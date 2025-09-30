@@ -88,3 +88,8 @@ dist/
 
 # Docker
 .dockerignore
+
+# Archivos de configuración local que no deben estar en el repo
+setup-husky.sh
+Dispositivos
+package-lock.json
