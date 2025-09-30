@@ -1,7 +1,9 @@
-import redis.asyncio as redis
 import json
 import logging
-from typing import Optional, Dict, Any, Callable
+from typing import Any, Callable, Dict, Optional
+
+import redis.asyncio as redis
+
 from .config import settings
 
 logger = logging.getLogger(__name__)
@@ -19,7 +21,7 @@ class RedisClient:
                 settings.redis_url,
                 decode_responses=True,
                 socket_timeout=5,
-                socket_connect_timeout=5
+                socket_connect_timeout=5,
             )
             # Test connection
             await self.redis_client.ping()
@@ -58,9 +60,9 @@ class RedisClient:
 
             # Escuchar mensajes en segundo plano
             async for message in self.pubsub.listen():
-                if message['type'] == 'message':
+                if message["type"] == "message":
                     try:
-                        data = json.loads(message['data'])
+                        data = json.loads(message["data"])
                         await callback(data)
                     except Exception as e:
                         logger.error(f"❌ Error procesando mensaje: {e}")

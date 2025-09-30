@@ -20,9 +20,7 @@ class SupabaseStore {
   async sessionExists({ session }) {
     try {
       // Comprobar existencia real listando en el bucket raíz
-      const { data, error } = await this.supabase.storage
-        .from(this.bucketName)
-        .list('');
+      const { data, error } = await this.supabase.storage.from(this.bucketName).list('');
 
       if (error || !Array.isArray(data)) return false;
       return data.some(item => item.name === `${session}.zip`);
@@ -86,7 +84,9 @@ class SupabaseStore {
         .download(`${session}.zip`);
 
       if (error || !data) {
-        console.warn(`ℹ️ No remote session found or download failed for ${session}. Continuing without restore.`);
+        console.warn(
+          `ℹ️ No remote session found or download failed for ${session}. Continuing without restore.`
+        );
         return null; // No interrumpir el inicio; permitirá generar QR nuevo
       }
 

@@ -1,7 +1,8 @@
-from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, Field
 
 
 class UserTypeEnum(str, Enum):
@@ -108,6 +109,7 @@ class ServiceOrder(BaseModel):
 
 class SessionData(BaseModel):
     """Modelo para datos de sesión compatible con el formato anterior"""
+
     phone: str
     message: str
     timestamp: datetime
@@ -118,6 +120,7 @@ class SessionData(BaseModel):
 
 class SessionStats(BaseModel):
     """Modelo para estadísticas de sesiones"""
+
     total_users: int
     total_messages: int
     active_users_1h: int
@@ -126,6 +129,7 @@ class SessionStats(BaseModel):
 
 class SessionCreateRequest(BaseModel):
     """Modelo para crear sesión (compatible con Session Service anterior)"""
+
     phone: str
     message: str
     timestamp: Optional[datetime] = None

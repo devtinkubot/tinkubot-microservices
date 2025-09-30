@@ -5,9 +5,8 @@ Gestiona sesiones de conversación con Redis para mantener contexto
 
 import json
 import logging
-from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
-import asyncio
+from typing import Any, Dict, List, Optional
 
 from .redis_client import redis_client
 
@@ -16,7 +15,14 @@ logger = logging.getLogger(__name__)
 
 class SessionMessage:
     """Modelo para mensajes de sesión"""
-    def __init__(self, message: str, timestamp: datetime = None, is_bot: bool = False, metadata: Dict = None):
+
+    def __init__(
+        self,
+        message: str,
+        timestamp: datetime = None,
+        is_bot: bool = False,
+        metadata: Dict = None,
+    ):
         self.message = message
         self.timestamp = timestamp or datetime.now()
         self.is_bot = is_bot
@@ -27,30 +33,32 @@ class SessionMessage:
             "message": self.message,
             "timestamp": self.timestamp.isoformat(),
             "is_bot": self.is_bot,
-            "metadata": self.metadata
+            "metadata": self.metadata,
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'SessionMessage':
+    def from_dict(cls, data: Dict[str, Any]) -> "SessionMessage":
         return cls(
             message=data["message"],
             timestamp=datetime.fromisoformat(data["timestamp"]),
             is_bot=data.get("is_bot", False),
-            metadata=data.get("metadata", {})
+            metadata=data.get("metadata", {}),
         )
 
 
 class SessionManager:
     """Gestor de sesiones de conversación"""
 
-    def __init__(self, redis_client=None):
-        self.redis_client = redis_client or redis_client
+    def __init__(self, redis_client_param=None):
+        self.redis_client = redis_client_param or redis_client
         self.session_ttl = 3600  # 1 hora en segundos
         self.max_sessions_per_user = 10  # Máximo 10 sesiones por usuario
         self._fallback_storage = {}  # Almacenamiento en memoria cuando Redis falla
         self._redis_available = True  # Estado de conexión a Redis
 
-    async def save_session(self, phone: str, message: str, is_bot: bool = False, metadata: Dict = None) -> bool:
+    async def save_session(
+        self, phone: str, message: str, is_bot: bool = False, metadata: Dict = None
+    ) -> bool:
         """
         Guarda un mensaje en la sesión del usuario
 
@@ -65,11 +73,19 @@ class SessionManager:
         """
         try:
             session_key = f"session:{phone}"
-            session_message = SessionMessage(message, is_bot=is_bot, metadata=metadata or {})
+            session_message = SessionMessage(
+                message, is_bot=is_bot, metadata=metadata or {}
+            )
 
             # Verificar si Redis está disponible
-            if not self._redis_available or not self.redis_client or not self.redis_client.redis_client:
-                logger.warning(f"⚠️ Redis no disponible, usando almacenamiento en memoria para {phone}")
+            if (
+                not self._redis_available
+                or not self.redis_client
+                or not self.redis_client.redis_client
+            ):
+                logger.warning(
+                    f"⚠️ Redis no disponible, usando almacenamiento en memoria para {phone}"
+                )
                 return self._save_session_fallback(phone, session_message)
 
             # Obtener sesiones existentes
@@ -80,13 +96,15 @@ class SessionManager:
 
             # Mantener solo las últimas N sesiones
             if len(existing_sessions) > self.max_sessions_per_user:
-                existing_sessions = existing_sessions[:self.max_sessions_per_user]
+                existing_sessions = existing_sessions[: self.max_sessions_per_user]
 
             # Convertir a formato JSON
             sessions_data = [msg.to_dict() for msg in existing_sessions]
 
             # Guardar en Redis con TTL
-            await self.redis_client.set(session_key, sessions_data, expire=self.session_ttl)
+            await self.redis_client.set(
+                session_key, sessions_data, expire=self.session_ttl
+            )
 
             logger.debug(f"✅ Sesión guardada para {phone}: {message[:50]}...")
             return True
@@ -95,10 +113,14 @@ class SessionManager:
             logger.error(f"❌ Error guardando sesión para {phone}: {e}")
             # Intentar fallback si Redis falla
             self._redis_available = False
-            session_message = SessionMessage(message, is_bot=is_bot, metadata=metadata or {})
+            session_message = SessionMessage(
+                message, is_bot=is_bot, metadata=metadata or {}
+            )
             return self._save_session_fallback(phone, session_message)
 
-    def _save_session_fallback(self, phone: str, session_message: SessionMessage) -> bool:
+    def _save_session_fallback(
+        self, phone: str, session_message: SessionMessage
+    ) -> bool:
         """Guarda sesión en almacenamiento en memoria como fallback"""
         try:
             if phone not in self._fallback_storage:
@@ -107,15 +129,21 @@ class SessionManager:
             # Agregar al inicio y mantener límite
             self._fallback_storage[phone].insert(0, session_message)
             if len(self._fallback_storage[phone]) > self.max_sessions_per_user:
-                self._fallback_storage[phone] = self._fallback_storage[phone][:self.max_sessions_per_user]
+                self._fallback_storage[phone] = self._fallback_storage[phone][
+                    : self.max_sessions_per_user
+                ]
 
-            logger.warning(f"📝 Sesión guardada en memoria para {phone}: {session_message.message[:50]}...")
+            logger.warning(
+                f"📝 Sesión guardada en memoria para {phone}: {session_message.message[:50]}..."
+            )
             return True
         except Exception as e:
             logger.error(f"❌ Error en fallback de sesión para {phone}: {e}")
             return False
 
-    async def get_conversation_history(self, phone: str, limit: int = None) -> List[SessionMessage]:
+    async def get_conversation_history(
+        self, phone: str, limit: int = None
+    ) -> List[SessionMessage]:
         """
         Obtiene el historial de conversación de un usuario
 
@@ -128,8 +156,14 @@ class SessionManager:
         """
         try:
             # Verificar si Redis está disponible
-            if not self._redis_available or not self.redis_client or not self.redis_client.redis_client:
-                logger.warning(f"⚠️ Redis no disponible, usando almacenamiento en memoria para {phone}")
+            if (
+                not self._redis_available
+                or not self.redis_client
+                or not self.redis_client.redis_client
+            ):
+                logger.warning(
+                    f"⚠️ Redis no disponible, usando almacenamiento en memoria para {phone}"
+                )
                 return self._get_history_fallback(phone, limit)
 
             session_key = f"session:{phone}"
@@ -161,13 +195,17 @@ class SessionManager:
             self._redis_available = False
             return self._get_history_fallback(phone, limit)
 
-    def _get_history_fallback(self, phone: str, limit: int = None) -> List[SessionMessage]:
+    def _get_history_fallback(
+        self, phone: str, limit: int = None
+    ) -> List[SessionMessage]:
         """Obtiene historial desde almacenamiento en memoria como fallback"""
         try:
             messages = self._fallback_storage.get(phone, [])
             if limit:
                 messages = messages[:limit]
-            logger.warning(f"📖 Historial obtenido desde memoria para {phone}: {len(messages)} mensajes")
+            logger.warning(
+                f"📖 Historial obtenido desde memoria para {phone}: {len(messages)} mensajes"
+            )
             return messages
         except Exception as e:
             logger.error(f"❌ Error en fallback de historial para {phone}: {e}")
@@ -287,7 +325,9 @@ class SessionManager:
             one_hour_ago = datetime.now() - timedelta(hours=1)
 
             for key in session_keys:
-                sessions = await self.get_conversation_history(key.replace("session:", ""))
+                sessions = await self.get_conversation_history(
+                    key.replace("session:", "")
+                )
                 total_messages += len(sessions)
 
                 # Verificar si tiene mensajes recientes
@@ -298,7 +338,9 @@ class SessionManager:
                 "total_users": total_users,
                 "total_messages": total_messages,
                 "active_users_1h": active_users,
-                "avg_messages_per_user": total_messages / total_users if total_users > 0 else 0
+                "avg_messages_per_user": (
+                    total_messages / total_users if total_users > 0 else 0
+                ),
             }
 
         except Exception as e:
@@ -356,7 +398,9 @@ class SessionManager:
                 if session_messages:
                     sessions_json = [msg.to_dict() for msg in session_messages]
                     session_key = f"session:{phone}"
-                    await self.redis_client.set(session_key, sessions_json, expire=self.session_ttl)
+                    await self.redis_client.set(
+                        session_key, sessions_json, expire=self.session_ttl
+                    )
                     imported_count += 1
 
             logger.info(f"✅ Importadas {imported_count} sesiones")

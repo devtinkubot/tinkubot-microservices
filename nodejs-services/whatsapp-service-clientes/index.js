@@ -63,13 +63,16 @@ async function sendWithRetry(sendFn, maxRetries = 3, baseDelayMs = 300) {
     } catch (err) {
       lastErr = err;
       const msg = (err && (err.message || err.originalMessage)) || '';
-      const retriable = /Execution context was destroyed|Target closed|Evaluation failed|Protocol error/i.test(msg);
+      const retriable =
+        /Execution context was destroyed|Target closed|Evaluation failed|Protocol error/i.test(msg);
       if (!retriable || attempt === maxRetries) {
         console.error('sendWithRetry: fallo definitivo:', msg);
         throw err;
       }
       const delay = baseDelayMs * Math.pow(2, attempt);
-      console.warn(`sendWithRetry: reintentando en ${delay}ms (intento ${attempt + 1}/${maxRetries})`);
+      console.warn(
+        `sendWithRetry: reintentando en ${delay}ms (intento ${attempt + 1}/${maxRetries})`
+      );
       await new Promise(r => setTimeout(r, delay));
       attempt++;
     }
@@ -95,8 +98,11 @@ async function replyText(message, text) {
 
 // Helpers para renderizar UI en WhatsApp (opciones numeradas)
 async function sendButtons(to, text, labels = []) {
-  const numbered = (labels || []).slice(0, 3).map((l, i) => `${i + 1}) ${l}`).join('\n');
-  const body = `${text || 'Elige una opción:'}\n\n${numbered}\n\nResponde con el número de tu opción (1-${(labels || []).slice(0,3).length}).`;
+  const numbered = (labels || [])
+    .slice(0, 3)
+    .map((l, i) => `${i + 1}) ${l}`)
+    .join('\n');
+  const body = `${text || 'Elige una opción:'}\n\n${numbered}\n\nResponde con el número de tu opción (1-${(labels || []).slice(0, 3).length}).`;
   await sendText(to, body);
 }
 
@@ -170,7 +176,7 @@ async function processWithAI(message) {
           lat: parseFloat(lat),
           lng: parseFloat(lng),
           name: message.location.name || undefined,
-          address: message.location.address || undefined
+          address: message.location.address || undefined,
         };
         console.warn('✅ Ubicación válida procesada:', payload.location);
       } else {
@@ -182,7 +188,10 @@ async function processWithAI(message) {
       console.warn('✅ Ubicación detectada desde objeto location nativo');
     }
 
-    const response = await postWithRetry(`${AI_SERVICE_URL}/handle-whatsapp-message`, payload, { timeout: 15000, retries: 2 });
+    const response = await postWithRetry(`${AI_SERVICE_URL}/handle-whatsapp-message`, payload, {
+      timeout: 15000,
+      retries: 2,
+    });
     return response.data;
   } catch (error) {
     if (error.response) {
@@ -191,7 +200,9 @@ async function processWithAI(message) {
       console.error('Error al procesar con IA:', error.message || error);
     }
     if (error.response && error.response.status === 400) {
-      return { text: 'Lo siento, no pude procesar tu mensaje. Por favor, intenta enviar un mensaje de texto claro.' };
+      return {
+        text: 'Lo siento, no pude procesar tu mensaje. Por favor, intenta enviar un mensaje de texto claro.',
+      };
     }
     return { text: 'Lo siento, estoy teniendo problemas para procesar tu mensaje.' };
   }
@@ -256,7 +267,11 @@ client.on('authenticated', () => {
 client.on('auth_failure', msg => {
   console.error(`[${instanceName}] Falla de autenticación:`, msg);
   clientStatus = 'disconnected';
-  io.emit('status', { status: 'disconnected', reason: 'auth_failure', timestamp: new Date().toISOString() });
+  io.emit('status', {
+    status: 'disconnected',
+    reason: 'auth_failure',
+    timestamp: new Date().toISOString(),
+  });
 });
 
 client.on('ready', () => {
@@ -276,7 +291,8 @@ client.on('ready', () => {
 let lastSessionSavedLog = 0;
 client.on('remote_session_saved', () => {
   const now = Date.now();
-  if (now - lastSessionSavedLog > 60_000) { // log cada 60s máx
+  if (now - lastSessionSavedLog > 60_000) {
+    // log cada 60s máx
     console.warn(`[${instanceName}] Sesión guardada en Supabase Storage`);
     lastSessionSavedLog = now;
   }
@@ -301,7 +317,10 @@ client.on('message', async message => {
       console.warn('  - location completo:', JSON.stringify(message.location, null, 2));
     }
     console.warn('  - body length:', message.body ? message.body.length : 0);
-    console.warn('  - body preview:', message.body ? message.body.substring(0, 100) + '...' : '[none]');
+    console.warn(
+      '  - body preview:',
+      message.body ? message.body.substring(0, 100) + '...' : '[none]'
+    );
   }
 
   if (message.hasQuotedMsg) {
@@ -337,35 +356,55 @@ client.on('message', async message => {
       console.warn('AI raw:', JSON.stringify(ai).slice(0, 500));
     } catch {}
 
-    // Respuesta estructurada (contrato flexible)
-    const text = ai.ai_response || ai.response || ai.text;
-    const ui = ai.ui || {};
+    async function sendAiObject(obj) {
+      const text = obj.ai_response || obj.response || obj.text;
+      const ui = obj.ui || {};
 
-  if (ui.type === 'buttons' && Array.isArray(ui.buttons)) {
-    await sendButtons(message.from, text || 'Elige una opción:', ui.buttons);
-  } else if (ui.type === 'location_request') {
-    await sendText(message.from, text || 'Por favor comparte tu ubicación 📎 para mostrarte los más cercanos.');
-  } else if (ui.type === 'provider_results') {
-    try {
-      const names = (ui.providers || []).map(p => p.name || 'Proveedor');
-      console.warn('➡️ Enviando provider_results al usuario:', { count: names.length, names });
-    } catch {}
-    await sendProviderResults(message.from, text || 'Encontré estas opciones:', ui.providers || []);
-  } else if (ui.type === 'feedback' && Array.isArray(ui.options)) {
-    await sendButtons(message.from, text || 'Califica tu experiencia:', ui.options);
-  } else if (ui.type === 'silent') {
-    // No enviar nada
-  } else if (text) {
-    await replyText(message, text);
-    } else {
-      await replyText(message, 'Procesando tu mensaje...');
+      if (ui.type === 'buttons' && Array.isArray(ui.buttons)) {
+        await sendButtons(message.from, text || 'Elige una opción:', ui.buttons);
+      } else if (ui.type === 'location_request') {
+        await sendText(
+          message.from,
+          text || 'Por favor comparte tu ubicación 📎 para mostrarte los más cercanos.'
+        );
+      } else if (ui.type === 'provider_results') {
+        try {
+          const names = (ui.providers || []).map(p => p.name || 'Proveedor');
+          console.warn('➡️ Enviando provider_results al usuario:', { count: names.length, names });
+        } catch {}
+        await sendProviderResults(
+          message.from,
+          text || 'Encontré estas opciones:',
+          ui.providers || []
+        );
+      } else if (ui.type === 'feedback' && Array.isArray(ui.options)) {
+        await sendButtons(message.from, text || 'Califica tu experiencia:', ui.options);
+      } else if (ui.type === 'silent') {
+        // No enviar nada
+      } else if (text) {
+        await replyText(message, text);
+      } else {
+        await replyText(message, 'Procesando tu mensaje...');
+      }
+
+      console.warn('Respuesta enviada (IA):', text || ui.type || '[sin texto]');
     }
 
-    console.warn('Respuesta enviada (IA):', text || ui.type || '[sin texto]');
+    // Permitir múltiples mensajes en una sola respuesta de IA
+    if (Array.isArray(ai.messages) && ai.messages.length > 0) {
+      for (const m of ai.messages) {
+        await sendAiObject(m || {});
+      }
+    } else {
+      await sendAiObject(ai || {});
+    }
   } catch (error) {
     console.error('Error al procesar mensaje:', error);
     // Enviar respuesta de fallback solo si falla la IA
-    await replyText(message, 'Lo siento, ocurrió un error al procesar tu mensaje. Por favor intenta de nuevo.');
+    await replyText(
+      message,
+      'Lo siento, ocurrió un error al procesar tu mensaje. Por favor intenta de nuevo.'
+    );
   }
 });
 

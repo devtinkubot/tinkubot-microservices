@@ -14,7 +14,8 @@ const instanceName = 'TinkuBot Proveedores';
 
 // Configuración de servicios externos
 // ESPECIALIZADO: Siempre usa el AI Service Proveedores
-const AI_SERVICE_URL = process.env.PROVEEDORES_AI_SERVICE_URL || 'http://ai-service-proveedores:5002';
+const AI_SERVICE_URL =
+  process.env.PROVEEDORES_AI_SERVICE_URL || 'http://ai-service-proveedores:5002';
 
 // Configuración de Supabase para almacenamiento de sesiones
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -145,7 +146,11 @@ client.on('authenticated', () => {
 client.on('auth_failure', msg => {
   console.error(`[${instanceName}] Falla de autenticación:`, msg);
   clientStatus = 'disconnected';
-  io.emit('status', { status: 'disconnected', reason: 'auth_failure', timestamp: new Date().toISOString() });
+  io.emit('status', {
+    status: 'disconnected',
+    reason: 'auth_failure',
+    timestamp: new Date().toISOString(),
+  });
 });
 
 client.on('ready', () => {
