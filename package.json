@@ -1,0 +1,20 @@
+{
+  "name": "tinkubot-microservices",
+  "version": "1.0.0",
+  "description": "Arquitectura de microservicios para TinkuBot - Sistema de automatización de WhatsApp con IA y agentes Rust",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.58.0",
+    "dotenv": "^17.2.2",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "eslint-plugin-node": "^11.1.0"
+  }
+}

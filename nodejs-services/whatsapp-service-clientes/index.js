@@ -1,0 +1,460 @@
+const express = require('express');
+const { Client, RemoteAuth } = require('whatsapp-web.js');
+const qrcode = require('qrcode-terminal');
+const cors = require('cors');
+const axios = require('axios');
+const http = require('http');
+const { Server } = require('socket.io');
+const SupabaseStore = require('./SupabaseStore');
+
+const app = express();
+const port = process.env.WHATSAPP_PORT || 7001;
+const instanceId = 'bot-clientes';
+const instanceName = 'TinkuBot Clientes';
+
+// Configuración de servicios externos
+// ESPECIALIZADO: Siempre usa el AI Service Clientes
+const AI_SERVICE_URL = process.env.AI_SERVICE_CLIENTES_URL || 'http://ai-service-clientes:5001';
+console.warn(`[${instanceName}] IA Clientes URL: ${AI_SERVICE_URL}`);
+
+// Configuración de Supabase para almacenamiento de sesiones
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_BACKEND_API_KEY;
+const supabaseBucket = process.env.SUPABASE_BUCKET_NAME;
+
+// Validar configuración de Supabase
+if (!supabaseUrl || !supabaseKey || !supabaseBucket) {
+  console.error('❌ Error: Faltan variables de entorno de Supabase');
+  console.error('Requeridas: SUPABASE_URL, SUPABASE_BACKEND_API_KEY, SUPABASE_BUCKET_NAME');
+  process.exit(1);
+}
+
+// Inicializar Supabase Store
+const supabaseStore = new SupabaseStore(supabaseUrl, supabaseKey, supabaseBucket);
+console.warn('✅ Supabase Store inicializado');
+
+// Configuración de instancia
+console.warn(`🤖 Iniciando ${instanceName} (ID: ${instanceId})`);
+console.warn(`📱 Puerto: ${port}`);
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// Configurar servidor HTTP y WebSocket
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST'],
+  },
+});
+
+let qrCodeData = null;
+let clientStatus = 'disconnected';
+
+// Envío robusto con retry/backoff para mitigar errores de Puppeteer/Chromium
+async function sendWithRetry(sendFn, maxRetries = 3, baseDelayMs = 300) {
+  let attempt = 0;
+  let lastErr;
+  while (attempt <= maxRetries) {
+    try {
+      return await sendFn();
+    } catch (err) {
+      lastErr = err;
+      const msg = (err && (err.message || err.originalMessage)) || '';
+      const retriable = /Execution context was destroyed|Target closed|Evaluation failed|Protocol error/i.test(msg);
+      if (!retriable || attempt === maxRetries) {
+        console.error('sendWithRetry: fallo definitivo:', msg);
+        throw err;
+      }
+      const delay = baseDelayMs * Math.pow(2, attempt);
+      console.warn(`sendWithRetry: reintentando en ${delay}ms (intento ${attempt + 1}/${maxRetries})`);
+      await new Promise(r => setTimeout(r, delay));
+      attempt++;
+    }
+  }
+  throw lastErr;
+}
+
+async function sendText(to, text) {
+  const safeText = text || ' ';
+  return sendWithRetry(() => client.sendMessage(to, safeText));
+}
+
+async function replyText(message, text) {
+  const safeText = text || ' ';
+  // message.reply también usa evaluate; si falla, intentamos vía sendMessage
+  try {
+    return await sendWithRetry(() => message.reply(safeText));
+  } catch (err) {
+    console.warn('replyText fallback -> sendMessage debido a error reply:', err?.message || err);
+    return sendText(message.from, safeText);
+  }
+}
+
+// Helpers para renderizar UI en WhatsApp (opciones numeradas)
+async function sendButtons(to, text, labels = []) {
+  const numbered = (labels || []).slice(0, 3).map((l, i) => `${i + 1}) ${l}`).join('\n');
+  const body = `${text || 'Elige una opción:'}\n\n${numbered}\n\nResponde con el número de tu opción (1-${(labels || []).slice(0,3).length}).`;
+  await sendText(to, body);
+}
+
+async function sendProviderResults(to, text, providers = []) {
+  try {
+    const names = (providers || []).slice(0, 3).map((p, i) => `${i + 1}) ${p.name || 'Proveedor'}`);
+    const body = `${text || 'Encontré estas opciones:'}\n\n${names.join('\n')}\n\nResponde con el número del proveedor (1-${names.length}).`;
+    await sendText(to, body);
+  } catch (err) {
+    console.error('Error enviando resultados de proveedores:', err);
+  }
+}
+
+// Helpers HTTP con reintentos
+async function postWithRetry(url, payload, { timeout = 15000, retries = 2, baseDelay = 300 } = {}) {
+  let attempt = 0;
+  let lastErr;
+  while (attempt <= retries) {
+    try {
+      return await axios.post(url, payload, { timeout });
+    } catch (err) {
+      lastErr = err;
+      const msg = err?.message || '';
+      const retriable = /ENOTFOUND|ECONNRESET|ETIMEDOUT|EAI_AGAIN|timeout/i.test(msg);
+      if (!retriable || attempt === retries) throw err;
+      const delay = baseDelay * Math.pow(2, attempt);
+      console.warn(`HTTP retry ${attempt + 1}/${retries} en ${delay}ms: ${msg}`);
+      await new Promise(r => setTimeout(r, delay));
+      attempt++;
+    }
+  }
+  throw lastErr;
+}
+
+// Función para procesar mensajes con IA (envía contexto enriquecido)
+async function processWithAI(message) {
+  try {
+    const payload = {
+      id: message.id._serialized || message.id,
+      from_number: message.from,
+      content: message.body || '',
+      timestamp: new Date(),
+      status: 'received',
+      message_type: message.type,
+    };
+
+    // Selección por reply-to: si responde citando una opción, usar el texto citado como selected_option
+    if (message.hasQuotedMsg) {
+      try {
+        const quoted = await message.getQuotedMessage();
+        if (quoted && quoted.body) {
+          payload.selected_option = quoted.body.trim();
+        }
+      } catch (e) {
+        console.warn('No se pudo obtener quoted message:', e.message || e);
+      }
+    }
+
+    // Ubicación compartida - Manejo mejorado según documentación oficial de WhatsApp Web.js
+    if ((message.type === 'location' || message.type === 'live_location') && message.location) {
+      console.warn('📍 Objeto location completo:', JSON.stringify(message.location, null, 2));
+
+      // Según documentación oficial, Location tiene propiedades: latitude, longitude, name, address, url
+      const lat = message.location.latitude;
+      const lng = message.location.longitude;
+
+      console.warn('📍 Coordenadas extraídas - lat:', lat, 'lng:', lng);
+
+      if (lat && lng && !isNaN(lat) && !isNaN(lng)) {
+        payload.location = {
+          lat: parseFloat(lat),
+          lng: parseFloat(lng),
+          name: message.location.name || undefined,
+          address: message.location.address || undefined
+        };
+        console.warn('✅ Ubicación válida procesada:', payload.location);
+      } else {
+        console.warn('❌ Coordenadas inválidas - lat:', lat, 'lng:', lng);
+      }
+    }
+    // Solo adjuntar ubicación cuando sea mensaje de ubicación nativo
+    if (payload.location) {
+      console.warn('✅ Ubicación detectada desde objeto location nativo');
+    }
+
+    const response = await postWithRetry(`${AI_SERVICE_URL}/handle-whatsapp-message`, payload, { timeout: 15000, retries: 2 });
+    return response.data;
+  } catch (error) {
+    if (error.response) {
+      console.error('Error IA status:', error.response.status, error.response.data);
+    } else {
+      console.error('Error al procesar con IA:', error.message || error);
+    }
+    if (error.response && error.response.status === 400) {
+      return { text: 'Lo siento, no pude procesar tu mensaje. Por favor, intenta enviar un mensaje de texto claro.' };
+    }
+    return { text: 'Lo siento, estoy teniendo problemas para procesar tu mensaje.' };
+  }
+}
+
+console.warn('Inicializando cliente de WhatsApp con RemoteAuth...');
+
+const client = new Client({
+  authStrategy: new RemoteAuth({
+    clientId: instanceId, // Identificador único por instancia
+    store: supabaseStore, // Store de Supabase para sesiones remotas
+    dataPath: '/app/.wwebjs_auth', // Ruta temporal para sesiones
+    backupSyncIntervalMs: 300000, // 5 minutos entre backups
+    rmMaxRetries: 4, // Máximo de reintentos para eliminar archivos
+  }), // Guardar sesión en Supabase Storage
+  puppeteer: {
+    headless: true,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-accelerated-2d-canvas',
+      '--no-first-run',
+      '--no-zygote',
+      '--disable-gpu',
+      '--disable-extensions',
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
+      '--disable-features=TranslateUI',
+      '--disable-ipc-flooding-protection',
+      '--enable-unsafe-swiftshader',
+      '--max-old-space-size=256',
+    ],
+  },
+});
+
+client.on('qr', qr => {
+  console.warn(`[${instanceName}] QR Code recibido, generándolo en terminal y guardándolo...`);
+  qrcode.generate(qr, { small: true });
+  qrCodeData = qr; // Guardamos el QR para la API
+  clientStatus = 'qr_ready';
+
+  // Notificar a clientes WebSocket
+  io.emit('status', {
+    status: 'qr_ready',
+    qr,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Marcar como conectado al autenticarse (al escanear QR)
+client.on('authenticated', () => {
+  if (clientStatus !== 'connected') {
+    console.warn(`[${instanceName}] Autenticación exitosa (authenticated)`);
+  }
+  clientStatus = 'connected';
+  qrCodeData = null;
+  io.emit('status', { status: 'connected', timestamp: new Date().toISOString() });
+});
+
+client.on('auth_failure', msg => {
+  console.error(`[${instanceName}] Falla de autenticación:`, msg);
+  clientStatus = 'disconnected';
+  io.emit('status', { status: 'disconnected', reason: 'auth_failure', timestamp: new Date().toISOString() });
+});
+
+client.on('ready', () => {
+  if (clientStatus !== 'connected') {
+    console.warn(`[${instanceName}] ¡Cliente de WhatsApp está listo con sesión remota!`);
+  }
+  qrCodeData = null; // Ya no necesitamos el QR
+  clientStatus = 'connected';
+
+  // Notificar a clientes WebSocket
+  io.emit('status', {
+    status: 'connected',
+    timestamp: new Date().toISOString(),
+  });
+});
+
+let lastSessionSavedLog = 0;
+client.on('remote_session_saved', () => {
+  const now = Date.now();
+  if (now - lastSessionSavedLog > 60_000) { // log cada 60s máx
+    console.warn(`[${instanceName}] Sesión guardada en Supabase Storage`);
+    lastSessionSavedLog = now;
+  }
+});
+
+// Manejar mensajes entrantes
+client.on('message', async message => {
+  console.warn(
+    `[${instanceName}] Mensaje recibido de ${message.from}:`,
+    message.body || '[Mensaje sin texto]'
+  );
+  console.warn('  tipo:', message.type, 'tieneUbicacion:', !!message.location);
+
+  // Depuración avanzada para ubicaciones
+  if (message.type === 'location' || message.type === 'live_location') {
+    console.warn('🔍 Detalles del mensaje de ubicación:');
+    console.warn('  - type:', message.type);
+    console.warn('  - hasMedia:', message.hasMedia);
+    console.warn('  - location type:', typeof message.location);
+    if (message.location) {
+      console.warn('  - location keys:', Object.keys(message.location));
+      console.warn('  - location completo:', JSON.stringify(message.location, null, 2));
+    }
+    console.warn('  - body length:', message.body ? message.body.length : 0);
+    console.warn('  - body preview:', message.body ? message.body.substring(0, 100) + '...' : '[none]');
+  }
+
+  if (message.hasQuotedMsg) {
+    try {
+      const quoted = await message.getQuotedMessage();
+      console.warn('  quoted body:', quoted && quoted.body ? quoted.body : '[none]');
+    } catch {}
+  }
+
+  // Ignorar mensajes de broadcast y del sistema
+  if (
+    message.from === 'status@broadcast' ||
+    message.from.endsWith('@g.us') ||
+    message.from.endsWith('@broadcast')
+  ) {
+    return;
+  }
+
+  // ACTUALIZADO: La gestión de sesiones está integrada en processWithAI()
+  // Ya no es necesario llamar a saveSession() por separado
+
+  // Procesar con IA y responder (soporta UI estructurada)
+  try {
+    // Ignorar tipos de mensaje no conversacionales (evita respuestas a notificaciones/templates)
+    const allowedTypes = new Set(['chat', 'location', 'live_location']);
+    if (!allowedTypes.has(message.type)) {
+      console.warn('  [ignorado] tipo no conversacional:', message.type);
+      return;
+    }
+
+    const ai = await processWithAI(message);
+    try {
+      console.warn('AI raw:', JSON.stringify(ai).slice(0, 500));
+    } catch {}
+
+    // Respuesta estructurada (contrato flexible)
+    const text = ai.ai_response || ai.response || ai.text;
+    const ui = ai.ui || {};
+
+  if (ui.type === 'buttons' && Array.isArray(ui.buttons)) {
+    await sendButtons(message.from, text || 'Elige una opción:', ui.buttons);
+  } else if (ui.type === 'location_request') {
+    await sendText(message.from, text || 'Por favor comparte tu ubicación 📎 para mostrarte los más cercanos.');
+  } else if (ui.type === 'provider_results') {
+    try {
+      const names = (ui.providers || []).map(p => p.name || 'Proveedor');
+      console.warn('➡️ Enviando provider_results al usuario:', { count: names.length, names });
+    } catch {}
+    await sendProviderResults(message.from, text || 'Encontré estas opciones:', ui.providers || []);
+  } else if (ui.type === 'feedback' && Array.isArray(ui.options)) {
+    await sendButtons(message.from, text || 'Califica tu experiencia:', ui.options);
+  } else if (ui.type === 'silent') {
+    // No enviar nada
+  } else if (text) {
+    await replyText(message, text);
+    } else {
+      await replyText(message, 'Procesando tu mensaje...');
+    }
+
+    console.warn('Respuesta enviada (IA):', text || ui.type || '[sin texto]');
+  } catch (error) {
+    console.error('Error al procesar mensaje:', error);
+    // Enviar respuesta de fallback solo si falla la IA
+    await replyText(message, 'Lo siento, ocurrió un error al procesar tu mensaje. Por favor intenta de nuevo.');
+  }
+});
+
+client.on('disconnected', reason => {
+  console.error(`[${instanceName}] Cliente desconectado:`, reason);
+  clientStatus = 'disconnected';
+
+  // Notificar a clientes WebSocket
+  io.emit('status', {
+    status: 'disconnected',
+    reason,
+    timestamp: new Date().toISOString(),
+  });
+
+  // Opcional: intentar reinicializar
+  // client.initialize();
+});
+
+client.initialize();
+
+// --- Endpoints de la API ---
+
+// Endpoint para obtener el QR code
+app.get('/qr', (req, res) => {
+  if (clientStatus === 'qr_ready' && qrCodeData) {
+    res.json({ qr: qrCodeData });
+  } else {
+    res.status(404).json({ error: 'QR code no disponible o ya conectado.' });
+  }
+});
+
+// Endpoint para obtener el estado
+app.get('/status', (req, res) => {
+  res.json({ status: clientStatus });
+});
+
+// Endpoint para enviar mensajes de texto (usado por scheduler de AI Clientes)
+app.post('/send', async (req, res) => {
+  try {
+    const { to, message } = req.body || {};
+    if (!to || !message) {
+      return res.status(400).json({ error: 'to and message are required' });
+    }
+    await sendText(to, message);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e?.message || String(e) });
+  }
+});
+
+// Endpoint de Health Check extendido
+app.get('/health', async (req, res) => {
+  const healthStatus = {
+    status: 'healthy',
+    instance: instanceId,
+    name: instanceName,
+    port,
+    whatsapp_status: clientStatus,
+    ai_service: 'unknown',
+    websocket_connected: true,
+    timestamp: new Date().toISOString(),
+  };
+
+  // Verificar conexión con AI Service Clientes
+  try {
+    const aiResponse = await axios.get(`${AI_SERVICE_URL}/health`, {
+      timeout: 5000,
+    });
+    healthStatus.ai_service = 'connected';
+    healthStatus.ai_service_status = aiResponse.data.status || 'ok';
+  } catch (error) {
+    healthStatus.ai_service = 'disconnected';
+    healthStatus.ai_service_error = error.message;
+  }
+
+  // Si WhatsApp no está conectado, marcar como degradado
+  if (clientStatus !== 'connected') {
+    healthStatus.status = 'degraded';
+  }
+
+  // Si AI Service no está conectado, marcar como unhealthy
+  if (healthStatus.ai_service === 'disconnected') {
+    healthStatus.status = 'unhealthy';
+  }
+
+  res.json(healthStatus);
+});
+
+server.listen(port, () => {
+  console.warn(`🚀 ${instanceName} (ID: ${instanceId}) escuchando en http://localhost:${port}`);
+  console.warn('🔌 WebSocket habilitado para notificaciones en tiempo real');
+});
