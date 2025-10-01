@@ -18,7 +18,7 @@ def ascii_block(lines: List[str]) -> str:
     if not lines:
         lines = [""]
     width = max(len(line) for line in lines)
-    border = " " + "." * (width + 2)
+    border = " " + "." * (width + 3)
     body = [f" {line.ljust(width)} " for line in lines]
     return "\n".join([border, *body, border])
 
