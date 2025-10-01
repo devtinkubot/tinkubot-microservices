@@ -25,7 +25,17 @@ from shared_lib.models import (
 from shared_lib.redis_client import redis_client
 from shared_lib.session_manager import session_manager
 from templates.prompts import (
+    CONFIRM_NEW_SEARCH_BUTTONS,
+    CONFIRM_PROMPT_FOOTER,
+    CONFIRM_PROMPT_TITLE_DEFAULT,
+    confirm_options_block,
+    FEEDBACK_PROMPT_FOOTER,
+    FEEDBACK_PROMPT_TITLE,
+    feedback_options_block,
     INITIAL_PROMPT,
+    provider_options_block,
+    provider_options_intro,
+    provider_options_prompt,
     SCOPE_PROMPT_BLOCK,
     SCOPE_PROMPT_FOOTER,
     SCOPE_PROMPT_TITLE,
@@ -269,17 +279,6 @@ RESET_KEYWORDS = {
     "nuevo",
 }
 
-CONFIRM_NEW_SEARCH_MESSAGE = (
-    "¿Quieres buscar otro servicio?\n"
-    "*1* Sí, buscar otro servicio\n"
-    "*2* No, por ahora está bien"
-)
-
-CONFIRM_NEW_SEARCH_BUTTONS = [
-    "Sí, buscar otro servicio",
-    "No, por ahora está bien",
-]
-
 MAX_CONFIRM_ATTEMPTS = 2
 
 
@@ -414,6 +413,55 @@ async def send_scope_prompt(phone: str, flow: Dict[str, Any]):
         except Exception:
             pass
     return {"messages": messages}
+
+
+def provider_prompt_messages(city: str, providers: list[Dict[str, Any]]):
+    return [
+        {"response": provider_options_intro(city)},
+        {"response": provider_options_block(providers)},
+        ui_provider_results(provider_options_prompt(len(providers)), providers),
+    ]
+
+
+async def send_provider_prompt(phone: str, flow: Dict[str, Any], city: str):
+    providers = flow.get("providers", [])
+    messages = provider_prompt_messages(city, providers)
+    await set_flow(phone, flow)
+    for msg in messages:
+        try:
+            if msg.get("response"):
+                await session_manager.save_session(phone, msg["response"], is_bot=True)
+        except Exception:
+            pass
+    return {"messages": messages}
+
+
+def confirm_prompt_messages(title: str):
+    return [
+        {"response": title},
+        {"response": confirm_options_block()},
+        ui_buttons(CONFIRM_PROMPT_FOOTER, CONFIRM_NEW_SEARCH_BUTTONS),
+    ]
+
+
+async def send_confirm_prompt(phone: str, flow: Dict[str, Any], title: str):
+    messages = confirm_prompt_messages(title)
+    await set_flow(phone, flow)
+    for msg in messages:
+        try:
+            if msg.get("response"):
+                await session_manager.save_session(phone, msg["response"], is_bot=True)
+        except Exception:
+            pass
+    return {"messages": messages}
+
+
+def feedback_prompt_messages():
+    return [
+        {"response": FEEDBACK_PROMPT_TITLE},
+        {"response": feedback_options_block()},
+        ui_feedback(FEEDBACK_PROMPT_FOOTER),
+    ]
 
 
 def normalize_button(val: Optional[str]) -> Optional[str]:
@@ -831,7 +879,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                 # No hay proveedores: notificar y ofrecer reiniciar búsqueda con botones
                 flow["state"] = "confirm_new_search"
                 flow["confirm_attempts"] = 0
-                flow["confirm_prompt"] = CONFIRM_NEW_SEARCH_MESSAGE
+                flow["confirm_title"] = CONFIRM_PROMPT_TITLE_DEFAULT
                 await set_flow(phone, flow)
                 msg1 = f"No tenemos proveedores registrados en {city} aún. Por ahora no es posible continuar."
                 # Guardar ambos mensajes en la sesión
@@ -839,20 +887,17 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                     await session_manager.save_session(phone, msg1, is_bot=True)
                 except Exception:
                     pass
-                try:
-                    await session_manager.save_session(
-                        phone, flow["confirm_prompt"], is_bot=True
-                    )
-                except Exception:
-                    pass
+                confirm_msgs = confirm_prompt_messages(flow["confirm_title"])
+                for msg in confirm_msgs:
+                    try:
+                        if msg.get("response"):
+                            await session_manager.save_session(
+                                phone, msg["response"], is_bot=True
+                            )
+                    except Exception:
+                        pass
                 return {
-                    "messages": [
-                        {"response": msg1},
-                        ui_buttons(
-                            flow["confirm_prompt"],
-                            CONFIRM_NEW_SEARCH_BUTTONS,
-                        ),
-                    ]
+                    "messages": [{"response": msg1}, *confirm_msgs],
                 }
 
             flow["providers"] = providers[:3]
@@ -887,12 +932,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                     f"📣 Devolviendo provider_results a WhatsApp: count={len(flow['providers'])}"
                 )
 
-            return await respond(
-                flow,
-                ui_provider_results(
-                    f"Encontré estas opciones en {city}:", flow["providers"]
-                ),
-            )
+            return await send_provider_prompt(phone, flow, city)
 
         # Fast-path: si llega ubicación válida en cualquier estado y ya tenemos servicio+ciudad, pasar a búsqueda
         lat = None
@@ -1077,9 +1117,15 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
             await set_flow(phone, flow)
             # Guardar mensajes del bot en sesión
             await session_manager.save_session(phone, msg, is_bot=True)
-            await session_manager.save_session(
-                phone, "Por favor, califica tu experiencia:", is_bot=True
-            )
+            feedback_msgs = feedback_prompt_messages()
+            for fmsg in feedback_msgs:
+                try:
+                    if fmsg.get("response"):
+                        await session_manager.save_session(
+                            phone, fmsg["response"], is_bot=True
+                        )
+                except Exception:
+                    pass
             # Agendar recordatorio de feedback diferido (por si el usuario no califica)
             try:
                 await schedule_feedback_request(
@@ -1088,12 +1134,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
             except Exception as e:
                 logger.warning(f"No se pudo agendar feedback: {e}")
             # Devolver dos mensajes: información del proveedor y luego solicitud de calificación con UI
-            return {
-                "messages": [
-                    {"response": msg},
-                    ui_feedback("Por favor, califica tu experiencia:"),
-                ]
-            }
+            return {"messages": [{"response": msg}, *feedback_msgs]}
 
             return {"response": "Responde con el número del proveedor (1, 2 o 3)."}
 
@@ -1123,19 +1164,25 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
 
             flow["state"] = "confirm_new_search"
             flow["confirm_attempts"] = 0
-            flow["confirm_prompt"] = (
-                "¡Gracias por tu calificación! Tu opinión ayuda a mejorar nuestra comunidad.\n"
-                f"{CONFIRM_NEW_SEARCH_MESSAGE}"
+            flow["confirm_title"] = (
+                "¡Gracias por tu calificación! Tu opinión ayuda a mejorar nuestra comunidad."
             )
-            await set_flow(phone, flow)
-            return ui_buttons(flow["confirm_prompt"], CONFIRM_NEW_SEARCH_BUTTONS)
+            return await send_confirm_prompt(phone, flow, flow["confirm_title"])
 
         if state == "confirm_new_search":
             choice_raw = (selected or text or "").strip()
             choice = choice_raw.lower().strip()
             choice = choice.rstrip(".!¡¿)")
 
-            confirm_prompt = flow.get("confirm_prompt") or CONFIRM_NEW_SEARCH_MESSAGE
+            confirm_title = flow.get("confirm_title")
+            if not confirm_title:
+                legacy_prompt = flow.get("confirm_prompt")
+                if isinstance(legacy_prompt, str) and legacy_prompt.strip():
+                    confirm_title = legacy_prompt.split("\n", 1)[0].strip()
+                else:
+                    confirm_title = CONFIRM_PROMPT_TITLE_DEFAULT
+                flow["confirm_title"] = confirm_title
+                flow.pop("confirm_prompt", None)
 
             yes_choices = {
                 "1",
@@ -1172,6 +1219,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                 await reset_flow(phone)
                 if isinstance(flow, dict):
                     flow.pop("confirm_attempts", None)
+                    flow.pop("confirm_title", None)
                     flow.pop("confirm_prompt", None)
                 return await respond(
                     {"state": "awaiting_service"},
@@ -1192,10 +1240,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                     {"response": INITIAL_PROMPT},
                 )
 
-            return await respond(
-                flow,
-                ui_buttons(confirm_prompt, CONFIRM_NEW_SEARCH_BUTTONS),
-            )
+            return await send_confirm_prompt(phone, flow, confirm_title)
 
         # Fallback: mantener o guiar según progreso
         helper = flow if isinstance(flow, dict) else {}

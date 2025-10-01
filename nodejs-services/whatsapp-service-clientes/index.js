@@ -85,17 +85,6 @@ async function sendText(to, text) {
   return sendWithRetry(() => client.sendMessage(to, safeText));
 }
 
-async function replyText(message, text) {
-  const safeText = text || ' ';
-  // message.reply también usa evaluate; si falla, intentamos vía sendMessage
-  try {
-    return await sendWithRetry(() => message.reply(safeText));
-  } catch (err) {
-    console.warn('replyText fallback -> sendMessage debido a error reply:', err?.message || err);
-    return sendText(message.from, safeText);
-  }
-}
-
 // Helpers para renderizar UI en WhatsApp (opciones numeradas)
 async function sendButtons(to, text, labels = []) {
   const numbered = (labels || [])
@@ -382,9 +371,9 @@ client.on('message', async message => {
       } else if (ui.type === 'silent') {
         // No enviar nada
       } else if (text) {
-        await replyText(message, text);
+        await sendText(message.from, text);
       } else {
-        await replyText(message, 'Procesando tu mensaje...');
+        await sendText(message.from, 'Procesando tu mensaje...');
       }
 
       console.warn('Respuesta enviada (IA):', text || ui.type || '[sin texto]');
@@ -401,8 +390,8 @@ client.on('message', async message => {
   } catch (error) {
     console.error('Error al procesar mensaje:', error);
     // Enviar respuesta de fallback solo si falla la IA
-    await replyText(
-      message,
+    await sendText(
+      message.from,
       'Lo siento, ocurrió un error al procesar tu mensaje. Por favor intenta de nuevo.'
     );
   }
