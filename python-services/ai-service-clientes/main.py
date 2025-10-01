@@ -24,7 +24,12 @@ from shared_lib.models import (
 )
 from shared_lib.redis_client import redis_client
 from shared_lib.session_manager import session_manager
-from templates.prompts import INITIAL_PROMPT
+from templates.prompts import (
+    INITIAL_PROMPT,
+    SCOPE_PROMPT_BLOCK,
+    SCOPE_PROMPT_FOOTER,
+    SCOPE_PROMPT_TITLE,
+)
 from supabase import create_client
 
 # Configurar logging
@@ -276,19 +281,6 @@ CONFIRM_NEW_SEARCH_BUTTONS = [
 ]
 
 MAX_CONFIRM_ATTEMPTS = 2
-
-SCOPE_PROMPT_TITLE = "Deseas que el servicio sea?"
-SCOPE_PROMPT_BLOCK = (
-    "```\n"
-    "..................................\n"
-    "         Opciones:\n"
-    " *1*  Cerca y Urgente\n"
-    " *2*  Cerca pero puedo esperar\n"
-    " *3*  Toda la ciudad\n"
-    "..................................\n"
-    "```\n"
-)
-SCOPE_PROMPT_FOOTER = "Escriba una opción (*1*-*3*)"
 
 
 def extract_profession_and_location(
