@@ -14,16 +14,13 @@ CONFIRM_NEW_SEARCH_BUTTONS = [
 CONFIRM_PROMPT_TITLE_DEFAULT = "¿Quieres buscar otro servicio?"
 CONFIRM_PROMPT_FOOTER = "Responde con el número de tu opción:"
 
-BLOCK_MIN_WIDTH = 32
-
 def ascii_block(lines: List[str]) -> str:
     if not lines:
         lines = [""]
     width = max(len(line) for line in lines)
-    width = max(width, BLOCK_MIN_WIDTH)
-    border = " " + "." * (width + 2)
+    border = " " + "." * (width + 3)
     body = [f" {line.ljust(width)} " for line in lines]
-    return "```\n" + "\n".join([border, *body, border]) + "\n```"
+    return "\n".join([border, "", *body, "", border])
 
 
 # Bloque ASCII para guiar la selección del alcance del servicio.

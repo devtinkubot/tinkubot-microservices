@@ -394,8 +394,7 @@ def ui_feedback(text: str):
 
 def scope_prompt_messages() -> list[Dict[str, Any]]:
     return [
-        {"response": SCOPE_PROMPT_TITLE},
-        {"response": SCOPE_PROMPT_BLOCK},
+        {"response": f"{SCOPE_PROMPT_TITLE}\n{SCOPE_PROMPT_BLOCK}"},
         ui_buttons(
             SCOPE_PROMPT_FOOTER,
             [SCOPE_BTN_URGENT, SCOPE_BTN_NEAR_WAIT, SCOPE_BTN_CITYWIDE],
@@ -416,9 +415,9 @@ async def send_scope_prompt(phone: str, flow: Dict[str, Any]):
 
 
 def provider_prompt_messages(city: str, providers: list[Dict[str, Any]]):
+    header = provider_options_intro(city)
     return [
-        {"response": provider_options_intro(city)},
-        {"response": provider_options_block(providers)},
+        {"response": f"{header}\n{provider_options_block(providers)}"},
         ui_provider_results(provider_options_prompt(len(providers)), providers),
     ]
 
@@ -438,8 +437,7 @@ async def send_provider_prompt(phone: str, flow: Dict[str, Any], city: str):
 
 def confirm_prompt_messages(title: str):
     return [
-        {"response": title},
-        {"response": confirm_options_block()},
+        {"response": f"{title}\n{confirm_options_block()}"},
         ui_buttons(CONFIRM_PROMPT_FOOTER, CONFIRM_NEW_SEARCH_BUTTONS),
     ]
 
@@ -458,8 +456,7 @@ async def send_confirm_prompt(phone: str, flow: Dict[str, Any], title: str):
 
 def feedback_prompt_messages():
     return [
-        {"response": FEEDBACK_PROMPT_TITLE},
-        {"response": feedback_options_block()},
+        {"response": f"{FEEDBACK_PROMPT_TITLE}\n{feedback_options_block()}"},
         ui_feedback(FEEDBACK_PROMPT_FOOTER),
     ]
 
