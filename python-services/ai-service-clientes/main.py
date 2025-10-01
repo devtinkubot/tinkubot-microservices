@@ -263,6 +263,21 @@ RESET_KEYWORDS = {
     "nuevo",
 }
 
+INITIAL_PROMPT = "¿En qué te puedo ayudar hoy?"
+
+CONFIRM_NEW_SEARCH_MESSAGE = (
+    "¿Quieres buscar otro servicio?\n"
+    "*1* Sí, buscar otro servicio\n"
+    "*2* No, por ahora está bien"
+)
+
+CONFIRM_NEW_SEARCH_BUTTONS = [
+    "Sí, buscar otro servicio",
+    "No, por ahora está bien",
+]
+
+MAX_CONFIRM_ATTEMPTS = 2
+
 
 def extract_profession_and_location(
     history_text: str, last_message: str
@@ -764,7 +779,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                     return await respond(
                         flow,
                         {
-                            "response": "Volvamos a empezar. ¿Qué servicio necesitas hoy?"
+                            "response": f"Volvamos a empezar. {INITIAL_PROMPT}"
                         },
                     )
                 if not service:
@@ -788,6 +803,8 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
             if not providers:
                 # No hay proveedores: notificar y ofrecer reiniciar búsqueda con botones
                 flow["state"] = "confirm_new_search"
+                flow["confirm_attempts"] = 0
+                flow["confirm_prompt"] = CONFIRM_NEW_SEARCH_MESSAGE
                 await set_flow(phone, flow)
                 msg1 = f"No tenemos proveedores registrados en {city} aún. Por ahora no es posible continuar."
                 # Guardar ambos mensajes en la sesión
@@ -797,7 +814,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                     pass
                 try:
                     await session_manager.save_session(
-                        phone, "¿Quieres buscar otro servicio?", is_bot=True
+                        phone, flow["confirm_prompt"], is_bot=True
                     )
                 except Exception:
                     pass
@@ -805,8 +822,8 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                     "messages": [
                         {"response": msg1},
                         ui_buttons(
-                            "¿Quieres buscar otro servicio?",
-                            ["Sí, buscar otro servicio", "No, por ahora está bien"],
+                            flow["confirm_prompt"],
+                            CONFIRM_NEW_SEARCH_BUTTONS,
                         ),
                     ]
                 }
@@ -882,7 +899,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                 return await respond(flow, {"response": "¿En qué ciudad lo necesitas?"})
             # Si no hay intención clara, inicia flujo pidiendo el servicio (sin ejemplos)
             new_flow = {"state": "awaiting_service"}
-            return await respond(new_flow, {"response": "¿Qué servicio necesitas hoy?"})
+            return await respond(new_flow, {"response": INITIAL_PROMPT})
 
         # Close conversation kindly
         if selected == "No, por ahora está bien":
@@ -894,7 +911,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
         # State machine
         if state == "awaiting_service":
             if not text or text.strip().lower() in GREETINGS:
-                return {"response": "¿Qué servicio necesitas hoy?"}
+                return {"response": INITIAL_PROMPT}
             # Extraer profesión canónica desde texto libre (evita capturar frases como 'de plomeros')
             try:
                 prof, _loc = extract_profession_and_location("", text)
@@ -1067,35 +1084,87 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                 logger.warning(f"No se pudo guardar review: {e}")
 
             flow["state"] = "confirm_new_search"
-            await set_flow(phone, flow)
-            return ui_buttons(
-                "¡Gracias por tu calificación! Tu opinión ayuda a mejorar nuestra comunidad.\n¿Quieres buscar otro servicio?",
-                ["Sí, buscar otro servicio", "No, por ahora está bien"],
+            flow["confirm_attempts"] = 0
+            flow["confirm_prompt"] = (
+                "¡Gracias por tu calificación! Tu opinión ayuda a mejorar nuestra comunidad.\n"
+                f"{CONFIRM_NEW_SEARCH_MESSAGE}"
             )
+            await set_flow(phone, flow)
+            return ui_buttons(flow["confirm_prompt"], CONFIRM_NEW_SEARCH_BUTTONS)
 
         if state == "confirm_new_search":
-            choice = (selected or text or "").strip().lower()
-            if choice in (
+            choice_raw = (selected or text or "").strip()
+            choice = choice_raw.lower().strip()
+            choice = choice.rstrip(".!¡¿)")
+
+            confirm_prompt = flow.get("confirm_prompt") or CONFIRM_NEW_SEARCH_MESSAGE
+
+            yes_choices = {
                 "1",
                 "sí",
                 "si",
                 "sí, buscar otro servicio",
                 "si, buscar otro servicio",
-            ):
+                "sí por favor",
+                "si por favor",
+                "sí gracias",
+                "si gracias",
+                "buscar otro servicio",
+                "otro servicio",
+                "claro",
+                "opcion 1",
+                "opción 1",
+                "1)",
+            }
+            no_choices = {
+                "2",
+                "no",
+                "no, por ahora está bien",
+                "no gracias",
+                "no, gracias",
+                "por ahora no",
+                "no deseo",
+                "no quiero",
+                "opcion 2",
+                "opción 2",
+                "2)",
+            }
+
+            if choice in yes_choices:
                 await reset_flow(phone)
-                await set_flow(phone, {"state": "awaiting_service"})
-                return {"response": "¿Qué servicio necesitas hoy?"}
-            if choice in ("2", "no", "no, por ahora está bien"):
+                if isinstance(flow, dict):
+                    flow.pop("confirm_attempts", None)
+                    flow.pop("confirm_prompt", None)
+                return await respond(
+                    {"state": "awaiting_service"},
+                    {"response": INITIAL_PROMPT},
+                )
+
+            if choice in no_choices:
                 await reset_flow(phone)
-                # Respuesta silenciosa: no enviar mensaje
                 return {"ui": {"type": "silent"}}
+
+            attempts = int(flow.get("confirm_attempts") or 0) + 1
+            flow["confirm_attempts"] = attempts
+
+            if attempts >= MAX_CONFIRM_ATTEMPTS:
+                await reset_flow(phone)
+                return await respond(
+                    {"state": "awaiting_service"},
+                    {"response": INITIAL_PROMPT},
+                )
+
+            return await respond(
+                flow,
+                ui_buttons(confirm_prompt, CONFIRM_NEW_SEARCH_BUTTONS),
+            )
 
         # Fallback: mantener o guiar según progreso
         helper = flow if isinstance(flow, dict) else {}
         if not helper.get("service"):
             return await respond(
                 {"state": "awaiting_service"},
-                {"response": "¿Qué servicio necesitas hoy?"},
+                {"response": INITIAL_PROMPT},
             )
         if not helper.get("city"):
             helper["state"] = "awaiting_city"
