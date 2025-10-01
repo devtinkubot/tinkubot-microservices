@@ -24,6 +24,7 @@ from shared_lib.models import (
 )
 from shared_lib.redis_client import redis_client
 from shared_lib.session_manager import session_manager
+from flows.client_flow import ClientFlow
 from templates.prompts import (
     CONFIRM_NEW_SEARCH_BUTTONS,
     CONFIRM_PROMPT_FOOTER,
@@ -978,18 +979,14 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
 
         # State machine
         if state == "awaiting_service":
-            if not text or text.strip().lower() in GREETINGS:
-                return {"response": INITIAL_PROMPT}
-            # Extraer profesión canónica desde texto libre (evita capturar frases como 'de plomeros')
-            try:
-                prof, _loc = extract_profession_and_location("", text)
-            except Exception:
-                prof = None
-            service_val = prof or text
-            flow.update({"service": service_val, "state": "awaiting_city"})
-            return await respond(
-                flow, {"response": "Perfecto, ¿en qué ciudad lo necesitas?"}
+            updated_flow, reply = ClientFlow.handle_awaiting_service(
+                flow,
+                text,
+                GREETINGS,
+                INITIAL_PROMPT,
+                extract_profession_and_location,
             )
+            return await respond(updated_flow, reply)
 
         if state == "awaiting_city":
             if not text:
