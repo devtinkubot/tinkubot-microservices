@@ -12,7 +12,7 @@ CONFIRM_NEW_SEARCH_BUTTONS = [
     "No, por ahora está bien",
 ]
 CONFIRM_PROMPT_TITLE_DEFAULT = "¿Quieres buscar otro servicio?"
-CONFIRM_PROMPT_FOOTER = "Escriba una opción (*1*-*2*)"
+CONFIRM_PROMPT_FOOTER = "Responde con el número de tu opción:"
 
 def ascii_block(lines: List[str]) -> str:
     if not lines:
@@ -48,9 +48,8 @@ def provider_options_block(providers: List[Dict[str, Any]]) -> str:
     return ascii_block(lines)
 
 
-def provider_options_prompt(count: int) -> str:
-    max_idx = max(count, 1)
-    return f"Escriba una opción (*1*-*{max_idx}*)"
+def provider_options_prompt(_: int) -> str:
+    return "Responde con el número de tu opción:"
 
 
 def confirm_options_block() -> str:
@@ -63,7 +62,7 @@ def confirm_options_block() -> str:
 
 # Bloques para solicitud de feedback
 FEEDBACK_PROMPT_TITLE = "Califica tu experiencia"
-FEEDBACK_PROMPT_FOOTER = "Escriba una opción (*1*-*5*)"
+FEEDBACK_PROMPT_FOOTER = "Responde con el número de tu opción:"
 FEEDBACK_OPTIONS = {
     1: "Muy mala",
     2: "Mala",

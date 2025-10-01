@@ -86,23 +86,12 @@ async function sendText(to, text) {
 }
 
 // Helpers para renderizar UI en WhatsApp (opciones numeradas)
-async function sendButtons(to, text, labels = []) {
-  const numbered = (labels || [])
-    .slice(0, 3)
-    .map((l, i) => `${i + 1}) ${l}`)
-    .join('\n');
-  const body = `${text || 'Elige una opción:'}\n\n${numbered}\n\nResponde con el número de tu opción (1-${(labels || []).slice(0, 3).length}).`;
-  await sendText(to, body);
+async function sendButtons(to, text) {
+  await sendText(to, text || 'Responde con el número de tu opción:');
 }
 
-async function sendProviderResults(to, text, providers = []) {
-  try {
-    const names = (providers || []).slice(0, 3).map((p, i) => `${i + 1}) ${p.name || 'Proveedor'}`);
-    const body = `${text || 'Encontré estas opciones:'}\n\n${names.join('\n')}\n\nResponde con el número del proveedor (1-${names.length}).`;
-    await sendText(to, body);
-  } catch (err) {
-    console.error('Error enviando resultados de proveedores:', err);
-  }
+async function sendProviderResults(to, text) {
+  await sendText(to, text || 'Responde con el número del proveedor.');
 }
 
 // Helpers HTTP con reintentos
