@@ -278,6 +278,19 @@ CONFIRM_NEW_SEARCH_BUTTONS = [
 
 MAX_CONFIRM_ATTEMPTS = 2
 
+SCOPE_PROMPT_TITLE = "Deseas que el servicio sea?"
+SCOPE_PROMPT_BLOCK = (
+    "```\n"
+    "..................................\n"
+    "         Opciones:\n"
+    " *1*  Cerca y Urgente\n"
+    " *2*  Cerca pero puedo esperar\n"
+    " *3*  Toda la ciudad\n"
+    "..................................\n"
+    "```\n"
+)
+SCOPE_PROMPT_FOOTER = "Escriba una opción (*1*-*3*)"
+
 
 def extract_profession_and_location(
     history_text: str, last_message: str
@@ -387,6 +400,29 @@ def ui_provider_results(text: str, providers: list[Dict[str, Any]]):
 def ui_feedback(text: str):
     options = ["⭐️1", "⭐️2", "⭐️3", "⭐️4", "⭐️5"]
     return {"response": text, "ui": {"type": "feedback", "options": options}}
+
+
+def scope_prompt_messages() -> list[Dict[str, Any]]:
+    return [
+        {"response": SCOPE_PROMPT_TITLE},
+        {"response": SCOPE_PROMPT_BLOCK},
+        ui_buttons(
+            SCOPE_PROMPT_FOOTER,
+            [SCOPE_BTN_URGENT, SCOPE_BTN_NEAR_WAIT, SCOPE_BTN_CITYWIDE],
+        ),
+    ]
+
+
+async def send_scope_prompt(phone: str, flow: Dict[str, Any]):
+    messages = scope_prompt_messages()
+    await set_flow(phone, flow)
+    for msg in messages:
+        try:
+            if msg.get("response"):
+                await session_manager.save_session(phone, msg["response"], is_bot=True)
+        except Exception:
+            pass
+    return {"messages": messages}
 
 
 def normalize_button(val: Optional[str]) -> Optional[str]:
@@ -929,31 +965,44 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                     "response": "Indica la ciudad por favor (por ejemplo: Quito, Cuenca)."
                 }
             flow.update({"city": text, "state": "awaiting_scope"})
-            return await respond(
-                flow,
-                ui_buttons(
-                    "¿Dependiendo de tu necesidad, deseas?",
-                    [SCOPE_BTN_URGENT, SCOPE_BTN_NEAR_WAIT, SCOPE_BTN_CITYWIDE],
-                ),
-            )
+            return await send_scope_prompt(phone, flow)
 
         if state == "awaiting_scope":
             choice = (selected or text or "").strip()
+            choice_lower = choice.lower()
+            choice_normalized = choice_lower.strip()
+            choice_normalized = choice_normalized.strip("*")
+            choice_normalized = choice_normalized.strip()
+            choice_normalized = choice_normalized.rstrip(".)")
+
             # Mapear variantes numéricas y sin emoji
-            if choice.lower() in ("1", "1.", "opcion 1", "opción 1"):
+            if choice_normalized in (
+                "1",
+                "1.",
+                "1)",
+                "opcion 1",
+                "opción 1",
+            ):
                 choice = SCOPE_BTN_URGENT
-            elif choice.lower() in ("2", "2.", "opcion 2", "opción 2"):
+            elif choice_normalized in (
+                "2",
+                "2.",
+                "2)",
+                "opcion 2",
+                "opción 2",
+            ):
                 choice = SCOPE_BTN_NEAR_WAIT
-            elif choice.lower() in (
+            elif choice_normalized in (
                 "3",
                 "3.",
+                "3)",
                 "opcion 3",
                 "opción 3",
                 "toda la ciudad",
             ):
                 choice = SCOPE_BTN_CITYWIDE
 
-            cl = choice.lower()
+            cl = choice_lower
             # Palabras clave
             if choice not in (
                 SCOPE_BTN_URGENT,
@@ -972,10 +1021,8 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                 SCOPE_BTN_NEAR_WAIT,
                 SCOPE_BTN_CITYWIDE,
             ):
-                return ui_buttons(
-                    "Elige una opción:",
-                    [SCOPE_BTN_URGENT, SCOPE_BTN_NEAR_WAIT, SCOPE_BTN_CITYWIDE],
-                )
+                flow["state"] = "awaiting_scope"
+                return await send_scope_prompt(phone, flow)
 
             flow["scope"] = choice
             if choice == SCOPE_BTN_CITYWIDE:
@@ -1170,10 +1217,8 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
             helper["state"] = "awaiting_city"
             return await respond(helper, {"response": "¿En qué ciudad lo necesitas?"})
         if helper.get("state") == "awaiting_scope":
-            return ui_buttons(
-                "Elige una opción:",
-                [SCOPE_BTN_URGENT, SCOPE_BTN_NEAR_WAIT, SCOPE_BTN_CITYWIDE],
-            )
+            helper["state"] = "awaiting_scope"
+            return await send_scope_prompt(phone, helper)
         return {"response": "¿Podrías reformular tu mensaje?"}
 
     except Exception as e:
