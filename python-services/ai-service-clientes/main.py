@@ -999,61 +999,35 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
             return await send_scope_prompt(phone, updated_flow)
 
         if state == "awaiting_scope":
-            choice = (selected or text or "").strip()
-            choice_lower = choice.lower()
-            choice_normalized = choice_lower.strip()
-            choice_normalized = choice_normalized.strip("*")
-            choice_normalized = choice_normalized.strip()
-            choice_normalized = choice_normalized.rstrip(".)")
-
-            # Mapear variantes numéricas y sin emoji
-            if choice_normalized in (
-                "1",
-                "1.",
-                "1)",
-                "opcion 1",
-                "opción 1",
-                "inmediato",
-            ):
-                choice = SCOPE_BTN_IMMEDIATE
-            elif choice_normalized in (
-                "2",
-                "2.",
-                "2)",
-                "opcion 2",
-                "opción 2",
-                "puedo esperar",
-            ):
-                choice = SCOPE_BTN_CAN_WAIT
-
-            cl = choice_lower
-            if choice not in (
+            updated_flow, immediate_reply = ClientFlow.handle_awaiting_scope(
+                flow,
+                text,
+                selected,
+                lambda f: scope_prompt_messages(),
+                lambda f: asyncio.run(set_flow(phone, f)),
+                lambda: asyncio.run(do_search()),
+                ui_location_request,
                 SCOPE_BTN_IMMEDIATE,
                 SCOPE_BTN_CAN_WAIT,
-            ):
-                if "inmediato" in cl or "urgente" in cl:
-                    choice = SCOPE_BTN_IMMEDIATE
-                elif "esperar" in cl:
-                    choice = SCOPE_BTN_CAN_WAIT
+            )
 
-            if choice not in (
-                SCOPE_BTN_IMMEDIATE,
-                SCOPE_BTN_CAN_WAIT,
-            ):
-                flow["state"] = "awaiting_scope"
-                return await send_scope_prompt(phone, flow)
+            # Handle cases where the handler already triggered search/location prompt.
+            if isinstance(immediate_reply, dict):
+                return immediate_reply
 
-            flow["scope"] = choice
-            if choice == SCOPE_BTN_CAN_WAIT:
-                flow["state"] = "searching"
-                # Ejecutar búsqueda inmediatamente (no requiere ubicación)
+            # If handler triggered a search, run it now using updated flow.
+            flow = updated_flow
+            if flow.get("state") == "searching":
                 return await do_search()
-            else:
-                flow["state"] = "awaiting_location"
+
+            if flow.get("state") == "awaiting_location":
                 await set_flow(phone, flow)
                 return ui_location_request(
                     "Por favor comparte tu ubicación 📎 para mostrarte los más cercanos."
                 )
+
+            flow["state"] = "awaiting_scope"
+            return await send_scope_prompt(phone, flow)
 
         if state == "awaiting_location":
             # Aceptar ubicación siempre que vengan coordenadas, independientemente de message_type
