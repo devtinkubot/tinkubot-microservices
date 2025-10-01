@@ -29,9 +29,6 @@ from templates.prompts import (
     CONFIRM_PROMPT_FOOTER,
     CONFIRM_PROMPT_TITLE_DEFAULT,
     confirm_options_block,
-    FEEDBACK_PROMPT_FOOTER,
-    FEEDBACK_PROMPT_TITLE,
-    feedback_options_block,
     INITIAL_PROMPT,
     provider_options_block,
     provider_options_intro,
@@ -334,9 +331,8 @@ async def search_providers(
 # --- Conversational flow helpers ---
 FLOW_KEY = "flow:{}"  # phone
 
-SCOPE_BTN_URGENT = "Cerca y urgente ⚡"
-SCOPE_BTN_NEAR_WAIT = "Cerca pero puedo esperar 🕒"
-SCOPE_BTN_CITYWIDE = "Toda la ciudad 🌆"
+SCOPE_BTN_IMMEDIATE = "Inmediato"
+SCOPE_BTN_CAN_WAIT = "Puedo esperar"
 
 
 async def get_flow(phone: str) -> Dict[str, Any]:
@@ -397,7 +393,7 @@ def scope_prompt_messages() -> list[Dict[str, Any]]:
         {"response": f"{SCOPE_PROMPT_TITLE}\n{SCOPE_PROMPT_BLOCK}"},
         ui_buttons(
             SCOPE_PROMPT_FOOTER,
-            [SCOPE_BTN_URGENT, SCOPE_BTN_NEAR_WAIT, SCOPE_BTN_CITYWIDE],
+            [SCOPE_BTN_IMMEDIATE, SCOPE_BTN_CAN_WAIT],
         ),
     ]
 
@@ -452,13 +448,6 @@ async def send_confirm_prompt(phone: str, flow: Dict[str, Any], title: str):
         except Exception:
             pass
     return {"messages": messages}
-
-
-def feedback_prompt_messages():
-    return [
-        {"response": f"{FEEDBACK_PROMPT_TITLE}\n{feedback_options_block()}"},
-        ui_feedback(FEEDBACK_PROMPT_FOOTER),
-    ]
 
 
 def normalize_button(val: Optional[str]) -> Optional[str]:
@@ -1010,50 +999,38 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                 "1)",
                 "opcion 1",
                 "opción 1",
+                "inmediato",
             ):
-                choice = SCOPE_BTN_URGENT
+                choice = SCOPE_BTN_IMMEDIATE
             elif choice_normalized in (
                 "2",
                 "2.",
                 "2)",
                 "opcion 2",
                 "opción 2",
+                "puedo esperar",
             ):
-                choice = SCOPE_BTN_NEAR_WAIT
-            elif choice_normalized in (
-                "3",
-                "3.",
-                "3)",
-                "opcion 3",
-                "opción 3",
-                "toda la ciudad",
-            ):
-                choice = SCOPE_BTN_CITYWIDE
+                choice = SCOPE_BTN_CAN_WAIT
 
             cl = choice_lower
-            # Palabras clave
             if choice not in (
-                SCOPE_BTN_URGENT,
-                SCOPE_BTN_NEAR_WAIT,
-                SCOPE_BTN_CITYWIDE,
+                SCOPE_BTN_IMMEDIATE,
+                SCOPE_BTN_CAN_WAIT,
             ):
-                if "urgente" in cl:
-                    choice = SCOPE_BTN_URGENT
-                elif "ciudad" in cl:
-                    choice = SCOPE_BTN_CITYWIDE
-                elif "cerca" in cl:
-                    choice = SCOPE_BTN_NEAR_WAIT
+                if "inmediato" in cl or "urgente" in cl:
+                    choice = SCOPE_BTN_IMMEDIATE
+                elif "esperar" in cl:
+                    choice = SCOPE_BTN_CAN_WAIT
 
             if choice not in (
-                SCOPE_BTN_URGENT,
-                SCOPE_BTN_NEAR_WAIT,
-                SCOPE_BTN_CITYWIDE,
+                SCOPE_BTN_IMMEDIATE,
+                SCOPE_BTN_CAN_WAIT,
             ):
                 flow["state"] = "awaiting_scope"
                 return await send_scope_prompt(phone, flow)
 
             flow["scope"] = choice
-            if choice == SCOPE_BTN_CITYWIDE:
+            if choice == SCOPE_BTN_CAN_WAIT:
                 flow["state"] = "searching"
                 # Ejecutar búsqueda inmediatamente (no requiere ubicación)
                 return await do_search()
@@ -1114,12 +1091,12 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
             await set_flow(phone, flow)
             # Guardar mensajes del bot en sesión
             await session_manager.save_session(phone, msg, is_bot=True)
-            feedback_msgs = feedback_prompt_messages()
-            for fmsg in feedback_msgs:
+            confirm_msgs = confirm_prompt_messages("¿Te ayudo con otro servicio?")
+            for cmsg in confirm_msgs:
                 try:
-                    if fmsg.get("response"):
+                    if cmsg.get("response"):
                         await session_manager.save_session(
-                            phone, fmsg["response"], is_bot=True
+                            phone, cmsg["response"], is_bot=True
                         )
                 except Exception:
                     pass
@@ -1131,7 +1108,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
             except Exception as e:
                 logger.warning(f"No se pudo agendar feedback: {e}")
             # Devolver dos mensajes: información del proveedor y luego solicitud de calificación con UI
-            return {"messages": [{"response": msg}, *feedback_msgs]}
+            return {"messages": [{"response": msg}, *confirm_msgs]}
 
             return {"response": "Responde con el número del proveedor (1, 2 o 3)."}
 
@@ -1161,9 +1138,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
 
             flow["state"] = "confirm_new_search"
             flow["confirm_attempts"] = 0
-            flow["confirm_title"] = (
-                "¡Gracias por tu calificación! Tu opinión ayuda a mejorar nuestra comunidad."
-            )
+            flow["confirm_title"] = "¿Te ayudo con otro servicio?"
             return await send_confirm_prompt(phone, flow, flow["confirm_title"])
 
         if state == "confirm_new_search":

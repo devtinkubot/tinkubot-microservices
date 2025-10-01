@@ -26,9 +26,8 @@ def ascii_block(lines: List[str]) -> str:
 # Bloque ASCII para guiar la selección del alcance del servicio.
 SCOPE_PROMPT_TITLE = "Deseas que el servicio sea?"
 _SCOPE_PROMPT_LINES = [
-    "*1* Cerca y Urgente",
-    "*2* Cerca pero puedo esperar",
-    "*3* Toda la ciudad",
+    "*1* Inmediato",
+    "*2* Puedo esperar",
 ]
 SCOPE_PROMPT_BLOCK = ascii_block(_SCOPE_PROMPT_LINES)
 SCOPE_PROMPT_FOOTER = "Responde con el número de tu opción:"
@@ -59,19 +58,3 @@ def confirm_options_block() -> str:
     ]
     return ascii_block(lines)
 
-
-# Bloques para solicitud de feedback
-FEEDBACK_PROMPT_TITLE = "Califica tu experiencia"
-FEEDBACK_PROMPT_FOOTER = "Responde con el número de tu opción:"
-FEEDBACK_OPTIONS = {
-    1: "Muy mala",
-    2: "Mala",
-    3: "Regular",
-    4: "Buena",
-    5: "Excelente",
-}
-
-
-def feedback_options_block() -> str:
-    lines = [f"*{idx}* {label}" for idx, label in FEEDBACK_OPTIONS.items()]
-    return ascii_block(lines)

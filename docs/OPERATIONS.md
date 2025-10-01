@@ -81,7 +81,8 @@ docker compose up -d ai-service-clientes whatsapp-service-clientes
 
 - Reset por chat: enviar `reset` reinicia el flujo y responde “¿Qué servicio necesitas hoy?”
 - Tipos de mensaje aceptados en WhatsApp: `chat`, `location`, `live_location`. Mensajes internos (e.g., `notification_template`) se ignoran.
-- “Toda la ciudad (3)”: ejecuta búsqueda inmediata sin pedir ubicación.
+- “Opción 1 (Inmediato)”: requiere ubicación y busca proveedores cercanos.
+- “Opción 2 (Puedo esperar)”: busca en la base de datos sin pedir ubicación.
 - Conexión con proveedor: mensaje minimalista + link `wa.me` para abrir chat.
 - Feedback diferido: se agenda vía `task_queue` y se envía en `FEEDBACK_DELAY_SECONDS`.
 
@@ -90,4 +91,3 @@ docker compose up -d ai-service-clientes whatsapp-service-clientes
 - ENOTFOUND ai-service-clientes: asegúrate que el contenedor `ai-service-clientes` esté “healthy” y en la misma red de Docker.
 - Sólo veo notificaciones y no “chat”: abre manualmente el chat con el número del bot y envía texto simple (“hola”). Verifica que el log muestre `tipo: chat`.
 - Build lento (Chrome): la capa `apt-get install chromium` puede tardar la primera vez; las siguientes builds usan caché. Usa BuildKit y `--parallel`.
-
