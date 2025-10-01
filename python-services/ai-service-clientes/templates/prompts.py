@@ -24,7 +24,7 @@ def ascii_block(lines: List[str]) -> str:
 
 
 # Bloque ASCII para guiar la selección del alcance del servicio.
-SCOPE_PROMPT_TITLE = "Deseas que el servicio sea?"
+SCOPE_PROMPT_TITLE = "¿Deseas que el servicio sea?"
 _SCOPE_PROMPT_LINES = [
     "*1* Inmediato",
     "*2* Puedo esperar",
@@ -57,4 +57,3 @@ def confirm_options_block() -> str:
         f"*2* {CONFIRM_NEW_SEARCH_BUTTONS[1]}",
     ]
     return ascii_block(lines)
-
