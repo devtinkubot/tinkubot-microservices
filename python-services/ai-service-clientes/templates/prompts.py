@@ -5,7 +5,7 @@ from typing import Any, Dict, List
 # Mantener este módulo enfocado en textos y plantillas simples para evitar
 # mezclar lógica de flujo con contenido.
 
-INITIAL_PROMPT = "¿En qué te puedo ayudar hoy?"
+INITIAL_PROMPT = "*¿En qué te puedo ayudar hoy?*"
 
 CONFIRM_NEW_SEARCH_BUTTONS = [
     "Sí, buscar otro servicio",
@@ -24,7 +24,7 @@ def ascii_block(lines: List[str]) -> str:
 
 
 # Bloque ASCII para guiar la selección del alcance del servicio.
-SCOPE_PROMPT_TITLE = "¿Deseas que el servicio sea?"
+SCOPE_PROMPT_TITLE = "*¿Deseas que el servicio sea?*"
 _SCOPE_PROMPT_LINES = [
     "*1* Inmediato",
     "*2* Puedo esperar",

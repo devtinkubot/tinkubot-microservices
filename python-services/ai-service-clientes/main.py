@@ -278,6 +278,10 @@ RESET_KEYWORDS = {
 
 MAX_CONFIRM_ATTEMPTS = 2
 
+FAREWELL_MESSAGE = (
+    "¡Gracias por utilizar nuestros servicios! Si necesitas otro apoyo, solo escríbeme."
+)
+
 
 def extract_profession_and_location(
     history_text: str, last_message: str
@@ -431,9 +435,20 @@ async def send_provider_prompt(phone: str, flow: Dict[str, Any], city: str):
     return {"messages": messages}
 
 
+def _bold(text: str) -> str:
+    stripped = (text or "").strip()
+    if not stripped:
+        return ""
+    if stripped.startswith("*") and stripped.endswith("*"):
+        return stripped
+    stripped = stripped.strip("*")
+    return f"*{stripped}*"
+
+
 def confirm_prompt_messages(title: str):
+    title_bold = _bold(title)
     return [
-        {"response": f"{title}\n{confirm_options_block()}"},
+        {"response": f"{title_bold}\n{confirm_options_block()}"},
         ui_buttons(CONFIRM_PROMPT_FOOTER, CONFIRM_NEW_SEARCH_BUTTONS),
     ]
 
@@ -1171,7 +1186,13 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
 
             if choice in no_choices:
                 await reset_flow(phone)
-                return {"ui": {"type": "silent"}}
+                try:
+                    await session_manager.save_session(
+                        phone, FAREWELL_MESSAGE, is_bot=True
+                    )
+                except Exception:
+                    pass
+                return {"response": FAREWELL_MESSAGE}
 
             attempts = int(flow.get("confirm_attempts") or 0) + 1
             flow["confirm_attempts"] = attempts
