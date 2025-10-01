@@ -999,34 +999,23 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
             return await send_scope_prompt(phone, updated_flow)
 
         if state == "awaiting_scope":
-            updated_flow, immediate_reply = ClientFlow.handle_awaiting_scope(
+            updated_flow, immediate_reply = await ClientFlow.handle_awaiting_scope(
                 flow,
                 text,
                 selected,
-                lambda f: scope_prompt_messages(),
-                lambda f: asyncio.run(set_flow(phone, f)),
-                lambda: asyncio.run(do_search()),
+                lambda f: send_scope_prompt(phone, f),
+                lambda f: set_flow(phone, f),
+                do_search,
                 ui_location_request,
                 SCOPE_BTN_IMMEDIATE,
                 SCOPE_BTN_CAN_WAIT,
             )
 
-            # Handle cases where the handler already triggered search/location prompt.
-            if isinstance(immediate_reply, dict):
+            flow = updated_flow
+            if immediate_reply is not None:
                 return immediate_reply
 
-            # If handler triggered a search, run it now using updated flow.
-            flow = updated_flow
-            if flow.get("state") == "searching":
-                return await do_search()
-
-            if flow.get("state") == "awaiting_location":
-                await set_flow(phone, flow)
-                return ui_location_request(
-                    "Por favor comparte tu ubicación 📎 para mostrarte los más cercanos."
-                )
-
-            flow["state"] = "awaiting_scope"
+            # Fallback: reemitir prompt en caso de que no haya respuesta inmediata.
             return await send_scope_prompt(phone, flow)
 
         if state == "awaiting_location":

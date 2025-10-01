@@ -1,6 +1,6 @@
 """Lógica modularizada del flujo conversacional de clientes."""
 
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Awaitable, Callable, Dict, Optional, Tuple
 
 
 class ClientFlow:
@@ -47,13 +47,13 @@ class ClientFlow:
         return flow, {"response": None}
 
     @staticmethod
-    def handle_awaiting_scope(
+    async def handle_awaiting_scope(
         flow: Dict[str, Any],
         text: Optional[str],
         selected: Optional[str],
-        send_scope_prompt: Callable[[Dict[str, Any]], Dict[str, Any]],
-        set_flow_fn: Callable[[Dict[str, Any]], None],
-        do_search_fn: Callable[[], Any],
+        send_scope_prompt: Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]],
+        set_flow_fn: Callable[[Dict[str, Any]], Awaitable[None]],
+        do_search_fn: Callable[[], Awaitable[Any]],
         ui_location_request_fn: Callable[[str], Dict[str, Any]],
         immediate_label: str,
         can_wait_label: str,
@@ -80,15 +80,17 @@ class ClientFlow:
 
         if choice not in (immediate_label, can_wait_label):
             flow["state"] = "awaiting_scope"
-            return flow, send_scope_prompt(flow)
+            prompt = await send_scope_prompt(flow)
+            return flow, prompt
 
         flow["scope"] = choice
         if choice == can_wait_label:
             flow["state"] = "searching"
-            return flow, do_search_fn()
+            result = await do_search_fn()
+            return flow, result
 
         flow["state"] = "awaiting_location"
-        set_flow_fn(flow)
+        await set_flow_fn(flow)
         return flow, ui_location_request_fn(
             "Por favor comparte tu ubicación 📎 para mostrarte los más cercanos."
         )
