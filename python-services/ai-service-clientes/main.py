@@ -1082,7 +1082,9 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
 
             provider = provider or (providers_list or [None])[0]
             flow["chosen_provider"] = provider
-            flow["state"] = "awaiting_feedback"
+            flow["state"] = "confirm_new_search"
+            flow["confirm_attempts"] = 0
+            flow["confirm_title"] = "¿Te ayudo con otro servicio?"
 
             msg = formal_connection_message(
                 provider or {}, flow.get("service", ""), flow.get("city", "")
@@ -1091,7 +1093,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
             await set_flow(phone, flow)
             # Guardar mensajes del bot en sesión
             await session_manager.save_session(phone, msg, is_bot=True)
-            confirm_msgs = confirm_prompt_messages("¿Te ayudo con otro servicio?")
+            confirm_msgs = confirm_prompt_messages(flow.get("confirm_title") or "¿Te ayudo con otro servicio?")
             for cmsg in confirm_msgs:
                 try:
                     if cmsg.get("response"):
@@ -1109,37 +1111,6 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                 logger.warning(f"No se pudo agendar feedback: {e}")
             # Devolver dos mensajes: información del proveedor y luego solicitud de calificación con UI
             return {"messages": [{"response": msg}, *confirm_msgs]}
-
-            return {"response": "Responde con el número del proveedor (1, 2 o 3)."}
-
-        if state == "awaiting_feedback":
-            rating = extract_rating(selected or text or "")
-            if rating is None:
-                return ui_feedback("Por favor, califica tu experiencia:")
-
-            # Insertar review en Supabase
-            try:
-                if supabase:
-                    client_id = supabase_find_or_create_user(phone, "client")
-                    provider = flow.get("chosen_provider") or {}
-                    provider_id = provider.get("id")
-                    if client_id and provider_id:
-                        supabase.table("reviews").insert(
-                            {
-                                "provider_id": provider_id,
-                                "client_id": client_id,
-                                "rating": rating,
-                                "comment": None,
-                                "status": "published",
-                            }
-                        ).execute()
-            except Exception as e:
-                logger.warning(f"No se pudo guardar review: {e}")
-
-            flow["state"] = "confirm_new_search"
-            flow["confirm_attempts"] = 0
-            flow["confirm_title"] = "¿Te ayudo con otro servicio?"
-            return await send_confirm_prompt(phone, flow, flow["confirm_title"])
 
         if state == "confirm_new_search":
             choice_raw = (selected or text or "").strip()
