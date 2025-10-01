@@ -24,6 +24,7 @@ from shared_lib.models import (
 )
 from shared_lib.redis_client import redis_client
 from shared_lib.session_manager import session_manager
+from templates.prompts import INITIAL_PROMPT
 from supabase import create_client
 
 # Configurar logging
@@ -262,8 +263,6 @@ RESET_KEYWORDS = {
     "start",
     "nuevo",
 }
-
-INITIAL_PROMPT = "¿En qué te puedo ayudar hoy?"
 
 CONFIRM_NEW_SEARCH_MESSAGE = (
     "¿Quieres buscar otro servicio?\n"
