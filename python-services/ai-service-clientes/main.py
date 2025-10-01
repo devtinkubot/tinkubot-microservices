@@ -965,7 +965,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
             # Si el usuario ya envió texto con intención, úsalo como servicio directamente
             if text and text.strip().lower() not in GREETINGS:
                 flow = {"service": text, "state": "awaiting_city"}
-                return await respond(flow, {"response": "¿En qué ciudad lo necesitas?"})
+                return await respond(flow, {"response": "*¿En qué ciudad lo necesitas?*"})
             # Si no hay intención clara, inicia flujo pidiendo el servicio (sin ejemplos)
             new_flow = {"state": "awaiting_service"}
             return await respond(new_flow, {"response": INITIAL_PROMPT})
@@ -989,12 +989,14 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
             return await respond(updated_flow, reply)
 
         if state == "awaiting_city":
-            if not text:
-                return {
-                    "response": "Indica la ciudad por favor (por ejemplo: Quito, Cuenca)."
-                }
-            flow.update({"city": text, "state": "awaiting_scope"})
-            return await send_scope_prompt(phone, flow)
+            updated_flow, reply = ClientFlow.handle_awaiting_city(
+                flow,
+                text,
+                "Indica la ciudad por favor (por ejemplo: Quito, Cuenca).",
+            )
+            if reply.get("response"):
+                return reply
+            return await send_scope_prompt(phone, updated_flow)
 
         if state == "awaiting_scope":
             choice = (selected or text or "").strip()
@@ -1212,7 +1214,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
             )
         if not helper.get("city"):
             helper["state"] = "awaiting_city"
-            return await respond(helper, {"response": "¿En qué ciudad lo necesitas?"})
+            return await respond(helper, {"response": "*¿En qué ciudad lo necesitas?*"})
         if helper.get("state") == "awaiting_scope":
             helper["state"] = "awaiting_scope"
             return await send_scope_prompt(phone, helper)
