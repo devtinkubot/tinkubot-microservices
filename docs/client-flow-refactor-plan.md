@@ -4,24 +4,18 @@
 
 Completar la extracción de la lógica conversacional de `main.py` hacia `flows/client_flow.py`, modularizando cada estado y dejando a `main.py` como orquestador.
 
-## Estados pendientes
+## Estado actual
 
-1. `awaiting_location`
-   - Validar coordenadas recibidas.
-   - Enviar de nuevo el prompt de ubicación si faltan datos.
-   - Pasar a `searching` cuando haya lat/lng válidos.
+- [x] `awaiting_location` extraído a `ClientFlow` con validación de coordenadas y reintentos.
+- [x] `searching` encapsulado en `ClientFlow.handle_searching`, incluida la transición a confirmaciones y persistencia en Supabase.
+- [x] `presenting_results` migrado con normalización de selección y agenda de feedback.
+- [x] `confirm_new_search` centralizado con manejo de intents, reset y despedida.
 
-2. `searching`
-   - Invocar `do_search()` centralizado en `ClientFlow` o mantener helper en `main.py` pero con llamada desde `ClientFlow`.
-   - Manejar respuestas de búsqueda (sin proveedores / con proveedores).
+## TODO inmediato
 
-3. `presenting_results`
-   - Normalizar selecciones (número o texto “Conectar con…”).
-   - Guardar el proveedor elegido y delegar la construcción del mensaje de conexión.
-
-4. `confirm_new_search`
-   - Interpretar respuestas “sí/no”, manejar intentos y despedida.
-   - Resetear flujo y reenviar prompts cuando corresponda.
+1. Realizar pruebas manuales end-to-end en QA para validar el flujo completo tras la extracción.
+2. Ajustar documentación operativa (`docs/OPERATIONS.md`) si la orquestación cambió para el equipo de soporte.
+3. Evaluar si vale la pena introducir un `FlowContext` o helper similar para reducir la cantidad de callbacks que recibe `ClientFlow`.
 
 ## Pasos sugeridos
 
@@ -36,4 +30,3 @@ Completar la extracción de la lógica conversacional de `main.py` hacia `flows/
 - Mantener pruebas manuales en QA tras cada migración parcial.
 - Actualizar documentación (`docs/OPERATIONS.md`) cuando cambie la estructura del flujo.
 - Revisar si al final conviene clases auxiliares (ej. `FlowContext`) para reducir parámetros.
-

@@ -838,103 +838,30 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                 )
             return reply_obj
 
+        async def save_bot_message(message: Optional[str]):
+            if not message:
+                return
+            try:
+                await session_manager.save_session(phone, message, is_bot=True)
+            except Exception:
+                pass
+
         # Reusable search step (centraliza la transición a 'searching')
         async def do_search():
-            service = flow.get("service", "").strip()
-            city = flow.get("city", "").strip()
-
-            # Logging para depuración del estado searching
-            logger.info(
-                f"🔍 Ejecutando búsqueda: servicio='{service}', ciudad='{city}'"
+            return await ClientFlow.handle_searching(
+                flow,
+                phone,
+                respond,
+                lambda svc, cty: search_providers(svc, cty),
+                lambda cty: send_provider_prompt(phone, flow, cty),
+                lambda data: set_flow(phone, data),
+                save_bot_message,
+                confirm_prompt_messages,
+                INITIAL_PROMPT,
+                CONFIRM_PROMPT_TITLE_DEFAULT,
+                logger,
+                supabase,
             )
-            logger.info(f"📋 Flujo previo a búsqueda: {flow}")
-
-            # Si faltan datos, pedir solo lo que falte
-            if not service or not city:
-                if not service and not city:
-                    flow["state"] = "awaiting_service"
-                    return await respond(
-                        flow,
-                        {
-                            "response": f"Volvamos a empezar. {INITIAL_PROMPT}"
-                        },
-                    )
-                if not service:
-                    flow["state"] = "awaiting_service"
-                    return await respond(
-                        flow,
-                        {
-                            "response": "¿Qué servicio necesitas? Ya sé que estás en "
-                            + (city or "tu ciudad")
-                            + "."
-                        },
-                    )
-                if not city:
-                    flow["state"] = "awaiting_city"
-                    return await respond(
-                        flow, {"response": "¿En qué ciudad necesitas " + service + "?"}
-                    )
-
-            results = await search_providers(service, city)
-            providers = results.get("providers") or []
-            if not providers:
-                # No hay proveedores: notificar y ofrecer reiniciar búsqueda con botones
-                flow["state"] = "confirm_new_search"
-                flow["confirm_attempts"] = 0
-                flow["confirm_title"] = CONFIRM_PROMPT_TITLE_DEFAULT
-                await set_flow(phone, flow)
-                msg1 = f"No tenemos proveedores registrados en {city} aún. Por ahora no es posible continuar."
-                # Guardar ambos mensajes en la sesión
-                try:
-                    await session_manager.save_session(phone, msg1, is_bot=True)
-                except Exception:
-                    pass
-                confirm_msgs = confirm_prompt_messages(flow["confirm_title"])
-                for msg in confirm_msgs:
-                    try:
-                        if msg.get("response"):
-                            await session_manager.save_session(
-                                phone, msg["response"], is_bot=True
-                            )
-                    except Exception:
-                        pass
-                return {
-                    "messages": [{"response": msg1}, *confirm_msgs],
-                }
-
-            flow["providers"] = providers[:3]
-            flow["state"] = "presenting_results"
-
-            # Persistencia final en Supabase
-            try:
-                if supabase:
-                    supabase.table("service_requests").insert(
-                        {
-                            "phone": phone,
-                            "intent": "service_request",
-                            "profession": service,
-                            "location_city": city,
-                            "requested_at": datetime.utcnow().isoformat(),
-                            "resolved_at": datetime.utcnow().isoformat(),
-                            "suggested_providers": flow["providers"],
-                        }
-                    ).execute()
-            except Exception as e:
-                logger.warning(f"No se pudo registrar service_request: {e}")
-
-            try:
-                names = ", ".join(
-                    [p.get("name") or "Proveedor" for p in flow["providers"]]
-                )
-                logger.info(
-                    f"📣 Devolviendo provider_results a WhatsApp: count={len(flow['providers'])} names=[{names}]"
-                )
-            except Exception:
-                logger.info(
-                    f"📣 Devolviendo provider_results a WhatsApp: count={len(flow['providers'])}"
-                )
-
-            return await send_provider_prompt(phone, flow, city)
 
         # Fast-path: si llega ubicación válida en cualquier estado y ya tenemos servicio+ciudad, pasar a búsqueda
         lat = None
@@ -1019,154 +946,48 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
             return await send_scope_prompt(phone, flow)
 
         if state == "awaiting_location":
-            # Aceptar ubicación siempre que vengan coordenadas, independientemente de message_type
-            lat = None
-            lng = None
-            if isinstance(location, dict):
-                lat = location.get("lat") or location.get("latitude")
-                lng = location.get("lng") or location.get("longitude")
-            if not (lat and lng):
-                return ui_location_request(
-                    "Necesito tu ubicación para mostrarte los más cercanos."
-                )
-            flow["location"] = {"lat": lat, "lng": lng}
-            flow["state"] = "searching"
-            return await do_search()
+            updated_flow, reply = await ClientFlow.handle_awaiting_location(
+                flow,
+                location if isinstance(location, dict) else {},
+                do_search,
+                ui_location_request,
+                "Necesito tu ubicación para mostrarte los más cercanos.",
+            )
+            flow = updated_flow
+            return reply
 
         if state == "searching":
             return await do_search()
 
         if state == "presenting_results":
-            choice = (selected or text or "").strip()
-            providers_list = flow.get("providers", [])
-
-            # Selección por número (1..N)
-            provider = None
-            if choice.isdigit():
-                idx = int(choice)
-                if 1 <= idx <= len(providers_list):
-                    provider = providers_list[idx - 1]
-
-            # Selección por texto "Conectar con <nombre>"
-            if not provider and choice.lower().startswith("conectar con"):
-                name = choice.split("con", 1)[-1].strip()
-                for p in providers_list:
-                    if name.lower().replace("con ", "").strip() in (
-                        p.get("name", "").lower()
-                    ):
-                        provider = p
-                        break
-
-            provider = provider or (providers_list or [None])[0]
-            flow["chosen_provider"] = provider
-            flow["state"] = "confirm_new_search"
-            flow["confirm_attempts"] = 0
-            flow["confirm_title"] = "¿Te ayudo con otro servicio?"
-
-            msg = formal_connection_message(
-                provider or {}, flow.get("service", ""), flow.get("city", "")
+            return await ClientFlow.handle_presenting_results(
+                flow,
+                text,
+                selected,
+                phone,
+                lambda data: set_flow(phone, data),
+                save_bot_message,
+                formal_connection_message,
+                confirm_prompt_messages,
+                schedule_feedback_request,
+                logger,
+                "¿Te ayudo con otro servicio?",
             )
-            # Responder con texto y pedir calificación en un mensaje separado inmediato
-            await set_flow(phone, flow)
-            # Guardar mensajes del bot en sesión
-            await session_manager.save_session(phone, msg, is_bot=True)
-            confirm_msgs = confirm_prompt_messages(flow.get("confirm_title") or "¿Te ayudo con otro servicio?")
-            for cmsg in confirm_msgs:
-                try:
-                    if cmsg.get("response"):
-                        await session_manager.save_session(
-                            phone, cmsg["response"], is_bot=True
-                        )
-                except Exception:
-                    pass
-            # Agendar recordatorio de feedback diferido (por si el usuario no califica)
-            try:
-                await schedule_feedback_request(
-                    phone, provider or {}, flow.get("service", ""), flow.get("city", "")
-                )
-            except Exception as e:
-                logger.warning(f"No se pudo agendar feedback: {e}")
-            # Devolver dos mensajes: información del proveedor y luego solicitud de calificación con UI
-            return {"messages": [{"response": msg}, *confirm_msgs]}
 
         if state == "confirm_new_search":
-            choice_raw = (selected or text or "").strip()
-            choice = choice_raw.lower().strip()
-            choice = choice.rstrip(".!¡¿)")
-
-            confirm_title = flow.get("confirm_title")
-            if not confirm_title:
-                legacy_prompt = flow.get("confirm_prompt")
-                if isinstance(legacy_prompt, str) and legacy_prompt.strip():
-                    confirm_title = legacy_prompt.split("\n", 1)[0].strip()
-                else:
-                    confirm_title = CONFIRM_PROMPT_TITLE_DEFAULT
-                flow["confirm_title"] = confirm_title
-                flow.pop("confirm_prompt", None)
-
-            yes_choices = {
-                "1",
-                "sí",
-                "si",
-                "sí, buscar otro servicio",
-                "si, buscar otro servicio",
-                "sí por favor",
-                "si por favor",
-                "sí gracias",
-                "si gracias",
-                "buscar otro servicio",
-                "otro servicio",
-                "claro",
-                "opcion 1",
-                "opción 1",
-                "1)",
-            }
-            no_choices = {
-                "2",
-                "no",
-                "no, por ahora está bien",
-                "no gracias",
-                "no, gracias",
-                "por ahora no",
-                "no deseo",
-                "no quiero",
-                "opcion 2",
-                "opción 2",
-                "2)",
-            }
-
-            if choice in yes_choices:
-                await reset_flow(phone)
-                if isinstance(flow, dict):
-                    flow.pop("confirm_attempts", None)
-                    flow.pop("confirm_title", None)
-                    flow.pop("confirm_prompt", None)
-                return await respond(
-                    {"state": "awaiting_service"},
-                    {"response": INITIAL_PROMPT},
-                )
-
-            if choice in no_choices:
-                await reset_flow(phone)
-                try:
-                    await session_manager.save_session(
-                        phone, FAREWELL_MESSAGE, is_bot=True
-                    )
-                except Exception:
-                    pass
-                return {"response": FAREWELL_MESSAGE}
-
-            attempts = int(flow.get("confirm_attempts") or 0) + 1
-            flow["confirm_attempts"] = attempts
-
-            if attempts >= MAX_CONFIRM_ATTEMPTS:
-                await reset_flow(phone)
-                return await respond(
-                    {"state": "awaiting_service"},
-                    {"response": INITIAL_PROMPT},
-                )
-
-            return await send_confirm_prompt(phone, flow, confirm_title)
+            return await ClientFlow.handle_confirm_new_search(
+                flow,
+                text,
+                selected,
+                lambda: reset_flow(phone),
+                respond,
+                lambda data, title: send_confirm_prompt(phone, data, title),
+                save_bot_message,
+                INITIAL_PROMPT,
+                FAREWELL_MESSAGE,
+                CONFIRM_PROMPT_TITLE_DEFAULT,
+                MAX_CONFIRM_ATTEMPTS,
+            )
 
         # Fallback: mantener o guiar según progreso
         helper = flow if isinstance(flow, dict) else {}
