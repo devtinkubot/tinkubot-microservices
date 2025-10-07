@@ -19,8 +19,9 @@ Separar datos de clientes vs. proveedores, reducir fricción al pedir ciudad, y 
 - **2.1 Adaptar acceso a Supabase**
   - Reemplazar `supabase_find_or_create_user` por helper `get_or_create_customer` que consulte `customers` por teléfono.
 - **2.2 Gestión de ciudad y flujo**
-  - Al detectar opción “puedo esperar”: si `customers.city` existe, pedir confirmación “Seguimos buscando en <city>?”.
-  - Si confirma, usarla; si niega o no existe, preguntar ciudad manualmente.
+  - Si `customers.city` existe, usarla directamente y avanzar al prompt de alcance sin solicitar confirmación.
+  - Añadir al listado de proveedores la opción `0 Cambio de ciudad` para que el cliente actualice la ubicación en cualquier momento.
+  - Limitar la presentación a un máximo de 5 proveedores por conversación.
   - Para “urgente”: solicitar ubicación con coordenadas y guardar `city_snapshot` como `None` o derivar si el flujo la envía luego.
   - Cuando el usuario provea ciudad distinta, actualizar `customers.city` + `city_confirmed_at`.
 - **2.3 Registro de solicitudes**

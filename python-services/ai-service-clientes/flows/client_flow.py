@@ -179,7 +179,7 @@ class ClientFlow:
                 await save_bot_message_fn(cmsg.get("response"))
             return {"messages": [{"response": msg1}, *confirm_msgs]}
 
-        flow["providers"] = providers[:3]
+        flow["providers"] = providers[:5]
         flow["state"] = "presenting_results"
 
         if supabase_client:
@@ -234,6 +234,24 @@ class ClientFlow:
         """
 
         choice = (selected or text or "").strip()
+        choice_lower = choice.lower()
+        choice_normalized = choice_lower.strip().strip("*").rstrip(".)")
+        if choice_normalized in ("0", "opcion 0", "opción 0") or (
+            "cambio" in choice_lower and "ciudad" in choice_lower
+        ):
+            flow["state"] = "awaiting_city"
+            flow["city_confirmed"] = False
+            flow.pop("providers", None)
+            flow.pop("chosen_provider", None)
+            flow.pop("confirm_attempts", None)
+            flow.pop("confirm_title", None)
+            await set_flow_fn(flow)
+            message = {
+                "response": "Entendido, ¿en qué ciudad lo necesitas ahora?",
+            }
+            await save_bot_message_fn(message["response"])
+            return message
+
         providers_list = flow.get("providers", [])
 
         provider = None

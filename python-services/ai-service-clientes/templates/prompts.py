@@ -40,7 +40,7 @@ def provider_options_intro(city: str) -> str:
 
 
 def provider_options_block(providers: List[Dict[str, Any]]) -> str:
-    lines: List[str] = []
+    lines: List[str] = ["*0* Cambio de ciudad"]
     for idx, provider in enumerate(providers, start=1):
         name = (provider.get("name") or "Proveedor").strip()
         lines.append(f"*{idx}* {name}")
@@ -48,7 +48,7 @@ def provider_options_block(providers: List[Dict[str, Any]]) -> str:
 
 
 def provider_options_prompt(_: int) -> str:
-    return "Responde con el número de tu opción:"
+    return "Responde con el número de tu opción (o 0 para cambiar de ciudad):"
 
 
 def confirm_options_block() -> str:
