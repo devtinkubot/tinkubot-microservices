@@ -1033,7 +1033,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                 service_value = (detected_profession or text).strip()
                 flow.update({"service": service_value})
 
-                if flow.get("city"):
+                if flow.get("service") and flow.get("city"):
                     flow["state"] = "awaiting_scope"
                     await set_flow(phone, flow)
                     return await send_scope_prompt(phone, flow)
@@ -1061,7 +1061,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                 INITIAL_PROMPT,
                 extract_profession_and_location,
             )
-            if updated_flow.get("city"):
+            if updated_flow.get("service") and updated_flow.get("city"):
                 updated_flow["state"] = "awaiting_scope"
                 return await send_scope_prompt(phone, updated_flow)
 
