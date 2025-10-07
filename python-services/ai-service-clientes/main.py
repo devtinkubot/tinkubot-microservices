@@ -453,7 +453,7 @@ def ui_feedback(text: str):
 def city_confirmation_prompt(city: Optional[str]) -> Dict[str, Any]:
     city_label = (city or "tu ciudad actual").strip()
     question = (
-        f"¿Seguimos buscando en {city_label}? Si cambiaste de ciudad, responde 'No' y dime la nueva."
+        f"¿Seguimos buscando en {city_label}? Si cambió tu ubicación, responde 'No' y cuéntame la nueva ciudad."
     )
     return ui_buttons(question, ["Sí", "No"])
 
