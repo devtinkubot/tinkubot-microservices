@@ -514,42 +514,44 @@ def extract_rating(selected: str) -> Optional[int]:
     return None
 
 
-def supabase_find_or_create_user(
-    phone: str, user_type: str = "client"
-) -> Optional[str]:
-    if not supabase:
+def get_or_create_customer(
+    phone: str,
+    *,
+    full_name: Optional[str] = None,
+    city: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Obtiene o crea un registro en `customers` asociado al teléfono."""
+
+    if not supabase or not phone:
         return None
+
     try:
-        res = (
-            supabase.table("users")
-            .select("id")
+        existing = (
+            supabase.table("customers")
+            .select(
+                "id, phone_number, full_name, city, city_confirmed_at, notes, created_at, updated_at"
+            )
             .eq("phone_number", phone)
             .limit(1)
             .execute()
         )
-        if res.data:
-            return res.data[0]["id"]
-        # Create minimal user
-        ins = (
-            supabase.table("users")
-            .insert(
-                {
-                    "phone_number": phone,
-                    "name": "Cliente TinkuBot",
-                    "user_type": (
-                        "client"
-                        if user_type not in ("client", "provider")
-                        else user_type
-                    ),
-                    "status": "active",
-                }
-            )
-            .execute()
-        )
-        if ins.data:
-            return ins.data[0]["id"]
-    except Exception as e:
-        logger.warning(f"No se pudo crear/buscar user {phone}: {e}")
+        if existing.data:
+            return existing.data[0]
+
+        payload: Dict[str, Any] = {
+            "phone_number": phone,
+            "full_name": full_name or "Cliente TinkuBot",
+        }
+
+        if city:
+            payload["city"] = city
+            payload["city_confirmed_at"] = datetime.utcnow().isoformat()
+
+        created = supabase.table("customers").insert(payload).execute()
+        if created.data:
+            return created.data[0]
+    except Exception as exc:
+        logger.warning(f"No se pudo crear/buscar customer {phone}: {exc}")
     return None
 
 
@@ -605,6 +607,16 @@ async def process_client_message(request: AIProcessingRequest):
         logger.info(
             f"📨 Procesando mensaje de cliente: {phone} - {request.message[:100]}..."
         )
+
+        customer_profile = get_or_create_customer(phone=phone)
+        if customer_profile:
+            logger.debug(
+                "Cliente sincronizado en Supabase",
+                extra={
+                    "customer_id": customer_profile.get("id"),
+                    "customer_city": customer_profile.get("city"),
+                },
+            )
 
         # Guardar mensaje del usuario en sesión
         await session_manager.save_session(phone, request.message, is_bot=False)
