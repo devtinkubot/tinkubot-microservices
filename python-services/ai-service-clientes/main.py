@@ -608,16 +608,6 @@ async def process_client_message(request: AIProcessingRequest):
             f"📨 Procesando mensaje de cliente: {phone} - {request.message[:100]}..."
         )
 
-        customer_profile = get_or_create_customer(phone=phone)
-        if customer_profile:
-            logger.debug(
-                "Cliente sincronizado en Supabase",
-                extra={
-                    "customer_id": customer_profile.get("id"),
-                    "customer_city": customer_profile.get("city"),
-                },
-            )
-
         # Guardar mensaje del usuario en sesión
         await session_manager.save_session(phone, request.message, is_bot=False)
 
@@ -803,6 +793,16 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
         phone = (payload.get("from_number") or "").strip()
         if not phone:
             raise HTTPException(status_code=400, detail="from_number is required")
+
+        customer_profile = get_or_create_customer(phone=phone)
+        if customer_profile:
+            logger.debug(
+                "Cliente sincronizado en Supabase",
+                extra={
+                    "customer_id": customer_profile.get("id"),
+                    "customer_city": customer_profile.get("city"),
+                },
+            )
 
         text = (payload.get("content") or "").strip()
         selected = normalize_button(payload.get("selected_option"))
