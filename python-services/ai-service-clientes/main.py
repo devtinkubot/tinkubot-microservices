@@ -453,7 +453,7 @@ def ui_feedback(text: str):
 def city_confirmation_prompt(city: Optional[str]) -> Dict[str, Any]:
     city_label = (city or "tu ciudad actual").strip()
     question = (
-        f"¿Seguimos buscando en {city_label}? Si cambió tu ubicación, responde 'No' y cuéntame la nueva ciudad."
+        f"¿Seguimos buscando en {city_label} o prefieres otra ciudad? Si cambió tu ubicación, responde 'No' y cuéntame la nueva ciudad."
     )
     return ui_buttons(question, ["Sí", "No"])
 
@@ -1089,8 +1089,14 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
             answer = interpret_yes_no(selected or text)
             if answer is True:
                 flow["city_confirmed"] = True
-                flow["state"] = "awaiting_scope"
-                return await send_scope_prompt(phone, flow)
+                if flow.get("service"):
+                    flow["state"] = "awaiting_scope"
+                    return await send_scope_prompt(phone, flow)
+                flow["state"] = "awaiting_service"
+                return await respond(
+                    flow,
+                    {"response": "Perfecto, ¿qué servicio necesitas?"},
+                )
             if answer is False:
                 flow["city_confirmed"] = False
                 flow["state"] = "awaiting_city"
