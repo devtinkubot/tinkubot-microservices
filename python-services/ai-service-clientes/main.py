@@ -35,9 +35,6 @@ from templates.prompts import (
     provider_options_block,
     provider_options_intro,
     provider_options_prompt,
-    SCOPE_PROMPT_BLOCK,
-    SCOPE_PROMPT_FOOTER,
-    SCOPE_PROMPT_TITLE,
 )
 from supabase import create_client
 
@@ -393,9 +390,6 @@ async def search_providers(
 # --- Conversational flow helpers ---
 FLOW_KEY = "flow:{}"  # phone
 
-SCOPE_BTN_IMMEDIATE = "Inmediato"
-SCOPE_BTN_CAN_WAIT = "Puedo esperar"
-
 
 async def get_flow(phone: str) -> Dict[str, Any]:
     try:
@@ -434,10 +428,6 @@ def ui_buttons(text: str, labels: list[str]):
     return {"response": text, "ui": {"type": "buttons", "buttons": labels}}
 
 
-def ui_location_request(text: str):
-    return {"response": text, "ui": {"type": "location_request"}}
-
-
 def ui_provider_results(text: str, providers: list[Dict[str, Any]]):
     return {
         "response": text,
@@ -448,28 +438,6 @@ def ui_provider_results(text: str, providers: list[Dict[str, Any]]):
 def ui_feedback(text: str):
     options = ["⭐️1", "⭐️2", "⭐️3", "⭐️4", "⭐️5"]
     return {"response": text, "ui": {"type": "feedback", "options": options}}
-
-
-def scope_prompt_messages() -> list[Dict[str, Any]]:
-    return [
-        {"response": f"{SCOPE_PROMPT_TITLE}\n{SCOPE_PROMPT_BLOCK}"},
-        ui_buttons(
-            SCOPE_PROMPT_FOOTER,
-            [SCOPE_BTN_IMMEDIATE, SCOPE_BTN_CAN_WAIT],
-        ),
-    ]
-
-
-async def send_scope_prompt(phone: str, flow: Dict[str, Any]):
-    messages = scope_prompt_messages()
-    await set_flow(phone, flow)
-    for msg in messages:
-        try:
-            if msg.get("response"):
-                await session_manager.save_session(phone, msg["response"], is_bot=True)
-        except Exception:
-            pass
-    return {"messages": messages}
 
 
 def provider_prompt_messages(city: str, providers: list[Dict[str, Any]]):
@@ -1002,30 +970,6 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                 supabase,
             )
 
-        # Fast-path: si llega ubicación válida en cualquier estado y ya tenemos servicio+ciudad, pasar a búsqueda
-        lat = None
-        lng = None
-        if isinstance(location, dict):
-            lat = location.get("lat") or location.get("latitude")
-            lng = location.get("lng") or location.get("longitude")
-
-        # Logging para depuración del fast-path de ubicación
-        if lat and lng:
-            logger.info(f"📍 Ubicación recibida - lat: {lat}, lng: {lng}")
-            logger.info(f"📋 Estado actual del flujo: {flow}")
-
-        if lat and lng and flow.get("service") and flow.get("city"):
-            logger.info(
-                f"✅ Fast-path activado: servicio={flow.get('service')}, ciudad={flow.get('city')}"
-            )
-            flow["location"] = {"lat": lat, "lng": lng}
-            flow["state"] = "searching"
-
-        if lat and lng and flow.get("service") and flow.get("city"):
-            flow["location"] = {"lat": lat, "lng": lng}
-            flow["state"] = "searching"
-            return await do_search()
-
         # Start or restart
         if not state or selected == "Sí, buscar otro servicio":
             cleaned = text.strip().lower() if text else ""
@@ -1034,9 +978,9 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                 flow.update({"service": service_value})
 
                 if flow.get("service") and flow.get("city"):
-                    flow["state"] = "awaiting_scope"
+                    flow["state"] = "searching"
                     await set_flow(phone, flow)
-                    return await send_scope_prompt(phone, flow)
+                    return await do_search()
 
                 flow["state"] = "awaiting_city"
                 flow["city_confirmed"] = False
@@ -1061,11 +1005,12 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                 INITIAL_PROMPT,
                 extract_profession_and_location,
             )
-            if updated_flow.get("service") and updated_flow.get("city"):
-                updated_flow["state"] = "awaiting_scope"
-                return await send_scope_prompt(phone, updated_flow)
-
-            return await respond(updated_flow, reply)
+            flow = updated_flow
+            if flow.get("service") and flow.get("city"):
+                flow["state"] = "searching"
+                await set_flow(phone, flow)
+                return await do_search()
+            return await respond(flow, reply)
 
         if state == "awaiting_city":
             updated_flow, reply = ClientFlow.handle_awaiting_city(
@@ -1090,39 +1035,10 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
             if reply.get("response"):
                 return await respond(updated_flow, reply)
 
-            updated_flow["state"] = "awaiting_scope"
-            return await send_scope_prompt(phone, updated_flow)
-
-        if state == "awaiting_scope":
-            updated_flow, immediate_reply = await ClientFlow.handle_awaiting_scope(
-                flow,
-                text,
-                selected,
-                lambda f: send_scope_prompt(phone, f),
-                lambda f: set_flow(phone, f),
-                do_search,
-                ui_location_request,
-                SCOPE_BTN_IMMEDIATE,
-                SCOPE_BTN_CAN_WAIT,
-            )
-
             flow = updated_flow
-            if immediate_reply is not None:
-                return immediate_reply
-
-            # Fallback: reemitir prompt en caso de que no haya respuesta inmediata.
-            return await send_scope_prompt(phone, flow)
-
-        if state == "awaiting_location":
-            updated_flow, reply = await ClientFlow.handle_awaiting_location(
-                flow,
-                location if isinstance(location, dict) else {},
-                do_search,
-                ui_location_request,
-                "Necesito tu ubicación para mostrarte los más cercanos.",
-            )
-            flow = updated_flow
-            return reply
+            flow["state"] = "searching"
+            await set_flow(phone, flow)
+            return await do_search()
 
         if state == "searching":
             return await do_search()
@@ -1167,9 +1083,6 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
         if not helper.get("city"):
             helper["state"] = "awaiting_city"
             return await respond(helper, {"response": "*¿En qué ciudad lo necesitas?*"})
-        if helper.get("state") == "awaiting_scope":
-            helper["state"] = "awaiting_scope"
-            return await send_scope_prompt(phone, helper)
         return {"response": "¿Podrías reformular tu mensaje?"}
 
     except Exception as e:

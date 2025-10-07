@@ -16,24 +16,6 @@ CONFIRM_PROMPT_FOOTER = "**Responde con el número de tu opción (o 0 para cambi
 
 SEPARATOR_LINE = ".................."
 
-def ascii_block(lines: List[str]) -> str:
-    if not lines:
-        lines = [""]
-    width = max(len(line) for line in lines)
-    border = " " + "." * (width + 3)
-    body = [f" {line.ljust(width)} " for line in lines]
-    return "\n".join([border, "", *body, "", border])
-
-
-# Bloque ASCII para guiar la selección del alcance del servicio.
-SCOPE_PROMPT_TITLE = "*¿Deseas que el servicio sea?*"
-_SCOPE_PROMPT_LINES = [
-    "*1* Inmediato",
-    "*2* Puedo esperar",
-]
-SCOPE_PROMPT_BLOCK = ascii_block(_SCOPE_PROMPT_LINES)
-SCOPE_PROMPT_FOOTER = "Responde con el número de tu opción:"
-
 
 def provider_options_intro(city: str) -> str:
     if city:
