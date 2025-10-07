@@ -471,16 +471,17 @@ def _bold(text: str) -> str:
     return f"**{stripped}**"
 
 
-def confirm_prompt_messages(title: str):
+def confirm_prompt_messages(title: str, include_city_option: bool = False):
     title_bold = _bold(title)
     return [
-        {"response": f"{title_bold}\n\n{confirm_options_block()}"},
+        {"response": f"{title_bold}\n\n{confirm_options_block(include_city_option)}"},
         ui_buttons(CONFIRM_PROMPT_FOOTER, CONFIRM_NEW_SEARCH_BUTTONS),
     ]
 
 
 async def send_confirm_prompt(phone: str, flow: Dict[str, Any], title: str):
-    messages = confirm_prompt_messages(title)
+    include_city_option = bool(flow.get("confirm_include_city_option"))
+    messages = confirm_prompt_messages(title, include_city_option)
     await set_flow(phone, flow)
     for msg in messages:
         try:

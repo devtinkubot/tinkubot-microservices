@@ -8,7 +8,7 @@ from typing import Any, Dict, List
 INITIAL_PROMPT = "*¿En qué te puedo ayudar hoy?*"
 
 CONFIRM_NEW_SEARCH_BUTTONS = [
-    "Sí, buscar otro servicio",
+    "Buscar otro servicio",
     "No, por ahora está bien",
 ]
 CONFIRM_PROMPT_TITLE_DEFAULT = "¿Te ayudo con otro servicio?"
@@ -81,13 +81,17 @@ def provider_no_results_prompt() -> str:
     return ""
 
 
-def confirm_options_block() -> str:
+def confirm_options_block(include_city_option: bool = False) -> str:
     lines = [
         SEPARATOR_LINE,
         "",
+    ]
+    if include_city_option:
+        lines.append("0 Buscar en otra ciudad")
+    lines.extend([
         f"1 {CONFIRM_NEW_SEARCH_BUTTONS[0]}",
         f"2 {CONFIRM_NEW_SEARCH_BUTTONS[1]}",
         "",
         SEPARATOR_LINE,
-    ]
+    ])
     return "\n".join(lines)

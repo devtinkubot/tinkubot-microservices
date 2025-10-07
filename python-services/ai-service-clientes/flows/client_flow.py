@@ -61,7 +61,7 @@ class ClientFlow:
         send_provider_prompt_fn: Callable[[str], Awaitable[Dict[str, Any]]],
         set_flow_fn: Callable[[Dict[str, Any]], Awaitable[None]],
         save_bot_message_fn: Callable[[Optional[str]], Awaitable[None]],
-        confirm_prompt_messages_fn: Callable[[str], list[Dict[str, Any]]],
+        confirm_prompt_messages_fn: Callable[[str, bool], list[Dict[str, Any]]],
         initial_prompt: str,
         confirm_prompt_title_default: str,
         logger: Any,
@@ -102,11 +102,14 @@ class ClientFlow:
             flow["state"] = "confirm_new_search"
             flow["confirm_attempts"] = 0
             flow["confirm_title"] = confirm_prompt_title_default
+            flow["confirm_include_city_option"] = True
             await set_flow_fn(flow)
             block = provider_no_results_block(city)
             prompt_text = provider_no_results_prompt()
             await save_bot_message_fn(block)
-            confirm_msgs = confirm_prompt_messages_fn(confirm_prompt_title_default)
+            confirm_msgs = confirm_prompt_messages_fn(
+                confirm_prompt_title_default, True
+            )
             for cmsg in confirm_msgs:
                 response_text = cmsg.get("response")
                 if response_text:
@@ -120,6 +123,7 @@ class ClientFlow:
 
         flow["providers"] = providers[:5]
         flow["state"] = "presenting_results"
+        flow["confirm_include_city_option"] = False
 
         if supabase_client:
             try:
@@ -160,7 +164,7 @@ class ClientFlow:
         set_flow_fn: Callable[[Dict[str, Any]], Awaitable[None]],
         save_bot_message_fn: Callable[[Optional[str]], Awaitable[None]],
         formal_connection_message_fn: Callable[[Dict[str, Any], str, str], str],
-        confirm_prompt_messages_fn: Callable[[str], list[Dict[str, Any]]],
+        confirm_prompt_messages_fn: Callable[[str, bool], list[Dict[str, Any]]],
         schedule_feedback_fn: Optional[
             Callable[[str, Dict[str, Any], str, str], Awaitable[None]]
         ],
@@ -184,6 +188,7 @@ class ClientFlow:
             flow.pop("chosen_provider", None)
             flow.pop("confirm_attempts", None)
             flow.pop("confirm_title", None)
+            flow.pop("confirm_include_city_option", None)
             await set_flow_fn(flow)
             message = {
                 "response": "Entendido, ¿en qué ciudad lo necesitas ahora?",
@@ -212,6 +217,7 @@ class ClientFlow:
         flow["state"] = "confirm_new_search"
         flow["confirm_attempts"] = 0
         flow["confirm_title"] = confirm_title_default
+        flow["confirm_include_city_option"] = False
 
         message = formal_connection_message_fn(
             provider or {}, flow.get("service", ""), flow.get("city", "")
@@ -220,7 +226,10 @@ class ClientFlow:
         await set_flow_fn(flow)
         await save_bot_message_fn(message)
 
-        confirm_msgs = confirm_prompt_messages_fn(flow.get("confirm_title") or confirm_title_default)
+        confirm_msgs = confirm_prompt_messages_fn(
+            flow.get("confirm_title") or confirm_title_default,
+            flow.get("confirm_include_city_option", False),
+        )
         for cmsg in confirm_msgs:
             await save_bot_message_fn(cmsg.get("response"))
 
@@ -264,6 +273,7 @@ class ClientFlow:
             flow.pop("confirm_attempts", None)
             flow.pop("confirm_title", None)
             flow.pop("confirm_prompt", None)
+            flow.pop("confirm_include_city_option", None)
             return await respond_fn(
                 flow,
                 {"response": "Entendido, ¿en qué ciudad lo necesitas ahora?"},
@@ -316,6 +326,7 @@ class ClientFlow:
                 flow.pop("confirm_attempts", None)
                 flow.pop("confirm_title", None)
                 flow.pop("confirm_prompt", None)
+                flow.pop("confirm_include_city_option", None)
             return await respond_fn(
                 {"state": "awaiting_service"},
                 {"response": initial_prompt},
@@ -324,6 +335,7 @@ class ClientFlow:
         if choice in no_choices:
             await reset_flow_fn()
             await save_bot_message_fn(farewell_message)
+            flow.pop("confirm_include_city_option", None)
             return {"response": farewell_message}
 
         attempts = int(flow.get("confirm_attempts") or 0) + 1
