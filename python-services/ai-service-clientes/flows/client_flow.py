@@ -174,26 +174,20 @@ class ClientFlow:
             flow["confirm_attempts"] = 0
             flow["confirm_title"] = confirm_prompt_title_default
             await set_flow_fn(flow)
-            msg1 = (
-                f"No tenemos proveedores registrados en {city} aún. "
-                "Por ahora no es posible continuar."
-            )
-            await save_bot_message_fn(msg1)
             block = provider_no_results_block(city)
             prompt_text = provider_no_results_prompt()
             await save_bot_message_fn(block)
-            await save_bot_message_fn(prompt_text)
             confirm_msgs = confirm_prompt_messages_fn(confirm_prompt_title_default)
             for cmsg in confirm_msgs:
-                await save_bot_message_fn(cmsg.get("response"))
-            return {
-                "messages": [
-                    {"response": msg1},
-                    {"response": block},
-                    {"response": prompt_text},
-                    *confirm_msgs,
-                ]
-            }
+                response_text = cmsg.get("response")
+                if response_text:
+                    await save_bot_message_fn(response_text)
+            if prompt_text:
+                await save_bot_message_fn(prompt_text)
+            messages = [{"response": block}, *confirm_msgs]
+            if prompt_text:
+                messages.append({"response": prompt_text})
+            return {"messages": messages}
 
         flow["providers"] = providers[:5]
         flow["state"] = "presenting_results"

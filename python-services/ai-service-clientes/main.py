@@ -475,7 +475,7 @@ async def send_scope_prompt(phone: str, flow: Dict[str, Any]):
 def provider_prompt_messages(city: str, providers: list[Dict[str, Any]]):
     header = provider_options_intro(city)
     return [
-        {"response": f"{header}\n{provider_options_block(providers)}"},
+        {"response": f"{header}\n\n{provider_options_block(providers)}"},
         ui_provider_results(provider_options_prompt(len(providers)), providers),
     ]
 
@@ -497,16 +497,16 @@ def _bold(text: str) -> str:
     stripped = (text or "").strip()
     if not stripped:
         return ""
-    if stripped.startswith("*") and stripped.endswith("*"):
+    if stripped.startswith("**") and stripped.endswith("**"):
         return stripped
     stripped = stripped.strip("*")
-    return f"*{stripped}*"
+    return f"**{stripped}**"
 
 
 def confirm_prompt_messages(title: str):
     title_bold = _bold(title)
     return [
-        {"response": f"{title_bold}\n{confirm_options_block()}"},
+        {"response": f"{title_bold}\n\n{confirm_options_block()}"},
         ui_buttons(CONFIRM_PROMPT_FOOTER, CONFIRM_NEW_SEARCH_BUTTONS),
     ]
 
