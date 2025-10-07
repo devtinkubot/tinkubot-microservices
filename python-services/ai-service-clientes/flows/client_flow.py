@@ -3,6 +3,11 @@
 from datetime import datetime
 from typing import Any, Awaitable, Callable, Dict, Optional, Tuple
 
+from templates.prompts import (
+    provider_no_results_block,
+    provider_no_results_prompt,
+)
+
 
 class ClientFlow:
     """Encapsula handlers por estado de la conversación."""
@@ -174,10 +179,21 @@ class ClientFlow:
                 "Por ahora no es posible continuar."
             )
             await save_bot_message_fn(msg1)
+            block = provider_no_results_block(city)
+            prompt_text = provider_no_results_prompt()
+            await save_bot_message_fn(block)
+            await save_bot_message_fn(prompt_text)
             confirm_msgs = confirm_prompt_messages_fn(confirm_prompt_title_default)
             for cmsg in confirm_msgs:
                 await save_bot_message_fn(cmsg.get("response"))
-            return {"messages": [{"response": msg1}, *confirm_msgs]}
+            return {
+                "messages": [
+                    {"response": msg1},
+                    {"response": block},
+                    {"response": prompt_text},
+                    *confirm_msgs,
+                ]
+            }
 
         flow["providers"] = providers[:5]
         flow["state"] = "presenting_results"
@@ -314,6 +330,21 @@ class ClientFlow:
         choice_raw = (selected or text or "").strip()
         choice = choice_raw.lower().strip()
         choice = choice.rstrip(".!¡¿)")
+
+        if choice in {"0", "opcion 0", "opción 0"} or (
+            "cambio" in choice and "ciudad" in choice
+        ):
+            flow["state"] = "awaiting_city"
+            flow["city_confirmed"] = False
+            flow.pop("providers", None)
+            flow.pop("chosen_provider", None)
+            flow.pop("confirm_attempts", None)
+            flow.pop("confirm_title", None)
+            flow.pop("confirm_prompt", None)
+            return await respond_fn(
+                flow,
+                {"response": "Entendido, ¿en qué ciudad lo necesitas ahora?"},
+            )
 
         confirm_title = flow.get("confirm_title")
         if not confirm_title:

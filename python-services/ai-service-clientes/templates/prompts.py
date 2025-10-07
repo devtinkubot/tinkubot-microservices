@@ -51,6 +51,19 @@ def provider_options_prompt(_: int) -> str:
     return "Responde con el número de tu opción (o 0 para cambiar de ciudad):"
 
 
+def provider_no_results_block(city: str) -> str:
+    city_label = (city or "tu ciudad").strip()
+    lines = [
+        "*0* Cambio de ciudad",
+        f"-- No tenemos proveedores en {city_label} aún --",
+    ]
+    return ascii_block(lines)
+
+
+def provider_no_results_prompt() -> str:
+    return "Responde 0 para cambiar de ciudad o elige otra opción del menú."
+
+
 def confirm_options_block() -> str:
     lines = [
         f"*1* {CONFIRM_NEW_SEARCH_BUTTONS[0]}",
