@@ -6,6 +6,7 @@ Procesa mensajes de clientes, entiende necesidades y coordina con proveedores
 import asyncio
 import logging
 import os
+import unicodedata
 from datetime import datetime
 from typing import Any, Dict, Optional
 
@@ -283,6 +284,62 @@ FAREWELL_MESSAGE = (
     "¡Gracias por utilizar nuestros servicios! Si necesitas otro apoyo, solo escríbeme."
 )
 
+AFFIRMATIVE_WORDS = {
+    "si",
+    "sí",
+    "claro",
+    "correcto",
+    "dale",
+    "por supuesto",
+    "asi es",
+    "así es",
+    "ok",
+    "okay",
+    "vale",
+}
+
+NEGATIVE_WORDS = {
+    "no",
+    "nop",
+    "cambio",
+    "cambié",
+    "otra",
+    "otro",
+    "negativo",
+    "prefiero no",
+}
+
+
+def _normalize_token(text: str) -> str:
+    stripped = (text or "").strip().lower()
+    normalized = unicodedata.normalize("NFD", stripped)
+    without_accents = "".join(ch for ch in normalized if unicodedata.category(ch) != "Mn")
+    clean = without_accents.replace("!", "").replace("?", "").replace(",", "")
+    return clean
+
+
+def interpret_yes_no(text: Optional[str]) -> Optional[bool]:
+    if not text:
+        return None
+    base = _normalize_token(text)
+    if not base:
+        return None
+    tokens = base.split()
+    normalized_affirmative = {_normalize_token(word) for word in AFFIRMATIVE_WORDS}
+    normalized_negative = {_normalize_token(word) for word in NEGATIVE_WORDS}
+
+    if base in normalized_affirmative:
+        return True
+    if base in normalized_negative:
+        return False
+
+    for token in tokens:
+        if token in normalized_affirmative:
+            return True
+        if token in normalized_negative:
+            return False
+    return None
+
 
 def extract_profession_and_location(
     history_text: str, last_message: str
@@ -391,6 +448,14 @@ def ui_provider_results(text: str, providers: list[Dict[str, Any]]):
 def ui_feedback(text: str):
     options = ["⭐️1", "⭐️2", "⭐️3", "⭐️4", "⭐️5"]
     return {"response": text, "ui": {"type": "feedback", "options": options}}
+
+
+def city_confirmation_prompt(city: Optional[str]) -> Dict[str, Any]:
+    city_label = (city or "tu ciudad actual").strip()
+    question = (
+        f"¿Seguimos buscando en {city_label}? Si cambiaste de ciudad, responde 'No' y dime la nueva."
+    )
+    return ui_buttons(question, ["Sí", "No"])
 
 
 def scope_prompt_messages() -> list[Dict[str, Any]]:
@@ -552,6 +617,32 @@ def get_or_create_customer(
             return created.data[0]
     except Exception as exc:
         logger.warning(f"No se pudo crear/buscar customer {phone}: {exc}")
+    return None
+
+
+def update_customer_city(customer_id: Optional[str], city: str) -> Optional[Dict[str, Any]]:
+    if not supabase or not customer_id or not city:
+        return None
+    try:
+        result = (
+            supabase.table("customers")
+            .update(
+                {
+                    "city": city,
+                    "city_confirmed_at": datetime.utcnow().isoformat(),
+                }
+            )
+            .eq("id", customer_id)
+            .select(
+                "id, phone_number, full_name, city, city_confirmed_at, updated_at"
+            )
+            .limit(1)
+            .execute()
+        )
+        if result.data:
+            return result.data[0]
+    except Exception as exc:
+        logger.warning(f"No se pudo actualizar city para customer {customer_id}: {exc}")
     return None
 
 
@@ -795,12 +886,22 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
             raise HTTPException(status_code=400, detail="from_number is required")
 
         customer_profile = get_or_create_customer(phone=phone)
+        flow = await get_flow(phone)
+
+        customer_id = None
         if customer_profile:
+            customer_id = customer_profile.get("id")
+            if customer_id:
+                flow.setdefault("customer_id", customer_id)
+            profile_city = customer_profile.get("city")
+            if profile_city and not flow.get("city"):
+                flow["city"] = profile_city
+                flow.setdefault("city_confirmed", False)
             logger.debug(
                 "Cliente sincronizado en Supabase",
                 extra={
-                    "customer_id": customer_profile.get("id"),
-                    "customer_city": customer_profile.get("city"),
+                    "customer_id": customer_id,
+                    "customer_city": profile_city,
                 },
             )
 
@@ -808,6 +909,33 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
         selected = normalize_button(payload.get("selected_option"))
         msg_type = payload.get("message_type")
         location = payload.get("location") or {}
+
+        detected_profession, detected_city = extract_profession_and_location(
+            "",
+            text,
+        )
+        if detected_city:
+            normalized_city = detected_city
+            current_city = (flow.get("city") or "").strip()
+            if normalized_city.lower() != current_city.lower():
+                updated_profile = update_customer_city(
+                    flow.get("customer_id") or customer_id,
+                    normalized_city,
+                )
+                if updated_profile:
+                    customer_profile = updated_profile
+                    flow["city"] = updated_profile.get("city")
+                    flow["city_confirmed"] = True
+                    flow["city_confirmed_at"] = updated_profile.get(
+                        "city_confirmed_at"
+                    )
+                    customer_id = updated_profile.get("id")
+                    flow["customer_id"] = customer_id
+                else:
+                    flow["city"] = normalized_city
+                    flow["city_confirmed"] = True
+            else:
+                flow["city_confirmed"] = True
 
         logger.info(
             f"📱 WhatsApp [{phone}] tipo={msg_type} selected={selected} text='{text[:60]}'"
@@ -826,7 +954,6 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                 phone, text, is_bot=False, metadata={"message_id": payload.get("id")}
             )
 
-        flow = await get_flow(phone)
         state = flow.get("state")
 
         # Logging detallado al inicio del procesamiento
@@ -901,13 +1028,26 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
 
         # Start or restart
         if not state or selected == "Sí, buscar otro servicio":
-            # Si el usuario ya envió texto con intención, úsalo como servicio directamente
-            if text and text.strip().lower() not in GREETINGS:
-                flow = {"service": text, "state": "awaiting_city"}
+            cleaned = text.strip().lower() if text else ""
+            if text and cleaned not in GREETINGS:
+                service_value = (detected_profession or text).strip()
+                flow.update({"service": service_value})
+
+                if flow.get("city") and flow.get("city_confirmed"):
+                    flow["state"] = "awaiting_scope"
+                    await set_flow(phone, flow)
+                    return await send_scope_prompt(phone, flow)
+
+                if flow.get("city") and not flow.get("city_confirmed"):
+                    flow["state"] = "confirm_city"
+                    prompt = city_confirmation_prompt(flow["city"])
+                    return await respond(flow, prompt)
+
+                flow["state"] = "awaiting_city"
                 return await respond(flow, {"response": "*¿En qué ciudad lo necesitas?*"})
-            # Si no hay intención clara, inicia flujo pidiendo el servicio (sin ejemplos)
-            new_flow = {"state": "awaiting_service"}
-            return await respond(new_flow, {"response": INITIAL_PROMPT})
+
+            flow.update({"state": "awaiting_service"})
+            return await respond(flow, {"response": INITIAL_PROMPT})
 
         # Close conversation kindly
         if selected == "No, por ahora está bien":
@@ -925,7 +1065,37 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                 INITIAL_PROMPT,
                 extract_profession_and_location,
             )
+            if updated_flow.get("city") and updated_flow.get("city_confirmed"):
+                updated_flow["state"] = "awaiting_scope"
+                return await send_scope_prompt(phone, updated_flow)
+
+            if updated_flow.get("city") and not updated_flow.get("city_confirmed"):
+                updated_flow["state"] = "confirm_city"
+                return await respond(
+                    updated_flow,
+                    city_confirmation_prompt(updated_flow.get("city", "tu ciudad")),
+                )
+
             return await respond(updated_flow, reply)
+
+        if state == "confirm_city":
+            answer = interpret_yes_no(selected or text)
+            if answer is True:
+                flow["city_confirmed"] = True
+                flow["state"] = "awaiting_scope"
+                return await send_scope_prompt(phone, flow)
+            if answer is False:
+                flow["city_confirmed"] = False
+                flow["state"] = "awaiting_city"
+                message = {
+                    "response": "Entendido, ¿en qué ciudad lo necesitas ahora?",
+                }
+                return await respond(flow, message)
+
+            return await respond(
+                flow,
+                city_confirmation_prompt(flow.get("city") or "tu ciudad"),
+            )
 
         if state == "awaiting_city":
             updated_flow, reply = ClientFlow.handle_awaiting_city(
@@ -933,8 +1103,24 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                 text,
                 "Indica la ciudad por favor (por ejemplo: Quito, Cuenca).",
             )
+
+            if text:
+                normalized_input = text.strip().title()
+                updated_flow["city"] = normalized_input
+                updated_flow["city_confirmed"] = True
+                update_result = update_customer_city(
+                    updated_flow.get("customer_id") or customer_id,
+                    normalized_input,
+                )
+                if update_result:
+                    updated_flow["city_confirmed_at"] = update_result.get(
+                        "city_confirmed_at"
+                    )
+
             if reply.get("response"):
-                return reply
+                return await respond(updated_flow, reply)
+
+            updated_flow["state"] = "awaiting_scope"
             return await send_scope_prompt(phone, updated_flow)
 
         if state == "awaiting_scope":
