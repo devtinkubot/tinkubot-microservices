@@ -81,12 +81,16 @@ def provider_no_results_prompt() -> str:
     return ""
 
 
-def confirm_options_block(include_city_option: bool = False) -> str:
+def confirm_options_block(
+    include_city_option: bool = False, include_provider_option: bool = False
+) -> str:
     lines = [
         SEPARATOR_LINE,
         "",
     ]
-    if include_city_option:
+    if include_provider_option:
+        lines.append("0 Elegir otro proveedor")
+    elif include_city_option:
         lines.append("0 Buscar en otra ciudad")
     lines.extend([
         f"1 {CONFIRM_NEW_SEARCH_BUTTONS[0]}",

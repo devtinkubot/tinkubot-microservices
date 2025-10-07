@@ -471,17 +471,26 @@ def _bold(text: str) -> str:
     return f"**{stripped}**"
 
 
-def confirm_prompt_messages(title: str, include_city_option: bool = False):
+def confirm_prompt_messages(
+    title: str,
+    include_city_option: bool = False,
+    include_provider_option: bool = False,
+):
     title_bold = _bold(title)
     return [
-        {"response": f"{title_bold}\n\n{confirm_options_block(include_city_option)}"},
+        {
+            "response": f"{title_bold}\n\n{confirm_options_block(include_city_option, include_provider_option)}"
+        },
         ui_buttons(CONFIRM_PROMPT_FOOTER, CONFIRM_NEW_SEARCH_BUTTONS),
     ]
 
 
 async def send_confirm_prompt(phone: str, flow: Dict[str, Any], title: str):
     include_city_option = bool(flow.get("confirm_include_city_option"))
-    messages = confirm_prompt_messages(title, include_city_option)
+    include_provider_option = bool(flow.get("confirm_include_provider_option"))
+    messages = confirm_prompt_messages(
+        title, include_city_option, include_provider_option
+    )
     await set_flow(phone, flow)
     for msg in messages:
         try:
@@ -1083,6 +1092,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                 selected,
                 lambda: reset_flow(phone),
                 respond,
+                lambda: send_provider_prompt(phone, flow, flow.get("city", "")),
                 lambda data, title: send_confirm_prompt(phone, data, title),
                 save_bot_message,
                 INITIAL_PROMPT,
