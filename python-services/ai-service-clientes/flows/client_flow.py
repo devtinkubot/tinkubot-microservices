@@ -153,9 +153,9 @@ class ClientFlow:
                 return await respond_fn(
                     flow,
                     {
-                        "response": "¿Qué servicio necesitas? Ya sé que estás en "
+                        "response": "Perfecto, tomé nota de que estás en "
                         + (city or "tu ciudad")
-                        + ".",
+                        + ". Dime qué servicio necesitas.",
                     },
                 )
             flow["state"] = "awaiting_city"
