@@ -12,7 +12,7 @@ CONFIRM_NEW_SEARCH_BUTTONS = [
     "No, por ahora está bien",
 ]
 CONFIRM_PROMPT_TITLE_DEFAULT = "¿Te ayudo con otro servicio?"
-CONFIRM_PROMPT_FOOTER = "**Responde con el número de tu opción (o 0 para cambiar de ciudad):**"
+CONFIRM_PROMPT_FOOTER = "*Responde con el número de tu opción:*"
 
 SEPARATOR_LINE = ".................."
 

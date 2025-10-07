@@ -613,6 +613,18 @@ def update_customer_city(customer_id: Optional[str], city: str) -> Optional[Dict
     return None
 
 
+def clear_customer_city(customer_id: Optional[str]) -> None:
+    if not supabase or not customer_id:
+        return
+    try:
+        supabase.table("customers").update(
+            {"city": None, "city_confirmed_at": None}
+        ).eq("id", customer_id).execute()
+        logger.info(f"🧼 Ciudad eliminada para customer {customer_id}")
+    except Exception as exc:
+        logger.warning(f"No se pudo limpiar city para customer {customer_id}: {exc}")
+
+
 @app.on_event("startup")
 async def startup_event():
     """Inicializar conexiones al arrancar el servicio"""
@@ -912,6 +924,11 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
         # Comandos de reinicio de flujo (útil en pruebas)
         if text and text.strip().lower() in RESET_KEYWORDS:
             await reset_flow(phone)
+            # Limpiar ciudad registrada para simular primer uso
+            try:
+                clear_customer_city(flow.get("customer_id") or customer_id)
+            except Exception:
+                pass
             # Prepara nuevo flujo pero no condiciona al usuario con ejemplos
             await set_flow(phone, {"state": "awaiting_service"})
             return {"response": "Nueva sesión iniciada."}
