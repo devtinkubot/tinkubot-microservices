@@ -624,7 +624,7 @@ def update_customer_city(customer_id: Optional[str], city: str) -> Optional[Dict
     if not supabase or not customer_id or not city:
         return None
     try:
-        result = (
+        update_resp = (
             supabase.table("customers")
             .update(
                 {
@@ -633,14 +633,21 @@ def update_customer_city(customer_id: Optional[str], city: str) -> Optional[Dict
                 }
             )
             .eq("id", customer_id)
+            .execute()
+        )
+        if update_resp.data:
+            return update_resp.data[0]
+        select_resp = (
+            supabase.table("customers")
             .select(
                 "id, phone_number, full_name, city, city_confirmed_at, updated_at"
             )
+            .eq("id", customer_id)
             .limit(1)
             .execute()
         )
-        if result.data:
-            return result.data[0]
+        if select_resp.data:
+            return select_resp.data[0]
     except Exception as exc:
         logger.warning(f"No se pudo actualizar city para customer {customer_id}: {exc}")
     return None
