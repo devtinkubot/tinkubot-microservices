@@ -23,6 +23,10 @@ CONSENT_BUTTONS = [
     "Sí, acepto",
     "No, gracias"
 ]
+CONFIRM_NEW_SEARCH_BUTTONS = [
+    "Sí, buscar otro servicio",
+    "No, por ahora está bien"
+]
 CONFIRM_PROMPT_TITLE_DEFAULT = "¿Te ayudo con otro servicio?"
 CONFIRM_PROMPT_FOOTER = "*Responde con el número de tu opción:*"
 
