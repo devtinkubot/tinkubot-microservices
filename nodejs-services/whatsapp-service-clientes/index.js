@@ -122,9 +122,11 @@ async function processWithAI(message) {
       id: message.id._serialized || message.id,
       from_number: message.from,
       content: message.body || '',
-      timestamp: new Date(),
+      timestamp: message.timestamp || new Date(),
       status: 'received',
       message_type: message.type,
+      message_id: message.id._serialized || message.id || '',
+      device_type: message.deviceType || ''
     };
 
     // Selección por reply-to: si responde citando una opción, usar el texto citado como selected_option

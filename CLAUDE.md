@@ -207,7 +207,12 @@ OPENAI_API_KEY=tu-api-key
 # Redis
 REDIS_URL=redis://localhost:6379
 
-# Database (para proveedores)
+# Supabase (Base de datos principal)
+SUPABASE_URL=tu-supabase-url
+SUPABASE_BACKEND_API_KEY=tu-service-key
+SUPABASE_BUCKET_NAME=tinkubot-sessions
+
+# Database (para proveedores - PostgreSQL directo)
 DATABASE_URL=postgresql://user:pass@localhost:5432/tinkubot
 
 # Instancias
@@ -217,20 +222,102 @@ CLIENTES_WHATSAPP_PORT=8005
 PROVEEDORES_INSTANCE_ID=proveedores
 PROVEEDORES_INSTANCE_NAME=Bot Proveedores
 PROVEEDORES_WHATSAPP_PORT=8006
+
+# URLs de Servicios
+AI_SERVICE_CLIENTES_URL=http://ai-service-clientes:5003
+AI_SERVICE_PROVEEDORES_URL=http://ai-service-proveedores:5007
+WHATSAPP_CLIENTES_URL=http://whatsapp-service-clientes:8005
+WHATSAPP_PROVEEDORES_URL=http://whatsapp-service-proveedores:8006
 ```
 
 ## Estructura de Datos y Flujo
 
-### Flujo de Mensajes de Clientes
+### Base de Datos (Supabase/PostgreSQL)
 
-1. Usuario envía mensaje a WhatsApp
-2. `whatsapp-service-clientes` recibe mensaje
-3. Envía a `ai-service-clientes` para procesamiento con OpenAI
-4. Si se detecta solicitud de servicio, llama a `ai-service-proveedores`
-5. `ai-service-proveedores` busca proveedores en la base de datos
-6. Genera respuesta con resultados y opciones
-7. Devuelve respuesta a `whatsapp-service-clientes`
-8. Envía respuesta al usuario por WhatsApp
+#### Tablas Principales Implementadas
+
+**customers** - Gestión de Clientes B2C
+```sql
+CREATE TABLE customers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    phone_number VARCHAR(20) UNIQUE NOT NULL,
+    full_name VARCHAR(255) NOT NULL,
+    city VARCHAR(100),
+    city_confirmed_at TIMESTAMP,
+    has_consent BOOLEAN DEFAULT false,  -- Control de consentimiento
+    notes JSONB DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+**consents** - Registro Legal de Consentimientos
+```sql
+CREATE TABLE consents (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES customers(id),
+    user_type VARCHAR(20) DEFAULT 'customer',
+    response VARCHAR(20) NOT NULL,  -- 'accepted' o 'declined'
+    message_log JSONB NOT NULL,     -- Metadata completa del consentimiento
+    created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+**service_requests** - Registro de Solicitudes
+```sql
+CREATE TABLE service_requests (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    phone VARCHAR(20) NOT NULL,
+    intent VARCHAR(50) DEFAULT 'service_request',
+    profession VARCHAR(100),
+    location_city VARCHAR(100),
+    requested_at TIMESTAMP DEFAULT NOW(),
+    resolved_at TIMESTAMP,
+    suggested_providers JSONB DEFAULT '[]'
+);
+```
+
+**task_queue** - Tareas Programadas
+```sql
+CREATE TABLE task_queue (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    task_type VARCHAR(50) NOT NULL,
+    payload JSONB NOT NULL,
+    status VARCHAR(20) DEFAULT 'pending',
+    priority INTEGER DEFAULT 0,
+    scheduled_at TIMESTAMP NOT NULL,
+    started_at TIMESTAMP,
+    completed_at TIMESTAMP,
+    retry_count INTEGER DEFAULT 0,
+    max_retries INTEGER DEFAULT 3,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+### Flujo de Mensajes de Clientes (con Consentimiento)
+
+1. **Usuario envía mensaje a WhatsApp**
+2. **whatsapp-service-clientes** recibe mensaje y envía a `ai-service-clientes`
+3. **Validación de Consentimiento**:
+   - Si `customers.has_consent` es null/false → Solicita consentimiento
+   - Si ya aceptó → Continúa flujo normal
+4. **Procesamiento con IA**: OpenAI analiza intención y extrae entidades
+5. **Búsqueda de Proveedores**: Si detecta solicitud de servicio, llama a `ai-service-proveedores`
+6. **Respuesta al Cliente**: Genera respuesta con opciones de proveedores
+7. **Registro en Base de Datos**: Guarda en `service_requests` y `task_queue` (feedback)
+8. **Envío por WhatsApp**: Devuelve respuesta estructurada al usuario
+
+### Flujo de Consentimiento Implementado
+
+1. **Detección**: Nuevo cliente o cliente sin consentimiento (`has_consent != true`)
+2. **Solicitud**: Envía mensaje con botones "Sí, acepto" / "No, gracias"
+3. **Captura**: Registra respuesta exacta y metadata completa
+4. **Persistencia**:
+   - Actualiza `customers.has_consent = true/false`
+   - Inserta registro en `consents` con metadata legal
+5. **Continuación**:
+   - Si aceptó: Continúa con flujo normal de búsqueda
+   - Si rechazó: Bloquea y ofrece ayuda directa
 
 ### Base de Datos de Proveedores
 

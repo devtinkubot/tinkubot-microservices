@@ -6,14 +6,14 @@ Lograr que TinkuBot conecte necesidades de clientes con proveedores interesados 
 
 ## Fases de implementación
 
-### Fase 0 – Fundamentos compartidos
-- Definir payloads de eventos y contractos API entre `ai-service-clientes` y `ai-service-proveedores`.
-- Preparar utilidades de logging/trace en ambos servicios para auditar cada solicitud.
+### Fase 0 – Fundamentos compartidos ✅
+- ✅ Definir payloads de eventos y contractos API entre `ai-service-clientes` y `ai-service-proveedores`.
+- ✅ Preparar utilidades de logging/trace en ambos servicios para auditar cada solicitud.
 
-### Fase 1 – Simplificación del flujo en AI Clientes
-- Pedir únicamente servicio y ciudad (ciudad solo la primera vez); eliminar prompt de urgencia.
-- Incorporar almacenamiento de ciudad preferida en la sesión para reutilizarla.
-- Ajustar prompts de resultados para mostrar únicamente proveedores disponibles y permitir selección directa.
+### Fase 1 – Simplificación del flujo en AI Clientes ✅
+- ✅ Pedir únicamente servicio y ciudad (ciudad solo la primera vez); eliminar prompt de urgencia.
+- ✅ Incorporar almacenamiento de ciudad preferida en la sesión para reutilizarla.
+- ✅ Ajustar prompts de resultados para mostrar únicamente proveedores disponibles y permitir selección directa.
 
 ### Fase 2 – Orquestación de invitaciones sin cola externa
 - Implementar en `ai-service-clientes` un coordinador que:
@@ -24,6 +24,12 @@ Lograr que TinkuBot conecte necesidades de clientes con proveedores interesados 
   - Envíe la invitación por WhatsApp con opciones "1. Me interesa" / "2. No puedo".
   - Procese la respuesta del proveedor y publique `provider.invite.responded`.
 - Manejar respuestas tardías agradeciendo y notificando que la solicitud ya se asignó.
+
+#### Sub-fases recomendadas
+1. **Coordinador en AI Clientes**: orquestar búsqueda de candidatos, emitir `provider.invite.created` y trackear estados por proveedor.
+2. **Handlers en AI Proveedores**: recibir invitaciones, enviar WhatsApp y publicar `provider.invite.responded`.
+3. **Consumidores en AI Clientes**: procesar respuestas, aplicar timeout / objetivo de 3 interesados y generar la lista final (con fallback top-rating).
+4. **Asignación y cierre**: emitir `provider.assignment.confirmed` / `provider.assignment.closed`, notificar a proveedores y limpiar estado.
 
 ### Fase 3 – Asignación y comunicación
 - `ai-service-clientes` muestra al cliente los proveedores interesados (ordenados por tiempo de respuesta y rating). Si no hay interesados, devuelve los 3 mejores ratings disponibles.

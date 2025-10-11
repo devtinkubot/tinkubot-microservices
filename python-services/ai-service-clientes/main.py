@@ -4,6 +4,7 @@ Procesa mensajes de clientes, entiende necesidades y coordina con proveedores
 """
 
 import asyncio
+import json
 import logging
 import os
 import unicodedata
@@ -31,6 +32,8 @@ from templates.prompts import (
     CONFIRM_PROMPT_FOOTER,
     CONFIRM_PROMPT_TITLE_DEFAULT,
     confirm_options_block,
+    CONSENT_BUTTONS,
+    CONSENT_PROMPT,
     INITIAL_PROMPT,
     provider_options_block,
     provider_options_intro,
@@ -440,6 +443,92 @@ def ui_feedback(text: str):
     return {"response": text, "ui": {"type": "feedback", "options": options}}
 
 
+async def request_consent(phone: str) -> Dict[str, Any]:
+    """Envía mensaje de solicitud de consentimiento."""
+    return ui_buttons(CONSENT_PROMPT, CONSENT_BUTTONS)
+
+
+async def handle_consent_response(
+    phone: str, customer_profile: Dict[str, Any], selected_option: str, payload: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Maneja la respuesta de consentimiento del cliente."""
+
+    # Mapear respuesta del botón
+    if selected_option == "1":  # "Sí, acepto"
+        response = "accepted"
+        message = "✅ Gracias por aceptar. Ahora puedo ayudarte a encontrar los mejores proveedores para ti."
+
+        # Actualizar has_consent a TRUE
+        try:
+            supabase.table("customers").update({"has_consent": True}).eq(
+                "id", customer_profile.get("id")
+            ).execute()
+
+            # Guardar registro legal en tabla consents con metadata completa
+            consent_data = {
+                "consent_timestamp": payload.get("timestamp"),
+                "phone": payload.get("from_number"),
+                "message_id": payload.get("message_id"),
+                "exact_response": payload.get("content"),
+                "consent_type": "provider_contact",
+                "platform": "whatsapp",
+                "message_type": payload.get("message_type"),
+                "device_type": payload.get("device_type")
+            }
+
+            consent_record = {
+                "user_id": customer_profile.get("id"),
+                "user_type": "customer",
+                "response": response,
+                "message_log": json.dumps(consent_data, ensure_ascii=False),
+            }
+            supabase.table("consents").insert(consent_record).execute()
+
+            logger.info(f"✅ Consentimiento aceptado por cliente {phone}")
+
+        except Exception as exc:
+            logger.error(f"❌ Error guardando consentimiento para {phone}: {exc}")
+            message = "✅ Gracias por aceptar. Ahora puedo ayudarte a encontrar los mejores proveedores para ti."
+
+        return {"response": message}
+
+    else:  # "No, gracias"
+        response = "declined"
+        message = """Entendido. Sin tu consentimiento no puedo compartir tus datos con proveedores.
+
+Si cambias de opinión, simplemente escribe "hola" y podremos empezar de nuevo.
+
+📞 ¿Necesitas ayuda directamente? Llámanos al [número de atención al cliente]"""
+
+        # Guardar registro legal igualmente con metadata completa
+        try:
+            consent_data = {
+                "consent_timestamp": payload.get("timestamp"),
+                "phone": payload.get("from_number"),
+                "message_id": payload.get("message_id"),
+                "exact_response": payload.get("content"),
+                "consent_type": "provider_contact",
+                "platform": "whatsapp",
+                "message_type": payload.get("message_type"),
+                "device_type": payload.get("device_type")
+            }
+
+            consent_record = {
+                "user_id": customer_profile.get("id"),
+                "user_type": "customer",
+                "response": response,
+                "message_log": json.dumps(consent_data, ensure_ascii=False),
+            }
+            supabase.table("consents").insert(consent_record).execute()
+
+            logger.info(f"❌ Consentimiento rechazado por cliente {phone}")
+
+        except Exception as exc:
+            logger.error(f"❌ Error guardando rechazo de consentimiento para {phone}: {exc}")
+
+        return {"response": message}
+
+
 def provider_prompt_messages(city: str, providers: list[Dict[str, Any]]):
     header = provider_options_intro(city)
     return [
@@ -564,7 +653,7 @@ def get_or_create_customer(
         existing = (
             supabase.table("customers")
             .select(
-                "id, phone_number, full_name, city, city_confirmed_at, notes, created_at, updated_at"
+                "id, phone_number, full_name, city, city_confirmed_at, has_consent, notes, created_at, updated_at"
             )
             .eq("phone_number", phone)
             .limit(1)
@@ -875,6 +964,19 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
             raise HTTPException(status_code=400, detail="from_number is required")
 
         customer_profile = get_or_create_customer(phone=phone)
+
+        # Validación de consentimiento
+        if not customer_profile:
+            return await request_consent(phone)
+
+        # Si no tiene consentimiento, verificar si está respondiendo a la solicitud
+        if not customer_profile.get('has_consent'):
+            selected = normalize_button(payload.get("selected_option"))
+            if selected in ["1", "2"]:  # Respondiendo al consentimiento
+                return await handle_consent_response(phone, customer_profile, selected, payload)
+            else:
+                return await request_consent(phone)
+
         flow = await get_flow(phone)
 
         customer_id = None

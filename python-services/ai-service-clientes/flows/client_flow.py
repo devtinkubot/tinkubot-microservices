@@ -4,6 +4,8 @@ from datetime import datetime
 from typing import Any, Awaitable, Callable, Dict, Optional, Tuple
 
 from templates.prompts import (
+    CONSENT_BUTTONS,
+    CONSENT_PROMPT,
     provider_no_results_block,
     provider_no_results_prompt,
 )

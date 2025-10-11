@@ -7,9 +7,21 @@ from typing import Any, Dict, List
 
 INITIAL_PROMPT = "*¿En qué te puedo ayudar hoy?*"
 
-CONFIRM_NEW_SEARCH_BUTTONS = [
-    "Buscar otro servicio",
-    "No, por ahora está bien",
+# Consentimiento de protección de datos
+CONSENT_PROMPT = """Para poder conectararte con proveedores de servicios, necesito tu consentimiento para compartir tus datos de contacto únicamente con los profesionales seleccionados.
+
+📋 *Información que compartiremos:*
+• Tu número de teléfono
+• Ciudad donde necesitas el servicio
+• Tipo de servicio que solicitas
+
+🔒 *Tus datos están seguros y solo se usan para esta consulta.*
+
+*¿Aceptas compartir tus datos con proveedores?*"""
+
+CONSENT_BUTTONS = [
+    "Sí, acepto",
+    "No, gracias"
 ]
 CONFIRM_PROMPT_TITLE_DEFAULT = "¿Te ayudo con otro servicio?"
 CONFIRM_PROMPT_FOOTER = "*Responde con el número de tu opción:*"
