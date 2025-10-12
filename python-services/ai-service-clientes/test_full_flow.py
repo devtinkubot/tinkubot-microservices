@@ -25,7 +25,7 @@ def test_full_consent_flow():
 
     # 4. Verificar elementos clave
     expected_elements = [
-        "¿En qué te puedo ayudar hoy?",
+        "Cuéntame, ¿qué servicio necesitas hoy?",
         "Para poder conectararte con proveedores",
         "1 Acepto",
         "2 No acepto",

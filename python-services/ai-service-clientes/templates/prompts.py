@@ -5,7 +5,7 @@ from typing import Any, Dict, List
 # Mantener este módulo enfocado en textos y plantillas simples para evitar
 # mezclar lógica de flujo con contenido.
 
-INITIAL_PROMPT = "*¿En qué te puedo ayudar hoy?*"
+INITIAL_PROMPT = "*Cuéntame, ¿qué servicio necesitas hoy?*"
 
 # Consentimiento de protección de datos
 CONSENT_PROMPT = """Para poder conectararte con proveedores de servicios, necesito tu consentimiento para compartir tus datos de contacto únicamente con los profesionales seleccionados.
