@@ -97,6 +97,27 @@ def provider_no_results_prompt() -> str:
     return ""
 
 
+def consent_options_block() -> str:
+    """Genera el bloque de opciones numeradas para consentimiento."""
+    lines = [
+        SEPARATOR_LINE,
+        "",
+        "1 Sí, acepto",
+        "2 No, gracias",
+        "",
+        SEPARATOR_LINE,
+    ]
+    return "\n".join(lines)
+
+
+def consent_prompt_messages() -> List[str]:
+    """Genera los mensajes completos para solicitud de consentimiento."""
+    return [
+        f"{CONSENT_PROMPT}\n\n{consent_options_block()}",
+        CONFIRM_PROMPT_FOOTER
+    ]
+
+
 def confirm_options_block(
     include_city_option: bool = False, include_provider_option: bool = False
 ) -> str:

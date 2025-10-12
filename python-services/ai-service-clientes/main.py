@@ -32,6 +32,8 @@ from templates.prompts import (
     CONFIRM_PROMPT_FOOTER,
     CONFIRM_PROMPT_TITLE_DEFAULT,
     confirm_options_block,
+    consent_options_block,
+    consent_prompt_messages,
     CONSENT_BUTTONS,
     CONSENT_PROMPT,
     INITIAL_PROMPT,
@@ -444,8 +446,10 @@ def ui_feedback(text: str):
 
 
 async def request_consent(phone: str) -> Dict[str, Any]:
-    """Envía mensaje de solicitud de consentimiento."""
-    return ui_buttons(CONSENT_PROMPT, CONSENT_BUTTONS)
+    """Envía mensaje de solicitud de consentimiento con formato numérico."""
+    messages = consent_prompt_messages()
+    # Retornar el primer mensaje con el contenido completo
+    return {"response": messages[0]}
 
 
 async def handle_consent_response(
