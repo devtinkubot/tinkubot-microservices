@@ -750,6 +750,18 @@ def clear_customer_city(customer_id: Optional[str]) -> None:
         logger.warning(f"No se pudo limpiar city para customer {customer_id}: {exc}")
 
 
+def clear_customer_consent(customer_id: Optional[str]) -> None:
+    if not supabase or not customer_id:
+        return
+    try:
+        supabase.table("customers").update(
+            {"has_consent": False}
+        ).eq("id", customer_id).execute()
+        logger.info(f"📝 Consentimiento restablecido para customer {customer_id}")
+    except Exception as exc:
+        logger.warning(f"No se pudo limpiar consentimiento para customer {customer_id}: {exc}")
+
+
 @app.on_event("startup")
 async def startup_event():
     """Inicializar conexiones al arrancar el servicio"""
@@ -1090,7 +1102,9 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
             await reset_flow(phone)
             # Limpiar ciudad registrada para simular primer uso
             try:
-                clear_customer_city(flow.get("customer_id") or customer_id)
+                customer_id_for_reset = flow.get("customer_id") or customer_id
+                clear_customer_city(customer_id_for_reset)
+                clear_customer_consent(customer_id_for_reset)
             except Exception:
                 pass
             # Prepara nuevo flujo pero no condiciona al usuario con ejemplos
