@@ -89,9 +89,9 @@ docker compose up -d ai-service-clientes whatsapp-service-clientes
 
 ### Flujo de Consentimiento (Implementado)
 1. **Detección**: Nuevo cliente o cliente sin `has_consent = true`
-2. **Solicitud**: Bot envía mensaje con información sobre qué datos se compartirán y botones:
-   - "Sí, acepto" (opción 1)
-   - "No, gracias" (opción 2)
+2. **Solicitud**: Bot envía mensaje con información sobre qué datos se compartirán, seguido del recordatorio `*Responde con el número de tu opción:*` y las opciones numeradas:
+   - `1 Acepto`
+   - `2 No acepto`
 3. **Registro**:
    - Si acepta: Actualiza `customers.has_consent = true` y crea registro en `consents`
    - Si rechaza: Registra rechazo en `consents` y ofrece ayuda directa
@@ -113,7 +113,7 @@ docker compose up -d ai-service-clientes whatsapp-service-clientes
 
 ### Comandos Útiles
 - **"hola"**: Inicia conversación (verifica consentimiento primero)
-- **"reset"**: Limpia ciudad guardada y reinicia flujo
+- **"reset"**: Limpia ciudad guardada, restablece `has_consent = false` y reinicia flujo
 - **Responder "1" o "2"**: Selecciona opciones de botones
 - **Opción "0"**: Cambiar ciudad o elegir otro proveedor (dependiendo del contexto)
 

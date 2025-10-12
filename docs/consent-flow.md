@@ -13,20 +13,31 @@ Capturar el consentimiento explícito del cliente antes de compartir sus datos d
 ### 1. Detección de Cliente Sin Consentimiento
 
 ```python
-# En ai-service-clientes/main.py líneas 966-978
+# ai-service-clientes/main.py (handle_whatsapp_message)
 customer_profile = get_or_create_customer(phone=phone)
 
 # Validación de consentimiento
 if not customer_profile:
     return await request_consent(phone)
 
-# Si no tiene consentimiento, verificar si está respondiendo a la solicitud
-if not customer_profile.get('has_consent'):
+if not customer_profile.get("has_consent"):
     selected = normalize_button(payload.get("selected_option"))
-    if selected in ["1", "2"]:  # Respondiendo al consentimiento
+    text_content = (payload.get("content") or "").strip()
+    text_numeric_option = normalize_button(text_content)
+
+    if selected in {"1", "2"}:
         return await handle_consent_response(phone, customer_profile, selected, payload)
-    else:
-        return await request_consent(phone)
+
+    if text_numeric_option in {"1", "2"}:
+        return await handle_consent_response(
+            phone, customer_profile, text_numeric_option, payload
+        )
+
+    if interpret_yes_no(text_content) is not None:
+        mapped = "1" if interpret_yes_no(text_content) else "2"
+        return await handle_consent_response(phone, customer_profile, mapped, payload)
+
+    return await request_consent(phone)
 ```
 
 ### 2. Mensaje de Solicitud de Consentimiento
@@ -45,26 +56,33 @@ Para poder conectararte con proveedores de servicios, necesito tu consentimiento
 *¿Aceptas compartir tus datos con proveedores?*
 ```
 
-**Botones disponibles**:
-- "Sí, acepto" (opción 1)
-- "No, gracias" (opción 2)
+**Bloque numérico y recordatorio**:
+```
+..................
+1 Acepto
+2 No acepto
+
+..................
+```
+
+**Mensaje de seguimiento**:
+```
+*Responde con el número de tu opción:*
+```
+
+> ℹ️ `request_consent` devuelve ambos textos en una sola respuesta (`{"messages": [...]}`), por lo que WhatsApp envía primero el bloque explicativo y a continuación el recordatorio.
 
 ### 3. Manejo de Respuestas
 
 #### ✅ Si el cliente acepta (opción 1):
 
 ```python
-# Líneas 457-493 en main.py
-if selected_option == "1":  # "Sí, acepto"
-    response = "accepted"
-    message = "✅ Gracias por aceptar. Ahora puedo ayudarte a encontrar los mejores proveedores para ti."
-
-    # Actualizar has_consent a TRUE
+# ai-service-clientes/main.py (handle_consent_response)
+if selected_option in ["1", "Acepto"]:
     supabase.table("customers").update({"has_consent": True}).eq(
         "id", customer_profile.get("id")
     ).execute()
 
-    # Guardar registro legal en tabla consents
     consent_data = {
         "consent_timestamp": payload.get("timestamp"),
         "phone": payload.get("from_number"),
@@ -73,38 +91,42 @@ if selected_option == "1":  # "Sí, acepto"
         "consent_type": "provider_contact",
         "platform": "whatsapp",
         "message_type": payload.get("message_type"),
-        "device_type": payload.get("device_type")
+        "device_type": payload.get("device_type"),
     }
 
-    consent_record = {
-        "user_id": customer_profile.get("id"),
-        "user_type": "customer",
-        "response": response,
-        "message_log": json.dumps(consent_data, ensure_ascii=False),
-    }
-    supabase.table("consents").insert(consent_record).execute()
+    supabase.table("consents").insert(
+        {
+            "user_id": customer_profile.get("id"),
+            "user_type": "customer",
+            "response": "accepted",
+            "message_log": json.dumps(consent_data, ensure_ascii=False),
+        }
+    ).execute()
+
+    return {"response": INITIAL_PROMPT}
 ```
 
 #### ❌ Si el cliente rechaza (opción 2):
 
 ```python
-# Líneas 495-529
-else:  # "No, gracias"
-    response = "declined"
-    message = """Entendido. Sin tu consentimiento no puedo compartir tus datos con proveedores.
+# Rama de rechazo en handle_consent_response
+response = "declined"
+message = """Entendido. Sin tu consentimiento no puedo compartir tus datos con proveedores.
 
 Si cambias de opinión, simplemente escribe "hola" y podremos empezar de nuevo.
 
 📞 ¿Necesitas ayuda directamente? Llámanos al [número de atención al cliente]"""
 
-    # Guardar registro legal igualmente con metadata completa
-    consent_record = {
+supabase.table("consents").insert(
+    {
         "user_id": customer_profile.get("id"),
         "user_type": "customer",
         "response": response,
         "message_log": json.dumps(consent_data, ensure_ascii=False),
     }
-    supabase.table("consents").insert(consent_record).execute()
+).execute()
+
+return {"response": message}
 ```
 
 ## 🗃️ Estructura de Datos
@@ -136,7 +158,7 @@ CREATE TABLE consents (
   "consent_timestamp": "2025-01-11T15:30:00.000Z",
   "phone": "+593998823053",
   "message_id": "wamid.HBgLNTkzOTg4MjMwNTNVAgASGBQzQjI4RDI1QjBGMEYxQzg",
-  "exact_response": "Sí, acepto",
+  "exact_response": "Acepto",
   "consent_type": "provider_contact",
   "platform": "whatsapp",
   "message_type": "text",
@@ -231,10 +253,15 @@ LIMIT 10;
    - Validar metadata completa almacenada
    - Comprobar actualización de `customers.has_consent`
 
+5. **Reset Manual para QA**
+   - Enviar `reset`
+   - Confirmar que el flujo responde "Nueva sesión iniciada."
+   - Verificar en Supabase que `has_consent` vuelve a `false` para ese cliente
+
 ## 📋 Checklist de Validación para QA
 
 - [ ] Clientes nuevos reciben solicitud de consentimiento
-- [ ] Botones "Sí, acepto" y "No, gracias" funcionan correctamente
+- [ ] Opciones "1 Acepto" y "2 No acepto" funcionan correctamente
 - [ ] Consentimientos aceptados actualizan `customers.has_consent = true`
 - [ ] Consentimientos rechazados actualizan `customers.has_consent = false`
 - [ ] Todos los consentimientos se registran en tabla `consents`

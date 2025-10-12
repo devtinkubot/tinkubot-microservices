@@ -310,7 +310,7 @@ CREATE TABLE task_queue (
 ### Flujo de Consentimiento Implementado
 
 1. **Detección**: Nuevo cliente o cliente sin consentimiento (`has_consent != true`)
-2. **Solicitud**: Envía mensaje con botones "Sí, acepto" / "No, gracias"
+2. **Solicitud**: Envía bloque informativo + recordatorio `*Responde con el número de tu opción:*` con `1 Acepto` y `2 No acepto`
 3. **Captura**: Registra respuesta exacta y metadata completa
 4. **Persistencia**:
    - Actualiza `customers.has_consent = true/false`

@@ -52,7 +52,7 @@ CREATE TABLE consents (
   "consent_timestamp": "2025-01-XX...",
   "phone": "+593...",
   "message_id": "WA_MESSAGE_ID",
-  "exact_response": "Sí, acepto",
+  "exact_response": "Acepto",
   "consent_type": "provider_contact",
   "platform": "whatsapp",
   "message_type": "text",
@@ -134,7 +134,7 @@ sequenceDiagram
     DB-->>AI: has_consent = false/null
     AI->>WA: Solicita consentimiento
     WA->>C: "¿Aceptas compartir tus datos?"
-    C->>WA: Responde "Sí, acepto"
+    C->>WA: Responde "Acepto" o "1"
     WA->>AI: /handle-whatsapp-message con selección
     AI->>DB: UPDATE customers SET has_consent = true
     AI->>DB: INSERT INTO consents (metadata completa)

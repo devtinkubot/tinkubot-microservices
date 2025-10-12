@@ -459,7 +459,7 @@ async def handle_consent_response(
     """Maneja la respuesta de consentimiento del cliente."""
 
     # Mapear respuesta del botón o texto
-    if selected_option in ["1", "Sí, acepto"]:  # "Sí, acepto" o respuesta de texto positivo
+    if selected_option in ["1", "Acepto"]:
         response = "accepted"
 
         # Actualizar has_consent a TRUE
@@ -496,7 +496,7 @@ async def handle_consent_response(
         # Después de aceptar, continuar con el flujo normal mostrando el prompt inicial
         return {"response": INITIAL_PROMPT}
 
-    else:  # "No, gracias"
+    else:  # "No acepto"
         response = "declined"
         message = """Entendido. Sin tu consentimiento no puedo compartir tus datos con proveedores.
 

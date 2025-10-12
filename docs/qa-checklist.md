@@ -44,7 +44,7 @@ curl http://localhost:5007/health  # AI Service Proveedores
 - [ ] **Resultado esperado**: Bot solicita consentimiento con botones
 
 #### Paso 2: Aceptación de Consentimiento
-- [ ] Responder "Sí, acepto" (opción 1)
+- [ ] Responder con botón "Acepto" o escribir "1"
 - [ ] **Resultado esperado**:
   - Mensaje de confirmación "✅ Gracias por aceptar"
   - Bot continúa con flujo normal de búsqueda
@@ -69,7 +69,7 @@ curl http://localhost:5007/health  # AI Service Proveedores
 
 #### Paso 1: Rechazo Inicial
 - [ ] Enviar mensaje "hola" con número nuevo
-- [ ] Responder "No, gracias" (opción 2)
+- [ ] Responder con botón "No acepto" o escribir "2"
 - [ ] **Resultado esperado**:
   - Mensaje explicando que no puede compartir datos
   - Ofrece ayuda directa
@@ -95,7 +95,7 @@ curl http://localhost:5007/health  # AI Service Proveedores
 
 #### Comandos de Sistema
 - [ ] Enviar "reset"
-- [ ] **Resultado esperado**: Limpia ciudad, reinicia flujo
+- [ ] **Resultado esperado**: Limpia ciudad, reinicia flujo y restablece `has_consent = false`
 - [ ] Enviar mensaje inválido
 - [ ] **Resultado esperado**: Respuesta de fallback amigable
 
@@ -152,7 +152,7 @@ Para cada registro de consentimiento verificar:
   "consent_timestamp": "2025-01-XX...",  // ✅ Timestamp del consentimiento
   "phone": "+593998823053",             // ✅ Teléfono del cliente
   "message_id": "wamid...",              // ✅ ID del mensaje de WhatsApp
-  "exact_response": "Sí, acepto",        // ✅ Respuesta exacta
+  "exact_response": "Acepto",            // ✅ Respuesta exacta
   "consent_type": "provider_contact",   // ✅ Tipo de consentimiento
   "platform": "whatsapp",               // ✅ Plataforma
   "message_type": "text",                // ✅ Tipo de mensaje
