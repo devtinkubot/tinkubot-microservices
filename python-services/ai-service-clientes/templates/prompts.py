@@ -20,8 +20,8 @@ CONSENT_PROMPT = """Para poder conectararte con proveedores de servicios, necesi
 *¿Aceptas compartir tus datos con proveedores?*"""
 
 CONSENT_BUTTONS = [
-    "Sí, acepto",
-    "No, gracias"
+    "Acepto",
+    "No acepto"
 ]
 CONFIRM_NEW_SEARCH_BUTTONS = [
     "Sí, buscar otro servicio",
@@ -102,8 +102,8 @@ def consent_options_block() -> str:
     lines = [
         SEPARATOR_LINE,
         "",
-        "1 Sí, acepto",
-        "2 No, gracias",
+        "1 Acepto",
+        "2 No acepto",
         "",
         SEPARATOR_LINE,
     ]

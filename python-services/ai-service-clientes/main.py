@@ -7,6 +7,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import unicodedata
 from datetime import datetime
 from typing import Any, Dict, Optional
@@ -289,6 +290,7 @@ FAREWELL_MESSAGE = (
 AFFIRMATIVE_WORDS = {
     "si",
     "sí",
+    "acepto",
     "claro",
     "correcto",
     "dale",
@@ -447,9 +449,8 @@ def ui_feedback(text: str):
 
 async def request_consent(phone: str) -> Dict[str, Any]:
     """Envía mensaje de solicitud de consentimiento con formato numérico."""
-    messages = consent_prompt_messages()
-    # Retornar el primer mensaje con el contenido completo
-    return {"response": messages[0]}
+    messages = [{"response": msg} for msg in consent_prompt_messages()]
+    return {"messages": messages}
 
 
 async def handle_consent_response(
@@ -594,7 +595,29 @@ async def send_confirm_prompt(phone: str, flow: Dict[str, Any], title: str):
 
 
 def normalize_button(val: Optional[str]) -> Optional[str]:
-    return (val or "").strip()
+    """
+    Normaliza valores de botones/opciones enviados desde WhatsApp.
+
+    - Extrae el número inicial (e.g. "1 Sí, acepto" -> "1")
+    - Compacta espacios adicionales
+    - Devuelve None si la cadena está vacía tras limpiar
+    """
+    if val is None:
+        return None
+
+    text = str(val).strip()
+    if not text:
+        return None
+
+    # Reemplazar espacios múltiples por uno solo
+    text = re.sub(r"\s+", " ", text)
+
+    # Si inicia con un número (1, 2, 10, etc.), devolver solo el número
+    match = re.match(r"^(\d+)", text)
+    if match:
+        return match.group(1)
+
+    return text
 
 
 def formal_connection_message(provider: Dict[str, Any], service: str, city: str) -> str:
@@ -975,24 +998,36 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
         # Si no tiene consentimiento, verificar si está respondiendo a la solicitud
         if not customer_profile.get('has_consent'):
             selected = normalize_button(payload.get("selected_option"))
-            text_content = (payload.get("content") or "").strip().lower()
+            text_content_raw = (payload.get("content") or "").strip()
+            text_numeric_option = normalize_button(text_content_raw)
 
-            # Verificar si responde con texto o con botones
-            is_consent_text = interpret_yes_no(text_content) == True
-            is_declined_text = interpret_yes_no(text_content) == False
-            is_consent_button = selected in ["1", "Sí, acepto"]
-            is_declined_button = selected in ["2", "No, gracias"]
+            # Normalizar para comparaciones case-insensitive
+            selected_lower = selected.lower() if isinstance(selected, str) else None
 
-            if is_consent_text or is_consent_button:
-                # Mapear respuesta a "1" para procesamiento unificado
-                option_to_process = "1" if is_consent_text else selected
+            # Priorizar opciones seleccionadas mediante botones o quick replies
+            if selected in {"1", "2"}:
+                return await handle_consent_response(phone, customer_profile, selected, payload)
+            if selected_lower in {
+                CONSENT_BUTTONS[0].lower(),
+                CONSENT_BUTTONS[1].lower(),
+            }:
+                option_to_process = "1" if selected_lower == CONSENT_BUTTONS[0].lower() else "2"
                 return await handle_consent_response(phone, customer_profile, option_to_process, payload)
-            elif is_declined_text or is_declined_button:
-                # Mapear respuesta a "2" para procesamiento unificado
-                option_to_process = "2" if is_declined_text else selected
-                return await handle_consent_response(phone, customer_profile, option_to_process, payload)
-            else:
-                return await request_consent(phone)
+
+            # Interpretar texto libre numérico (ej. usuario responde "1" o "2")
+            if text_numeric_option in {"1", "2"}:
+                return await handle_consent_response(phone, customer_profile, text_numeric_option, payload)
+
+            # Interpretar textos afirmativos/negativos libres
+            is_consent_text = interpret_yes_no(text_content_raw) == True
+            is_declined_text = interpret_yes_no(text_content_raw) == False
+
+            if is_consent_text:
+                return await handle_consent_response(phone, customer_profile, "1", payload)
+            if is_declined_text:
+                return await handle_consent_response(phone, customer_profile, "2", payload)
+
+            return await request_consent(phone)
 
         flow = await get_flow(phone)
 
