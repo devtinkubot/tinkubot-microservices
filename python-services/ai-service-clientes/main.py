@@ -453,8 +453,8 @@ async def handle_consent_response(
 ) -> Dict[str, Any]:
     """Maneja la respuesta de consentimiento del cliente."""
 
-    # Mapear respuesta del botón
-    if selected_option == "1":  # "Sí, acepto"
+    # Mapear respuesta del botón o texto
+    if selected_option in ["1", "Sí, acepto"]:  # "Sí, acepto" o respuesta de texto positivo
         response = "accepted"
         message = "✅ Gracias por aceptar. Ahora puedo ayudarte a encontrar los mejores proveedores para ti."
 
@@ -972,8 +972,22 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
         # Si no tiene consentimiento, verificar si está respondiendo a la solicitud
         if not customer_profile.get('has_consent'):
             selected = normalize_button(payload.get("selected_option"))
-            if selected in ["1", "2"]:  # Respondiendo al consentimiento
-                return await handle_consent_response(phone, customer_profile, selected, payload)
+            text_content = (payload.get("content") or "").strip().lower()
+
+            # Verificar si responde con texto o con botones
+            is_consent_text = interpret_yes_no(text_content) == True
+            is_declined_text = interpret_yes_no(text_content) == False
+            is_consent_button = selected in ["1", "Sí, acepto"]
+            is_declined_button = selected in ["2", "No, gracias"]
+
+            if is_consent_text or is_consent_button:
+                # Mapear respuesta a "1" para procesamiento unificado
+                option_to_process = "1" if is_consent_text else selected
+                return await handle_consent_response(phone, customer_profile, option_to_process, payload)
+            elif is_declined_text or is_declined_button:
+                # Mapear respuesta a "2" para procesamiento unificado
+                option_to_process = "2" if is_declined_text else selected
+                return await handle_consent_response(phone, customer_profile, option_to_process, payload)
             else:
                 return await request_consent(phone)
 
