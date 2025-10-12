@@ -460,7 +460,6 @@ async def handle_consent_response(
     # Mapear respuesta del botón o texto
     if selected_option in ["1", "Sí, acepto"]:  # "Sí, acepto" o respuesta de texto positivo
         response = "accepted"
-        message = "✅ Gracias por aceptar. Ahora puedo ayudarte a encontrar los mejores proveedores para ti."
 
         # Actualizar has_consent a TRUE
         try:
@@ -492,9 +491,9 @@ async def handle_consent_response(
 
         except Exception as exc:
             logger.error(f"❌ Error guardando consentimiento para {phone}: {exc}")
-            message = "✅ Gracias por aceptar. Ahora puedo ayudarte a encontrar los mejores proveedores para ti."
 
-        return {"response": message}
+        # Después de aceptar, continuar con el flujo normal mostrando el prompt inicial
+        return {"response": INITIAL_PROMPT}
 
     else:  # "No, gracias"
         response = "declined"
