@@ -8,8 +8,8 @@ Este documento resume variables de entorno clave, comandos de despliegue y verif
 - **FEEDBACK_DELAY_SECONDS**: segundos para pedir calificación diferida (ej. 300 en pruebas, 14400 en prod).
 - **TASK_POLL_INTERVAL_SECONDS**: intervalo de polling de tareas (por defecto 60).
 - **FLOW_TTL_SECONDS**: TTL del flujo conversacional en Redis (por defecto 3600).
-- **PROVEEDORES_AI_SERVICE_URL**: URL del servicio de Proveedores (por defecto http://ai-service-proveedores:5007).
-- **WHATSAPP_CLIENTES_URL**: URL interna del WhatsApp Clientes (por defecto http://whatsapp-service-clientes:8005).
+- **PROVEEDORES_AI_SERVICE_URL**: URL del servicio de Proveedores (por defecto http://ai-service-proveedores:5002).
+- **WHATSAPP_CLIENTES_URL**: URL interna del WhatsApp Clientes (por defecto http://whatsapp-service-clientes:7001).
 - **SUPABASE_URL / SUPABASE_BACKEND_API_KEY**: credenciales de Supabase para tabla `customers` y `consents`.
 - **REDIS_URL**: URL de Redis (Upstash).
 - **OPENAI_API_KEY**: API key de OpenAI para procesamiento de lenguaje natural.
@@ -21,15 +21,15 @@ Este documento resume variables de entorno clave, comandos de despliegue y verif
 - **REDIS_URL**: URL de Redis (si aplica).
 
 ### WhatsApp Clientes (nodejs-services/whatsapp-service-clientes)
-- **AI_SERVICE_CLIENTES_URL**: URL del AI Clientes (por defecto http://ai-service-clientes:5003).
+- **AI_SERVICE_CLIENTES_URL**: URL del AI Clientes (por defecto http://ai-service-clientes:5001).
 - **SUPABASE_URL / SUPABASE_BACKEND_API_KEY / SUPABASE_BUCKET_NAME**: sesión remota con RemoteAuth.
-- **WHATSAPP_PORT**: puerto expuesto (por defecto 8005).
+- **WHATSAPP_PORT**: puerto expuesto (por defecto 7001).
 - **INSTANCE_ID**: identificador único (clientes).
 
 ### WhatsApp Proveedores (nodejs-services/whatsapp-service-proveedores)
-- **PROVEEDORES_AI_SERVICE_URL**: URL del AI Proveedores (por defecto http://ai-service-proveedores:5007).
+- **PROVEEDORES_AI_SERVICE_URL**: URL del AI Proveedores (por defecto http://ai-service-proveedores:5002).
 - **SUPABASE_URL / SUPABASE_BACKEND_API_KEY / SUPABASE_BUCKET_NAME**: sesión remota.
-- **WHATSAPP_PORT**: puerto expuesto (por defecto 8006).
+- **WHATSAPP_PORT**: puerto expuesto (por defecto 7002).
 - **INSTANCE_ID**: identificador único (proveedores).
 
 ## Despliegue rápido
@@ -50,13 +50,13 @@ docker builder prune -f
 
 ## Endpoints útiles
 
-### WhatsApp Clientes (8005)
+### WhatsApp Clientes (7001)
 - **Estado simple**: `GET /status`
 - **Health**: `GET /health`
 - **QR Code**: `GET /qr` (obtener código QR para escanear)
 - **Envío de texto (scheduler)**: `POST /send` body `{ to, message }`
 
-### AI Service Clientes (5003)
+### AI Service Clientes (5001)
 - **Health**: `GET /health`
 - **Manejo de WhatsApp**: `POST /handle-whatsapp-message` (uso interno por WhatsApp Service)
 - **Procesamiento general**: `POST /process-message`
@@ -66,7 +66,7 @@ docker builder prune -f
   - `DELETE /sessions/{phone}`
   - `GET /sessions/stats`
 
-### AI Service Proveedores (5007)
+### AI Service Proveedores (5002)
 - **Health**: `GET /health`
 - **Búsqueda**: `POST /search-providers`
 - **Registro**: `POST /register-provider`
@@ -98,7 +98,7 @@ docker compose up -d ai-service-clientes whatsapp-service-clientes
 4. **Continuación**: Solo clientes con consentimiento pueden acceder al flujo de búsqueda
 
 ### Flujo de Búsqueda de Servicios
-- **Reset por chat**: enviar `reset` limpia la ciudad guardada, reinicia el flujo y responde "¿Qué servicio necesitas hoy?"
+- **Reset por chat**: enviar `reset` limpia la ciudad guardada, reinicia el flujo y responde "Cuéntame, ¿qué servicio necesitas hoy?"
 - **Tipos de mensaje aceptados**: `chat`, `location`, `live_location`. Mensajes internos (e.g., `notification_template`) se ignoran.
 - **Flujo de petición**: Solo si tiene consentimiento → se solicita servicio, luego ciudad (si es la primera vez o tras un cambio) y se dispara la búsqueda.
 - **Sin proveedores**: Se muestra `-- No tenemos aún proveedores --` y el menú incluye `0 Buscar en otra ciudad`, `1 Buscar otro servicio`, `2 No, por ahora está bien`.

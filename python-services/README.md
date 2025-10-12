@@ -6,13 +6,13 @@ Servicios de IA de TinkuBot migrados a Python con FastAPI, Redis Pub/Sub y PostG
 
 ### Servicios Implementados
 
-1. **AI Service Clientes** (Port 5003)
+1. **AI Service Clientes** (Puerto 5001)
    - Procesamiento de mensajes de clientes con OpenAI
    - Entendimiento de necesidades y extracción de información
    - Coordinación con servicio de proveedores
    - ✅ **Gestión de sesiones integrada** (ahora incluye el Session Service)
 
-2. **AI Service Proveedores** (Port 5007)
+2. **AI Service Proveedores** (Puerto 5002)
    - Búsqueda geolocalizada de proveedores con PostGIS
    - Gestión de disponibilidad y perfiles de proveedores
    - Matching basado en ubicación y habilidades
@@ -46,12 +46,10 @@ WhatsApp Service (Node.js) → AI Service Clientes (Python)
 
 - **FastAPI**: Framework web moderno y rápido
 - **AsyncIO**: Programación asíncrona para alto rendimiento
-- **Redis (Upstash)**: Pub/Sub para comunicación entre servicios
-- **PostgreSQL + PostGIS**: Base de datos con soporte geoespacial
-- **SQLAlchemy 2.0**: ORM asíncrono
+- **Redis (Upstash)**: Cache y almacenamiento temporal de flujo
+- **Supabase**: Persistencia de customers, consentimientos y proveedores
 - **OpenAI**: Procesamiento de lenguaje natural
-- **Pytest**: Framework de testing
-- **Mypy**: Type checking estático
+- **httpx**: Cliente HTTP asíncrono para comunicarse con otros servicios
 
 ## 🚀 Instalación y Configuración
 
@@ -106,16 +104,16 @@ DATABASE_URL=postgresql://usuario:password@host:puerto/basedatos
 REDIS_URL=rediss://:password@host:puerto
 
 # Puertos de servicios
-CLIENTES_SERVICE_PORT=5003
-PROVEEDORES_SERVICE_PORT=5007
+CLIENTES_SERVICE_PORT=5001
+PROVEEDORES_SERVICE_PORT=5002
 ```
 
 ## 🏃‍♂️ Ejecución
 
-### Iniciar Todos los Servicios
+### Iniciar Ambos Servicios con Docker Compose
 
 ```bash
-python start_services.py
+docker compose up -d ai-service-clientes ai-service-proveedores
 ```
 
 ### Iniciar Servicios Individualmente
@@ -148,14 +146,13 @@ curl http://localhost:5002/health
 
 ## 📚 API Documentation
 
-### AI Service Clientes (Port 5001)
+### AI Service Clientes (Puerto 5001)
 
 #### Endpoints
 
 - `GET /` - Información del servicio
 - `GET /health` - Health check
 - `POST /process-message` - Procesar mensaje con IA
-- `POST /search-providers` - Buscar proveedores para cliente
 - `POST /handle-whatsapp-message` - Manejar mensaje de WhatsApp
 
 #### Endpoints de Sesiones (compatibles con Session Service anterior)
@@ -178,7 +175,7 @@ curl -X POST "http://localhost:5001/process-message" \
   }'
 ```
 
-### AI Service Proveedores (Port 5002)
+### AI Service Proveedores (Puerto 5002)
 
 #### Endpoints
 

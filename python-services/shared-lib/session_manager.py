@@ -239,24 +239,6 @@ class SessionManager:
             logger.error(f"❌ Error generando contexto para {phone}: {e}")
             return ""
 
-    async def get_last_session(self, phone: str) -> Optional[SessionMessage]:
-        """
-        Obtiene el último mensaje de un usuario
-
-        Args:
-            phone: Número de teléfono del usuario
-
-        Returns:
-            Optional[SessionMessage]: Último mensaje o None si no existe
-        """
-        try:
-            history = await self.get_conversation_history(phone, limit=1)
-            return history[0] if history else None
-
-        except Exception as e:
-            logger.error(f"❌ Error obteniendo última sesión para {phone}: {e}")
-            return None
-
     async def delete_sessions(self, phone: str) -> bool:
         """
         Elimina todas las sesiones de un usuario
@@ -281,31 +263,6 @@ class SessionManager:
         except Exception as e:
             logger.error(f"❌ Error eliminando sesiones para {phone}: {e}")
             return False
-
-    async def get_all_active_sessions(self) -> Dict[str, List[SessionMessage]]:
-        """
-        Obtiene todas las sesiones activas (para administración)
-
-        Returns:
-            Dict[str, List[SessionMessage]]: Diccionario con teléfono como clave
-        """
-        try:
-            # Nota: Esta operación puede ser costosa en producción con muchos usuarios
-            # En un entorno real, se debería usar SCAN en lugar de KEYS
-            session_keys = await self.redis_client.redis_client.keys("session:*")
-
-            all_sessions = {}
-            for key in session_keys:
-                phone = key.replace("session:", "")
-                sessions = await self.get_conversation_history(phone)
-                if sessions:
-                    all_sessions[phone] = sessions
-
-            return all_sessions
-
-        except Exception as e:
-            logger.error(f"❌ Error obteniendo todas las sesiones activas: {e}")
-            return {}
 
     async def get_session_stats(self) -> Dict[str, Any]:
         """
@@ -346,70 +303,6 @@ class SessionManager:
         except Exception as e:
             logger.error(f"❌ Error obteniendo estadísticas de sesiones: {e}")
             return {}
-
-    async def cleanup_expired_sessions(self) -> int:
-        """
-        Limpia sesiones expiradas (las claves con TTL ya se eliminan automáticamente)
-        Este método es para limpieza manual si es necesario
-
-        Returns:
-            int: Número de sesiones limpiadas
-        """
-        try:
-            # Redis ya maneja TTL automáticamente, pero si necesitamos limpieza manual
-            session_keys = await self.redis_client.redis_client.keys("session:*")
-            cleaned_count = 0
-
-            for key in session_keys:
-                ttl = await self.redis_client.redis_client.ttl(key)
-                if ttl == -1:  # Sin TTL (no debería pasar)
-                    await self.redis_client.delete(key)
-                    cleaned_count += 1
-
-            return cleaned_count
-
-        except Exception as e:
-            logger.error(f"❌ Error en limpieza de sesiones: {e}")
-            return 0
-
-    async def bulk_import_sessions(self, sessions_data: Dict[str, List[Dict]]) -> int:
-        """
-        Importa sesiones masivamente (para migración)
-
-        Args:
-            sessions_data: Diccionario con teléfono como clave y lista de mensajes
-
-        Returns:
-            int: Número de sesiones importadas
-        """
-        try:
-            imported_count = 0
-
-            for phone, messages in sessions_data.items():
-                session_messages = []
-                for msg_data in messages:
-                    try:
-                        msg = SessionMessage.from_dict(msg_data)
-                        session_messages.append(msg)
-                    except Exception as e:
-                        logger.warning(f"⚠️ Error importando mensaje para {phone}: {e}")
-                        continue
-
-                if session_messages:
-                    sessions_json = [msg.to_dict() for msg in session_messages]
-                    session_key = f"session:{phone}"
-                    await self.redis_client.set(
-                        session_key, sessions_json, expire=self.session_ttl
-                    )
-                    imported_count += 1
-
-            logger.info(f"✅ Importadas {imported_count} sesiones")
-            return imported_count
-
-        except Exception as e:
-            logger.error(f"❌ Error en importación masiva: {e}")
-            return 0
-
 
 # Instancia global para uso en los servicios
 session_manager = SessionManager()

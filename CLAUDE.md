@@ -8,16 +8,14 @@ TinkuBot es un sistema de microservicios para automatización de WhatsApp con IA
 
 ### Servicios Node.js
 
-- **nodejs-services/frontend-service**: Interface web (Express + Bootstrap) - Puerto 8200
-- **nodejs-services/whatsapp-service-clientes**: Bot para clientes (+593 99 882 3053) - Puerto 8005
-- **nodejs-services/whatsapp-service-proveedores**: Bot para proveedores - Puerto 8006
-- **session-service**: Gestión de sesiones con Redis - Puerto 8004
-- **auth-service**: Servicio de autenticación - Puerto 8002
+- **nodejs-services/frontend-service**: Interfaz web (Express + Bootstrap) - Puerto 6002
+- **nodejs-services/whatsapp-service-clientes**: Bot para clientes (+593 99 882 3053) - Puerto 7001
+- **nodejs-services/whatsapp-service-proveedores**: Bot para proveedores - Puerto 7002
 
 ### Servicios Python
 
-- **ai-service-clientes**: Procesamiento con IA para clientes - Puerto 5003
-- **ai-service-proveedores**: Gestión de proveedores y búsqueda - Puerto 5007
+- **ai-service-clientes**: Procesamiento con IA para clientes - Puerto 5001
+- **ai-service-proveedores**: Gestión de proveedores y búsqueda - Puerto 5002
 
 ### Arquitectura de Comunicación
 
@@ -31,12 +29,12 @@ TinkuBot es un sistema de microservicios para automatización de WhatsApp con IA
 
 ```bash
 # Inicio completo con Docker Compose
-docker-compose up --build
-docker-compose up -d  # modo detached
+docker compose up --build
+docker compose up -d  # modo detached
 
 # Servicios individuales
-cd python-services/ai-service-clientes && python3 main_simple.py
-cd python-services/ai-service-proveedores && python3 main_simple.py
+cd python-services/ai-service-clientes && python main.py
+cd python-services/ai-service-proveedores && python main.py
 ```
 
 ### Desarrollo Local
@@ -44,57 +42,59 @@ cd python-services/ai-service-proveedores && python3 main_simple.py
 ```bash
 # Frontend Service
 cd nodejs-services/frontend-service
+npm install
 npm run dev  # con nodemon
 npm start    # producción
 
-# WhatsApp Service
-cd nodejs-services/whatsapp-service
+# WhatsApp Service Clientes
+cd nodejs-services/whatsapp-service-clientes
 npm install
-npm run dev  # si hay nodemon
-node index.js
+npm run dev  # o npm start en producción
+
+# WhatsApp Service Proveedores
+cd nodejs-services/whatsapp-service-proveedores
+npm install
+npm run dev  # o npm start en producción
 
 # AI Service Clientes
 cd python-services/ai-service-clientes
-python3 main_simple.py
+pip install -r requirements.txt
+python main.py
 
 # AI Service Proveedores
 cd python-services/ai-service-proveedores
-python3 main_simple.py
-
-# Session Service
-cd nodejs-services/session-service
-npm install
-node index.js
+pip install -r requirements.txt
+python main.py
 ```
 
 ### Construcción y Limpieza
 
 ```bash
 # Construir imágenes Docker
-docker-compose build
-docker-compose build --no-cache  # limpieza completa
+docker compose build
+docker compose build --no-cache  # limpieza completa
 
 # Limpiar y reconstruir
-docker-compose down -v
+docker compose down -v
 docker system prune -f
-docker-compose build --no-cache
+docker compose build --no-cache
 ```
 
 ### Monitoreo y Logs
 
 ```bash
 # Estado de contenedores
-docker-compose ps
+docker compose ps
 
 # Logs en tiempo real
-docker-compose logs -f
-docker-compose logs -f frontend-service
-docker-compose logs -f whatsapp-service-clientes
-docker-compose logs -f ai-service-clientes
-docker-compose logs -f ai-service-proveedores
+docker compose logs -f
+docker compose logs -f frontend-service
+docker compose logs -f whatsapp-service-clientes
+docker compose logs -f ai-service-clientes
+docker compose logs -f ai-service-proveedores
 
 # Logs con timestamp
-docker-compose logs -t frontend-service
+docker compose logs -t frontend-service
 ```
 
 ### Health Checks
@@ -115,11 +115,11 @@ curl http://localhost:5002/health
 - **Tecnología**: Express + Socket.io + Bootstrap 5
 - **Función**: Dashboard web para monitorear y gestionar bots
 - **Dependencias**:
-  - Conecta con ambos servicios WhatsApp (clientes:8005, proveedores:8006)
+  - Conecta con ambos servicios WhatsApp (clientes:7001, proveedores:7002)
   - Usa Socket.io para actualizaciones en tiempo real
 - **Endpoints**: Dashboard principal, generación de QR, estadísticas
 
-### WhatsApp Services (Ports 8005, 8006)
+### WhatsApp Services (Puertos 7001 y 7002)
 
 - **Tecnología**: Node.js + whatsapp-web.js + Selenium
 - **Función**: Automatización de WhatsApp Web
@@ -129,12 +129,11 @@ curl http://localhost:5002/health
   - Persistencia de sesiones en volúmenes Docker
   - Integración con AI Services para procesamiento de mensajes
 - **Variables de entorno**:
-  - `AI_SERVICE_URL`: URL del servicio de IA
-  - `SESSION_SERVICE_URL`: URL del servicio de sesiones
+  - `AI_SERVICE_CLIENTES_URL` / `PROVEEDORES_AI_SERVICE_URL`: URLs del servicio de IA correspondiente
   - `INSTANCE_ID` y `INSTANCE_NAME`: Identificación de la instancia
   - `WHATSAPP_PORT`: Puerto específico
 
-### AI Service Clientes (Port 5003)
+### AI Service Clientes (Puerto 5001)
 
 - **Tecnología**: Python + FastAPI + OpenAI
 - **Función**: Procesamiento de lenguaje natural para clientes
@@ -145,7 +144,7 @@ curl http://localhost:5002/health
   - Gestión de conversaciones y seguimiento
 - **Dependencias**: OpenAI API key, Redis para caché
 
-### AI Service Proveedores (Port 5007)
+### AI Service Proveedores (Puerto 5002)
 
 - **Tecnología**: Python + FastAPI + PostgreSQL
 - **Función**: Gestión y búsqueda de proveedores
@@ -155,12 +154,6 @@ curl http://localhost:5002/health
   - Almacenamiento de información de proveedores
   - Estadísticas y reportes
 - **Endpoints**: `/search-providers`, `/register-provider`, `/providers/stats`
-
-### Session Service (Port 8004)
-
-- **Tecnología**: Node.js + Redis
-- **Función**: Gestión centralizada de sesiones
-- **Características**: Cache en Redis para mejorar rendimiento
 
 ## Imágenes Docker Optimizadas
 
@@ -218,16 +211,16 @@ DATABASE_URL=postgresql://user:pass@localhost:5432/tinkubot
 # Instancias
 CLIENTES_INSTANCE_ID=clientes
 CLIENTES_INSTANCE_NAME=Bot Clientes
-CLIENTES_WHATSAPP_PORT=8005
+CLIENTES_WHATSAPP_PORT=7001
 PROVEEDORES_INSTANCE_ID=proveedores
 PROVEEDORES_INSTANCE_NAME=Bot Proveedores
-PROVEEDORES_WHATSAPP_PORT=8006
+PROVEEDORES_WHATSAPP_PORT=7002
 
 # URLs de Servicios
-AI_SERVICE_CLIENTES_URL=http://ai-service-clientes:5003
-AI_SERVICE_PROVEEDORES_URL=http://ai-service-proveedores:5007
-WHATSAPP_CLIENTES_URL=http://whatsapp-service-clientes:8005
-WHATSAPP_PROVEEDORES_URL=http://whatsapp-service-proveedores:8006
+AI_SERVICE_CLIENTES_URL=http://ai-service-clientes:5001
+PROVEEDORES_AI_SERVICE_URL=http://ai-service-proveedores:5002
+WHATSAPP_CLIENTES_URL=http://whatsapp-service-clientes:7001
+WHATSAPP_PROVEEDORES_URL=http://whatsapp-service-proveedores:7002
 ```
 
 ## Estructura de Datos y Flujo
@@ -349,7 +342,7 @@ docker network ls
 docker network inspect tinkubot-microservices_tinkubot-network
 
 # Probar conexiones entre servicios
-docker exec -it tinkubot-ai-service-clientes curl http://ai-service-proveedores:5007/health
+docker exec -it tinkubot-ai-service-clientes curl http://ai-service-proveedores:5002/health
 ```
 
 ## Endpoints Principales
@@ -364,13 +357,13 @@ docker exec -it tinkubot-ai-service-clientes curl http://ai-service-proveedores:
 
 - `GET /health` - Health check
 - `GET /qr` - Obtener código QR
-- `POST /messages` - Enviar mensaje (uso interno)
+- `POST /send` - Enviar mensaje (uso interno)
 
 ### AI Service Clientes
 
 - `GET /health` - Health check
 - `POST /handle-whatsapp-message` - Procesar mensaje de WhatsApp
-- `POST /process` - Procesar mensaje con IA
+- `POST /process-message` - Procesar mensaje con IA
 
 ### AI Service Proveedores
 
@@ -378,8 +371,3 @@ docker exec -it tinkubot-ai-service-clientes curl http://ai-service-proveedores:
 - `POST /search-providers` - Buscar proveedores por profesión y ubicación
 - `POST /register-provider` - Registrar nuevo proveedor
 - `GET /providers/stats` - Obtener estadísticas de proveedores
-
-### Session Service
-
-- `GET /health` - Health check
-- Endpoints de gestión de sesiones con Redis

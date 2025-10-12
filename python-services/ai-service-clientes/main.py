@@ -21,7 +21,6 @@ from shared_lib.config import settings
 from shared_lib.models import (
     AIProcessingRequest,
     AIProcessingResponse,
-    ClientRequest,
     SessionCreateRequest,
     SessionStats,
 )
@@ -442,11 +441,6 @@ def ui_provider_results(text: str, providers: list[Dict[str, Any]]):
     }
 
 
-def ui_feedback(text: str):
-    options = ["⭐️1", "⭐️2", "⭐️3", "⭐️4", "⭐️5"]
-    return {"response": text, "ui": {"type": "feedback", "options": options}}
-
-
 async def request_consent(phone: str) -> Dict[str, Any]:
     """Envía mensaje de solicitud de consentimiento con formato numérico."""
     messages = [{"response": msg} for msg in consent_prompt_messages()]
@@ -643,25 +637,6 @@ def formal_connection_message(provider: Dict[str, Any], service: str, city: str)
         f"Abrir chat: {link}\n\n"
         f"💬 Chat abierto para coordinar tu servicio."
     )
-
-
-def extract_rating(selected: str) -> Optional[int]:
-    s = (selected or "").strip()
-    if s.isdigit():
-        try:
-            val = int(s)
-            if 1 <= val <= 5:
-                return val
-        except Exception:
-            return None
-    if s.startswith("⭐️") and s[2:].isdigit():
-        try:
-            val = int(s[2:])
-            if 1 <= val <= 5:
-                return val
-        except Exception:
-            return None
-    return None
 
 
 def get_or_create_customer(
@@ -951,46 +926,6 @@ async def process_client_message(request: AIProcessingRequest):
         raise HTTPException(
             status_code=500, detail=f"Error processing message: {str(e)}"
         )
-
-
-@app.post("/search-providers")
-async def search_providers_for_client(client_request: ClientRequest):
-    """
-    Buscar proveedores para un cliente específico
-    """
-    try:
-        logger.info(f"🔍 Buscando proveedores para cliente: {client_request.client_id}")
-
-        # Publicar solicitud en Redis para el servicio de proveedores
-        search_request = {
-            "profession": client_request.profession,
-            "location": client_request.location,
-            "client_id": client_request.client_id,
-            "timestamp": client_request.timestamp.isoformat(),
-        }
-
-        # Publicar en canal de búsqueda de proveedores
-        await redis_client.publish("provider_search_requests", search_request)
-
-        # Aquí podrías implementar una espera por respuesta
-        # Por ahora, retornamos confirmación de que la búsqueda fue iniciada
-        return {
-            "status": "search_initiated",
-            "message": "Buscando proveedores disponibles...",
-            "client_id": client_request.client_id,
-            "search_criteria": {
-                "profession": client_request.profession,
-                "location": client_request.location,
-            },
-        }
-
-    except Exception as e:
-        logger.error(f"❌ Error en búsqueda de proveedores: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Error searching providers: {str(e)}"
-        )
-
-
 @app.post("/handle-whatsapp-message")
 async def handle_whatsapp_message(payload: Dict[str, Any]):
     """
@@ -1388,20 +1323,6 @@ async def get_session_stats():
         raise HTTPException(
             status_code=500, detail=f"Error getting session stats: {str(e)}"
         )
-
-
-async def listen_for_provider_responses():
-    """
-    Escuchar respuestas del servicio de proveedores
-    """
-
-    async def handle_provider_response(response_data: Dict[str, Any]):
-        """Manejar respuestas del servicio de proveedores"""
-        logger.info(f"📥 Respuesta de proveedores recibida: {response_data}")
-        # Aquí podrías procesar la respuesta y notificar al cliente
-
-    # Suscribirse a canal de respuestas de proveedores
-    await redis_client.subscribe("provider_search_responses", handle_provider_response)
 
 
 if __name__ == "__main__":
