@@ -8,7 +8,9 @@ from typing import Any, Dict, List
 INITIAL_PROMPT = "*Cuéntame, ¿qué servicio necesitas hoy?*"
 
 # Consentimiento de protección de datos
-CONSENT_PROMPT = """Para poder conectararte con proveedores de servicios, necesito tu consentimiento para compartir tus datos de contacto únicamente con los profesionales seleccionados.
+CONSENT_PROMPT = """¡Hola! Soy TinkuBot, tu asistente virtual para encontrar servicios confiables de forma rápida y segura.
+
+Para poder conectararte con proveedores de servicios, necesito tu consentimiento para compartir tus datos de contacto únicamente con los profesionales seleccionados.
 
 📋 *Información que compartiremos:*
 • Tu número de teléfono

@@ -44,6 +44,8 @@ if not customer_profile.get("has_consent"):
 
 **Contenido del mensaje** (templates/prompts.py):
 ```text
+¡Hola! Soy TinkuBot, tu asistente virtual para encontrar servicios confiables de forma rápida y segura.
+
 Para poder conectararte con proveedores de servicios, necesito tu consentimiento para compartir tus datos de contacto únicamente con los profesionales seleccionados.
 
 📋 *Información que compartiremos:*
