@@ -9,29 +9,49 @@ def normalize_text(value: Optional[str]) -> str:
     return (value or "").strip()
 
 
-def parse_experience_years(text: str) -> Optional[int]:
+def parse_experience_years(text: Optional[str]) -> Optional[int]:
     normalized = (text or "").strip().lower()
-    if normalized in {"omitir", "ninguna", "no", "na", "n/a"}:
-        return 0
+    if not normalized:
+        return None
 
-    numbers = ""
-    for char in normalized:
-        if char.isdigit():
-            numbers += char
-        elif numbers:
+    digits = ""
+    for ch in normalized:
+        if ch.isdigit():
+            digits += ch
+        elif digits:
             break
 
-    if not numbers:
+    if not digits:
         return None
 
     try:
-        return max(0, min(60, int(numbers)))
-    except Exception:
+        value = int(digits)
+    except ValueError:
         return None
+
+    return max(0, min(60, value))
 
 
 class ProviderFlow:
     """Encapsula manejadores de cada estado del flujo de registro."""
+
+    @staticmethod
+    def handle_awaiting_city(
+        flow: Dict[str, Any], message_text: Optional[str]
+    ) -> Dict[str, Any]:
+        city = normalize_text(message_text)
+        if len(city) < 2:
+            return {
+                "success": True,
+                "response": "Indicame tu ciudad (ej: Quito, Guayaquil, Cuenca).",
+            }
+
+        flow["city"] = city
+        flow["state"] = "awaiting_name"
+        return {
+            "success": True,
+            "response": "Perfecto. Cual es tu nombre completo?",
+        }
 
     @staticmethod
     def handle_awaiting_name(
@@ -48,7 +68,7 @@ class ProviderFlow:
         flow["state"] = "awaiting_profession"
         return {
             "success": True,
-            "response": "Gracias. Cual es tu profesion u oficio? (ej: plomero, electricista)",
+            "response": "Que profesion u oficio ofreces? (ej: plomero, electricista)",
         }
 
     @staticmethod
@@ -63,44 +83,53 @@ class ProviderFlow:
             }
 
         flow["profession"] = profession
-        flow["state"] = "awaiting_city"
+        flow["state"] = "awaiting_specialty"
         return {
             "success": True,
-            "response": "En que ciudad trabajas principalmente?",
+            "response": "Cual es tu especialidad dentro de esa profesion?",
         }
 
     @staticmethod
-    def handle_awaiting_city(
+    def handle_awaiting_specialty(
         flow: Dict[str, Any], message_text: Optional[str]
     ) -> Dict[str, Any]:
-        city = normalize_text(message_text)
-        if len(city) < 2:
+        specialty = normalize_text(message_text)
+        lowered = specialty.lower()
+        if lowered in {"omitir", "ninguna", "na", "n/a"}:
             return {
                 "success": True,
-                "response": "Indicame tu ciudad (ej: Quito, Guayaquil, Cuenca).",
+                "response": "La especialidad es obligatoria. Por favor escribela tal como la trabajas.",
             }
 
-        flow["city"] = city
-        flow["state"] = "awaiting_address"
+        if len(specialty) < 2:
+            return {
+                "success": True,
+                "response": "La especialidad debe tener al menos 2 caracteres.",
+            }
+
+        flow["specialty"] = specialty
+        flow["state"] = "awaiting_experience"
         return {
             "success": True,
-            "response": "Opcional: tu direccion o sector (puedes responder 'omitir').",
+            "response": "Cuantos anos de experiencia tienes? (escribe un numero)",
         }
 
     @staticmethod
-    def handle_awaiting_address(
+    def handle_awaiting_experience(
         flow: Dict[str, Any], message_text: Optional[str]
     ) -> Dict[str, Any]:
-        address = normalize_text(message_text)
-        if address.lower() in {"omitir", "na", "n/a", "ninguna"}:
-            flow["address"] = None
-        else:
-            flow["address"] = address
+        years = parse_experience_years(message_text)
+        if years is None:
+            return {
+                "success": True,
+                "response": "Necesito un numero de anos de experiencia (ej: 5).",
+            }
 
+        flow["experience_years"] = years
         flow["state"] = "awaiting_email"
         return {
             "success": True,
-            "response": "Opcional: tu correo electronico (o escribe 'omitir').",
+            "response": "Tienes un correo electronico donde pueda escribirte? (responde el correo o 'omitir')",
         }
 
     @staticmethod
@@ -117,49 +146,10 @@ class ProviderFlow:
             }
 
         flow["email"] = email
-        flow["state"] = "awaiting_experience"
-        return {
-            "success": True,
-            "response": "Cuantos anos de experiencia tienes? (puedes escribir un numero o 'omitir')",
-        }
-
-    @staticmethod
-    def handle_awaiting_experience(
-        flow: Dict[str, Any], message_text: Optional[str]
-    ) -> Dict[str, Any]:
-        years = parse_experience_years(message_text or "")
-        if years is None:
-            return {
-                "success": True,
-                "response": "Por favor envia un numero de anos (ej: 5) o escribe 'omitir'.",
-            }
-
-        flow["experience_years"] = years
-        flow["state"] = "awaiting_dni"
-        return {
-            "success": True,
-            "response": "Para completar tu verificacion, cual es tu numero de DNI? (puedes responder 'omitir' si prefieres)",
-        }
-
-    @staticmethod
-    def handle_awaiting_dni(
-        flow: Dict[str, Any], message_text: Optional[str]
-    ) -> Dict[str, Any]:
-        dni = normalize_text(message_text)
-        if dni.lower() in {"omitir", "na", "n/a", "ninguno"}:
-            flow["dni_number"] = None
-        elif len(dni) < 5 or len(dni) > 20:
-            return {
-                "success": True,
-                "response": "El DNI debe tener entre 5 y 20 caracteres. Envialo nuevamente o escribe 'omitir'.",
-            }
-        else:
-            flow["dni_number"] = dni
-
         flow["state"] = "awaiting_social_media"
         return {
             "success": True,
-            "response": "Opcional: Tienes Facebook o Instagram? Envia tu usuario o escribe 'omitir'.",
+            "response": "Tienes alguna red social (Instagram o Facebook) para mostrar tu trabajo? Envia el enlace o escribe 'omitir'.",
         }
 
     @staticmethod
@@ -180,21 +170,45 @@ class ProviderFlow:
             flow["social_media_url"] = f"https://instagram.com/{social}"
             flow["social_media_type"] = "instagram"
 
-        flow["state"] = "confirm"
+        flow["state"] = "awaiting_dni_front_photo"
+        return {
+            "success": True,
+            "response": "Perfecto. Ahora necesito la foto del DNI (parte frontal). Envia la imagen como adjunto.",
+        }
+
+    @staticmethod
+    def build_confirmation_summary(flow: Dict[str, Any]) -> str:
+        email = flow.get("email") or "No especificado"
+        social = flow.get("social_media_url") or "No especificada"
+        social_type = flow.get("social_media_type")
+        if social_type and social and social != "No especificada":
+            social = f"{social} ({social_type})"
+
+        front = "Recibida" if flow.get("dni_front_image") else "Pendiente"
+        back = "Recibida" if flow.get("dni_back_image") else "Pendiente"
+        face = "Recibida" if flow.get("face_image") else "Pendiente"
+
+        experience = flow.get("experience_years")
+        experience_text = (
+            f"{experience} anos" if isinstance(experience, int) and experience > 0 else "Sin especificar"
+        )
+        specialty = flow.get("specialty") or "No especificada"
 
         summary = (
             "Por favor confirma tus datos:\n"
+            f"- Ciudad: {flow.get('city')}\n"
             f"- Nombre: {flow.get('name')}\n"
             f"- Profesion: {flow.get('profession')}\n"
-            f"- Ciudad: {flow.get('city')}\n"
-            f"- Email: {flow.get('email') or 'No especificado'}\n"
-            f"- Experiencia: {flow.get('experience_years')} anos\n"
-            f"- DNI: {flow.get('dni_number') or 'No especificado'}\n"
-            f"- Red Social: {flow.get('social_media_url') or 'No especificada'}\n\n"
+            f"- Especialidad: {specialty}\n"
+            f"- Experiencia: {experience_text}\n"
+            f"- Correo: {email}\n"
+            f"- Red Social: {social}\n"
+            f"- Foto DNI (frente): {front}\n"
+            f"- Foto DNI (reverso): {back}\n"
+            f"- Selfie: {face}\n\n"
             "Responde 'confirmar' para guardar o 'editar' para corregir."
         )
-
-        return {"success": True, "response": summary}
+        return summary
 
     @staticmethod
     async def handle_confirm(
@@ -202,15 +216,20 @@ class ProviderFlow:
         message_text: Optional[str],
         phone: str,
         register_provider_fn: Callable[[Dict[str, Any]], Awaitable[Optional[Dict[str, Any]]]],
+        upload_media_fn: Callable[[str, Dict[str, Any]], Awaitable[None]],
         reset_flow_fn: Callable[[], Awaitable[None]],
         logger: Any,
     ) -> Dict[str, Any]:
         text = normalize_text(message_text).lower()
         if text.startswith("editar"):
-            flow["state"] = "awaiting_name"
+            has_consent = flow.get("has_consent", False)
+            flow.clear()
+            flow["state"] = "awaiting_city"
+            if has_consent:
+                flow["has_consent"] = True
             return {
                 "success": True,
-                "response": "De acuerdo, actualicemos los datos. Cual es tu nombre completo?",
+                "response": "Reiniciemos. En que ciudad trabajas principalmente?",
             }
 
         if text.startswith("confirm") or text in {"si", "ok", "listo"}:
@@ -220,8 +239,9 @@ class ProviderFlow:
                 "email": flow.get("email"),
                 "city": flow.get("city"),
                 "profession": flow.get("profession"),
+                "specialty": flow.get("specialty"),
                 "experience_years": flow.get("experience_years"),
-                "dni_number": flow.get("dni_number"),
+                "dni_number": None,
                 "social_media_url": flow.get("social_media_url"),
                 "social_media_type": flow.get("social_media_type"),
                 "has_consent": flow.get("has_consent", False),
@@ -233,6 +253,9 @@ class ProviderFlow:
                     "Proveedor registrado exitosamente: %s",
                     registered_provider.get("id"),
                 )
+                provider_id = registered_provider.get("id")
+                if provider_id:
+                    await upload_media_fn(provider_id, flow)
                 await reset_flow_fn()
                 return {
                     "success": True,

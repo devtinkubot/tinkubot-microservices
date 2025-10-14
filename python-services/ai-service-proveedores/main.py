@@ -24,7 +24,6 @@ from supabase import Client, create_client
 
 from flows.provider_flow import ProviderFlow
 from templates.prompts import (
-    REGISTRATION_START_PROMPT,
     consent_acknowledged_message,
     consent_declined_message,
     consent_prompt_messages,
@@ -85,8 +84,9 @@ class ProviderRegisterRequest(BaseModel):
     profession: str
     phone: str
     email: Optional[str] = None
-    address: str
     city: str
+    specialty: Optional[str] = None
+    experience_years: Optional[int] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     has_consent: bool = False
@@ -207,6 +207,35 @@ def is_registration_trigger(text: str) -> bool:
     return any(t in low for t in TRIGGER_WORDS)
 
 
+def extract_first_image_base64(payload: Dict[str, Any]) -> Optional[str]:
+    candidates = [
+        payload.get("image_base64"),
+        payload.get("media_base64"),
+        payload.get("file_base64"),
+    ]
+    for candidate in candidates:
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
+
+    attachments = payload.get("attachments") or payload.get("media") or []
+    if isinstance(attachments, dict):
+        attachments = [attachments]
+    for item in attachments:
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") and item["type"].lower() not in {"image", "photo", "picture"}:
+            continue
+        data = item.get("base64") or item.get("data") or item.get("content")
+        if isinstance(data, str) and data.strip():
+            return data.strip()
+
+    content = payload.get("content") or payload.get("message")
+    if isinstance(content, str) and content.startswith("data:image/"):
+        return content
+
+    return None
+
+
 async def supabase_find_or_create_user_provider(
     phone: str, name: Optional[str], city: Optional[str]
 ) -> Optional[str]:
@@ -318,11 +347,20 @@ def supabase_upsert_provider_profession(
         logger.warning(f"No se pudo upsert provider_profession: {e}")
 
 
-def supabase_optional_seed_provider_service(provider_id: str, profession_name: str):
+def supabase_optional_seed_provider_service(
+    provider_id: str, profession_name: Optional[str], specialty_name: Optional[str] = None
+):
     if not supabase:
         return
     try:
-        title = profession_name.title()
+        base_title = (specialty_name or profession_name or "").strip()
+        title = base_title.title() if base_title else (profession_name or "Servicio").title()
+        description_parts = []
+        if profession_name:
+            description_parts.append(f"Profesional en {profession_name.title()}")
+        if specialty_name:
+            description_parts.append(f"Especialidad: {specialty_name.title()}")
+        description = " - ".join(description_parts) if description_parts else f"Servicio de {title}"
         # Crear un servicio base si no hay
         sel = (
             supabase.table("provider_services")
@@ -337,7 +375,7 @@ def supabase_optional_seed_provider_service(provider_id: str, profession_name: s
                 {
                     "provider_id": provider_id,
                     "title": title,
-                    "description": f"Servicio de {title}",
+                    "description": description,
                 }
             ).execute()
     except Exception as e:
@@ -504,6 +542,7 @@ async def register_provider_in_supabase(
         email = provider_data.get("email")
         city = provider_data.get("city")
         profession_name = provider_data.get("profession")
+        specialty_name = provider_data.get("specialty")
         experience_years = provider_data.get("experience_years") or 0
         has_consent_value = provider_data.get("has_consent")
         has_consent = (
@@ -536,6 +575,8 @@ async def register_provider_in_supabase(
             }
             if has_consent is not None:
                 update_data["has_consent"] = has_consent
+            if specialty_name:
+                update_data["specialty"] = specialty_name
 
             # Agregar campos opcionales si se proporcionan
             if dni_number:
@@ -561,6 +602,8 @@ async def register_provider_in_supabase(
             }
             if has_consent is not None:
                 new_provider_data["has_consent"] = has_consent
+            if specialty_name:
+                new_provider_data["specialty"] = specialty_name
 
             # Agregar campos opcionales si se proporcionan
             if dni_number:
@@ -592,7 +635,9 @@ async def register_provider_in_supabase(
 
         # 3) Semilla de servicio base (opcional)
         if profession_name:
-            supabase_optional_seed_provider_service(provider_id, profession_name)
+            supabase_optional_seed_provider_service(
+                provider_id, profession_name, specialty_name
+            )
 
         # 4) Retornar datos del proveedor (con formato compatible)
         return {
@@ -602,6 +647,7 @@ async def register_provider_in_supabase(
             "email": email,
             "city": city,
             "profession": profession_name,
+            "specialty": specialty_name,
             "experience_years": experience_years,
             "dni_number": dni_number,
             "social_media_url": social_media_url,
@@ -639,8 +685,9 @@ def get_provider_profile(phone: str) -> Optional[Dict[str, Any]]:
 
 async def request_provider_consent(phone: str) -> Dict[str, Any]:
     """Generar mensajes de solicitud de consentimiento para proveedores."""
-    prompt_text = "\n\n".join(consent_prompt_messages())
-    return {"success": True, "response": prompt_text}
+    prompts = consent_prompt_messages()
+    messages = [{"response": text} for text in prompts]
+    return {"success": True, "messages": messages}
 
 
 def interpret_yes_no(text: str) -> Optional[bool]:
@@ -738,7 +785,7 @@ async def handle_provider_consent_response(
 
     if option == "1":
         flow["has_consent"] = True
-        flow["state"] = "awaiting_name"
+        flow["state"] = "awaiting_city"
         await set_flow(phone, flow)
 
         if supabase and provider_id:
@@ -759,12 +806,13 @@ async def handle_provider_consent_response(
         record_provider_consent(provider_id, phone, payload, "accepted")
         logger.info("Consentimiento aceptado por proveedor %s", phone)
 
-        combined = "\n\n".join(
-            [consent_acknowledged_message(), REGISTRATION_START_PROMPT]
-        )
+        messages = [
+            {"response": consent_acknowledged_message()},
+            {"response": "Iniciemos tu registro. En que ciudad trabajas principalmente?"},
+        ]
         return {
             "success": True,
-            "response": combined,
+            "messages": messages,
         }
 
     # Rechazo de consentimiento
@@ -787,7 +835,7 @@ async def handle_provider_consent_response(
 
     return {
         "success": True,
-        "response": consent_declined_message(),
+        "messages": [{"response": consent_declined_message()}],
     }
 
 
@@ -976,6 +1024,50 @@ async def get_provider_image_urls(provider_id: str) -> Dict[str, Optional[str]]:
         return {}
 
 
+async def upload_identity_media(provider_id: str, flow: Dict[str, Any]) -> None:
+    if not supabase:
+        return
+
+    uploads: Dict[str, Optional[str]] = {
+        "front": None,
+        "back": None,
+        "face": None,
+    }
+
+    mapping = [
+        ("dni_front_image", "dni-front", "front"),
+        ("dni_back_image", "dni-back", "back"),
+        ("face_image", "face", "face"),
+    ]
+
+    for key, file_type, dest in mapping:
+        base64_data = flow.get(key)
+        if not base64_data:
+            continue
+        image_bytes = await process_base64_image(base64_data, file_type)
+        if not image_bytes:
+            continue
+        try:
+            url = await upload_provider_image_to_storage(
+                provider_id, image_bytes, file_type, "jpg"
+            )
+        except Exception as exc:
+            logger.error(
+                "❌ No se pudo subir imagen %s para %s: %s", key, provider_id, exc
+            )
+            url = None
+        if url:
+            uploads[dest] = url
+
+    if any(uploads.values()):
+        await update_provider_images(
+            provider_id,
+            uploads.get("front"),
+            uploads.get("back"),
+            uploads.get("face"),
+        )
+
+
 # Función para procesar mensajes con OpenAI
 async def process_message_with_openai(message: str, phone: str) -> str:
     """Procesar mensaje entrante con OpenAI"""
@@ -1143,8 +1235,9 @@ async def register_provider(request: ProviderRegisterRequest):
             "profession": request.profession,
             "phone": request.phone,
             "email": request.email,
-            "address": request.address,
             "city": request.city,
+            "specialty": request.specialty,
+            "experience_years": request.experience_years,
             "latitude": request.latitude,
             "longitude": request.longitude,
             "rating": 5.0,
@@ -1253,7 +1346,7 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
             await reset_flow(phone)
             return {
                 "success": True,
-                "response": "Reiniciemos. Empecemos con tu nombre completo.",
+                "response": "Reiniciemos. En que ciudad trabajas principalmente?",
             }
 
         flow = await get_flow(phone)
@@ -1272,11 +1365,11 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
                     flow = {"state": "awaiting_consent", "has_consent": False}
                     await set_flow(phone, flow)
                     return await request_provider_consent(phone)
-                flow = {"state": "awaiting_name", "has_consent": True}
+                flow = {"state": "awaiting_city", "has_consent": True}
                 await set_flow(phone, flow)
                 return {
                     "success": True,
-                    "response": REGISTRATION_START_PROMPT,
+                    "response": "Perfecto. Empecemos. En que ciudad trabajas principalmente?",
                 }
             ai_response = await process_message_with_openai(message_text, phone)
             return {
@@ -1287,11 +1380,11 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
 
         if state == "awaiting_consent":
             if has_consent:
-                flow["state"] = "awaiting_name"
+                flow["state"] = "awaiting_city"
                 await set_flow(phone, flow)
                 return {
                     "success": True,
-                    "response": REGISTRATION_START_PROMPT,
+                    "response": "Perfecto. Empecemos. En que ciudad trabajas principalmente?",
                 }
             consent_reply = await handle_provider_consent_response(
                 phone, flow, payload, provider_profile
@@ -1303,6 +1396,19 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
             await set_flow(phone, flow)
             return await request_provider_consent(phone)
 
+        if state == "awaiting_dni":
+            flow["state"] = "awaiting_city"
+            await set_flow(phone, flow)
+            return {
+                "success": True,
+                "response": "Actualicemos tu registro. En que ciudad trabajas principalmente?",
+            }
+
+        if state == "awaiting_city":
+            reply = ProviderFlow.handle_awaiting_city(flow, message_text)
+            await set_flow(phone, flow)
+            return reply
+
         if state == "awaiting_name":
             reply = ProviderFlow.handle_awaiting_name(flow, message_text)
             await set_flow(phone, flow)
@@ -1313,18 +1419,8 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
             await set_flow(phone, flow)
             return reply
 
-        if state == "awaiting_city":
-            reply = ProviderFlow.handle_awaiting_city(flow, message_text)
-            await set_flow(phone, flow)
-            return reply
-
-        if state == "awaiting_address":
-            reply = ProviderFlow.handle_awaiting_address(flow, message_text)
-            await set_flow(phone, flow)
-            return reply
-
-        if state == "awaiting_email":
-            reply = ProviderFlow.handle_awaiting_email(flow, message_text)
+        if state == "awaiting_specialty":
+            reply = ProviderFlow.handle_awaiting_specialty(flow, message_text)
             await set_flow(phone, flow)
             return reply
 
@@ -1333,8 +1429,8 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
             await set_flow(phone, flow)
             return reply
 
-        if state == "awaiting_dni":
-            reply = ProviderFlow.handle_awaiting_dni(flow, message_text)
+        if state == "awaiting_email":
+            reply = ProviderFlow.handle_awaiting_email(flow, message_text)
             await set_flow(phone, flow)
             return reply
 
@@ -1343,12 +1439,70 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
             await set_flow(phone, flow)
             return reply
 
+        if state == "awaiting_dni_front_photo":
+            image_b64 = extract_first_image_base64(payload)
+            if not image_b64:
+                return {
+                    "success": True,
+                    "response": "Necesito la foto frontal del DNI. Envia la imagen como adjunto.",
+                }
+            flow["dni_front_image"] = image_b64
+            flow["state"] = "awaiting_dni_back_photo"
+            await set_flow(phone, flow)
+            return {
+                "success": True,
+                "response": "Excelente. Ahora envia la parte posterior del DNI.",
+            }
+
+        if state == "awaiting_dni_back_photo":
+            image_b64 = extract_first_image_base64(payload)
+            if not image_b64:
+                return {
+                    "success": True,
+                    "response": "Necesito la parte posterior del DNI en una imagen adjunta.",
+                }
+            flow["dni_back_image"] = image_b64
+            flow["state"] = "awaiting_face_photo"
+            await set_flow(phone, flow)
+            return {
+                "success": True,
+                "response": "Gracias. Finalmente envia una selfie (rostro visible).",
+            }
+
+        if state == "awaiting_face_photo":
+            image_b64 = extract_first_image_base64(payload)
+            if not image_b64:
+                return {
+                    "success": True,
+                    "response": "Necesito una selfie clara para finalizar. Envia la foto como adjunto.",
+                }
+            flow["face_image"] = image_b64
+            summary = ProviderFlow.build_confirmation_summary(flow)
+            flow["state"] = "confirm"
+            await set_flow(phone, flow)
+            return {
+                "success": True,
+                "messages": [
+                    {"response": "Perfecto. Recibi la selfie."},
+                    {"response": summary},
+                ],
+            }
+
+        if state == "awaiting_address":
+            flow["state"] = "awaiting_email"
+            await set_flow(phone, flow)
+            return {
+                "success": True,
+                "response": "Opcional: tu correo electronico (o escribe 'omitir').",
+            }
+
         if state == "confirm":
             reply = await ProviderFlow.handle_confirm(
                 flow,
                 message_text,
                 phone,
                 register_provider_in_supabase,
+                upload_identity_media,
                 lambda: reset_flow(phone),
                 logger,
             )
