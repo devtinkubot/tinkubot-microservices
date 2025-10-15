@@ -195,22 +195,32 @@ class ProviderFlow:
             f"{experience} años" if isinstance(experience, int) and experience > 0 else "Sin especificar"
         )
         specialty = flow.get("specialty") or "No especificada"
+        city = flow.get("city") or "No especificada"
+        profession = flow.get("profession") or "No especificada"
+        name = flow.get("name") or "No especificado"
 
-        summary = (
-            "*Por favor confirma tus datos:*\n"
-            f"- Ciudad: {flow.get('city')}\n"
-            f"- Nombre: {flow.get('name')}\n"
-            f"- Profesion: {flow.get('profession')}\n"
-            f"- Especialidad: {specialty}\n"
-            f"- Experiencia: {experience_text}\n"
-            f"- Correo: {email}\n"
-            f"- Red Social: {social}\n"
-            f"- Foto DNI (frente): {front}\n"
-            f"- Foto DNI (reverso): {back}\n"
-            f"- Selfie: {face}\n\n"
-            "Responde 'confirmar' para guardar o 'editar' para corregir."
-        )
-        return summary
+        lines = [
+            "-----------------------------",
+            "*Por favor confirma tus datos:*",
+            "-----------------------------",
+            f"- Ciudad: {city}",
+            f"- Nombre: {name}",
+            f"- Profesion: {profession}",
+            f"- Especialidad: {specialty}",
+            f"- Experiencia: {experience_text}",
+            f"- Correo: {email}",
+            f"- Red Social: {social}",
+            f"- Foto Cédula (frente): {front}",
+            f"- Foto Cédula (reverso): {back}",
+            f"- Selfie: {face}",
+            "",
+            "-----------------------------",
+            "1. Confirmar datos",
+            "2. Editar información",
+            "-----------------------------",
+            "*Responde con el numero de tu opcion:*",
+        ]
+        return "\n".join(lines)
 
     @staticmethod
     async def handle_confirm(
@@ -222,8 +232,10 @@ class ProviderFlow:
         reset_flow_fn: Callable[[], Awaitable[None]],
         logger: Any,
     ) -> Dict[str, Any]:
-        text = normalize_text(message_text).lower()
-        if text.startswith("editar"):
+        raw_text = normalize_text(message_text)
+        text = raw_text.lower()
+
+        if text.startswith("2") or "editar" in text:
             has_consent = flow.get("has_consent", False)
             flow.clear()
             flow["state"] = "awaiting_city"
@@ -234,7 +246,11 @@ class ProviderFlow:
                 "response": "Reiniciemos. *En que ciudad trabajas principalmente?*",
             }
 
-        if text.startswith("confirm") or text in {"si", "ok", "listo"}:
+        if (
+            text.startswith("1")
+            or text.startswith("confirm")
+            or text in {"si", "ok", "listo", "confirmar"}
+        ):
             provider_data = {
                 "phone": phone,
                 "name": flow.get("name"),
@@ -283,5 +299,5 @@ class ProviderFlow:
 
         return {
             "success": True,
-            "response": "*Por favor escribe 'confirmar' para guardar o 'editar' para corregir.*",
+            "response": "*Por favor selecciona 1 para confirmar o 2 para editar tu informacion.*",
         }
