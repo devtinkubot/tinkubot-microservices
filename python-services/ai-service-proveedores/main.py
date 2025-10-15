@@ -918,11 +918,16 @@ async def upload_provider_image_to_storage(
 
         logger.info(f"📤 Subiendo imagen a Supabase Storage: {file_path}")
 
-        # Subir archivo a Supabase Storage
-        result = supabase.storage.from_("tinkubot-providers").upload(
+        storage_bucket = supabase.storage.from_("tinkubot-providers")
+        try:
+            storage_bucket.remove([file_path])
+        except Exception as remove_error:
+            logger.debug(f"No se pudo eliminar archivo previo {file_path}: {remove_error}")
+
+        result = storage_bucket.upload(
             path=file_path,
             file=file_data,
-            file_options={"content-type": f"image/{file_extension}"}
+            file_options={"content-type": f"image/{file_extension}", "upsert": True}
         )
 
         if result.data:
@@ -1378,6 +1383,7 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
         phone = request.phone or request.from_number or "unknown"
         message_text = request.message or request.content or ""
         payload = request.model_dump()
+        menu_choice = interpret_menu_option(message_text)
 
         logger.info(f"📨 Mensaje WhatsApp recibido de {phone}: {message_text[:50]}...")
 
@@ -1404,20 +1410,17 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
 
         if not state:
             registration_allowed = flow.get("registration_allowed", True)
-            if choice == "1":
-                if not registration_allowed:
-                    flow["mode"] = "update"
-                else:
-                    flow["mode"] = "registration"
+            if menu_choice == "1":
+                flow["mode"] = "registration" if registration_allowed else "update"
                 flow["state"] = "awaiting_city"
                 await set_flow(phone, flow)
                 prompt = (
-                    "*Actualicemos tus datos. En que ciudad trabajas principalmente?*"
-                    if flow["mode"] == "update"
-                    else "*Perfecto. Empecemos. En que ciudad trabajas principalmente?*"
+                    "*Perfecto. Empecemos. En que ciudad trabajas principalmente?*"
+                    if flow["mode"] == "registration"
+                    else "*Actualicemos tus datos. En que ciudad trabajas principalmente?*"
                 )
                 return {"success": True, "response": prompt}
-            if choice == "2":
+            if menu_choice == "2":
                 await reset_flow(phone)
                 await set_flow(phone, {"has_consent": True})
                 return {
@@ -1454,7 +1457,7 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
             return consent_reply
 
         if state == "awaiting_menu_option":
-            choice = interpret_menu_option(message_text)
+            choice = menu_choice
             registration_allowed = flow.get("registration_allowed", True)
             if choice == "1":
                 flow["mode"] = "registration" if registration_allowed else "update"
