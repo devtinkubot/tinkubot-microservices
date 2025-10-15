@@ -52,33 +52,60 @@ const io = new Server(server, {
 
 let qrCodeData = null;
 let clientStatus = 'disconnected';
+let lastRemoteSessionLog = 0;
+const SESSION_LOG_INTERVAL_MS = 5 * 60 * 1000;
 
 // Función para procesar mensajes con IA
 // ACTUALIZADO: Ahora usa el endpoint /handle-whatsapp-message que incluye gestión de sesiones
 async function processWithAI(message) {
   try {
-    // Verificar si el mensaje tiene texto o es multimedia
-    const messageText = message.body;
+    const rawText = message.body || '';
+    const messageText = rawText.trim();
+    let mediaAttachment = null;
 
-    // Si no hay texto, manejar según el tipo de mensaje
-    if (!messageText || messageText.trim() === '') {
-      if (message.hasMedia) {
-        // Para mensajes multimedia, usar una respuesta genérica
-        return 'He recibido tu archivo multimedia. Por favor, envía un mensaje de texto para que pueda ayudarte mejor.';
-      } else {
-        // Para otros tipos de mensajes sin texto
-        return 'Lo siento, solo puedo procesar mensajes de texto. Por favor, envía tu consulta en formato de texto.';
+    if (message.hasMedia) {
+      try {
+        const media = await message.downloadMedia();
+        if (media && media.data) {
+          mediaAttachment = {
+            type: media.mimetype && media.mimetype.startsWith('image/') ? 'image' : 'file',
+            mimetype: media.mimetype,
+            filename: media.filename,
+            base64: media.data,
+          };
+        }
+      } catch (downloadError) {
+        console.error('Error descargando media de WhatsApp:', downloadError);
       }
     }
 
-    // ACTUALIZADO: Usar el endpoint del servicio IA correspondiente
-    const response = await axios.post(`${AI_SERVICE_URL}/handle-whatsapp-message`, {
+    if (!messageText && !mediaAttachment) {
+      return 'Lo siento, solo puedo procesar mensajes de texto o imágenes claras. Por favor, envía tu consulta nuevamente.';
+    }
+
+    const payload = {
       id: message.id._serialized || message.id,
       from_number: message.from,
-      content: messageText,
+      content: messageText || null,
       timestamp: new Date(),
       status: 'received',
-    });
+    };
+
+    if (mediaAttachment) {
+      payload.media_base64 = mediaAttachment.base64;
+      payload.media_mimetype = mediaAttachment.mimetype;
+      payload.media_filename = mediaAttachment.filename;
+      payload.attachments = [
+        {
+          type: mediaAttachment.type,
+          mimetype: mediaAttachment.mimetype,
+          filename: mediaAttachment.filename,
+          base64: mediaAttachment.base64,
+        },
+      ];
+    }
+
+    const response = await axios.post(`${AI_SERVICE_URL}/handle-whatsapp-message`, payload);
 
     const data = response.data || {};
     const replies = [];
@@ -190,7 +217,13 @@ client.on('ready', () => {
 });
 
 client.on('remote_session_saved', () => {
-  console.warn(`[${instanceName}] Sesión guardada en Supabase Storage`);
+  const now = Date.now();
+  if (now - lastRemoteSessionLog < SESSION_LOG_INTERVAL_MS) {
+    return;
+  }
+
+  lastRemoteSessionLog = now;
+  console.debug(`[${instanceName}] Sesión guardada en Supabase Storage`);
 });
 
 // Manejar mensajes entrantes
@@ -214,18 +247,20 @@ client.on('message', async message => {
 
   // Procesar con IA y responder (ahora incluye gestión automática de sesiones)
   try {
+    const chat = await message.getChat();
     const responses = await processWithAI(message);
     const replies = Array.isArray(responses) ? responses : [responses];
 
     for (const replyText of replies) {
       if (!replyText || typeof replyText !== 'string') continue;
-      await message.reply(replyText);
+      await chat.sendMessage(replyText);
       console.warn('Respuesta enviada:', replyText);
     }
   } catch (error) {
     console.error('Error al procesar mensaje:', error);
+    const chat = await message.getChat();
     // Enviar respuesta de fallback solo si falla la IA
-    await message.reply(
+    await chat.sendMessage(
       'Lo siento, ocurrió un error al procesar tu mensaje. Por favor intenta de nuevo.'
     );
   }

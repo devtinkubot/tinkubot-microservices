@@ -1382,22 +1382,23 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
         has_consent = bool(flow.get("has_consent"))
 
         if not state:
+            if not has_consent:
+                flow = {**flow, "state": "awaiting_consent", "has_consent": False}
+                await set_flow(phone, flow)
+                return await request_provider_consent(phone)
+
             if is_registration_trigger(message_text):
-                if not has_consent:
-                    flow = {"state": "awaiting_consent", "has_consent": False}
-                    await set_flow(phone, flow)
-                    return await request_provider_consent(phone)
                 flow = {"state": "awaiting_city", "has_consent": True}
                 await set_flow(phone, flow)
                 return {
                     "success": True,
                     "response": "Perfecto. Empecemos. En que ciudad trabajas principalmente?",
                 }
+
             ai_response = await process_message_with_openai(message_text, phone)
             return {
                 "success": True,
-                "response": ai_response
-                + "\n\nSi deseas registrarte como proveedor, escribe: registro",
+                "response": ai_response,
             }
 
         if state == "awaiting_consent":

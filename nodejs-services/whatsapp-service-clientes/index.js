@@ -269,13 +269,15 @@ client.on('ready', () => {
 });
 
 let lastSessionSavedLog = 0;
+const SESSION_LOG_INTERVAL_MS = 5 * 60 * 1000;
 client.on('remote_session_saved', () => {
   const now = Date.now();
-  if (now - lastSessionSavedLog > 60_000) {
-    // log cada 60s máx
-    console.warn(`[${instanceName}] Sesión guardada en Supabase Storage`);
-    lastSessionSavedLog = now;
+  if (now - lastSessionSavedLog < SESSION_LOG_INTERVAL_MS) {
+    return;
   }
+
+  lastSessionSavedLog = now;
+  console.debug(`[${instanceName}] Sesión guardada en Supabase Storage`);
 });
 
 // Manejar mensajes entrantes
