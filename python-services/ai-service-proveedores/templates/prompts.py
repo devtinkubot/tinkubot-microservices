@@ -87,7 +87,7 @@ def provider_guidance_message() -> str:
 
 
 def provider_main_menu_message() -> str:
-    return PROVIDER_MAIN_MENU
+    return f"{PROVIDER_MAIN_MENU}\n\n{CONSENT_FOOTER}"
 
 
 PROVIDER_POST_REGISTRATION_MENU = (
@@ -103,4 +103,4 @@ PROVIDER_POST_REGISTRATION_MENU = (
 
 
 def provider_post_registration_menu_message() -> str:
-    return PROVIDER_POST_REGISTRATION_MENU
+    return f"{PROVIDER_POST_REGISTRATION_MENU}\n\n{CONSENT_FOOTER}"

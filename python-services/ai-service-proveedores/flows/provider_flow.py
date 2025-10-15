@@ -45,14 +45,14 @@ class ProviderFlow:
         if len(city) < 2:
             return {
                 "success": True,
-                "response": "Indicame tu ciudad (ej: Quito, Guayaquil, Cuenca).",
+                "response": "*Indicame tu ciudad (ej: Quito, Guayaquil, Cuenca).*",
             }
 
         flow["city"] = city
         flow["state"] = "awaiting_name"
         return {
             "success": True,
-            "response": "Perfecto. Cual es tu nombre completo?",
+            "response": "Perfecto. *Cual es tu nombre completo?*",
         }
 
     @staticmethod
@@ -63,14 +63,14 @@ class ProviderFlow:
         if len(name) < 2:
             return {
                 "success": True,
-                "response": "Por favor, enviame tu nombre completo.",
+                "response": "*Por favor, enviame tu nombre completo.*",
             }
 
         flow["name"] = name
         flow["state"] = "awaiting_profession"
         return {
             "success": True,
-            "response": "Que profesion u oficio ofreces? (ej: plomero, electricista)",
+            "response": "*Que profesion u oficio ofreces? (ej: plomero, electricista)*",
         }
 
     @staticmethod
@@ -81,14 +81,14 @@ class ProviderFlow:
         if len(profession) < 2:
             return {
                 "success": True,
-                "response": "Indica tu profesion u oficio (ej: plomero, electricista).",
+                "response": "*Indica tu profesion u oficio (ej: plomero, electricista).*",
             }
 
         flow["profession"] = profession
         flow["state"] = "awaiting_specialty"
         return {
             "success": True,
-            "response": "Cual es tu especialidad dentro de esa profesion?",
+            "response": "*Cual es tu especialidad dentro de esa profesion?*",
         }
 
     @staticmethod
@@ -100,20 +100,20 @@ class ProviderFlow:
         if lowered in {"omitir", "ninguna", "na", "n/a"}:
             return {
                 "success": True,
-                "response": "La especialidad es obligatoria. Por favor escribela tal como la trabajas.",
+                "response": "*La especialidad es obligatoria. Por favor escribela tal como la trabajas.*",
             }
 
         if len(specialty) < 2:
             return {
                 "success": True,
-                "response": "La especialidad debe tener al menos 2 caracteres.",
+                "response": "*La especialidad debe tener al menos 2 caracteres.*",
             }
 
         flow["specialty"] = specialty
         flow["state"] = "awaiting_experience"
         return {
             "success": True,
-            "response": "Cuantos anos de experiencia tienes? (escribe un numero)",
+            "response": "*Cuantos anos de experiencia tienes? (escribe un numero)*",
         }
 
     @staticmethod
@@ -124,14 +124,14 @@ class ProviderFlow:
         if years is None:
             return {
                 "success": True,
-                "response": "Necesito un numero de anos de experiencia (ej: 5).",
+                "response": "*Necesito un numero de anos de experiencia (ej: 5).*",
             }
 
         flow["experience_years"] = years
         flow["state"] = "awaiting_email"
         return {
             "success": True,
-            "response": "Tienes un correo electronico donde pueda escribirte? (responde el correo o 'omitir')",
+            "response": "*Tienes un correo electronico donde pueda escribirte? (responde el correo o 'omitir')*",
         }
 
     @staticmethod
@@ -144,14 +144,14 @@ class ProviderFlow:
         elif "@" not in email or "." not in email:
             return {
                 "success": True,
-                "response": "El correo no parece valido. Envialo nuevamente o escribe 'omitir'.",
+                "response": "*El correo no parece valido. Envialo nuevamente o escribe 'omitir'.*",
             }
 
         flow["email"] = email
         flow["state"] = "awaiting_social_media"
         return {
             "success": True,
-            "response": "Tienes alguna red social (Instagram o Facebook) para mostrar tu trabajo? Envia el enlace o escribe 'omitir'.",
+            "response": "*Tienes alguna red social (Instagram o Facebook) para mostrar tu trabajo? Envia el enlace o escribe 'omitir'.*",
         }
 
     @staticmethod
@@ -175,7 +175,7 @@ class ProviderFlow:
         flow["state"] = "awaiting_dni_front_photo"
         return {
             "success": True,
-            "response": "Perfecto. Ahora necesito la foto del DNI (parte frontal). Envia la imagen como adjunto.",
+            "response": "*Perfecto. Ahora necesito la foto del DNI (parte frontal). Envia la imagen como adjunto.*",
         }
 
     @staticmethod
@@ -231,7 +231,7 @@ class ProviderFlow:
                 flow["has_consent"] = True
             return {
                 "success": True,
-                "response": "Reiniciemos. En que ciudad trabajas principalmente?",
+                "response": "Reiniciemos. *En que ciudad trabajas principalmente?*",
             }
 
         if text.startswith("confirm") or text in {"si", "ok", "listo"}:
@@ -278,10 +278,10 @@ class ProviderFlow:
             logger.error("No se pudo registrar el proveedor")
             return {
                 "success": False,
-                "response": "Hubo un error al guardar tu informacion. Por favor intenta de nuevo.",
+                "response": "*Hubo un error al guardar tu informacion. Por favor intenta de nuevo.*",
             }
 
         return {
             "success": True,
-            "response": "Por favor escribe 'confirmar' para guardar o 'editar' para corregir.",
+            "response": "*Por favor escribe 'confirmar' para guardar o 'editar' para corregir.*",
         }
