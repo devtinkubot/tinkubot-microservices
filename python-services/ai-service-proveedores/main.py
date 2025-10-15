@@ -1403,6 +1403,28 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
         has_consent = bool(flow.get("has_consent"))
 
         if not state:
+            registration_allowed = flow.get("registration_allowed", True)
+            if choice == "1":
+                if not registration_allowed:
+                    flow["mode"] = "update"
+                else:
+                    flow["mode"] = "registration"
+                flow["state"] = "awaiting_city"
+                await set_flow(phone, flow)
+                prompt = (
+                    "Actualicemos tus datos. Cual es tu ciudad principal de trabajo?"
+                    if flow["mode"] == "update"
+                    else "Perfecto. Empecemos. En que ciudad trabajas principalmente?"
+                )
+                return {"success": True, "response": prompt}
+            if choice == "2":
+                await reset_flow(phone)
+                await set_flow(phone, {"has_consent": True})
+                return {
+                    "success": True,
+                    "response": "Perfecto. Si necesitas algo mas, escribe 'registro' o responde con una opcion del menu.",
+                }
+
             if not has_consent:
                 flow = {**flow, "state": "awaiting_consent", "has_consent": False}
                 await set_flow(phone, flow)
@@ -1436,15 +1458,12 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
             registration_allowed = flow.get("registration_allowed", True)
             if choice == "1":
                 if not registration_allowed:
+                    flow["mode"] = "update"
+                    flow["state"] = "awaiting_city"
                     await set_flow(phone, flow)
                     return {
                         "success": True,
-                        "messages": [
-                            {
-                                "response": "Ya tienes un registro activo. Usa la opcion 2 para actualizar tus datos o 3 para salir."
-                            },
-                            {"response": provider_post_registration_menu_message()},
-                        ],
+                        "response": "Actualicemos tus datos. Cual es tu ciudad principal de trabajo?",
                     }
                 flow["state"] = "awaiting_city"
                 flow["mode"] = "registration"
@@ -1454,6 +1473,23 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
                     "response": "Perfecto. Empecemos. En que ciudad trabajas principalmente?",
                 }
             if choice == "2":
+                if not registration_allowed:
+                    await reset_flow(phone)
+                    await set_flow(phone, {"has_consent": True})
+                    return {
+                        "success": True,
+                        "response": "Perfecto. Si necesitas algo mas, escribe 'registro' o responde con una opcion del menu.",
+                    }
+                    await set_flow(phone, flow)
+                    return {
+                        "success": True,
+                        "messages": [
+                            {
+                                "response": "Ya tienes un registro activo. Usa la opcion 1 para actualizar tus datos o 2 para salir."
+                            },
+                            {"response": provider_post_registration_menu_message()},
+                        ],
+                    }
                 flow["state"] = "awaiting_city"
                 flow["mode"] = "update"
                 await set_flow(phone, flow)

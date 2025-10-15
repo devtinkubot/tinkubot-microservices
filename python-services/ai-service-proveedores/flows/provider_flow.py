@@ -265,9 +265,6 @@ class ProviderFlow:
                         {
                             "response": "Registro completado! Tu perfil ha sido creado con verificacion de identidad."
                         },
-                        {
-                            "response": "Cuando quieras, puedes actualizar tus datos o agregar mas servicios."
-                        },
                         {"response": provider_post_registration_menu_message()},
                     ],
                     "reset_flow": True,

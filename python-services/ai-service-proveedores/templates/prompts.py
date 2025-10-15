@@ -93,8 +93,8 @@ def provider_main_menu_message() -> str:
 PROVIDER_POST_REGISTRATION_MENU = (
     "-----------------------------\n"
     "\n"
-    "2. Actualizacion de datos\n"
-    "3. Salir\n"
+    "1. Actualizacion de datos\n"
+    "2. Salir\n"
     "\n"
     "-----------------------------\n"
     "\n"
