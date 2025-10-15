@@ -27,6 +27,8 @@ from templates.prompts import (
     consent_acknowledged_message,
     consent_declined_message,
     consent_prompt_messages,
+    provider_guidance_message,
+    provider_main_menu_message,
 )
 
 # Configuración desde variables de entorno
@@ -726,6 +728,40 @@ def interpret_yes_no(text: str) -> Optional[bool]:
     return None
 
 
+def interpret_menu_option(text: Optional[str]) -> Optional[str]:
+    """Interpretar seleccion del menu principal de proveedores."""
+    value = (text or "").strip().lower()
+    if not value:
+        return None
+
+    normalized_value = unicodedata.normalize("NFKD", value)
+    normalized_value = normalized_value.encode("ascii", "ignore").decode().strip()
+
+    if not normalized_value:
+        return None
+
+    if normalized_value.startswith("1") or normalized_value.startswith("uno"):
+        return "1"
+    if "registro" in normalized_value or "crear" in normalized_value:
+        return "1"
+
+    if normalized_value.startswith("2") or normalized_value.startswith("dos"):
+        return "2"
+    if (
+        "actualizacion" in normalized_value
+        or "actualizar" in normalized_value
+        or "update" in normalized_value
+    ):
+        return "2"
+
+    if normalized_value.startswith("3") or normalized_value.startswith("tres"):
+        return "3"
+    if "salir" in normalized_value or "terminar" in normalized_value or "menu" in normalized_value:
+        return "3"
+
+    return None
+
+
 def record_provider_consent(
     provider_id: Optional[str], phone: str, payload: Dict[str, Any], response: str
 ) -> None:
@@ -785,7 +821,7 @@ async def handle_provider_consent_response(
 
     if option == "1":
         flow["has_consent"] = True
-        flow["state"] = "awaiting_city"
+        flow["state"] = "awaiting_menu_option"
         await set_flow(phone, flow)
 
         if supabase and provider_id:
@@ -808,7 +844,7 @@ async def handle_provider_consent_response(
 
         messages = [
             {"response": consent_acknowledged_message()},
-            {"response": "Iniciemos tu registro. En que ciudad trabajas principalmente?"},
+            {"response": provider_main_menu_message()},
         ]
         return {
             "success": True,
@@ -1354,11 +1390,14 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
             await reset_flow(phone)
 
             if has_consent:
-                new_flow = {"state": "awaiting_city", "has_consent": True}
+                new_flow = {"state": "awaiting_menu_option", "has_consent": True}
                 await set_flow(phone, new_flow)
                 return {
                     "success": True,
-                    "response": "Reiniciemos. En que ciudad trabajas principalmente?",
+                    "messages": [
+                        {"response": "Reiniciemos desde el menu principal."},
+                        {"response": provider_main_menu_message()},
+                    ],
                 }
 
             new_flow = {"state": "awaiting_consent", "has_consent": False}
@@ -1387,32 +1426,63 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
                 await set_flow(phone, flow)
                 return await request_provider_consent(phone)
 
-            if is_registration_trigger(message_text):
-                flow = {"state": "awaiting_city", "has_consent": True}
-                await set_flow(phone, flow)
-                return {
-                    "success": True,
-                    "response": "Perfecto. Empecemos. En que ciudad trabajas principalmente?",
-                }
-
-            ai_response = await process_message_with_openai(message_text, phone)
+            flow = {**flow, "state": "awaiting_menu_option", "has_consent": True}
+            await set_flow(phone, flow)
             return {
                 "success": True,
-                "response": ai_response,
+                "messages": [
+                    {"response": provider_guidance_message()},
+                    {"response": provider_main_menu_message()},
+                ],
             }
 
         if state == "awaiting_consent":
             if has_consent:
-                flow["state"] = "awaiting_city"
+                flow["state"] = "awaiting_menu_option"
                 await set_flow(phone, flow)
                 return {
                     "success": True,
-                    "response": "Perfecto. Empecemos. En que ciudad trabajas principalmente?",
+                    "messages": [{"response": provider_main_menu_message()}],
                 }
             consent_reply = await handle_provider_consent_response(
                 phone, flow, payload, provider_profile
             )
             return consent_reply
+
+        if state == "awaiting_menu_option":
+            choice = interpret_menu_option(message_text)
+            if choice == "1":
+                flow["state"] = "awaiting_city"
+                flow["mode"] = "registration"
+                await set_flow(phone, flow)
+                return {
+                    "success": True,
+                    "response": "Perfecto. Empecemos. En que ciudad trabajas principalmente?",
+                }
+            if choice == "2":
+                flow["state"] = "awaiting_city"
+                flow["mode"] = "update"
+                await set_flow(phone, flow)
+                return {
+                    "success": True,
+                    "response": "Actualicemos tus datos. Cual es tu ciudad principal de trabajo?",
+                }
+            if choice == "3":
+                await reset_flow(phone)
+                await set_flow(phone, {"has_consent": True})
+                return {
+                    "success": True,
+                    "response": "Perfecto. Si necesitas algo mas, escribe 'registro' o responde con una opcion del menu.",
+                }
+
+            await set_flow(phone, flow)
+            return {
+                "success": True,
+                "messages": [
+                    {"response": "No reconoci esa opcion. Por favor elige 1, 2 o 3."},
+                    {"response": provider_main_menu_message()},
+                ],
+            }
 
         if not has_consent:
             flow = {"state": "awaiting_consent", "has_consent": False}

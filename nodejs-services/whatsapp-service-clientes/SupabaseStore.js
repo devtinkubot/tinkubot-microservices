@@ -11,6 +11,8 @@ class SupabaseStore {
   constructor(supabaseUrl, supabaseKey, bucketName = 'wa_sessions') {
     this.supabase = createClient(supabaseUrl, supabaseKey);
     this.bucketName = bucketName;
+    this.lastSaveLogTs = 0;
+    this.saveLogIntervalMs = 60 * 1000; // throttling de logs de guardado
     console.warn(`[SupabaseStore] Inicializado con bucket: ${bucketName}`);
   }
 
@@ -63,7 +65,11 @@ class SupabaseStore {
         throw error;
       }
 
-      console.warn(`✅ Session ${session} saved to Supabase Storage`);
+      const now = Date.now();
+      if (now - this.lastSaveLogTs >= this.saveLogIntervalMs) {
+        console.debug(`✅ Session ${session} saved to Supabase Storage`);
+        this.lastSaveLogTs = now;
+      }
       // Nota: no eliminar el ZIP aquí; whatsapp-web.js lo eliminará
       return data;
     } catch (error) {

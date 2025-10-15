@@ -35,6 +35,23 @@ CONSENT_DECLINED_MESSAGE = (
     "Gracias por tu tiempo."
 )
 
+GUIDANCE_MESSAGE = (
+    "Hola, soy TinkuBot Proveedores. Puedo ayudarte a crear o actualizar tu perfil.\n"
+    "Selecciona una opcion del menu para continuar o escribe 'registro' para iniciar de inmediato."
+)
+
+PROVIDER_MAIN_MENU = (
+    "-----------------------------\n"
+    "\n"
+    "1. Registro\n"
+    "2. Actualizacion de datos\n"
+    "3. Salir\n"
+    "\n"
+    "-----------------------------\n"
+    "\n"
+    "Escribe la opcion que prefieres:"
+)
+
 
 def consent_options_block() -> str:
     lines = [
@@ -63,3 +80,11 @@ def consent_acknowledged_message() -> str:
 
 def consent_declined_message() -> str:
     return CONSENT_DECLINED_MESSAGE
+
+
+def provider_guidance_message() -> str:
+    return GUIDANCE_MESSAGE
+
+
+def provider_main_menu_message() -> str:
+    return PROVIDER_MAIN_MENU
