@@ -423,20 +423,6 @@ app.get('/status', (req, res) => {
   res.json({ status: clientStatus });
 });
 
-// Endpoint para enviar mensajes de texto (usado por scheduler de AI Clientes)
-app.post('/send', async (req, res) => {
-  try {
-    const { to, message } = req.body || {};
-    if (!to || !message) {
-      return res.status(400).json({ error: 'to and message are required' });
-    }
-    await sendText(to, message);
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e?.message || String(e) });
-  }
-});
-
 // Endpoint de Health Check extendido
 app.get('/health', async (req, res) => {
   const healthStatus = {
