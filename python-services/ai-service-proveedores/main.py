@@ -109,6 +109,11 @@ class WhatsAppMessageReceive(BaseModel):
     # Compatibilidad previa
     phone: Optional[str] = None
     message: Optional[str] = None
+    media_base64: Optional[str] = None
+    media_mimetype: Optional[str] = None
+    media_filename: Optional[str] = None
+    image_base64: Optional[str] = None
+    attachments: Optional[List[Dict[str, Any]]] = None
 
 
 class HealthResponse(BaseModel):
