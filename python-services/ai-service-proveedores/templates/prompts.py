@@ -12,7 +12,7 @@ CONSENT_SCOPE_BLOCK = (
     "Datos que almacenaremos:\n"
     "- Nombre completo\n"
     "- Telefono y ciudad\n"
-    "- Profesion y anos de experiencia\n"
+    "- Profesion y años de experiencia\n"
     "- Opcionalmente, tu correo y redes sociales\n\n"
     "Usaremos esta informacion unicamente para conectar tus servicios con clientes "
     "interesados. Puedes solicitar la eliminacion de tus datos en cualquier momento."

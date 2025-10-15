@@ -113,7 +113,7 @@ class ProviderFlow:
         flow["state"] = "awaiting_experience"
         return {
             "success": True,
-            "response": "*Cuantos anos de experiencia tienes? (escribe un numero)*",
+            "response": "*Cuantos años de experiencia tienes? (escribe un numero)*",
         }
 
     @staticmethod
@@ -124,7 +124,7 @@ class ProviderFlow:
         if years is None:
             return {
                 "success": True,
-                "response": "*Necesito un numero de anos de experiencia (ej: 5).*",
+                "response": "*Necesito un numero de años de experiencia (ej: 5).*",
             }
 
         flow["experience_years"] = years
@@ -192,7 +192,7 @@ class ProviderFlow:
 
         experience = flow.get("experience_years")
         experience_text = (
-            f"{experience} anos" if isinstance(experience, int) and experience > 0 else "Sin especificar"
+            f"{experience} años" if isinstance(experience, int) and experience > 0 else "Sin especificar"
         )
         specialty = flow.get("specialty") or "No especificada"
 
