@@ -26,7 +26,7 @@ CONSENT_OPTIONS = [
 CONSENT_FOOTER = "*Responde con el numero de tu opcion:*"
 
 REGISTRATION_START_PROMPT = (
-    "Perfecto. Empecemos con tu registro. Cual es tu nombre completo?"
+    "Perfecto. Empecemos. En que ciudad trabajas principalmente?"
 )
 
 CONSENT_DECLINED_MESSAGE = (
