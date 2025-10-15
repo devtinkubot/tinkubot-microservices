@@ -41,7 +41,7 @@ GUIDANCE_MESSAGE = (
 )
 
 PROVIDER_MAIN_MENU = (
-    "**Ingresar Menú**\n"
+    "**Menú de Proveedores**\n"
     "\n"
     "-----------------------------\n"
     "\n"
