@@ -1407,9 +1407,13 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
                 flow["has_consent"] = True
 
         has_consent = bool(flow.get("has_consent"))
+        registration_allowed = flow.get("registration_allowed")
+        if registration_allowed is None:
+            registration_allowed = not bool(provider_profile and provider_profile.get("id"))
+            flow["registration_allowed"] = registration_allowed
+            await set_flow(phone, flow)
 
         if not state:
-            registration_allowed = flow.get("registration_allowed", True)
             if menu_choice == "1":
                 flow["mode"] = "registration" if registration_allowed else "update"
                 flow["state"] = "awaiting_city"
@@ -1434,12 +1438,17 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
                 return await request_provider_consent(phone)
 
             flow = {**flow, "state": "awaiting_menu_option", "has_consent": True}
+            menu_message = (
+                provider_main_menu_message()
+                if registration_allowed
+                else provider_post_registration_menu_message()
+            )
             await set_flow(phone, flow)
             return {
                 "success": True,
                 "messages": [
                     {"response": provider_guidance_message()},
-                    {"response": provider_main_menu_message()},
+                    {"response": menu_message},
                 ],
             }
 
@@ -1447,9 +1456,14 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
             if has_consent:
                 flow["state"] = "awaiting_menu_option"
                 await set_flow(phone, flow)
+                menu_message = (
+                    provider_main_menu_message()
+                    if registration_allowed
+                    else provider_post_registration_menu_message()
+                )
                 return {
                     "success": True,
-                    "messages": [{"response": provider_main_menu_message()}],
+                    "messages": [{"response": menu_message}],
                 }
             consent_reply = await handle_provider_consent_response(
                 phone, flow, payload, provider_profile
@@ -1458,7 +1472,6 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
 
         if state == "awaiting_menu_option":
             choice = menu_choice
-            registration_allowed = flow.get("registration_allowed", True)
             if choice == "1":
                 flow["mode"] = "registration" if registration_allowed else "update"
                 flow["state"] = "awaiting_city"
@@ -1479,7 +1492,7 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
                         "response": "*Actualicemos tus datos. En que ciudad trabajas principalmente?*",
                     }
                 await reset_flow(phone)
-                await set_flow(phone, {"has_consent": True})
+                await set_flow(phone, {"has_consent": True, "registration_allowed": False})
                 return {
                     "success": True,
                     "response": "Perfecto. Si necesitas algo mas, escribe 'registro' o responde con una opcion del menu.",
@@ -1493,11 +1506,21 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
                 }
 
             await set_flow(phone, flow)
+            menu_message = (
+                provider_main_menu_message()
+                if registration_allowed
+                else provider_post_registration_menu_message()
+            )
+            invalid_prompt = (
+                "No reconoci esa opcion. Por favor elige 1 o 2."
+                if not registration_allowed
+                else "No reconoci esa opcion. Por favor elige 1, 2 o 3."
+            )
             return {
                 "success": True,
                 "messages": [
-                    {"response": "No reconoci esa opcion. Por favor elige 1, 2 o 3."},
-                    {"response": provider_main_menu_message()},
+                    {"response": invalid_prompt},
+                    {"response": menu_message},
                 ],
             }
 
