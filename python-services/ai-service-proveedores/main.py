@@ -1412,9 +1412,9 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
                 flow["state"] = "awaiting_city"
                 await set_flow(phone, flow)
                 prompt = (
-                    "Actualicemos tus datos. *Cual es tu ciudad principal de trabajo?*"
+                    "*Actualicemos tus datos. En que ciudad trabajas principalmente?*"
                     if flow["mode"] == "update"
-                    else "Perfecto. *En que ciudad trabajas principalmente?*"
+                    else "*Perfecto. Empecemos. En que ciudad trabajas principalmente?*"
                 )
                 return {"success": True, "response": prompt}
             if choice == "2":
@@ -1457,45 +1457,29 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
             choice = interpret_menu_option(message_text)
             registration_allowed = flow.get("registration_allowed", True)
             if choice == "1":
-                if not registration_allowed:
-                    flow["mode"] = "update"
-                    flow["state"] = "awaiting_city"
-                    await set_flow(phone, flow)
-                    return {
-                        "success": True,
-                        "response": "Actualicemos tus datos. Cual es tu ciudad principal de trabajo?",
-                    }
+                flow["mode"] = "registration" if registration_allowed else "update"
                 flow["state"] = "awaiting_city"
-                flow["mode"] = "registration"
                 await set_flow(phone, flow)
-                return {
-                    "success": True,
-                    "response": "Perfecto. Empecemos. En que ciudad trabajas principalmente?",
-                }
+                prompt = (
+                    "*Perfecto. Empecemos. En que ciudad trabajas principalmente?*"
+                    if flow["mode"] == "registration"
+                    else "*Actualicemos tus datos. En que ciudad trabajas principalmente?*"
+                )
+                return {"success": True, "response": prompt}
             if choice == "2":
-                if not registration_allowed:
-                    await reset_flow(phone)
-                    await set_flow(phone, {"has_consent": True})
-                    return {
-                        "success": True,
-                        "response": "Perfecto. Si necesitas algo mas, escribe 'registro' o responde con una opcion del menu.",
-                    }
+                if registration_allowed:
+                    flow["state"] = "awaiting_city"
+                    flow["mode"] = "update"
                     await set_flow(phone, flow)
                     return {
                         "success": True,
-                        "messages": [
-                            {
-                                "response": "Ya tienes un registro activo. Usa la opcion 1 para actualizar tus datos o 2 para salir."
-                            },
-                            {"response": provider_post_registration_menu_message()},
-                        ],
+                        "response": "*Actualicemos tus datos. En que ciudad trabajas principalmente?*",
                     }
-                flow["state"] = "awaiting_city"
-                flow["mode"] = "update"
-                await set_flow(phone, flow)
+                await reset_flow(phone)
+                await set_flow(phone, {"has_consent": True})
                 return {
                     "success": True,
-                    "response": "Actualicemos tus datos. *Cual es tu ciudad principal de trabajo?*",
+                    "response": "Perfecto. Si necesitas algo mas, escribe 'registro' o responde con una opcion del menu.",
                 }
             if choice == "3":
                 await reset_flow(phone)
@@ -1524,7 +1508,7 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
             await set_flow(phone, flow)
             return {
                 "success": True,
-                "response": "Actualicemos tu registro. *En que ciudad trabajas principalmente?*",
+                "response": "*Actualicemos tu registro. En que ciudad trabajas principalmente?*",
             }
 
         if state == "awaiting_city":
@@ -1567,14 +1551,14 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
             if not image_b64:
                 return {
                     "success": True,
-                    "response": "Necesito la foto frontal del DNI. Envia la imagen como adjunto.",
+                    "response": "*Necesito la foto frontal de la Cédula. Envia la imagen como adjunto.*",
                 }
             flow["dni_front_image"] = image_b64
             flow["state"] = "awaiting_dni_back_photo"
             await set_flow(phone, flow)
             return {
                 "success": True,
-                "response": "Excelente. Ahora envia la parte posterior del DNI.",
+                "response": "*Excelente. Ahora envia la foto de la parte posterior de la Cédula (parte de atrás). Envia la imagen como adjunto.*",
             }
 
         if state == "awaiting_dni_back_photo":
@@ -1582,14 +1566,14 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
             if not image_b64:
                 return {
                     "success": True,
-                    "response": "Necesito la parte posterior del DNI en una imagen adjunta.",
+                    "response": "*Necesito la foto de la parte posterior de la Cédula (parte de atrás). Envia la imagen como adjunto.*",
                 }
             flow["dni_back_image"] = image_b64
             flow["state"] = "awaiting_face_photo"
             await set_flow(phone, flow)
             return {
                 "success": True,
-                "response": "Gracias. Finalmente envia una selfie (rostro visible).",
+                "response": "*Gracias. Finalmente envia una selfie (rostro visible).*",
             }
 
         if state == "awaiting_face_photo":
@@ -1606,7 +1590,7 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
             return {
                 "success": True,
                 "messages": [
-                    {"response": "Perfecto. Recibi la selfie."},
+                    {"response": "Informacion recibida. Voy a procesar tu informacion, espera un momento."},
                     {"response": summary},
                 ],
             }

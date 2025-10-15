@@ -52,7 +52,7 @@ class ProviderFlow:
         flow["state"] = "awaiting_name"
         return {
             "success": True,
-            "response": "Perfecto. *Cual es tu nombre completo?*",
+            "response": "*Perfecto. Cual es tu nombre completo?*",
         }
 
     @staticmethod
@@ -70,7 +70,7 @@ class ProviderFlow:
         flow["state"] = "awaiting_profession"
         return {
             "success": True,
-            "response": "*Que profesion u oficio ofreces? (ej: plomero, electricista)*",
+            "response": "*Que profesion u oficio ofreces?*",
         }
 
     @staticmethod
@@ -175,7 +175,7 @@ class ProviderFlow:
         flow["state"] = "awaiting_dni_front_photo"
         return {
             "success": True,
-            "response": "*Perfecto. Ahora necesito la foto del DNI (parte frontal). Envia la imagen como adjunto.*",
+            "response": "*Perfecto. Ahora necesito la foto de la Cédula (parte frontal). Envia la imagen como adjunto.*",
         }
 
     @staticmethod
@@ -197,7 +197,7 @@ class ProviderFlow:
         specialty = flow.get("specialty") or "No especificada"
 
         summary = (
-            "Por favor confirma tus datos:\n"
+            "*Por favor confirma tus datos:*\n"
             f"- Ciudad: {flow.get('city')}\n"
             f"- Nombre: {flow.get('name')}\n"
             f"- Profesion: {flow.get('profession')}\n"
