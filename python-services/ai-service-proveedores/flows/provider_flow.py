@@ -52,7 +52,7 @@ class ProviderFlow:
         flow["state"] = "awaiting_name"
         return {
             "success": True,
-            "response": "*Perfecto. Cual es tu nombre completo?*",
+            "response": "*¿Cuál es tu nombre completo?*",
         }
 
     @staticmethod
@@ -70,7 +70,7 @@ class ProviderFlow:
         flow["state"] = "awaiting_profession"
         return {
             "success": True,
-            "response": "*Que profesion u oficio ofreces?*",
+            "response": "*¿Qué profesion u oficio ofreces?*",
         }
 
     @staticmethod

@@ -1419,9 +1419,9 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
                 flow["state"] = "awaiting_city"
                 await set_flow(phone, flow)
                 prompt = (
-                    "*Perfecto. Empecemos. En que ciudad trabajas principalmente?*"
+                    "*Ingresa la ciudad donde trabajas principalmente.*"
                     if flow["mode"] == "registration"
-                    else "*Actualicemos tus datos. En que ciudad trabajas principalmente?*"
+                    else "*Actualicemos tus datos. ¿En qué ciudad trabajas principalmente?*"
                 )
                 return {"success": True, "response": prompt}
             if menu_choice == "2":
@@ -1489,7 +1489,7 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
                     await set_flow(phone, flow)
                     return {
                         "success": True,
-                        "response": "*Actualicemos tus datos. En que ciudad trabajas principalmente?*",
+                        "response": "*Actualicemos tus datos. ¿En qué ciudad trabajas principalmente?*",
                     }
                 await reset_flow(phone)
                 await set_flow(phone, {"has_consent": True, "registration_allowed": False})
@@ -1532,10 +1532,10 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
         if state == "awaiting_dni":
             flow["state"] = "awaiting_city"
             await set_flow(phone, flow)
-            return {
-                "success": True,
-                "response": "*Actualicemos tu registro. En que ciudad trabajas principalmente?*",
-            }
+                return {
+                    "success": True,
+                    "response": "*Actualicemos tu registro. ¿En qué ciudad trabajas principalmente?*",
+                }
 
         if state == "awaiting_city":
             reply = ProviderFlow.handle_awaiting_city(flow, message_text)
