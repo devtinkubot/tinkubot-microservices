@@ -80,13 +80,37 @@ async function processWithAI(message) {
       status: 'received',
     });
 
-    return response.data.ai_response || response.data.response || 'Procesando tu mensaje...';
+    const data = response.data || {};
+    const replies = [];
+
+    if (Array.isArray(data.messages)) {
+      for (const item of data.messages) {
+        if (!item) continue;
+        if (typeof item === 'string' && item.trim()) {
+          replies.push(item.trim());
+          continue;
+        }
+        if (item.response && typeof item.response === 'string' && item.response.trim()) {
+          replies.push(item.response.trim());
+        }
+      }
+    }
+
+    const primaryResponse =
+      data.ai_response || data.response || data.message || data.prompt || null;
+    if (primaryResponse && typeof primaryResponse === 'string' && primaryResponse.trim()) {
+      replies.push(primaryResponse.trim());
+    }
+
+    return replies.length > 0 ? replies : ['Procesando tu mensaje...'];
   } catch (error) {
     console.error('Error al procesar con IA:', error);
     if (error.response && error.response.status === 400) {
-      return 'Lo siento, no pude procesar tu mensaje. Por favor, intenta enviar un mensaje de texto claro.';
+      return [
+        'Lo siento, no pude procesar tu mensaje. Por favor, intenta enviar un mensaje de texto claro.',
+      ];
     }
-    return 'Lo siento, estoy teniendo problemas para procesar tu mensaje.';
+    return ['Lo siento, estoy teniendo problemas para procesar tu mensaje.'];
   }
 }
 
@@ -190,9 +214,14 @@ client.on('message', async message => {
 
   // Procesar con IA y responder (ahora incluye gestión automática de sesiones)
   try {
-    const response = await processWithAI(message);
-    await message.reply(response);
-    console.warn('Respuesta enviada:', response);
+    const responses = await processWithAI(message);
+    const replies = Array.isArray(responses) ? responses : [responses];
+
+    for (const replyText of replies) {
+      if (!replyText || typeof replyText !== 'string') continue;
+      await message.reply(replyText);
+      console.warn('Respuesta enviada:', replyText);
+    }
   } catch (error) {
     console.error('Error al procesar mensaje:', error);
     // Enviar respuesta de fallback solo si falla la IA
