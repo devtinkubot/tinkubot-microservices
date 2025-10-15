@@ -582,8 +582,6 @@ async def register_provider_in_supabase(
             }
             if has_consent is not None:
                 update_data["has_consent"] = has_consent
-            if specialty_name:
-                update_data["specialty"] = specialty_name
 
             # Agregar campos opcionales si se proporcionan
             if dni_number:
@@ -609,8 +607,7 @@ async def register_provider_in_supabase(
             }
             if has_consent is not None:
                 new_provider_data["has_consent"] = has_consent
-            if specialty_name:
-                new_provider_data["specialty"] = specialty_name
+            # specialty se maneja en provider services para evitar dependencias de esquema
 
             # Agregar campos opcionales si se proporcionan
             if dni_number:
@@ -1384,36 +1381,15 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
         logger.info(f"📨 Mensaje WhatsApp recibido de {phone}: {message_text[:50]}...")
 
         if (message_text or "").strip().lower() in RESET_KEYWORDS:
-            previous_flow = await get_flow(phone)
-            existing_consent = bool(previous_flow.get("has_consent")) if previous_flow else False
-            provider_profile = get_provider_profile(phone)
-            profile_consent = bool(
-                provider_profile and provider_profile.get("has_consent")
-            )
-            has_consent = existing_consent or profile_consent
-
             await reset_flow(phone)
-
-            if has_consent:
-                new_flow = {"state": "awaiting_menu_option", "has_consent": True}
-                await set_flow(phone, new_flow)
-                return {
-                    "success": True,
-                    "messages": [
-                        {"response": "Reiniciemos desde el menu principal."},
-                        {"response": provider_main_menu_message()},
-                    ],
-                }
-
             new_flow = {"state": "awaiting_consent", "has_consent": False}
             await set_flow(phone, new_flow)
             consent_prompt = await request_provider_consent(phone)
-            reset_intro = {
+            return {
                 "success": True,
                 "messages": [{"response": "Reiniciemos desde el inicio."}]
                 + consent_prompt.get("messages", []),
             }
-            return reset_intro
 
         flow = await get_flow(phone)
         state = flow.get("state")
