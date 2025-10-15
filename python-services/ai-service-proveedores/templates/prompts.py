@@ -41,15 +41,15 @@ GUIDANCE_MESSAGE = (
 )
 
 PROVIDER_MAIN_MENU = (
+    "**Ingresar Menú**\n"
+    "\n"
     "-----------------------------\n"
     "\n"
     "1. Registro\n"
     "2. Actualizacion de datos\n"
     "3. Salir\n"
     "\n"
-    "-----------------------------\n"
-    "\n"
-    "Escribe la opcion que prefieres:"
+    "-----------------------------"
 )
 
 
@@ -91,14 +91,14 @@ def provider_main_menu_message() -> str:
 
 
 PROVIDER_POST_REGISTRATION_MENU = (
+    "**Menú de Proveedor**\n"
+    "\n"
     "-----------------------------\n"
     "\n"
     "1. Actualizacion de datos\n"
     "2. Salir\n"
     "\n"
-    "-----------------------------\n"
-    "\n"
-    "Escribe la opcion que prefieres:"
+    "-----------------------------"
 )
 
 
