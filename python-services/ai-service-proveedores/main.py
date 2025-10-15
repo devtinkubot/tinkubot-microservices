@@ -29,6 +29,7 @@ from templates.prompts import (
     consent_prompt_messages,
     provider_guidance_message,
     provider_main_menu_message,
+    provider_post_registration_menu_message,
 )
 
 # Configuración desde variables de entorno
@@ -1432,7 +1433,19 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
 
         if state == "awaiting_menu_option":
             choice = interpret_menu_option(message_text)
+            registration_allowed = flow.get("registration_allowed", True)
             if choice == "1":
+                if not registration_allowed:
+                    await set_flow(phone, flow)
+                    return {
+                        "success": True,
+                        "messages": [
+                            {
+                                "response": "Ya tienes un registro activo. Usa la opcion 2 para actualizar tus datos o 3 para salir."
+                            },
+                            {"response": provider_post_registration_menu_message()},
+                        ],
+                    }
                 flow["state"] = "awaiting_city"
                 flow["mode"] = "registration"
                 await set_flow(phone, flow)
@@ -1580,8 +1593,11 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
                 lambda: reset_flow(phone),
                 logger,
             )
+            new_flow = reply.pop("new_flow", None)
             should_reset = reply.pop("reset_flow", False)
-            if not should_reset:
+            if new_flow:
+                await set_flow(phone, new_flow)
+            elif not should_reset:
                 await set_flow(phone, flow)
             return reply
 

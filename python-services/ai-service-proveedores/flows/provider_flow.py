@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Awaitable, Callable, Dict, Optional
 
+from templates.prompts import provider_post_registration_menu_message
+
 
 def normalize_text(value: Optional[str]) -> str:
     return (value or "").strip()
@@ -259,8 +261,21 @@ class ProviderFlow:
                 await reset_flow_fn()
                 return {
                     "success": True,
-                    "response": "Registro completado! Tu perfil ha sido creado con verificacion de identidad. Cuando quieras, puedes agregar mas servicios o actualizar tus datos.",
+                    "messages": [
+                        {
+                            "response": "Registro completado! Tu perfil ha sido creado con verificacion de identidad."
+                        },
+                        {
+                            "response": "Cuando quieras, puedes actualizar tus datos o agregar mas servicios."
+                        },
+                        {"response": provider_post_registration_menu_message()},
+                    ],
                     "reset_flow": True,
+                    "new_flow": {
+                        "state": "awaiting_menu_option",
+                        "has_consent": True,
+                        "registration_allowed": False,
+                    },
                 }
 
             logger.error("No se pudo registrar el proveedor")

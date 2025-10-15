@@ -88,3 +88,19 @@ def provider_guidance_message() -> str:
 
 def provider_main_menu_message() -> str:
     return PROVIDER_MAIN_MENU
+
+
+PROVIDER_POST_REGISTRATION_MENU = (
+    "-----------------------------\n"
+    "\n"
+    "2. Actualizacion de datos\n"
+    "3. Salir\n"
+    "\n"
+    "-----------------------------\n"
+    "\n"
+    "Escribe la opcion que prefieres:"
+)
+
+
+def provider_post_registration_menu_message() -> str:
+    return PROVIDER_POST_REGISTRATION_MENU
