@@ -199,6 +199,50 @@ app.get('/whatsapp-status', async (req, res) => {
   }
 });
 
+// Endpoint de health check
+app.get('/health', async (req, res) => {
+  const healthStatus = {
+    status: 'healthy',
+    service: 'frontend-service',
+    port: PORT,
+    timestamp: new Date().toISOString(),
+    dependencies: {},
+  };
+
+  for (const instance of WHATSAPP_INSTANCES) {
+    healthStatus.dependencies[instance.id] = {
+      name: instance.name,
+      status: 'unknown',
+    };
+
+    try {
+      const { data } = await axios.get(`${instance.url}/health`, { timeout: 4000 });
+      const dependencyStatus = data.status || data.health || 'unknown';
+
+      healthStatus.dependencies[instance.id] = {
+        name: instance.name,
+        status: dependencyStatus,
+        whatsapp_status: data.whatsapp_status || data.status || null,
+        ai_service: data.ai_service || null,
+        timestamp: data.timestamp || null,
+      };
+
+      if (dependencyStatus !== 'healthy') {
+        healthStatus.status = dependencyStatus === 'degraded' ? 'degraded' : 'unhealthy';
+      }
+    } catch (error) {
+      healthStatus.dependencies[instance.id] = {
+        name: instance.name,
+        status: 'unreachable',
+        error: error.message,
+      };
+      healthStatus.status = 'unhealthy';
+    }
+  }
+
+  res.json(healthStatus);
+});
+
 // Iniciar servidor
 app.listen(PORT, '0.0.0.0', () => {
   console.warn(`🚀 Frontend Service corriendo en puerto ${PORT}`);
