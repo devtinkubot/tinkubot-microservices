@@ -33,9 +33,6 @@ from templates.prompts import (
 )
 
 # Configuración desde variables de entorno
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql://postgres:password@localhost:5432/tinkubot"
-)
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv(
     "SUPABASE_BACKEND_API_KEY", ""
@@ -121,7 +118,6 @@ class HealthResponse(BaseModel):
     status: str
     service: str
     timestamp: str
-    database: str = "disconnected"
     supabase: str = "disconnected"
 
 
