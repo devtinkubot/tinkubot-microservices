@@ -1478,10 +1478,10 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
         if state == "awaiting_dni":
             flow["state"] = "awaiting_city"
             await set_flow(phone, flow)
-                return {
-                    "success": True,
-                    "response": "*Actualicemos tu registro. ¿En qué ciudad trabajas principalmente?*",
-                }
+            return {
+                "success": True,
+                "response": "*Actualicemos tu registro. ¿En qué ciudad trabajas principalmente?*",
+            }
 
         if state == "awaiting_city":
             reply = ProviderFlow.handle_awaiting_city(flow, message_text)
