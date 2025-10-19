@@ -191,6 +191,88 @@ async function processWithAI(message) {
 
 console.warn('Inicializando cliente de WhatsApp con RemoteAuth...');
 
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+function shouldAutoReconnect(reason) {
+  if (!reason) return true;
+  const normalized = String(reason).toLowerCase();
+  if (normalized.includes('logout')) {
+    return false;
+  }
+  if (normalized.includes('multidevice')) {
+    return true;
+  }
+  return true;
+}
+
+async function resetWhatsAppSession(trigger = 'manual', { attemptLogout = true } = {}) {
+  if (isRefreshing) {
+    console.warn(
+      `[${instanceName}] Reinicio (${trigger}) ignorado: ya existe un proceso de regeneración en curso.`
+    );
+    return 'in_progress';
+  }
+
+  isRefreshing = true;
+  console.warn(`[${instanceName}] Iniciando reinicio de sesión (${trigger})...`);
+
+  try {
+    if (attemptLogout) {
+      try {
+        await client.logout();
+        console.warn(`[${instanceName}] Sesión cerrada correctamente (${trigger}).`);
+      } catch (logoutError) {
+        console.warn(
+          `[${instanceName}] No se pudo cerrar sesión (${trigger}):`,
+          logoutError?.message || logoutError
+        );
+      }
+    }
+
+    try {
+      await client.destroy();
+      console.warn(`[${instanceName}] Cliente destruido (${trigger}); preparando reinicio.`);
+    } catch (destroyError) {
+      console.warn(
+        `[${instanceName}] No se pudo destruir el cliente (${trigger}):`,
+        destroyError?.message || destroyError
+      );
+    }
+
+    try {
+      await supabaseStore.delete({ session: instanceId });
+      console.warn(`[${instanceName}] Sesión remota eliminada en Supabase (${trigger}).`);
+    } catch (storeError) {
+      console.warn(
+        `[${instanceName}] No se pudo eliminar la sesión remota (${trigger}):`,
+        storeError?.message || storeError
+      );
+    }
+
+    qrCodeData = null;
+    clientStatus = 'disconnected';
+
+    await wait(750);
+
+    client
+      .initialize()
+      .then(() =>
+        console.warn(
+          `[${instanceName}] Reinicio solicitado (${trigger}) en ejecución. Esperando nuevo QR/estado de conexión.`
+        )
+      )
+      .catch(error =>
+        console.error(`[${instanceName}] Error al reinicializar cliente (${trigger}):`, error)
+      );
+    return 'ok';
+  } catch (error) {
+    console.error(`[${instanceName}] Error durante el reinicio (${trigger}):`, error);
+    throw error;
+  } finally {
+    isRefreshing = false;
+  }
+}
+
 const client = new Client({
   authStrategy: new RemoteAuth({
     clientId: instanceId, // Identificador único por instancia
@@ -253,6 +335,9 @@ client.on('auth_failure', msg => {
     reason: 'auth_failure',
     timestamp: new Date().toISOString(),
   });
+  resetWhatsAppSession('auth_failure', { attemptLogout: false }).catch(error =>
+    console.error(`[${instanceName}] Error intentando recuperar tras auth_failure:`, error)
+  );
 });
 
 client.on('ready', () => {
@@ -392,18 +477,26 @@ client.on('message', async message => {
 });
 
 client.on('disconnected', reason => {
-  console.error(`[${instanceName}] Cliente desconectado:`, reason);
+  const timestamp = new Date().toISOString();
+  console.error(`[${instanceName}] CLIENTE DESCONECTADO - Razón: ${reason || 'sin motivo'}`);
+  console.error(`[${instanceName}] Timestamp desconexión: ${timestamp}`);
+  console.error(`[${instanceName}] Estado previo a reinicio: ${clientStatus}`);
   clientStatus = 'disconnected';
 
-  // Notificar a clientes WebSocket
   io.emit('status', {
     status: 'disconnected',
     reason,
-    timestamp: new Date().toISOString(),
+    timestamp,
   });
 
-  // Opcional: intentar reinicializar
-  // client.initialize();
+  if (!shouldAutoReconnect(reason)) {
+    console.warn(`[${instanceName}] Desconexión provocada por logout manual; no se reintenta.`);
+    return;
+  }
+
+  resetWhatsAppSession('auto-disconnected', { attemptLogout: false }).catch(error =>
+    console.error(`[${instanceName}] Error durante reinicio automático tras desconexión:`, error)
+  );
 });
 
 client.initialize();
@@ -425,47 +518,14 @@ app.get('/status', (req, res) => {
 });
 
 app.post('/refresh', async (req, res) => {
-  if (isRefreshing) {
-    return res.status(409).json({
-      success: false,
-      error: 'Ya hay un proceso de regeneración en curso.',
-    });
-  }
-
-  isRefreshing = true;
-  console.warn(`[${instanceName}] Solicitud de regeneración manual de QR recibida`);
-
   try {
-    try {
-      await client.logout();
-      console.warn(`[${instanceName}] Sesión de WhatsApp cerrada correctamente.`);
-    } catch (logoutError) {
-      console.warn(
-        `[${instanceName}] No se pudo cerrar sesión (posiblemente ya estaba cerrada):`,
-        logoutError?.message || logoutError
-      );
+    const result = await resetWhatsAppSession('manual', { attemptLogout: true });
+    if (result === 'in_progress') {
+      return res.status(409).json({
+        success: false,
+        error: 'Ya hay un proceso de regeneración en curso.',
+      });
     }
-
-    try {
-      await supabaseStore.delete({ session: instanceId });
-    } catch (storeError) {
-      console.warn(
-        `[${instanceName}] No se pudo eliminar la sesión remota (quizá no existía):`,
-        storeError?.message || storeError
-      );
-    }
-
-    qrCodeData = null;
-    clientStatus = 'disconnected';
-
-    setTimeout(() => {
-      client
-        .initialize()
-        .then(() => console.warn(`[${instanceName}] Inicialización reejecutada tras regeneración`))
-        .catch(error =>
-          console.error(`[${instanceName}] Error al reinicializar cliente:`, error?.message || error)
-        );
-    }, 500);
 
     res.json({
       success: true,
@@ -477,8 +537,6 @@ app.post('/refresh', async (req, res) => {
       success: false,
       error: 'No se pudo regenerar el código QR.',
     });
-  } finally {
-    isRefreshing = false;
   }
 });
 
