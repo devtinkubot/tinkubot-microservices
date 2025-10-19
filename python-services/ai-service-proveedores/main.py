@@ -8,9 +8,10 @@ import json
 import logging
 import math
 import os
+import re
 import unicodedata
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import httpx
 import uvicorn
@@ -342,143 +343,257 @@ def supabase_optional_seed_provider_service(
 async def search_providers_in_supabase(
     profession: str, location: str, radius: float = 10.0
 ) -> List[Dict[str, Any]]:
-    """Buscar proveedores usando la nueva tabla providers con profesiones y servicios."""
+    """Buscar proveedores utilizando profesiones, sinónimos y servicios declarados."""
     if not supabase:
         return []
 
+    search_term = (profession or "").strip()
+    location_term = (location or "").strip()
+    if not search_term:
+        logger.info("ℹ️ search_providers_in_supabase llamado sin profesión. Retornando vacío.")
+        return []
+
     try:
-        # 1) Resolver profesión a id por nombre o sinónimos
-        prof_id = None
-        logger.info(f"🔎 Resolviendo profesión: '{profession}' en Supabase")
-        resp = (
-            supabase.table("professions")
-            .select("id,name")
-            .ilike("name", f"%{profession}%")
-            .limit(1)
-            .execute()
-        )
-        if resp.data:
-            prof_id = resp.data[0]["id"]
-            logger.info(
-                f"✅ Profesión encontrada por nombre: id={prof_id}, name={resp.data[0]['name']}"
-            )
-        else:
-            syn = (
-                supabase.table("profession_synonyms")
-                .select("profession_id,synonym")
-                .ilike("synonym", f"%{profession}%")
+        logger.info(f"🔎 Resolviendo profesión y sinónimos para término: '{search_term}'")
+
+        matched_profession: Optional[Dict[str, Any]] = None
+        profession_id: Optional[str] = None
+        synonym_rows: List[Dict[str, Any]] = []
+
+        # 1) Intentar resolver la profesión directamente
+        try:
+            prof_resp = (
+                supabase.table("professions")
+                .select("id,name")
+                .ilike("name", f"%{search_term}%")
                 .limit(1)
                 .execute()
             )
-            if syn.data:
-                prof_id = syn.data[0]["profession_id"]
+            if prof_resp.data:
+                matched_profession = prof_resp.data[0]
+                profession_id = matched_profession.get("id")
                 logger.info(
-                    f"✅ Profesión resuelta por sinónimo: profession_id={prof_id}"
+                    f"✅ Profesión encontrada: id={profession_id}, name={matched_profession.get('name')}"
                 )
-            else:
-                logger.info(
-                    "ℹ️ Profesión no encontrada por nombre ni sinónimos; se intentará fallback por servicios"
-                )
+        except Exception as err:
+            logger.warning(f"⚠️ Error buscando profesión por nombre '{search_term}': {err}")
 
-        providers: List[Dict[str, Any]] = []
-
-        # 2) Buscar providers por provider_professions usando NUEVA TABLA providers
-        if prof_id is not None:
-            pp = (
-                supabase.table("provider_professions")
-                .select("provider_id,experience_years")
-                .eq("profession_id", prof_id)
-                .execute()
-            )
-            logger.info(f"📚 provider_professions encontrados: {len(pp.data or [])}")
-
-            if pp.data:
-                provider_ids = [row["provider_id"] for row in pp.data]
-                exp_map = {
-                    row["provider_id"]: (row.get("experience_years") or 0)
-                    for row in pp.data
-                }
-
-                # Consultar PROVEEDORES (nueva tabla) en lugar de users
-                logger.info(
-                    f"👤 Consultando PROVIDERS para {len(provider_ids)} provider_ids en ciudad ~ '{location}'"
-                )
-                providers_resp = (
-                    supabase.table("providers")
-                    .select("id,full_name,phone_number,city,email,verified,rating,social_media_url,social_media_type")
-                    .in_("id", provider_ids)
-                    .eq("available", True)
-                    .ilike("city", f"%{location}%")
+        # 2) Intentar resolver por sinónimo si no se encontró por nombre
+        if not matched_profession:
+            try:
+                syn_resp = (
+                    supabase.table("profession_synonyms")
+                    .select("profession_id,synonym")
+                    .ilike("synonym", f"%{search_term}%")
+                    .limit(1)
                     .execute()
                 )
-
-                for p in providers_resp.data or []:
-                    providers.append(
-                        {
-                            "id": p["id"],
-                            "name": p.get("full_name"),
-                            "profession": profession,
-                            "phone": p.get("phone_number"),
-                            "city": p.get("city"),
-                            "email": p.get("email"),
-                            "rating": p.get("rating", 4.5),
-                            "available": True,
-                            "verified": p.get("verified", False),
-                            "social_media_url": p.get("social_media_url"),
-                            "social_media_type": p.get("social_media_type"),
-                            "experience_years": exp_map.get(p["id"], 0),
-                        }
+                if syn_resp.data:
+                    synonym_rows = syn_resp.data
+                    profession_id = syn_resp.data[0]["profession_id"]
+                    prof_resp = (
+                        supabase.table("professions")
+                        .select("id,name")
+                        .eq("id", profession_id)
+                        .limit(1)
+                        .execute()
                     )
-                logger.info(
-                    f"✅ Providers coincidentes por ciudad: {len(providers_resp.data or [])}"
-                )
+                    if prof_resp.data:
+                        matched_profession = prof_resp.data[0]
+                        logger.info(
+                            f"✅ Profesión resuelta vía sinónimo: id={profession_id}, name={matched_profession.get('name')}"
+                        )
+            except Exception as err:
+                logger.warning(f"⚠️ Error buscando profesión por sinónimos '{search_term}': {err}")
 
-        # 3) Fallback: buscar por provider_services usando NUEVA TABLA providers
-        if not providers:
-            logger.info("🔁 Fallback: buscando por provider_services.title ~ profesión")
-            sv = (
-                supabase.table("provider_services")
-                .select("provider_id,title,description")
-                .ilike("title", f"%{profession}%")
-                .execute()
-            )
-            logger.info(f"📚 provider_services coincidentes: {len(sv.data or [])}")
-            ids = list({row["provider_id"] for row in (sv.data or [])})
-            if ids:
-                logger.info(
-                    f"👤 Consultando PROVIDERS para {len(ids)} provider_ids (fallback) en ciudad ~ '{location}'"
-                )
-                providers_resp = (
-                    supabase.table("providers")
-                    .select("id,full_name,phone_number,city,email,verified,rating,social_media_url,social_media_type")
-                    .in_("id", ids)
-                    .eq("available", True)
-                    .ilike("city", f"%{location}%")
+        # 3) Construir lista de términos a buscar en servicios
+        seen_terms: Set[str] = set()
+        service_terms: List[str] = []
+
+        def add_term(term: Optional[str]):
+            if not term:
+                return
+            cleaned = term.strip()
+            if not cleaned:
+                return
+            lowered = cleaned.lower()
+            if lowered not in seen_terms:
+                seen_terms.add(lowered)
+                service_terms.append(cleaned)
+
+        add_term(search_term)
+        # Dividir el término proporcionado en subcomponentes útiles
+        for fragment in re.split(r"[,\-/]", search_term):
+            if fragment and len(fragment.strip()) >= 4:
+                add_term(fragment.strip())
+
+        if matched_profession:
+            add_term(matched_profession.get("name"))
+
+        # Añadir sinónimos conocidos de la profesión resuelta
+        if profession_id:
+            try:
+                syn_list = (
+                    supabase.table("profession_synonyms")
+                    .select("synonym")
+                    .eq("profession_id", profession_id)
                     .execute()
                 )
-                for p in providers_resp.data or []:
-                    providers.append(
-                        {
-                            "id": p["id"],
-                            "name": p.get("full_name"),
-                            "profession": profession,
-                            "phone": p.get("phone_number"),
-                            "city": p.get("city"),
-                            "email": p.get("email"),
-                            "rating": p.get("rating", 4.4),
-                            "available": True,
-                            "verified": p.get("verified", False),
-                            "social_media_url": p.get("social_media_url"),
-                            "social_media_type": p.get("social_media_type"),
-                            "experience_years": 0,
-                        }
-                    )
+                for row in syn_list.data or []:
+                    add_term(row.get("synonym"))
+            except Exception as err:
+                logger.warning(f"⚠️ No se pudieron obtener sinónimos para profesión {profession_id}: {err}")
+
+        # También incluir el sinónimo que disparó el match (si aplica)
+        for row in synonym_rows:
+            add_term(row.get("synonym"))
+
+        logger.info(f"📝 Términos finales para búsqueda en servicios: {service_terms}")
+
+        provider_scores: Dict[str, int] = {}
+        match_reasons: Dict[str, set[str]] = {}
+        exp_map: Dict[str, int] = {}
+
+        def boost(provider_id: str, amount: int, reason: str):
+            if not provider_id:
+                return
+            provider_scores[provider_id] = provider_scores.get(provider_id, 0) + amount
+            if reason:
+                match_reasons.setdefault(provider_id, set()).add(reason)
+
+        profession_provider_ids: set[str] = set()
+        service_provider_ids: set[str] = set()
+
+        # 4) Buscar proveedores por profesión asociada
+        if profession_id:
+            try:
+                prof_matches = (
+                    supabase.table("provider_professions")
+                    .select("provider_id,experience_years")
+                    .eq("profession_id", profession_id)
+                    .execute()
+                )
+                for row in prof_matches.data or []:
+                    provider_id = row.get("provider_id")
+                    if not provider_id:
+                        continue
+                    profession_provider_ids.add(provider_id)
+                    exp_map[provider_id] = row.get("experience_years") or 0
+                    boost(provider_id, 100, "profession")
                 logger.info(
-                    f"✅ Providers coincidentes por ciudad (fallback): {len(providers_resp.data or [])}"
+                    f"📚 Coincidencias por profesión directa: {len(profession_provider_ids)}"
+                )
+            except Exception as err:
+                logger.warning(
+                    f"⚠️ Error al consultar provider_professions para profesión {profession_id}: {err}"
                 )
 
-        logger.info(f"📦 Total de proveedores a devolver: {len(providers)}")
-        return providers
+        # 5) Buscar por servicios declarados (title/description)
+        for term in service_terms:
+            try:
+                services_resp = (
+                    supabase.table("provider_services")
+                    .select("provider_id,title,description,is_active")
+                    .eq("is_active", True)
+                    .or_(f"title.ilike.%{term}%,description.ilike.%{term}%")
+                    .execute()
+                )
+            except Exception as err:
+                logger.warning(f"⚠️ Error consultando provider_services para término '{term}': {err}")
+                continue
+
+            lower_term = term.lower()
+            for row in services_resp.data or []:
+                provider_id = row.get("provider_id")
+                if not provider_id:
+                    continue
+                title = (row.get("title") or "").lower()
+                description = (row.get("description") or "").lower()
+
+                score = 0
+                if lower_term in title:
+                    score += 50
+                if lower_term in description:
+                    score += 30
+                if score == 0:
+                    # El OR pudo devolver resultados por coincidencia parcial, asignar un puntaje base
+                    score = 20
+
+                boost(provider_id, score, "service")
+                service_provider_ids.add(provider_id)
+
+        all_candidate_ids = set(provider_scores.keys())
+        if not all_candidate_ids:
+            logger.info("ℹ️ No se encontraron proveedores que coincidan con la búsqueda en Supabase.")
+            return []
+
+        # 6) Obtener detalles de proveedores aplicando filtro por ciudad si está disponible
+        logger.info(f"👤 Recuperando datos de {len(all_candidate_ids)} proveedores candidatos")
+        provider_query = (
+            supabase.table("providers")
+            .select(
+                "id,full_name,phone_number,city,email,verified,rating,social_media_url,social_media_type,available"
+            )
+            .in_("id", list(all_candidate_ids))
+            .eq("available", True)
+        )
+        if location_term:
+            provider_query = provider_query.ilike("city", f"%{location_term}%")
+
+        providers_resp = provider_query.execute()
+        providers_data = {row["id"]: row for row in providers_resp.data or [] if row.get("id")}
+
+        # Reintentar sin filtro de ciudad si no hubo coincidencias visibles
+        if location_term and not providers_data:
+            logger.info(
+                "ℹ️ No se encontraron proveedores en la ciudad indicada. Reintentando sin filtro de ciudad."
+            )
+            provider_query = (
+                supabase.table("providers")
+                .select(
+                    "id,full_name,phone_number,city,email,verified,rating,social_media_url,social_media_type,available"
+                )
+                .in_("id", list(all_candidate_ids))
+                .eq("available", True)
+            )
+            providers_resp = provider_query.execute()
+            providers_data = {row["id"]: row for row in providers_resp.data or [] if row.get("id")}
+
+        if not providers_data:
+            logger.info("ℹ️ No se recuperaron proveedores activos para los IDs candidatos.")
+            return []
+
+        profession_label = (
+            (matched_profession.get("name") if matched_profession else None) or profession
+        )
+
+        scored_results: List[Tuple[int, float, Dict[str, Any]]] = []
+        for provider_id, provider in providers_data.items():
+            score = provider_scores.get(provider_id, 0)
+            rating = provider.get("rating", 0.0) or 0.0
+            result = {
+                "id": provider_id,
+                "name": provider.get("full_name"),
+                "profession": profession_label,
+                "phone": provider.get("phone_number"),
+                "city": provider.get("city"),
+                "email": provider.get("email"),
+                "rating": rating if rating > 0 else 4.5,
+                "available": provider.get("available", True),
+                "verified": provider.get("verified", False),
+                "social_media_url": provider.get("social_media_url"),
+                "social_media_type": provider.get("social_media_type"),
+                "experience_years": exp_map.get(provider_id, 0),
+            }
+            scored_results.append((score, rating, result))
+
+        scored_results.sort(key=lambda item: (item[0], item[1]), reverse=True)
+
+        logger.info(
+            f"📦 Total de proveedores devueltos: {len(scored_results)} "
+            f"(profesión={len(profession_provider_ids)}, servicios={len(service_provider_ids)})"
+        )
+        return [item[2] for item in scored_results]
     except Exception as e:
         logger.error(f"❌ Error buscando en Supabase: {e}")
         return []
