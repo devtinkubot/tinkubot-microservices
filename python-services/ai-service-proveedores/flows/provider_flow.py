@@ -88,7 +88,7 @@ class ProviderFlow:
         flow["state"] = "awaiting_specialty"
         return {
             "success": True,
-            "response": "*Cual es tu especialidad dentro de esa profesion?*",
+            "response": "*Que servicios ofreces dentro de tu profesion?*",
         }
 
     @staticmethod

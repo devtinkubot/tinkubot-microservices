@@ -52,6 +52,7 @@ const io = new Server(server, {
 
 let qrCodeData = null;
 let clientStatus = 'disconnected';
+let isRefreshing = false;
 
 // Envío robusto con retry/backoff para mitigar errores de Puppeteer/Chromium
 async function sendWithRetry(sendFn, maxRetries = 3, baseDelayMs = 300) {
@@ -421,6 +422,64 @@ app.get('/qr', (req, res) => {
 // Endpoint para obtener el estado
 app.get('/status', (req, res) => {
   res.json({ status: clientStatus });
+});
+
+app.post('/refresh', async (req, res) => {
+  if (isRefreshing) {
+    return res.status(409).json({
+      success: false,
+      error: 'Ya hay un proceso de regeneración en curso.',
+    });
+  }
+
+  isRefreshing = true;
+  console.warn(`[${instanceName}] Solicitud de regeneración manual de QR recibida`);
+
+  try {
+    try {
+      await client.logout();
+      console.warn(`[${instanceName}] Sesión de WhatsApp cerrada correctamente.`);
+    } catch (logoutError) {
+      console.warn(
+        `[${instanceName}] No se pudo cerrar sesión (posiblemente ya estaba cerrada):`,
+        logoutError?.message || logoutError
+      );
+    }
+
+    try {
+      await supabaseStore.delete({ session: instanceId });
+    } catch (storeError) {
+      console.warn(
+        `[${instanceName}] No se pudo eliminar la sesión remota (quizá no existía):`,
+        storeError?.message || storeError
+      );
+    }
+
+    qrCodeData = null;
+    clientStatus = 'disconnected';
+
+    setTimeout(() => {
+      client
+        .initialize()
+        .then(() => console.warn(`[${instanceName}] Inicialización reejecutada tras regeneración`))
+        .catch(error =>
+          console.error(`[${instanceName}] Error al reinicializar cliente:`, error?.message || error)
+        );
+    }, 500);
+
+    res.json({
+      success: true,
+      message: 'Regeneración de QR iniciada. Escanea el nuevo código cuando aparezca.',
+    });
+  } catch (error) {
+    console.error(`[${instanceName}] Error durante la regeneración manual:`, error);
+    res.status(500).json({
+      success: false,
+      error: 'No se pudo regenerar el código QR.',
+    });
+  } finally {
+    isRefreshing = false;
+  }
 });
 
 // Endpoint de Health Check extendido

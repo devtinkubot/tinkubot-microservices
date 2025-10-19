@@ -240,54 +240,6 @@ def extract_first_image_base64(payload: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-async def supabase_find_or_create_user_provider(
-    phone: str, name: Optional[str], city: Optional[str]
-) -> Optional[str]:
-    if not supabase:
-        return None
-    try:
-        res = (
-            supabase.table("users")
-            .select("id")
-            .eq("phone_number", phone)
-            .limit(1)
-            .execute()
-        )
-        if res.data:
-            user_id = res.data[0]["id"]
-            # asegurar tipo y datos básicos
-            try:
-                supabase.table("users").update(
-                    {
-                        "user_type": "provider",
-                        "name": name or "Proveedor TinkuBot",
-                        "city": city,
-                        "status": "active",
-                    }
-                ).eq("id", user_id).execute()
-            except Exception as e:
-                logger.warning(f"Error updating user status: {e}")
-            return user_id
-        ins = (
-            supabase.table("users")
-            .insert(
-                {
-                    "phone_number": phone,
-                    "name": name or "Proveedor TinkuBot",
-                    "user_type": "provider",
-                    "city": city,
-                    "status": "active",
-                }
-            )
-            .execute()
-        )
-        if ins.data:
-            return ins.data[0]["id"]
-    except Exception as e:
-        logger.warning(f"No se pudo crear/buscar provider user {phone}: {e}")
-    return None
-
-
 def supabase_resolve_or_create_profession(name: str) -> Optional[str]:
     if not supabase or not name:
         return None
@@ -1167,9 +1119,7 @@ async def health_check():
         supabase_status = "not_configured"
         if supabase:
             try:
-                supabase.table("users").select("id").eq("user_type", "provider").limit(
-                    1
-                ).execute()
+                supabase.table("providers").select("id").limit(1).execute()
                 supabase_status = "connected"
             except Exception:
                 supabase_status = "error"

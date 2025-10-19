@@ -150,10 +150,58 @@
         margin-left: 0.5rem;
       }
 
-      .error-message {
+      .instance-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+      }
+
+      .instance-refresh-btn {
+        border: 1px solid var(--primary-color);
+        background: transparent;
+        color: var(--primary-color);
+        border-radius: 8px;
+        padding: 0.35rem 0.75rem;
+        font-size: 0.85rem;
+        font-weight: 500;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        transition: all 0.2s ease;
+      }
+
+      .instance-refresh-btn:hover:not(:disabled) {
+        background-color: var(--primary-color);
+        color: white;
+      }
+
+      .instance-refresh-btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      .instance-refresh-btn .spinner-border {
         display: none;
+        width: 1rem;
+        height: 1rem;
+      }
+
+      .instance-refresh-btn[data-loading='true'] .spinner-border {
+        display: inline-block;
+      }
+
+      .status-message {
+        display: none;
+        margin-top: 0.75rem;
+        font-size: 0.9rem;
+      }
+
+      .status-message.success {
+        color: var(--success-color);
+      }
+
+      .status-message.error {
         color: var(--danger-color);
-        margin-top: 0.5rem;
       }
     </style>
   </head>
@@ -217,7 +265,24 @@
                       <i class="fab fa-whatsapp me-2 text-success"></i>
                       WhatsApp Clientes
                     </h5>
-                    <span class="status-indicator loading" id="bot-clientes-status"></span>
+                    <div class="instance-actions">
+                      <span class="status-indicator loading" id="bot-clientes-status"></span>
+                      <button
+                        type="button"
+                        class="instance-refresh-btn"
+                        data-refresh="bot-clientes"
+                        data-loading="false"
+                        onclick="regenerateWhatsApp('bot-clientes')"
+                      >
+                        <i class="fas fa-sync-alt"></i>
+                        <span>Regenerar</span>
+                        <span
+                          class="spinner-border spinner-border-sm"
+                          role="status"
+                          aria-hidden="true"
+                        ></span>
+                      </button>
+                    </div>
                   </div>
                   <div id="bot-clientes-info">
                     <p class="text-muted">Verificando estado...</p>
@@ -227,7 +292,7 @@
                     <img id="bot-clientes-qr-img" src="" alt="QR Clientes" />
                     <p class="text-muted small mt-2">Abre WhatsApp Web > Dispositivos vinculados</p>
                   </div>
-                  <div class="error-message" id="bot-clientes-error"></div>
+                  <div class="status-message" id="bot-clientes-message" role="status"></div>
                 </div>
               </div>
               <div class="col-md-6">
@@ -237,7 +302,24 @@
                       <i class="fab fa-whatsapp me-2 text-success"></i>
                       WhatsApp Proveedores
                     </h5>
-                    <span class="status-indicator loading" id="bot-proveedores-status"></span>
+                    <div class="instance-actions">
+                      <span class="status-indicator loading" id="bot-proveedores-status"></span>
+                      <button
+                        type="button"
+                        class="instance-refresh-btn"
+                        data-refresh="bot-proveedores"
+                        data-loading="false"
+                        onclick="regenerateWhatsApp('bot-proveedores')"
+                      >
+                        <i class="fas fa-sync-alt"></i>
+                        <span>Regenerar</span>
+                        <span
+                          class="spinner-border spinner-border-sm"
+                          role="status"
+                          aria-hidden="true"
+                        ></span>
+                      </button>
+                    </div>
                   </div>
                   <div id="bot-proveedores-info">
                     <p class="text-muted">Verificando estado...</p>
@@ -247,7 +329,7 @@
                     <img id="bot-proveedores-qr-img" src="" alt="QR Proveedores" />
                     <p class="text-muted small mt-2">Abre WhatsApp Web > Dispositivos vinculados</p>
                   </div>
-                  <div class="error-message" id="bot-proveedores-error"></div>
+                  <div class="status-message" id="bot-proveedores-message" role="status"></div>
                 </div>
               </div>
             </div>
@@ -320,6 +402,73 @@
         });
       });
 
+      function setRefreshButtonState(instanceId, isLoading) {
+        const button = document.querySelector(
+          `.instance-refresh-btn[data-refresh="${instanceId}"]`
+        );
+        if (!button) return;
+
+        button.dataset.loading = isLoading ? 'true' : 'false';
+        button.disabled = isLoading;
+      }
+
+      function showStatusMessage(instanceId, message, type = 'success') {
+        const messageDiv = document.getElementById(`${instanceId}-message`);
+        if (!messageDiv) return;
+
+        messageDiv.classList.remove('success', 'error');
+
+        if (!message) {
+          messageDiv.style.display = 'none';
+          messageDiv.textContent = '';
+          return;
+        }
+
+        messageDiv.textContent = message;
+        messageDiv.classList.add(type === 'error' ? 'error' : 'success');
+        messageDiv.style.display = 'block';
+      }
+
+      async function regenerateWhatsApp(instanceId) {
+        setRefreshButtonState(instanceId, true);
+        showStatusMessage(instanceId, '');
+
+        const infoDiv = document.getElementById(`${instanceId}-info`);
+        if (infoDiv) {
+          infoDiv.innerHTML = `
+                    <p class="text-primary mb-0"><strong>Regenerando QR...</strong></p>
+                    <p class="text-muted small mb-0">Solicitando un nuevo código, espera unos segundos.</p>
+                `;
+        }
+
+        try {
+          const response = await fetch(`/api/whatsapp/${instanceId}/refresh`, {
+            method: 'POST',
+          });
+          const payload = await response.json().catch(() => ({}));
+
+          if (!response.ok) {
+            throw new Error(payload.error || payload.message || 'No se pudo regenerar el QR.');
+          }
+
+          await loadWhatsAppStatus();
+          showStatusMessage(
+            instanceId,
+            payload.message || 'Solicita escanear el nuevo código QR.',
+            'success'
+          );
+        } catch (error) {
+          console.error('Error al regenerar QR:', error);
+          showStatusMessage(
+            instanceId,
+            error?.message || 'Ocurrió un problema al solicitar el nuevo QR.',
+            'error'
+          );
+        } finally {
+          setRefreshButtonState(instanceId, false);
+        }
+      }
+
       // Cargar estado de WhatsApp
       async function loadWhatsAppStatus() {
         try {
@@ -329,6 +478,16 @@
           updateWhatsAppDisplay('bot-proveedores', data['bot-proveedores']);
         } catch (error) {
           console.error('Error al cargar estado de WhatsApp:', error);
+          showStatusMessage(
+            'bot-clientes',
+            'No se pudo cargar el estado. Intenta nuevamente.',
+            'error'
+          );
+          showStatusMessage(
+            'bot-proveedores',
+            'No se pudo cargar el estado. Intenta nuevamente.',
+            'error'
+          );
         }
       }
 
@@ -337,16 +496,21 @@
         const statusIndicator = document.getElementById(`${service}-status`);
         const infoDiv = document.getElementById(`${service}-info`);
         const qrDiv = document.getElementById(`${service}-qr`);
-        const errorDiv = document.getElementById(`${service}-error`);
+        const messageDiv = document.getElementById(`${service}-message`);
+        const statusData = data || {};
 
-        if (data.connected) {
+        if (statusData.connected) {
           statusIndicator.className = 'status-indicator connected';
           infoDiv.innerHTML = `
                     <p class="text-success mb-0"><strong>Conectado</strong></p>
                     <p class="text-muted small mb-0">Listo para enviar mensajes</p>
                 `;
           qrDiv.style.display = 'none';
-          errorDiv.style.display = 'none';
+          if (messageDiv) {
+            messageDiv.style.display = 'none';
+            messageDiv.textContent = '';
+            messageDiv.classList.remove('success', 'error');
+          }
         } else {
           statusIndicator.className = 'status-indicator disconnected';
           infoDiv.innerHTML = `
@@ -354,10 +518,14 @@
                     <p class="text-muted small mb-0">Necesita escanear código QR</p>
                 `;
           qrDiv.style.display = 'block';
-          if (data.qr) {
-            document.getElementById(`${service}-qr-img`).src = data.qr;
+          if (statusData.qr) {
+            document.getElementById(`${service}-qr-img`).src = statusData.qr;
           }
-          errorDiv.style.display = 'none';
+          if (messageDiv) {
+            messageDiv.style.display = 'none';
+            messageDiv.textContent = '';
+            messageDiv.classList.remove('success', 'error');
+          }
         }
       }
 

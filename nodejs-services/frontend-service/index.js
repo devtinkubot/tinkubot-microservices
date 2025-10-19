@@ -116,6 +116,29 @@ app.post('/api/whatsapp/:instanceId/send', async (req, res) => {
   }
 });
 
+app.post('/api/whatsapp/:instanceId/refresh', async (req, res) => {
+  try {
+    const { instanceId } = req.params;
+    const instance = WHATSAPP_INSTANCES.find(inst => inst.id === instanceId);
+
+    if (!instance) {
+      return res.status(404).json({ error: 'Instancia no encontrada' });
+    }
+
+    const response = await axios.post(`${instance.url}/refresh`, null, { timeout: 5000 });
+    res.json({
+      ...response.data,
+      instanceId: instance.id,
+      instanceName: instance.name,
+    });
+  } catch (error) {
+    console.error('Error al regenerar QR:', error?.message || error);
+    const status = error.response?.status || 500;
+    const payload = error.response?.data || { error: 'Error al regenerar el código QR' };
+    res.status(status).json(payload);
+  }
+});
+
 // API para obtener estado de WhatsApp (simplificado)
 app.get('/whatsapp-status', async (req, res) => {
   try {
