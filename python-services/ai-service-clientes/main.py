@@ -10,7 +10,7 @@ import os
 import re
 import unicodedata
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import httpx
 import uvicorn
@@ -356,6 +356,88 @@ def extract_profession_and_location(
     if profession == "mecanico":
         profession = "mecánico"
     return profession, location
+
+
+def _safe_json_loads(payload: str) -> Optional[Dict[str, Any]]:
+    if not payload:
+        return None
+    try:
+        return json.loads(payload)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", payload, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group(0))
+            except json.JSONDecodeError:
+                return None
+        return None
+
+
+async def intelligent_need_extraction(
+    message: str, context: str
+) -> Optional[Dict[str, Any]]:
+    if not openai_client:
+        return None
+    trimmed_context = context[-2000:] if context else ""
+    system_prompt = (
+        "Eres un analista experto en servicios profesionales en Ecuador. "
+        "Devuelve un JSON válido sin texto adicional."
+    )
+    user_prompt = (
+        "Analiza el mensaje y el contexto para identificar las necesidades reales del cliente.\n"
+        "MENSAJE_ACTUAL: \"{message}\"\n"
+        "CONTEXTO_RECIENTE: \"{context}\"\n\n"
+        "Responde con JSON usando los campos:\n"
+        "{\n"
+        '  "necesidad_real": string,\n'
+        '  "profesion_principal": string,\n'
+        '  "especialidades_requeridas": [string],\n'
+        '  "urgencia": "baja" | "media" | "alta",\n'
+        '  "sinonimos_posibles": [string],\n'
+        '  "ubicacion": string | null\n'
+        "}\n"
+        "Usa null cuando no se identifique un dato."
+    ).format(message=message, context=trimmed_context)
+    try:
+        response = await openai_client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.3,
+            max_tokens=300,
+        )
+        content = (response.choices[0].message.content or "").strip()
+        parsed = _safe_json_loads(content)
+        if not parsed:
+            logger.warning("No se pudo parsear respuesta de necesidad inteligente: %s", content)
+        return parsed
+    except Exception as exc:
+        logger.warning("Fallo en intelligent_need_extraction: %s", exc)
+        return None
+
+
+async def intelligent_search_providers_remote(payload: Dict[str, Any]) -> Dict[str, Any]:
+    url = f"{PROVEEDORES_AI_SERVICE_URL}/intelligent-search"
+    logger.info("➡️ Búsqueda inteligente de proveedores -> %s payload=%s", url, payload)
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(url, json=payload)
+        if resp.status_code == 200:
+            data = resp.json()
+            providers = data.get("providers") or []
+            total = data.get("total") or data.get("count") or len(providers)
+            return {"ok": True, "providers": providers, "total": total}
+        logger.warning(
+            "⚠️ Respuesta no exitosa en búsqueda inteligente %s cuerpo=%s",
+            resp.status_code,
+            resp.text[:300] if hasattr(resp, "text") else "<sin cuerpo>",
+        )
+        return {"ok": False, "providers": [], "total": 0}
+    except Exception as exc:
+        logger.error("❌ Error en intelligent_search_providers_remote: %s", exc)
+        return {"ok": False, "providers": [], "total": 0}
 
 
 async def search_providers(
@@ -796,20 +878,77 @@ async def process_client_message(request: AIProcessingRequest):
         # Obtener contexto de conversación para OpenAI y extracción
         conversation_context = await session_manager.get_session_context(phone)
 
-        # Intentar detección de profesión + ubicación y búsqueda de proveedores
-        profession, location = extract_profession_and_location(
+        need_insights = await intelligent_need_extraction(
+            request.message, conversation_context
+        )
+
+        def _normalize_optional_text(value: Any) -> Optional[str]:
+            if isinstance(value, str):
+                stripped = value.strip()
+                if stripped and stripped.lower() not in {"null", "ninguna"}:
+                    return stripped
+            return None
+
+        def _ensure_list(data: Any) -> List[str]:
+            if isinstance(data, list):
+                return [str(item).strip() for item in data if str(item).strip()]
+            if isinstance(data, str):
+                maybe = [fragment.strip() for fragment in re.split(r"[,\n]", data) if fragment.strip()]
+                return maybe
+            return []
+
+        need_profession = _normalize_optional_text(
+            need_insights.get("profesion_principal") if need_insights else None
+        )
+        need_location = _normalize_optional_text(
+            need_insights.get("ubicacion") if need_insights else None
+        )
+        need_summary = _normalize_optional_text(
+            need_insights.get("necesidad_real") if need_insights else None
+        )
+        need_urgency = _normalize_optional_text(
+            need_insights.get("urgencia") if need_insights else None
+        )
+        need_specialties = _ensure_list(
+            need_insights.get("especialidades_requeridas") if need_insights else []
+        )
+        need_synonyms = _ensure_list(
+            need_insights.get("sinonimos_posibles") if need_insights else []
+        )
+
+        detected_profession, detected_location = extract_profession_and_location(
             conversation_context, request.message
         )
+        profession = need_profession or detected_profession
+        location = need_location or detected_location
+
         if profession and location:
-            providers_result = await search_providers(profession, location)
+            search_payload = {
+                "necesidad_real": need_summary or profession,
+                "profesion_principal": profession,
+                "especialidades": need_specialties,
+                "especialidades_requeridas": need_specialties,
+                "sinonimos": need_synonyms,
+                "sinonimos_posibles": need_synonyms,
+                "ubicacion": location,
+                "urgencia": need_urgency,
+            }
+            providers_result = await intelligent_search_providers_remote(search_payload)
+
+            if not providers_result["ok"] or not providers_result["providers"]:
+                providers_result = await search_providers(profession, location)
+
             if providers_result["ok"] and providers_result["providers"]:
                 providers = providers_result["providers"][:3]
-                # Construir respuesta con resultados
-                lines = [
+                lines = []
+                if need_summary:
+                    lines.append(f"Necesidad detectada: {need_summary}.")
+                    lines.append("")
+                lines.append(
                     f"¡Excelente! He encontrado {len(providers)} {profession}s "
-                    f"en {location}:",
-                    "",
-                ]
+                    f"en {location.title() if isinstance(location, str) else location}:"
+                )
+                lines.append("")
                 for i, p in enumerate(providers, 1):
                     name = p.get("name") or p.get("provider_name") or "Proveedor"
                     rating = p.get("rating", 4.5)
@@ -824,14 +963,24 @@ async def process_client_message(request: AIProcessingRequest):
                         desc = ", ".join(desc[:3])
                     if desc:
                         lines.append(f"   - {desc}")
+                    specialty_tags = p.get("matched_terms") or p.get("specialties")
+                    if specialty_tags:
+                        if isinstance(specialty_tags, list):
+                            display = ", ".join(
+                                str(item) for item in specialty_tags[:3] if str(item).strip()
+                            )
+                        else:
+                            display = str(specialty_tags)
+                        if display:
+                            lines.append(f"   - Coincidencias: {display}")
                     lines.append("")
+                if need_urgency:
+                    lines.append(f"Urgencia estimada: {need_urgency}.")
                 lines.append("¿Quieres que te comparta el contacto de alguno?")
                 ai_response_text = "\n".join(lines)
 
-                # Guardar respuesta del bot en sesión
                 await session_manager.save_session(phone, ai_response_text, is_bot=True)
 
-                # Persistencia final en Supabase (solo si hay proveedores)
                 try:
                     if supabase:
                         supabase.table("service_requests").insert(
@@ -857,6 +1006,8 @@ async def process_client_message(request: AIProcessingRequest):
                         "profession": profession,
                         "location": location,
                         "providers": providers,
+                        "need_summary": need_summary,
+                        "urgency": need_urgency,
                     },
                     confidence=0.9,
                 )

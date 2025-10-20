@@ -80,6 +80,17 @@ class ProviderSearchResponse(BaseModel):
     profession: str
 
 
+class IntelligentSearchRequest(BaseModel):
+    necesidad_real: Optional[str] = None
+    profesion_principal: str
+    especialidades: Optional[List[str]] = None
+    especialidades_requeridas: Optional[List[str]] = None
+    sinonimos: Optional[List[str]] = None
+    sinonimos_posibles: Optional[List[str]] = None
+    ubicacion: str
+    urgencia: Optional[str] = None
+
+
 class ProviderRegisterRequest(BaseModel):
     name: str
     profession: str
@@ -165,6 +176,40 @@ FALLBACK_PROVIDERS = [
         "available": True,
     },
 ]
+
+ProviderMatch = Tuple[Dict[str, Any], int, str]
+
+
+def _safe_json_loads(payload: str) -> Optional[Any]:
+    if not payload:
+        return None
+    try:
+        return json.loads(payload)
+    except json.JSONDecodeError:
+        match = re.search(r"\[.*\]|\{.*\}", payload, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group(0))
+            except json.JSONDecodeError:
+                return None
+        return None
+
+
+def _normalize_terms(values: Optional[List[Any]]) -> List[str]:
+    normalized: List[str] = []
+    if not values:
+        return normalized
+    seen: Set[str] = set()
+    for raw in values:
+        text = str(raw).strip()
+        if not text:
+            continue
+        key = text.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(text)
+    return normalized
 
 # --- Flujo interactivo de registro de proveedores ---
 FLOW_KEY = "prov_flow:{}"  # phone
@@ -597,6 +642,151 @@ async def search_providers_in_supabase(
     except Exception as e:
         logger.error(f"❌ Error buscando en Supabase: {e}")
         return []
+
+
+async def expand_query_with_ai(necesidad: str, limit: int = 5) -> List[str]:
+    if not openai_client or not necesidad:
+        return []
+    prompt = (
+        "Genera hasta {limit} términos alternativos y sinónimos prácticos que un cliente "
+        "en Ecuador podría usar para buscar un servicio profesional relacionado con:\n"
+        f"\"{necesidad}\"\n"
+        "Muestra únicamente la lista en formato JSON simple, por ejemplo:\n"
+        '["termino1", "termino2"]'
+    ).format(limit=limit)
+    try:
+        response = await asyncio.to_thread(
+            openai_client.chat.completions.create,
+            model="gpt-3.5-turbo",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Responde solo con una lista JSON de términos relacionados.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.5,
+            max_tokens=200,
+        )
+        content = (response.choices[0].message.content or "").strip()
+        parsed = _safe_json_loads(content)
+        if isinstance(parsed, list):
+            return _normalize_terms(parsed)[:limit]
+        terms: List[str] = []
+        for line in content.splitlines():
+            clean = re.sub(r"^[\-\*\d\.\)]+\s*", "", line).strip()
+            if clean:
+                terms.append(clean)
+        return _normalize_terms(terms)[:limit]
+    except Exception as exc:
+        logger.warning("⚠️ No se pudo expandir la consulta '%s': %s", necesidad, exc)
+        return []
+
+
+def combine_and_score_results(matches: List[ProviderMatch]) -> List[Dict[str, Any]]:
+    if not matches:
+        return []
+    aggregated: Dict[str, Dict[str, Any]] = {}
+
+    for provider, weight, reason in matches:
+        if not provider:
+            continue
+        provider_id = (
+            provider.get("id")
+            or provider.get("provider_id")
+            or provider.get("phone")
+            or provider.get("phone_number")
+        )
+        if not provider_id:
+            continue
+        key = str(provider_id)
+        entry = aggregated.setdefault(
+            key,
+            {
+                "data": provider.copy(),
+                "score": 0,
+                "matched_terms": set(),
+                "sources": set(),
+            },
+        )
+        entry["score"] += weight
+        entry["matched_terms"].add(reason)
+        entry["sources"].add(reason.split(":", 1)[0])
+        rating = provider.get("rating")
+        if rating is not None:
+            entry["data"]["rating"] = rating
+
+        existing_terms = entry["data"].get("matched_terms")
+        if isinstance(existing_terms, list):
+            for t in existing_terms:
+                entry["matched_terms"].add(str(t))
+
+    sorted_results: List[Dict[str, Any]] = []
+    for entry in aggregated.values():
+        provider_data = entry["data"]
+        provider_data["match_score"] = entry["score"]
+        provider_data["matched_terms"] = sorted(entry["matched_terms"])
+        provider_data["match_sources"] = sorted(entry["sources"])
+        sorted_results.append(provider_data)
+
+    sorted_results.sort(
+        key=lambda item: (item.get("match_score", 0), item.get("rating", 0)), reverse=True
+    )
+    return sorted_results
+
+
+async def search_by_profession(profession: str, location: str) -> List[ProviderMatch]:
+    if not profession:
+        return []
+    providers = await search_providers_in_supabase(profession, location)
+    return [
+        (provider, 120, f"profesion:{profession}")
+        for provider in providers
+    ]
+
+
+async def search_by_specialties(
+    specialties: List[str], location: str
+) -> List[ProviderMatch]:
+    matches: List[ProviderMatch] = []
+    for specialty in specialties:
+        providers = await search_providers_in_supabase(specialty, location)
+        matches.extend(
+            (provider, 80, f"especialidad:{specialty}") for provider in providers
+        )
+    return matches
+
+
+async def search_by_synonyms(synonyms: List[str], location: str) -> List[ProviderMatch]:
+    matches: List[ProviderMatch] = []
+    for synonym in synonyms:
+        providers = await search_providers_in_supabase(synonym, location)
+        matches.extend(
+            (provider, 90, f"sinonimo:{synonym}") for provider in providers
+        )
+    return matches
+
+
+async def search_by_description(
+    necesidad: str, location: str
+) -> Tuple[List[ProviderMatch], List[str]]:
+    matches: List[ProviderMatch] = []
+    expansions_used: List[str] = []
+    if not necesidad:
+        return matches, expansions_used
+
+    providers = await search_providers_in_supabase(necesidad, location)
+    matches.extend((provider, 70, f"descripcion:{necesidad}") for provider in providers)
+
+    if len(matches) < 3:
+        expansions = await expand_query_with_ai(necesidad)
+        expansions_used = expansions
+        for term in expansions:
+            providers = await search_providers_in_supabase(term, location)
+            matches.extend(
+                (provider, 60, f"descripcion_expandida:{term}") for provider in providers
+            )
+    return matches, expansions_used
 
 
 # Registrar proveedor usando nueva tabla providers
@@ -1312,6 +1502,90 @@ async def search_providers(request: ProviderSearchRequest):
             count=len(fallback_providers),
             location=request.location,
             profession=request.profession,
+        )
+
+
+@app.post("/intelligent-search")
+async def intelligent_search(request: IntelligentSearchRequest):
+    """
+    Búsqueda inteligente multi dimensional combinando profesión, especialidades y semántica.
+    """
+    try:
+        location = request.ubicacion or ""
+        profession = request.profesion_principal or (request.necesidad_real or "")
+        if not profession or not location:
+            raise HTTPException(
+                status_code=400,
+                detail="Se requiere al menos profesión principal y ubicación para la búsqueda.",
+            )
+
+        specialties = _normalize_terms(
+            (request.especialidades or []) + (request.especialidades_requeridas or [])
+        )
+        synonyms = _normalize_terms(
+            (request.sinonimos or []) + (request.sinonimos_posibles or [])
+        )
+        necesidad = request.necesidad_real or profession
+
+        matches: List[ProviderMatch] = []
+        matches.extend(await search_by_profession(profession, location))
+        matches.extend(await search_by_specialties(specialties, location))
+        matches.extend(await search_by_synonyms(synonyms, location))
+        desc_matches, expansions = await search_by_description(necesidad, location)
+        matches.extend(desc_matches)
+
+        combined = combine_and_score_results(matches)
+        limited = combined[:20]
+
+        if not limited:
+            fallback = [
+                provider
+                for provider in FALLBACK_PROVIDERS
+                if profession.lower() in provider["profession"].lower()
+                and location.lower() in provider["city"].lower()
+            ]
+            logger.info(
+                "ℹ️ Búsqueda inteligente sin coincidencias, devolviendo fallback=%s",
+                len(fallback),
+            )
+            return {
+                "providers": fallback,
+                "total": len(fallback),
+                "query_expansions": expansions,
+                "metadata": {
+                    "specialties_used": specialties,
+                    "synonyms_used": synonyms,
+                    "urgency": request.urgencia,
+                    "necesidad_real": necesidad,
+                    "fallback": True,
+                },
+            }
+
+        logger.info(
+            "🧠 Búsqueda inteligente completada profesion=%s location=%s resultados=%s",
+            profession,
+            location,
+            len(limited),
+        )
+
+        return {
+            "providers": limited,
+            "total": len(combined),
+            "query_expansions": expansions,
+            "metadata": {
+                "specialties_used": specialties,
+                "synonyms_used": synonyms,
+                "urgency": request.urgencia,
+                "necesidad_real": necesidad,
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("❌ Error en intelligent-search: %s", exc)
+        raise HTTPException(
+            status_code=500,
+            detail="No se pudo realizar la búsqueda inteligente en este momento.",
         )
 
 
