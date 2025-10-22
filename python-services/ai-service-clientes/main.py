@@ -216,42 +216,100 @@ async def feedback_scheduler_loop():
 
 
 # --- Helpers for detection and providers search ---
-COMMON_SERVICES = [
-    "plomero",
-    "electricista",
-    "mecánico",
-    "mecanico",
-    "pintor",
-    "albañil",
-    "gasfitero",
-    "cerrajero",
-    "veterinario",
-    "chef",
-    "mesero",
-    "profesor",
-    "bartender",
-    "carpintero",
-    "jardinero",
-]
-ECUADOR_CITIES = [
-    "quito",
-    "guayaquil",
-    "cuenca",
-    "santo domingo",
-    "manta",
-    "portoviejo",
-    "machala",
-    "durán",
-    "duran",
-    "loja",
-    "ambato",
-    "riobamba",
-    "esmeraldas",
-    "quevedo",
-    "babahoyo",
-    "baba hoyo",
-    "milagro",
-]
+COMMON_SERVICE_SYNONYMS = {
+    "plomero": {"plomero", "plomeria", "plomería"},
+    "electricista": {"electricista", "electricistas"},
+    "mecánico": {
+        "mecanico",
+        "mecánico",
+        "mecanicos",
+        "mecanica automotriz",
+        "taller mecanico",
+    },
+    "pintor": {"pintor", "pintura", "pintores"},
+    "albañil": {"albañil", "albanil", "maestro de obra"},
+    "gasfitero": {"gasfitero", "gasfiteria", "fontanero"},
+    "cerrajero": {"cerrajero", "cerrajeria"},
+    "veterinario": {"veterinario", "veterinaria"},
+    "chef": {"chef", "cocinero", "cocinera"},
+    "mesero": {"mesero", "mesera", "camarero", "camarera"},
+    "profesor": {"profesor", "profesora", "maestro", "maestra"},
+    "bartender": {"bartender", "barman"},
+    "carpintero": {"carpintero", "carpinteria"},
+    "jardinero": {"jardinero", "jardineria"},
+    "marketing": {
+        "marketing",
+        "marketing digital",
+        "mercadotecnia",
+        "publicidad",
+        "publicista",
+        "agente de publicidad",
+        "campanas de marketing",
+        "campanas publicitarias",
+    },
+    "diseñador gráfico": {
+        "diseño grafico",
+        "diseno grafico",
+        "diseñador grafico",
+        "designer grafico",
+        "graphic designer",
+        "diseñador",
+    },
+    "consultor": {
+        "consultor",
+        "consultoria",
+        "consultoría",
+        "asesor",
+        "asesoria",
+        "asesoría",
+        "consultor de negocios",
+    },
+    "desarrollador": {
+        "desarrollador",
+        "programador",
+        "developer",
+        "desarrollo web",
+        "software developer",
+        "ingeniero de software",
+    },
+    "contador": {
+        "contador",
+        "contadora",
+        "contable",
+        "contabilidad",
+        "finanzas",
+    },
+    "abogado": {
+        "abogado",
+        "abogada",
+        "legal",
+        "asesoria legal",
+        "asesoría legal",
+        "servicios legales",
+    },
+}
+COMMON_SERVICES = list(COMMON_SERVICE_SYNONYMS.keys())
+ECUADOR_CITY_SYNONYMS = {
+    "Quito": {"quito"},
+    "Guayaquil": {"guayaquil"},
+    "Cuenca": {"cuenca"},
+    "Santo Domingo": {"santo domingo", "santo domingo de los tsachilas"},
+    "Manta": {"manta"},
+    "Portoviejo": {"portoviejo"},
+    "Machala": {"machala"},
+    "Durán": {"duran", "durán"},
+    "Loja": {"loja"},
+    "Ambato": {"ambato"},
+    "Riobamba": {"riobamba"},
+    "Esmeraldas": {"esmeraldas"},
+    "Quevedo": {"quevedo"},
+    "Babahoyo": {"babahoyo", "baba hoyo"},
+    "Milagro": {"milagro"},
+    "Ibarra": {"ibarra"},
+    "Tulcán": {"tulcan", "tulcán"},
+    "Latacunga": {"latacunga"},
+    "Salinas": {"salinas"},
+}
 
 GREETINGS = {
     "hola",
@@ -321,6 +379,14 @@ def _normalize_token(text: str) -> str:
     return clean
 
 
+def _normalize_text_for_matching(text: str) -> str:
+    base = (text or "").lower()
+    normalized = unicodedata.normalize("NFD", base)
+    without_accents = "".join(ch for ch in normalized if unicodedata.category(ch) != "Mn")
+    cleaned = re.sub(r"[^a-z0-9\s]", " ", without_accents)
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
 def interpret_yes_no(text: Optional[str]) -> Optional[bool]:
     if not text:
         return None
@@ -347,14 +413,44 @@ def interpret_yes_no(text: Optional[str]) -> Optional[bool]:
 def extract_profession_and_location(
     history_text: str, last_message: str
 ) -> tuple[Optional[str], Optional[str]]:
-    text = f"{history_text}\n{last_message}".lower()
-    profession = next((s for s in COMMON_SERVICES if s in text), None)
-    location = next((c for c in ECUADOR_CITIES if c in text), None)
-    if location:
-        location = location.title()
-    # Normalizar tildes básicas
-    if profession == "mecanico":
-        profession = "mecánico"
+    combined_text = f"{history_text}\n{last_message}"
+    normalized_text = _normalize_text_for_matching(combined_text)
+    if not normalized_text:
+        return None, None
+
+    padded_text = f" {normalized_text} "
+
+    profession = None
+    for canonical, synonyms in COMMON_SERVICE_SYNONYMS.items():
+        for synonym in synonyms:
+            normalized_synonym = _normalize_text_for_matching(synonym)
+            if not normalized_synonym:
+                continue
+            if f" {normalized_synonym} " in padded_text:
+                profession = canonical
+                break
+        if profession:
+            break
+
+    if not profession:
+        for service in COMMON_SERVICES:
+            normalized_service = _normalize_text_for_matching(service)
+            if normalized_service and f" {normalized_service} " in padded_text:
+                profession = service
+                break
+
+    location = None
+    for canonical_city, synonyms in ECUADOR_CITY_SYNONYMS.items():
+        for synonym in synonyms:
+            normalized_synonym = _normalize_text_for_matching(synonym)
+            if not normalized_synonym:
+                continue
+            if f" {normalized_synonym} " in padded_text:
+                location = canonical_city
+                break
+        if location:
+            break
+
     return profession, location
 
 
@@ -377,7 +473,16 @@ async def intelligent_need_extraction(
     message: str, context: str
 ) -> Optional[Dict[str, Any]]:
     if not openai_client:
-        return None
+        logger.warning(
+            "⚠️ intelligent_need_extraction sin cliente OpenAI (API key no configurada)"
+        )
+        return {"_error": "openai_client_not_configured"}
+
+    logger.info(
+        "🧠 Extrayendo necesidad inteligente (len msg=%s, len ctx=%s)",
+        len(message or ""),
+        len(context or ""),
+    )
     trimmed_context = context[-2000:] if context else ""
     system_prompt = (
         "Eres un analista experto en servicios profesionales en Ecuador. "
@@ -398,6 +503,19 @@ async def intelligent_need_extraction(
         "}\n"
         "Usa null cuando no se identifique un dato."
     ).format(message=message, context=trimmed_context)
+
+    def _failure_result(
+        reason: str,
+        raw_content: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {"_error": reason}
+        if raw_content:
+            payload["_raw_response"] = raw_content
+        if metadata:
+            payload.update(metadata)
+        return payload
+
     try:
         response = await openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
@@ -408,14 +526,48 @@ async def intelligent_need_extraction(
             temperature=0.3,
             max_tokens=300,
         )
-        content = (response.choices[0].message.content or "").strip()
+        if not response.choices:
+            logger.warning(
+                "⚠️ OpenAI respondió sin choices en intelligent_need_extraction"
+            )
+            return _failure_result("empty_choices")
+
+        choice_message = response.choices[0].message
+        content = (choice_message.content or "").strip()
+        if content.startswith("```"):
+            content = re.sub(
+                r"^```(?:json)?", "", content, flags=re.IGNORECASE
+            ).strip()
+            content = re.sub(r"```$", "", content).strip()
+
+        logger.debug("🧠 Respuesta OpenAI (recorte 400c): %s", content[:400])
+        if not content:
+            logger.warning(
+                "⚠️ OpenAI devolvió contenido vacío en intelligent_need_extraction"
+            )
+            return _failure_result("empty_content")
+
         parsed = _safe_json_loads(content)
         if not parsed:
-            logger.warning("No se pudo parsear respuesta de necesidad inteligente: %s", content)
+            logger.warning(
+                "No se pudo parsear respuesta de necesidad inteligente: %s", content
+            )
+            return _failure_result("json_parse_failed", raw_content=content)
+        if not isinstance(parsed, dict):
+            logger.warning(
+                "⚠️ Respuesta de OpenAI no es un objeto JSON: tipo=%s contenido=%s",
+                type(parsed),
+                content,
+            )
+            return _failure_result(
+                "unexpected_payload_type",
+                raw_content=content,
+                metadata={"payload_type": str(type(parsed))},
+            )
         return parsed
     except Exception as exc:
-        logger.warning("Fallo en intelligent_need_extraction: %s", exc)
-        return None
+        logger.exception("Fallo en intelligent_need_extraction: %s", exc)
+        return _failure_result("exception", metadata={"exception": str(exc)})
 
 
 async def intelligent_search_providers_remote(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -882,6 +1034,27 @@ async def process_client_message(request: AIProcessingRequest):
             request.message, conversation_context
         )
 
+        insights_error = None
+        raw_response_preview = None
+        insights_payload: Dict[str, Any] = {}
+        if isinstance(need_insights, dict):
+            insights_error = need_insights.get("_error")
+            if insights_error:
+                raw_response_preview = need_insights.get("_raw_response")
+                if raw_response_preview:
+                    raw_response_preview = str(raw_response_preview)[:400]
+            else:
+                insights_payload = need_insights
+
+        if insights_error:
+            logger.warning(
+                "⚠️ intelligent_need_extraction falló con código '%s'", insights_error
+            )
+            if raw_response_preview:
+                logger.debug(
+                    "🧠 Contenido sin parsear de extracción: %s", raw_response_preview
+                )
+
         def _normalize_optional_text(value: Any) -> Optional[str]:
             if isinstance(value, str):
                 stripped = value.strip()
@@ -898,22 +1071,22 @@ async def process_client_message(request: AIProcessingRequest):
             return []
 
         need_profession = _normalize_optional_text(
-            need_insights.get("profesion_principal") if need_insights else None
+            insights_payload.get("profesion_principal")
         )
         need_location = _normalize_optional_text(
-            need_insights.get("ubicacion") if need_insights else None
+            insights_payload.get("ubicacion")
         )
         need_summary = _normalize_optional_text(
-            need_insights.get("necesidad_real") if need_insights else None
+            insights_payload.get("necesidad_real")
         )
         need_urgency = _normalize_optional_text(
-            need_insights.get("urgencia") if need_insights else None
+            insights_payload.get("urgencia")
         )
         need_specialties = _ensure_list(
-            need_insights.get("especialidades_requeridas") if need_insights else []
+            insights_payload.get("especialidades_requeridas") or []
         )
         need_synonyms = _ensure_list(
-            need_insights.get("sinonimos_posibles") if need_insights else []
+            insights_payload.get("sinonimos_posibles") or []
         )
 
         detected_profession, detected_location = extract_profession_and_location(
@@ -921,6 +1094,18 @@ async def process_client_message(request: AIProcessingRequest):
         )
         profession = need_profession or detected_profession
         location = need_location or detected_location
+
+        if location:
+            location = location.strip()
+
+        if not profession and need_synonyms:
+            profession = next(
+                (syn for syn in need_synonyms if len(syn.split()) <= 3), need_synonyms[0]
+            )
+
+        if profession:
+            normalized_profession = _normalize_token(profession)
+            profession = normalized_profession or profession
 
         if profession and location:
             search_payload = {
@@ -1008,9 +1193,34 @@ async def process_client_message(request: AIProcessingRequest):
                         "providers": providers,
                         "need_summary": need_summary,
                         "urgency": need_urgency,
+                        "need_specialties": need_specialties,
+                        "need_synonyms": need_synonyms,
+                        "extraction_error": insights_error,
                     },
                     confidence=0.9,
                 )
+
+        if insights_error and not profession:
+            guidance_text = (
+                "Estoy teniendo problemas para entender exactamente el servicio que "
+                "necesitas. ¿Podrías decirlo en una palabra? Por ejemplo: marketing, "
+                "publicidad, diseño, plomería."
+            )
+            await session_manager.save_session(phone, guidance_text, is_bot=True)
+            return AIProcessingResponse(
+                response=guidance_text,
+                intent="service_request",
+                entities={
+                    "profession": None,
+                    "location": location,
+                    "urgency": need_urgency,
+                    "need_summary": need_summary,
+                    "need_specialties": need_specialties,
+                    "need_synonyms": need_synonyms,
+                    "extraction_error": insights_error,
+                },
+                confidence=0.5,
+            )
 
         # Construir prompt con contexto
         context_prompt = (
@@ -1049,6 +1259,7 @@ async def process_client_message(request: AIProcessingRequest):
             "location": None,
             "urgency": None,
             "budget": None,
+            "extraction_error": insights_error,
         }
 
         # Detectar intenciones comunes
