@@ -1,5 +1,5 @@
 {
-  "name": "whatsapp-service-clientes",
+  "name": "wa-clientes",
   "version": "1.0.0",
   "description": "WhatsApp Service Clientes para TinkuBot - Atención al cliente",
   "main": "index.js",

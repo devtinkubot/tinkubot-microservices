@@ -1,5 +1,5 @@
 {
-  "name": "whatsapp-service-proveedores",
+  "name": "wa-proveedores",
   "version": "1.0.0",
   "description": "WhatsApp Service Proveedores para TinkuBot - Gestión de proveedores",
   "main": "index.js",
