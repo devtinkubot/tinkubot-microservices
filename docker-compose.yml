@@ -2,104 +2,114 @@
 
 services:
   # Frontend Service - Interfaz web para el usuario
-  frontend-service:
+  frontend:
     build:
-      context: ./nodejs-services/frontend-service
+      context: ./nodejs-services/frontend
       dockerfile: Dockerfile
-    container_name: tinkubot-frontend-service
+    container_name: tinkubot-frontend
     ports:
-      - "6002:6002"
+      - "5000:5000"
     environment:
-      - WHATSAPP_CLIENTES_URL=http://whatsapp-service-clientes:7001
-      - WHATSAPP_PROVEEDORES_URL=http://whatsapp-service-proveedores:7002
+      - WHATSAPP_CLIENTES_URL=http://wa-clientes:5001
+      - WHATSAPP_PROVEEDORES_URL=http://wa-proveedores:5002
+      - FRONTEND_PORT=5000
       - NODE_ENV=production
     networks:
       - tinkubot-network
     restart: unless-stopped
-    # Eliminadas dependencias para evitar circularidad
-    # Los servicios pueden iniciar independientemente
 
   # WhatsApp Service - Bot Clientes (+593 99 882 3053)
-  whatsapp-service-clientes:
+  wa-clientes:
     build:
-      context: ./nodejs-services/whatsapp-service-clientes
+      context: ./nodejs-services/wa-clientes
       dockerfile: Dockerfile
-    container_name: tinkubot-whatsapp-service-clientes
-    ports:
-      - "7001:7001"
-    environment:
-      # ACTUALIZADO: Usa el AI Service Clientes específico para esta instancia
-      - AI_SERVICE_CLIENTES_URL=${AI_SERVICE_CLIENTES_URL}
-      - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_BACKEND_API_KEY=${SUPABASE_BACKEND_API_KEY}
-      - SUPABASE_BUCKET_NAME=${SUPABASE_BUCKET_NAME}
-      - INSTANCE_ID=${CLIENTES_INSTANCE_ID}
-      - INSTANCE_NAME=${CLIENTES_INSTANCE_NAME}
-      - WHATSAPP_PORT=${CLIENTES_WHATSAPP_PORT}
-      - NODE_ENV=production
-    networks:
-      - tinkubot-network
-    restart: unless-stopped
-    # Eliminada dependencia para evitar circularidad
-    # El servicio puede iniciar independientemente
-
-  # WhatsApp Service - Bot Proveedores (segundo número)
-  whatsapp-service-proveedores:
-    build:
-      context: ./nodejs-services/whatsapp-service-proveedores
-      dockerfile: Dockerfile
-    container_name: tinkubot-whatsapp-service-proveedores
-    ports:
-      - "7002:7002"
-    environment:
-      # ACTUALIZADO: Usa el AI Service Proveedores específico para esta instancia
-      - PROVEEDORES_AI_SERVICE_URL=${PROVEEDORES_AI_SERVICE_URL}
-      - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_BACKEND_API_KEY=${SUPABASE_BACKEND_API_KEY}
-      - SUPABASE_BUCKET_NAME=${SUPABASE_BUCKET_NAME}
-      - INSTANCE_ID=${PROVEEDORES_INSTANCE_ID}
-      - INSTANCE_NAME=${PROVEEDORES_INSTANCE_NAME}
-      - WHATSAPP_PORT=${PROVEEDORES_WHATSAPP_PORT}
-      - NODE_ENV=production
-    networks:
-      - tinkubot-network
-    restart: unless-stopped
-    # Eliminada dependencia para evitar circularidad
-    # El servicio puede iniciar independientemente
-
-  # AI Service Clientes - Procesamiento con sesiones integradas
-  ai-service-clientes:
-    build:
-      context: ./python-services
-      dockerfile: ai-service-clientes/Dockerfile
-    container_name: tinkubot-ai-service-clientes
+    container_name: tinkubot-wa-clientes
     ports:
       - "5001:5001"
+    environment:
+      # ACTUALIZADO: Usa el AI Service Clientes específico para esta instancia
+      - AI_SERVICE_CLIENTES_URL=http://ai-clientes:8001
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_BACKEND_API_KEY=${SUPABASE_BACKEND_API_KEY}
+      - SUPABASE_BUCKET_NAME=${SUPABASE_BUCKET_NAME}
+      - WHATSAPP_PORT=5001
+      - NODE_ENV=production
+    networks:
+      - tinkubot-network
+    restart: unless-stopped
+
+  # WhatsApp Service - Bot Proveedores (segundo número)
+  wa-proveedores:
+    build:
+      context: ./nodejs-services/wa-proveedores
+      dockerfile: Dockerfile
+    container_name: tinkubot-wa-proveedores
+    ports:
+      - "5002:5002"
+    environment:
+      # ACTUALIZADO: Usa el AI Service Proveedores específico para esta instancia
+      - PROVEEDORES_AI_SERVICE_URL=http://ai-proveedores:8002
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_BACKEND_API_KEY=${SUPABASE_BACKEND_API_KEY}
+      - SUPABASE_BUCKET_NAME=${SUPABASE_BUCKET_NAME}
+      - WHATSAPP_PORT=5002
+      - NODE_ENV=production
+    networks:
+      - tinkubot-network
+    restart: unless-stopped
+
+  # AI Service Clientes - Procesamiento con sesiones integradas
+  ai-clientes:
+    build:
+      context: ./python-services
+      dockerfile: ai-clientes/Dockerfile
+    container_name: tinkubot-ai-clientes
+    ports:
+      - "8001:8001"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - REDIS_URL=${REDIS_URL}
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_BACKEND_API_KEY=${SUPABASE_BACKEND_API_KEY}
-      - SERVER_PORT=5001
       - NODE_ENV=production
     networks:
       - tinkubot-network
     restart: unless-stopped
 
   # AI Service Proveedores - Procesamiento con sesiones integradas
-  ai-service-proveedores:
+  ai-proveedores:
     build:
       context: ./python-services
-      dockerfile: ai-service-proveedores/Dockerfile
-    container_name: tinkubot-ai-service-proveedores
+      dockerfile: ai-proveedores/Dockerfile
+    container_name: tinkubot-ai-proveedores
     ports:
-      - "5002:5002"
+      - "8002:8002"
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - REDIS_URL=${REDIS_URL}
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_BACKEND_API_KEY=${SUPABASE_BACKEND_API_KEY}
+      - NODE_ENV=production
+    networks:
+      - tinkubot-network
+    restart: unless-stopped
+
+  # Search Token Service - Servicio de búsqueda con tokenización
+  search-token:
+    build:
+      context: ./python-services
+      dockerfile: search-token/Dockerfile
+    container_name: tinkubot-search-token
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_BACKEND_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - API_PORT=8000
       - NODE_ENV=production
     networks:
       - tinkubot-network

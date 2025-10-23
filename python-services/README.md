@@ -6,13 +6,18 @@ Servicios de IA de TinkuBot migrados a Python con FastAPI, Redis Pub/Sub y PostG
 
 ### Servicios Implementados
 
-1. **AI Service Clientes** (Puerto 5001)
+1. **Search Token** (Puerto 8000)
+   - Búsqueda avanzada de proveedores con tokenización
+   - Cache ultrarrápido con Redis
+   - Múltiples estrategias de búsqueda (token-based, full-text, híbrida)
+
+2. **AI Clientes** (Puerto 8001)
    - Procesamiento de mensajes de clientes con OpenAI
    - Entendimiento de necesidades y extracción de información
    - Coordinación con servicio de proveedores
    - ✅ **Gestión de sesiones integrada** (ahora incluye el Session Service)
 
-2. **AI Service Proveedores** (Puerto 5002)
+3. **AI Proveedores** (Puerto 8002)
    - Búsqueda geolocalizada de proveedores con PostGIS
    - Gestión de disponibilidad y perfiles de proveedores
    - Matching basado en ubicación y habilidades
@@ -68,22 +73,7 @@ WhatsApp Service (Node.js) → AI Service Clientes (Python)
    cd python-services
    ```
 
-2. **Crear entorno virtual**
-
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # Linux/Mac
-   # o
-   venv\Scripts\activate     # Windows
-   ```
-
-3. **Instalar dependencias**
-
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **Configurar variables de entorno**
+2. **Configurar variables de entorno**
    ```bash
    cp .env.example .env
    # Editar .env con tus configuraciones
@@ -110,26 +100,40 @@ PROVEEDORES_SERVICE_PORT=5002
 
 ## 🏃‍♂️ Ejecución
 
-### Iniciar Ambos Servicios con Docker Compose
+### Método Recomendado: Docker Compose
 
 ```bash
-docker compose up -d ai-service-clientes ai-service-proveedores
+# Iniciar todos los servicios Python
+docker compose up -d search-token ai-clientes ai-proveedores
+
+# Verificar estado
+docker compose ps
 ```
 
-### Iniciar Servicios Individualmente
+### Desarrollo Local (sin Docker)
 
-**AI Service Clientes**
+Si prefieres desarrollar localmente sin Docker, cada servicio tiene sus propias dependencias:
+
+**Search Token**
 
 ```bash
-cd ai-service-clientes
+cd search-token
+pip install -r requirements.txt
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+**AI Clientes**
+
+```bash
+cd ai-clientes
 pip install -r requirements.txt
 python main.py
 ```
 
-**AI Service Proveedores**
+**AI Proveedores**
 
 ```bash
-cd ai-service-proveedores
+cd ai-proveedores
 pip install -r requirements.txt
 python main.py
 ```
@@ -137,12 +141,59 @@ python main.py
 ### Verificar Estado
 
 ```bash
-# AI Service Clientes
-curl http://localhost:5001/health
+# Search Token
+curl http://localhost:8000/health
 
-# AI Service Proveedores
-curl http://localhost:5002/health
+# AI Clientes
+curl http://localhost:8001/health
+
+# AI Proveedores
+curl http://localhost:8002/health
 ```
+
+## 🔍 Validación de Calidad Local
+
+**IMPORTANTE**: Antes de subir cualquier cambio a GitHub, debes ejecutar la validación de calidad local.
+
+### Flujo de Trabajo Recomendado
+
+1. **Hacer cambios en el código**
+2. **Ejecutar validación de calidad** (obligatorio)
+3. **Si todo está OK**: Hacer commit y push a GitHub
+4. **Si hay errores**: Corregir y repetir desde paso 2
+
+### Ejecutar Validación de Calidad
+
+```bash
+# Validar todos los servicios (recomendado)
+python validate_quality.py
+
+# Validar solo un servicio específico
+python validate_quality.py --service ai-clientes
+
+# Validar y corregir automáticamente (formato e importaciones)
+python validate_quality.py --fix
+```
+
+### Herramientas de Validación Incluidas
+
+El script de validación ejecuta automáticamente:
+
+- **📝 Black**: Formato automático de código
+- **📦 isort**: Ordenamiento de importaciones
+- **🔍 Flake8**: Linting y estilo de código
+- **🔧 MyPy**: Verificación de tipos estáticos
+- **🔒 Bandit**: Análisis de seguridad
+- **🐍 Python**: Validación de sintaxis básica
+
+### Configuración de Herramientas
+
+Las herramientas utilizan archivos de configuración locales:
+- `.flake8` - Configuración de Flake8
+- `.mypy.ini` - Configuración de MyPy
+- `pyproject.toml` - Configuración de Black, isort y Bandit
+
+**Nota**: Estos archivos son para uso local y no se deben subir a GitHub.
 
 ## 📚 API Documentation
 

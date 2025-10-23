@@ -14,16 +14,17 @@ class Settings(BaseSettings):
     # Redis Configuration (Upstash)
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379")
 
-    # Service Ports (según GESTION_PUERTOS.md)
-    frontend_service_port: int = int(os.getenv("FRONTEND_SERVICE_PORT", "6002"))
-    clientes_service_port: int = int(os.getenv("AI_SERVICE_CLIENTES_PORT", "5001"))
+    # Service Ports (actualizados según nuevo esquema simplificado)
+    frontend_service_port: int = int(os.getenv("FRONTEND_SERVICE_PORT", "5000"))
+    clientes_service_port: int = int(os.getenv("AI_SERVICE_CLIENTES_PORT", "8001"))
     proveedores_service_port: int = int(
-        os.getenv("AI_SERVICE_PROVEEDORES_PORT", "5002")
+        os.getenv("AI_SERVICE_PROVEEDORES_PORT", "8002")
     )
-    whatsapp_clientes_port: int = int(os.getenv("WHATSAPP_CLIENTES_PORT", "7001"))
-    whatsapp_proveedores_port: int = int(os.getenv("WHATSAPP_PROVEEDORES_PORT", "7002"))
+    whatsapp_clientes_port: int = int(os.getenv("WHATSAPP_CLIENTES_PORT", "5001"))
+    whatsapp_proveedores_port: int = int(os.getenv("WHATSAPP_PROVEEDORES_PORT", "5002"))
+    search_token_port: int = int(os.getenv("SEARCH_TOKEN_PORT", "8000"))
     session_service_port: int = int(os.getenv("SESSION_SERVICE_PORT", "8004"))
-    api_gateway_port: int = int(os.getenv("API_GATEWAY_PORT", "8000"))
+    api_gateway_port: int = int(os.getenv("API_GATEWAY_PORT", "8003"))
 
     # Instance Configuration
     clientes_instance_id: str = os.getenv("CLIENTES_INSTANCE_ID", "clientes")
@@ -56,6 +57,16 @@ class Settings(BaseSettings):
 
     # Flow TTL (seconds) for conversational state in Redis
     flow_ttl_seconds: int = int(os.getenv("FLOW_TTL_SECONDS", "3600"))
+
+    # Search Service Configuration
+    max_search_results: int = int(os.getenv("MAX_SEARCH_RESULTS", "20"))
+    default_search_limit: int = int(os.getenv("DEFAULT_SEARCH_LIMIT", "10"))
+    search_timeout_ms: int = int(os.getenv("SEARCH_TIMEOUT_MS", "5000"))
+    cache_ttl_seconds: int = int(os.getenv("CACHE_TTL_SECONDS", "300"))
+    search_api_host: str = os.getenv("SEARCH_API_HOST", "0.0.0.0")
+    search_api_prefix: str = os.getenv("SEARCH_API_PREFIX", "/api/v1")
+    search_metrics_enabled: bool = os.getenv("SEARCH_METRICS_ENABLED", "true").lower() == "true"
+    search_metrics_port: int = int(os.getenv("SEARCH_METRICS_PORT", "9091"))
 
     class Config:
         env_file = ".env"

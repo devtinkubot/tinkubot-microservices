@@ -93,3 +93,10 @@ dist/
 setup-husky.sh
 Dispositivos
 package-lock.json
+
+# Claude Code - archivos locales
+.claude/
+CLAUDE.md
+
+# Documentación local
+docs/
