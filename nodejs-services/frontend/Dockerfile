@@ -5,7 +5,7 @@ WORKDIR /app
 # Copiar package.json y package-lock.json
 COPY package*.json ./
 # Instalar dependencias de forma reproducible y sin devDependencies
-RUN npm ci --omit=dev
+RUN npm install --omit=dev --production
 
 # Copiar el resto de la aplicación
 COPY . .

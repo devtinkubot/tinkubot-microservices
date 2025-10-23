@@ -52,8 +52,8 @@ WORKDIR /usr/src/app
 
 # Copiar archivos de dependencias e instalar (rápido y reproducible)
 COPY package*.json ./
-# Usar npm ci y omitir devDependencies para imagen más ligera
-RUN npm ci --omit=dev
+# Usar npm install y omitir devDependencies para imagen más ligera
+RUN npm install --omit=dev --production
 
 # Copiar el resto del código de la aplicación
 COPY . .
