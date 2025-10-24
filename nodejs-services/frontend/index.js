@@ -4,26 +4,63 @@ const path = require('path');
 const QRCode = require('qrcode');
 const app = express();
 
+const parsePort = value => {
+  const num = Number(value);
+  return Number.isFinite(num) && num > 0 ? num : undefined;
+};
+
+const resolvePort = (defaultValue, ...candidates) => {
+  for (const candidate of candidates) {
+    const parsed = parsePort(candidate);
+    if (parsed !== undefined) {
+      return parsed;
+    }
+  }
+  return defaultValue;
+};
+
 // Configuración
-const PORT = process.env.FRONTEND_PORT || 5000;
+const PORT = resolvePort(5000, process.env.FRONTEND_SERVICE_PORT, process.env.FRONTEND_PORT);
+const clientesPort = resolvePort(
+  5001,
+  process.env.CLIENTES_WHATSAPP_PORT,
+  process.env.WHATSAPP_CLIENTES_PORT
+);
+const proveedoresPort = resolvePort(
+  5002,
+  process.env.PROVEEDORES_WHATSAPP_PORT,
+  process.env.WHATSAPP_PROVEEDORES_PORT
+);
+
+const serverDomain = process.env.SERVER_DOMAIN;
+const clientesHost = serverDomain || 'wa-clientes';
+const proveedoresHost = serverDomain || 'wa-proveedores';
+
 const WHATSAPP_CLIENTES_URL =
-  process.env.WHATSAPP_CLIENTES_URL || 'http://wa-clientes:5001';
+  process.env.WHATSAPP_CLIENTES_URL || `http://${clientesHost}:${clientesPort}`;
 const WHATSAPP_PROVEEDORES_URL =
-  process.env.WHATSAPP_PROVEEDORES_URL || 'http://wa-proveedores:5002';
+  process.env.WHATSAPP_PROVEEDORES_URL || `http://${proveedoresHost}:${proveedoresPort}`;
+
+const CLIENTES_INSTANCE_ID = process.env.CLIENTES_INSTANCE_ID || 'bot-clientes';
+const CLIENTES_INSTANCE_NAME = process.env.CLIENTES_INSTANCE_NAME || 'TinkuBot Clientes';
+const PROVEEDORES_INSTANCE_ID =
+  process.env.PROVEEDORES_INSTANCE_ID || 'bot-proveedores';
+const PROVEEDORES_INSTANCE_NAME =
+  process.env.PROVEEDORES_INSTANCE_NAME || 'TinkuBot Proveedores';
 
 // Configuración de instancias
 const WHATSAPP_INSTANCES = [
   {
-    id: 'bot-clientes',
-    name: 'TinkuBot Clientes',
+    id: CLIENTES_INSTANCE_ID,
+    name: CLIENTES_INSTANCE_NAME,
     url: WHATSAPP_CLIENTES_URL,
-    port: 5001,
+    port: clientesPort,
   },
   {
-    id: 'bot-proveedores',
-    name: 'TinkuBot Proveedores',
+    id: PROVEEDORES_INSTANCE_ID,
+    name: PROVEEDORES_INSTANCE_NAME,
     url: WHATSAPP_PROVEEDORES_URL,
-    port: 5002,
+    port: proveedoresPort,
   },
 ];
 

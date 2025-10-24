@@ -9,19 +9,31 @@ class Settings(BaseSettings):
 
     # Supabase Configuration
     supabase_url: str = os.getenv("SUPABASE_URL", "")
-    supabase_service_key: str = os.getenv("SUPABASE_SERVICE_KEY", "")
+    supabase_service_key: str = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv(
+        "SUPABASE_BACKEND_API_KEY", ""
+    )
 
     # Redis Configuration (Upstash)
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379")
 
     # Service Ports (actualizados según nuevo esquema simplificado)
     frontend_service_port: int = int(os.getenv("FRONTEND_SERVICE_PORT", "5000"))
-    clientes_service_port: int = int(os.getenv("AI_SERVICE_CLIENTES_PORT", "8001"))
-    proveedores_service_port: int = int(
-        os.getenv("AI_SERVICE_PROVEEDORES_PORT", "8002")
+    clientes_service_port: int = int(
+        os.getenv("CLIENTES_SERVER_PORT")
+        or os.getenv("AI_SERVICE_CLIENTES_PORT", "8001")
     )
-    whatsapp_clientes_port: int = int(os.getenv("WHATSAPP_CLIENTES_PORT", "5001"))
-    whatsapp_proveedores_port: int = int(os.getenv("WHATSAPP_PROVEEDORES_PORT", "5002"))
+    proveedores_service_port: int = int(
+        os.getenv("PROVEEDORES_SERVER_PORT")
+        or os.getenv("AI_SERVICE_PROVEEDORES_PORT", "8002")
+    )
+    whatsapp_clientes_port: int = int(
+        os.getenv("CLIENTES_WHATSAPP_PORT")
+        or os.getenv("WHATSAPP_CLIENTES_PORT", "5001")
+    )
+    whatsapp_proveedores_port: int = int(
+        os.getenv("PROVEEDORES_WHATSAPP_PORT")
+        or os.getenv("WHATSAPP_PROVEEDORES_PORT", "5002")
+    )
     search_token_port: int = int(os.getenv("SEARCH_TOKEN_PORT", "8000"))
     session_service_port: int = int(os.getenv("SESSION_SERVICE_PORT", "8004"))
     api_gateway_port: int = int(os.getenv("API_GATEWAY_PORT", "8003"))

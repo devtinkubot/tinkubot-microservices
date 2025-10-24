@@ -7,15 +7,45 @@ const http = require('http');
 const { Server } = require('socket.io');
 const SupabaseStore = require('./SupabaseStore');
 
+const parsePort = value => {
+  const num = Number(value);
+  return Number.isFinite(num) && num > 0 ? num : undefined;
+};
+
+const resolvePort = (defaultValue, ...candidates) => {
+  for (const candidate of candidates) {
+    const parsed = parsePort(candidate);
+    if (parsed !== undefined) {
+      return parsed;
+    }
+  }
+  return defaultValue;
+};
+
 const app = express();
-const port = process.env.WHATSAPP_PORT || 5002;
-const instanceId = 'bot-proveedores';
-const instanceName = 'TinkuBot Proveedores';
+const port = resolvePort(
+  5002,
+  process.env.PROVEEDORES_WHATSAPP_PORT,
+  process.env.WHATSAPP_PROVEEDORES_PORT,
+  process.env.WHATSAPP_PORT
+);
+const instanceId = process.env.PROVEEDORES_INSTANCE_ID || 'bot-proveedores';
+const instanceName = process.env.PROVEEDORES_INSTANCE_NAME || 'TinkuBot Proveedores';
 
 // Configuración de servicios externos
 // ESPECIALIZADO: Siempre usa el AI Service Proveedores
+const defaultAiPort = resolvePort(
+  8002,
+  process.env.PROVEEDORES_SERVER_PORT,
+  process.env.AI_SERVICE_PROVEEDORES_PORT
+);
+const fallbackAiHosts = [
+  process.env.SERVER_DOMAIN && `http://${process.env.SERVER_DOMAIN}:${defaultAiPort}`,
+  `http://ai-proveedores:${defaultAiPort}`,
+  'http://ai-srv-proveedores:8002',
+].filter(Boolean);
 const AI_SERVICE_URL =
-  process.env.PROVEEDORES_AI_SERVICE_URL || 'http://ai-srv-proveedores:8002';
+  process.env.PROVEEDORES_AI_SERVICE_URL || fallbackAiHosts[0];
 
 // Configuración de Supabase para almacenamiento de sesiones
 const supabaseUrl = process.env.SUPABASE_URL;

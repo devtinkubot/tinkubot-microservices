@@ -8,11 +8,12 @@ services:
       dockerfile: Dockerfile
     container_name: tinkubot-frontend
     ports:
-      - "5000:5000"
+      - "${FRONTEND_SERVICE_PORT:-5000}:${FRONTEND_SERVICE_PORT:-5000}"
     environment:
-      - WHATSAPP_CLIENTES_URL=http://wa-clientes:5001
-      - WHATSAPP_PROVEEDORES_URL=http://wa-proveedores:5002
-      - FRONTEND_PORT=5000
+      - FRONTEND_SERVICE_PORT=${FRONTEND_SERVICE_PORT}
+      - FRONTEND_PORT=${FRONTEND_SERVICE_PORT}
+      - WHATSAPP_CLIENTES_URL=http://wa-clientes:${CLIENTES_WHATSAPP_PORT:-5001}
+      - WHATSAPP_PROVEEDORES_URL=http://wa-proveedores:${PROVEEDORES_WHATSAPP_PORT:-5002}
       - NODE_ENV=production
     networks:
       - tinkubot-network
@@ -25,14 +26,18 @@ services:
       dockerfile: Dockerfile
     container_name: tinkubot-wa-clientes
     ports:
-      - "5001:5001"
+      - "${CLIENTES_WHATSAPP_PORT:-5001}:${CLIENTES_WHATSAPP_PORT:-5001}"
     environment:
       # ACTUALIZADO: Usa el AI Service Clientes específico para esta instancia
-      - AI_SERVICE_CLIENTES_URL=http://ai-clientes:8001
+      - AI_SERVICE_CLIENTES_URL=${AI_SERVICE_CLIENTES_URL}
+      - CLIENTES_AI_SERVICE_URL=${CLIENTES_AI_SERVICE_URL}
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_BACKEND_API_KEY=${SUPABASE_BACKEND_API_KEY}
       - SUPABASE_BUCKET_NAME=${SUPABASE_BUCKET_NAME}
-      - WHATSAPP_PORT=5001
+      - CLIENTES_WHATSAPP_PORT=${CLIENTES_WHATSAPP_PORT}
+      - WHATSAPP_CLIENTES_PORT=${WHATSAPP_CLIENTES_PORT}
+      - CLIENTES_INSTANCE_ID=${CLIENTES_INSTANCE_ID}
+      - CLIENTES_INSTANCE_NAME=${CLIENTES_INSTANCE_NAME}
       - NODE_ENV=production
     networks:
       - tinkubot-network
@@ -45,14 +50,17 @@ services:
       dockerfile: Dockerfile
     container_name: tinkubot-wa-proveedores
     ports:
-      - "5002:5002"
+      - "${PROVEEDORES_WHATSAPP_PORT:-5002}:${PROVEEDORES_WHATSAPP_PORT:-5002}"
     environment:
       # ACTUALIZADO: Usa el AI Service Proveedores específico para esta instancia
-      - PROVEEDORES_AI_SERVICE_URL=http://ai-proveedores:8002
+      - PROVEEDORES_AI_SERVICE_URL=${PROVEEDORES_AI_SERVICE_URL}
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_BACKEND_API_KEY=${SUPABASE_BACKEND_API_KEY}
       - SUPABASE_BUCKET_NAME=${SUPABASE_BUCKET_NAME}
-      - WHATSAPP_PORT=5002
+      - PROVEEDORES_WHATSAPP_PORT=${PROVEEDORES_WHATSAPP_PORT}
+      - WHATSAPP_PROVEEDORES_PORT=${WHATSAPP_PROVEEDORES_PORT}
+      - PROVEEDORES_INSTANCE_ID=${PROVEEDORES_INSTANCE_ID}
+      - PROVEEDORES_INSTANCE_NAME=${PROVEEDORES_INSTANCE_NAME}
       - NODE_ENV=production
     networks:
       - tinkubot-network
@@ -65,12 +73,15 @@ services:
       dockerfile: ai-clientes/Dockerfile
     container_name: tinkubot-ai-clientes
     ports:
-      - "8001:8001"
+      - "${CLIENTES_SERVER_PORT:-8001}:${CLIENTES_SERVER_PORT:-8001}"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - REDIS_URL=${REDIS_URL}
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_BACKEND_API_KEY=${SUPABASE_BACKEND_API_KEY}
+      - CLIENTES_SERVER_PORT=${CLIENTES_SERVER_PORT}
+      - AI_SERVICE_CLIENTES_PORT=${AI_SERVICE_CLIENTES_PORT}
+      - SERVER_HOST=${SERVER_HOST}
       - NODE_ENV=production
     networks:
       - tinkubot-network
@@ -83,13 +94,16 @@ services:
       dockerfile: ai-proveedores/Dockerfile
     container_name: tinkubot-ai-proveedores
     ports:
-      - "8002:8002"
+      - "${PROVEEDORES_SERVER_PORT:-8002}:${PROVEEDORES_SERVER_PORT:-8002}"
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - REDIS_URL=${REDIS_URL}
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_BACKEND_API_KEY=${SUPABASE_BACKEND_API_KEY}
+      - PROVEEDORES_SERVER_PORT=${PROVEEDORES_SERVER_PORT}
+      - AI_SERVICE_PROVEEDORES_PORT=${AI_SERVICE_PROVEEDORES_PORT}
+      - SERVER_HOST=${SERVER_HOST}
       - NODE_ENV=production
     networks:
       - tinkubot-network
@@ -102,14 +116,14 @@ services:
       dockerfile: search-token/Dockerfile
     container_name: tinkubot-search-token
     ports:
-      - "8000:8000"
+      - "${SEARCH_TOKEN_PORT:-8000}:${SEARCH_TOKEN_PORT:-8000}"
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_KEY=${SUPABASE_BACKEND_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - API_PORT=8000
+      - API_PORT=${SEARCH_TOKEN_PORT}
       - NODE_ENV=production
     networks:
       - tinkubot-network

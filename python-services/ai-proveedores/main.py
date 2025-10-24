@@ -2115,10 +2115,16 @@ async def test_message():
 
 
 if __name__ == "__main__":
+    server_host = os.getenv("SERVER_HOST", "0.0.0.0")
+    server_port = int(
+        os.getenv("PROVEEDORES_SERVER_PORT")
+        or os.getenv("AI_SERVICE_PROVEEDORES_PORT")
+        or settings.proveedores_service_port
+    )
     uvicorn.run(
         "main:app",
-        host="0.0.0.0",
-        port=settings.proveedores_service_port,
-        reload=False,
+        host=server_host,
+        port=server_port,
+        reload=os.getenv("UVICORN_RELOAD", "false").lower() == "true",
         log_level=LOG_LEVEL.lower(),
     )

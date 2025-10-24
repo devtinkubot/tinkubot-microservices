@@ -82,9 +82,19 @@ PROVEEDORES_AI_SERVICE_URL = os.getenv(
 )
 
 # WhatsApp Clientes URL para envíos salientes (scheduler)
+_clientes_whatsapp_port = (
+    os.getenv("WHATSAPP_CLIENTES_PORT")
+    or os.getenv("CLIENTES_WHATSAPP_PORT")
+    or str(settings.whatsapp_clientes_port)
+)
+_server_domain = os.getenv("SERVER_DOMAIN")
+if _server_domain:
+    _default_whatsapp_clientes_url = f"http://{_server_domain}:{_clientes_whatsapp_port}"
+else:
+    _default_whatsapp_clientes_url = f"http://wa-clientes:{_clientes_whatsapp_port}"
 WHATSAPP_CLIENTES_URL = os.getenv(
     "WHATSAPP_CLIENTES_URL",
-    f"http://wa-clientes:{settings.whatsapp_clientes_port}",
+    _default_whatsapp_clientes_url,
 )
 
 # Supabase client (optional) for persisting completed requests
@@ -1765,11 +1775,17 @@ if __name__ == "__main__":
     async def startup_wrapper():
         # Lanzar scheduler en background
         asyncio.create_task(feedback_scheduler_loop())
+        server_host = os.getenv("SERVER_HOST", "0.0.0.0")
+        server_port = int(
+            os.getenv("CLIENTES_SERVER_PORT")
+            or os.getenv("AI_SERVICE_CLIENTES_PORT")
+            or settings.clientes_service_port
+        )
         config = {
             "app": "main:app",
-            "host": "0.0.0.0",
-            "port": 8001,
-            "reload": True,
+            "host": server_host,
+            "port": server_port,
+            "reload": os.getenv("UVICORN_RELOAD", "true").lower() == "true",
             "log_level": settings.log_level.lower(),
         }
         uvicorn.run(**config)
