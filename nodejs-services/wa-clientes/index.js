@@ -26,8 +26,7 @@ const app = express();
 const port = resolvePort(
   5001,
   process.env.CLIENTES_WHATSAPP_PORT,
-  process.env.WHATSAPP_CLIENTES_PORT,
-  process.env.WHATSAPP_PORT
+  process.env.WHATSAPP_CLIENTES_PORT
 );
 const instanceId = process.env.CLIENTES_INSTANCE_ID || 'bot-clientes';
 const instanceName = process.env.CLIENTES_INSTANCE_NAME || 'TinkuBot Clientes';

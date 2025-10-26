@@ -20,7 +20,7 @@ const resolvePort = (defaultValue, ...candidates) => {
 };
 
 // Configuración
-const PORT = resolvePort(5000, process.env.FRONTEND_SERVICE_PORT, process.env.FRONTEND_PORT);
+const PORT = resolvePort(5000, process.env.FRONTEND_SERVICE_PORT);
 const clientesPort = resolvePort(
   5001,
   process.env.CLIENTES_WHATSAPP_PORT,
