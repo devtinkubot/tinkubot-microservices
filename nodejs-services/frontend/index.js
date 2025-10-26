@@ -73,6 +73,15 @@ WHATSAPP_INSTANCES.forEach(instance => {
 app.use(express.static('public'));
 app.use(express.json());
 
+// Health check para monitoreo básico
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    instances: WHATSAPP_INSTANCES.map(({ id, name, url }) => ({ id, name, url })),
+    uptime_seconds: Math.round(process.uptime()),
+  });
+});
+
 // Rutas
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin-dashboard.html'));

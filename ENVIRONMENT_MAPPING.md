@@ -104,8 +104,10 @@ AI_SERVICE_PROVEEDORES_PORT=8002
 SEARCH_TOKEN_URL=http://search-token:8000
 CLIENTES_AI_SERVICE_URL=http://ai-clientes:8001
 PROVEEDORES_AI_SERVICE_URL=http://ai-proveedores:8002
-CLIENTES_WHATSAPP_CLIENTES_URL=http://wa-clientes:5001
-CLIENTES_WHATSAPP_PROVEEDORES_URL=http://wa-proveedores:5002
+# Nota: docker-compose.yml inyecta estas URLs directamente en el frontend y en cualquier
+# servicio que las necesite; los nombres deben mantenerse exactamente igual.
+WHATSAPP_CLIENTES_URL=http://wa-clientes:5001
+WHATSAPP_PROVEEDORES_URL=http://wa-proveedores:5002
 
 # ===========================================
 # CONFIGURACIÓN DE PUERTOS (ESQUEMA ACTUALIZADO)

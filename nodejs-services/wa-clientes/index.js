@@ -74,6 +74,16 @@ console.warn(`📱 Puerto: ${port}`);
 app.use(cors());
 app.use(express.json());
 
+// Endpoint básico de health check para orquestadores
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    instanceId,
+    aiServiceUrl: AI_SERVICE_URL,
+    uptime_seconds: Math.round(process.uptime()),
+  });
+});
+
 // Configurar servidor HTTP y WebSocket
 const server = http.createServer(app);
 const io = new Server(server, {

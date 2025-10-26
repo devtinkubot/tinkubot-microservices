@@ -4,10 +4,11 @@
 
 **El equipo de QA reportó que las variables de entorno no están mapeadas correctamente con el código.**
 
-### **🔴 Variables Faltantes en .env:**
-- ❌ `AI_SERVICE_CLIENTES_URL` - Código asume `http://ai-clientes:8001` pero `.env` está vacío
-- ❌ `CLIENTES_AI_SERVICE_URL` - Código asume `http://ai-proveedores:8002` pero `.env` está vacío
-- ❌ `PROVEEDORES_AI_SERVICE_URL` - Código asume `http://ai-proveedores:8002` pero `.env` está vacío
+### **🔴 Variables Faltantes en .env (histórico QA):**
+- ❌ `AI_SERVICE_CLIENTES_URL` - Código asume `http://ai-clientes:8001` pero `.env` estaba vacío
+- ❌ `CLIENTES_AI_SERVICE_URL` - Código asume `http://ai-proveedores:8002` pero `.env` estaba vacío
+- ❌ `PROVEEDORES_AI_SERVICE_URL` - Código asume `http://ai-proveedores:8002` pero `.env` estaba vacío
+- ❌ `WHATSAPP_CLIENTES_URL` / `WHATSAPP_PROVEEDORES_URL` - Compose inyecta estas URLs al frontend; deben existir exactamente con esos nombres (no `CLIENTES_WHATSAPP_*`).
 - ❌ `SUPABASE_BACKEND_API_KEY` vs `SUPABASE_SERVICE_KEY` - Inconsistencia en nombres
 - ❌ `SUPABASE_BUCKET_NAME` y access keys - No configuradas en `.env`
 - ❌ `DATABASE_URL` - Configurada en `shared-lib/config.py` pero ausente en `.env`

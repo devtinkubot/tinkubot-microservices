@@ -21,6 +21,9 @@ COPY ai-proveedores/ .
 # (Opcional) Copiar librería compartida si se requiere en el futuro
 COPY shared-lib ./shared_lib
 
+# Asegurar que /app esté en PYTHONPATH para resolver main.py
+ENV PYTHONPATH="/app"
+
 # Crear usuario no root (Debian/Ubuntu)
 RUN useradd -m -u 1000 -s /bin/sh appuser && chown -R appuser:appuser /app
 USER appuser
@@ -33,4 +36,15 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8002/health || exit 1
 
 # Comando de inicio
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8002"]
+CMD [
+    "python",
+    "-m",
+    "uvicorn",
+    "main:app",
+    "--app-dir",
+    "/app",
+    "--host",
+    "0.0.0.0",
+    "--port",
+    "8002"
+]
