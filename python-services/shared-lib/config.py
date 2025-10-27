@@ -9,8 +9,8 @@ class Settings(BaseSettings):
 
     # Supabase Configuration
     supabase_url: str = os.getenv("SUPABASE_URL", "")
-    supabase_service_key: str = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv(
-        "SUPABASE_BACKEND_API_KEY", ""
+    supabase_service_key: str = os.getenv("SUPABASE_BACKEND_API_KEY") or os.getenv(
+        "SUPABASE_SERVICE_KEY", ""
     )
 
     # Redis Configuration (Upstash)

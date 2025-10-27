@@ -44,8 +44,6 @@ SUPABASE_SERVICE_KEY=your-supabase-service-role-key
 SUPABASE_BUCKET_NAME=wa_sessions
 SUPABASE_BUCKET_URL=https://your-project-id.supabase.co/storage/v1/s3
 SUPABASE_BUCKET_REGION=us-east-2
-SUPABASE_BUCKET_ACCESS_KEY=your-access-key
-SUPABASE_BUCKET_SECRET_ACCESS_KEY=your-secret-access-key
 
 # ===========================================
 # CONFIGURACIÓN BASE DE DATOS

@@ -35,9 +35,9 @@ from shared_lib.redis_client import redis_client
 from shared_lib.service_catalog import normalize_profession_for_search, normalize_text_pair
 
 # Configuración desde variables de entorno
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv(
-    "SUPABASE_BACKEND_API_KEY", ""
+SUPABASE_URL = settings.supabase_url or os.getenv("SUPABASE_URL", "")
+SUPABASE_SERVICE_KEY = settings.supabase_service_key or os.getenv(
+    "SUPABASE_SERVICE_KEY", ""
 )
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 ENABLE_DIRECT_WHATSAPP_SEND = (
