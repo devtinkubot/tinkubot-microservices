@@ -36,9 +36,8 @@ from shared_lib.service_catalog import normalize_profession_for_search, normaliz
 
 # Configuración desde variables de entorno
 SUPABASE_URL = settings.supabase_url or os.getenv("SUPABASE_URL", "")
-SUPABASE_SERVICE_KEY = settings.supabase_service_key or os.getenv(
-    "SUPABASE_SERVICE_KEY", ""
-)
+# settings ya se encarga de priorizar SUPABASE_BACKEND_API_KEY
+SUPABASE_SERVICE_KEY = settings.supabase_service_key
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 ENABLE_DIRECT_WHATSAPP_SEND = (
     os.getenv("AI_PROV_SEND_DIRECT", "false").lower() == "true"
