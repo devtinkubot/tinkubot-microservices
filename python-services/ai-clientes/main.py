@@ -101,8 +101,8 @@ WHATSAPP_CLIENTES_URL = os.getenv(
 
 # Supabase client (opcional) para persistencia
 SUPABASE_URL = settings.supabase_url
-# settings ya expone la clave backend directamente
-SUPABASE_KEY = settings.supabase_backend_api_key
+# settings expone la clave JWT de servicio para Supabase
+SUPABASE_KEY = settings.supabase_service_key
 supabase = (
     create_client(SUPABASE_URL, SUPABASE_KEY)
     if (SUPABASE_URL and SUPABASE_KEY)

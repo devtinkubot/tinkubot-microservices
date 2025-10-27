@@ -39,8 +39,8 @@ from shared_lib.service_catalog import (
 
 # Configuración desde variables de entorno
 SUPABASE_URL = settings.supabase_url or os.getenv("SUPABASE_URL", "")
-# settings ya se encarga de exponer la clave backend
-SUPABASE_SERVICE_KEY = settings.supabase_backend_api_key
+# settings expone la clave JWT de servicio para Supabase
+SUPABASE_SERVICE_KEY = settings.supabase_service_key
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 ENABLE_DIRECT_WHATSAPP_SEND = (
     os.getenv("AI_PROV_SEND_DIRECT", "false").lower() == "true"

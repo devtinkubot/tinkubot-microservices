@@ -10,8 +10,10 @@ class Settings(BaseSettings):
     # Supabase Configuration
     supabase_url: str = os.getenv("SUPABASE_URL", "")
     supabase_backend_api_key: str = os.getenv("SUPABASE_BACKEND_API_KEY", "")
-    # Alias legacy nombre para compatibilidad, pero usamos backend_api_key como fuente única
-    supabase_service_key: str = supabase_backend_api_key
+    # Clave JWT de servicio recomendada por Supabase (con fallback a backend para compatibilidad)
+    supabase_service_key: str = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv(
+        "SUPABASE_BACKEND_API_KEY", ""
+    )
 
     # Redis Configuration (Upstash)
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379")
