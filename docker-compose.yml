@@ -78,6 +78,8 @@ services:
       - REDIS_URL=${REDIS_URL}
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_BACKEND_API_KEY=${SUPABASE_BACKEND_API_KEY}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      - SUPABASE_KEY=${SUPABASE_BACKEND_API_KEY}
       - CLIENTES_SERVER_PORT=${CLIENTES_SERVER_PORT}
       - AI_SERVICE_CLIENTES_PORT=${AI_SERVICE_CLIENTES_PORT}
       - SERVER_HOST=${SERVER_HOST}
@@ -100,6 +102,8 @@ services:
       - REDIS_URL=${REDIS_URL}
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_BACKEND_API_KEY=${SUPABASE_BACKEND_API_KEY}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      - SUPABASE_KEY=${SUPABASE_BACKEND_API_KEY}
       - PROVEEDORES_SERVER_PORT=${PROVEEDORES_SERVER_PORT}
       - AI_SERVICE_PROVEEDORES_PORT=${AI_SERVICE_PROVEEDORES_PORT}
       - SERVER_HOST=${SERVER_HOST}
@@ -111,8 +115,8 @@ services:
   # Search Token Service - Servicio de búsqueda con tokenización
   search-token:
     build:
-      context: ./python-services
-      dockerfile: search-token/Dockerfile
+      context: ./python-services/search-token
+      dockerfile: Dockerfile
     container_name: tinkubot-search-token
     ports:
       - "${SEARCH_TOKEN_PORT:-8000}:${SEARCH_TOKEN_PORT:-8000}"
@@ -121,6 +125,7 @@ services:
       - REDIS_URL=${REDIS_URL}
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_KEY=${SUPABASE_BACKEND_API_KEY}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - API_PORT=${SEARCH_TOKEN_PORT}
       - NODE_ENV=production
