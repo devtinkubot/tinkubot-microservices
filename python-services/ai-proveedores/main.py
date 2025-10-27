@@ -32,12 +32,15 @@ from templates.prompts import (
 
 from shared_lib.config import settings
 from shared_lib.redis_client import redis_client
-from shared_lib.service_catalog import normalize_profession_for_search, normalize_text_pair
+from shared_lib.service_catalog import (
+    normalize_profession_for_search,
+    normalize_text_pair,
+)
 
 # Configuración desde variables de entorno
 SUPABASE_URL = settings.supabase_url or os.getenv("SUPABASE_URL", "")
-# settings ya se encarga de priorizar SUPABASE_BACKEND_API_KEY
-SUPABASE_SERVICE_KEY = settings.supabase_service_key
+# settings ya se encarga de exponer la clave backend
+SUPABASE_SERVICE_KEY = settings.supabase_backend_api_key
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 ENABLE_DIRECT_WHATSAPP_SEND = (
     os.getenv("AI_PROV_SEND_DIRECT", "false").lower() == "true"
@@ -870,7 +873,9 @@ async def register_provider_in_supabase(
         social_media_url = provider_data.get("social_media_url")
         social_media_type = provider_data.get("social_media_type")
 
-        def _display_text(normalized_value: str, fallback: str, default: str = "") -> str:
+        def _display_text(
+            normalized_value: str, fallback: str, default: str = ""
+        ) -> str:
             if normalized_value:
                 return normalized_value.title()
             if fallback:

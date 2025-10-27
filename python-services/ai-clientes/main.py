@@ -89,7 +89,9 @@ _clientes_whatsapp_port = (
 )
 _server_domain = os.getenv("SERVER_DOMAIN")
 if _server_domain:
-    _default_whatsapp_clientes_url = f"http://{_server_domain}:{_clientes_whatsapp_port}"
+    _default_whatsapp_clientes_url = (
+        f"http://{_server_domain}:{_clientes_whatsapp_port}"
+    )
 else:
     _default_whatsapp_clientes_url = f"http://wa-clientes:{_clientes_whatsapp_port}"
 WHATSAPP_CLIENTES_URL = os.getenv(
@@ -99,8 +101,8 @@ WHATSAPP_CLIENTES_URL = os.getenv(
 
 # Supabase client (opcional) para persistencia
 SUPABASE_URL = settings.supabase_url
-# settings ya resuelve SUPABASE_BACKEND_API_KEY como clave principal
-SUPABASE_KEY = settings.supabase_service_key
+# settings ya expone la clave backend directamente
+SUPABASE_KEY = settings.supabase_backend_api_key
 supabase = (
     create_client(SUPABASE_URL, SUPABASE_KEY)
     if (SUPABASE_URL and SUPABASE_KEY)
