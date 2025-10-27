@@ -32,7 +32,7 @@ from templates.prompts import (
 
 from shared_lib.config import settings
 from shared_lib.redis_client import redis_client
-from shared_lib.service_catalog import normalize_profession_for_search
+from shared_lib.service_catalog import normalize_profession_for_search, normalize_text_pair
 
 # Configuración desde variables de entorno
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
@@ -850,11 +850,18 @@ async def register_provider_in_supabase(
 
     try:
         phone = provider_data.get("phone")
-        name = provider_data.get("name") or "Proveedor TinkuBot"
+        # Normalizar nombre, ciudad y profesión (mantener original + versión buscable)
+        name_raw, name_normalized = normalize_text_pair(
+            provider_data.get("name") or "Proveedor TinkuBot"
+        )
         email = provider_data.get("email")
-        city = provider_data.get("city")
-        profession_name = provider_data.get("profession")
-        specialty_name = provider_data.get("specialty")
+        city_raw, city_normalized = normalize_text_pair(provider_data.get("city"))
+        profession_raw, profession_normalized = normalize_text_pair(
+            provider_data.get("profession")
+        )
+        specialty_raw, specialty_normalized = normalize_text_pair(
+            provider_data.get("specialty")
+        )
         experience_years = provider_data.get("experience_years") or 0
         has_consent_value = provider_data.get("has_consent")
         has_consent = bool(has_consent_value) if has_consent_value is not None else None
@@ -863,6 +870,20 @@ async def register_provider_in_supabase(
         dni_number = provider_data.get("dni_number")
         social_media_url = provider_data.get("social_media_url")
         social_media_type = provider_data.get("social_media_type")
+
+        def _display_text(normalized_value: str, fallback: str, default: str = "") -> str:
+            if normalized_value:
+                return normalized_value.title()
+            if fallback:
+                return fallback.strip()
+            return default
+
+        display_name = _display_text(name_normalized, name_raw, "Proveedor TinkuBot")
+        display_city = _display_text(city_normalized, city_raw)
+        display_profession = _display_text(profession_normalized, profession_raw)
+        display_specialty = _display_text(specialty_normalized, specialty_raw)
+        profession_name = display_profession or None
+        specialty_name = display_specialty or None
 
         # 1) Verificar si proveedor ya existe
         existing_provider = (
@@ -878,9 +899,9 @@ async def register_provider_in_supabase(
             # Actualizar proveedor existente
             provider_id = existing_provider.data[0]["id"]
             update_data = {
-                "full_name": name,
+                "full_name": display_name,
                 "email": email,
-                "city": city,
+                "city": display_city,
                 "updated_at": datetime.now().isoformat(),
             }
             if has_consent is not None:
@@ -903,9 +924,9 @@ async def register_provider_in_supabase(
             # Crear nuevo proveedor
             new_provider_data = {
                 "phone_number": phone,
-                "full_name": name,
+                "full_name": display_name,
                 "email": email,
-                "city": city,
+                "city": display_city,
                 "available": True,
                 "verified": False,
                 "rating": 0.0,
@@ -945,12 +966,15 @@ async def register_provider_in_supabase(
         # 4) Retornar datos del proveedor (con formato compatible)
         return {
             "id": provider_id,
-            "name": name,
+            "name": display_name,
             "phone": phone,
             "email": email,
-            "city": city,
-            "profession": profession_name,
-            "specialty": specialty_name,
+            "city": display_city,
+            "city_normalized": city_normalized or None,
+            "profession": display_profession,
+            "profession_normalized": profession_normalized or None,
+            "specialty": display_specialty,
+            "specialty_normalized": specialty_normalized or None,
             "experience_years": experience_years,
             "dni_number": dni_number,
             "social_media_url": social_media_url,
