@@ -100,20 +100,22 @@ class ProviderFlow:
         if lowered in {"omitir", "ninguna", "na", "n/a"}:
             return {
                 "success": True,
-                "response": "*La especialidad es obligatoria. Por favor escribela tal como la trabajas.*",
+                "response": (
+                    "*La especialidad es obligatoria. Por favor escribela tal como la trabajas.*"
+                ),
             }
 
         if len(specialty) < 2:
             return {
                 "success": True,
-                "response": "*La especialidad debe tener al menos 2 caracteres.*",
+                "response": ("*La especialidad debe tener al menos 2 caracteres.*"),
             }
 
         flow["specialty"] = specialty
         flow["state"] = "awaiting_experience"
         return {
             "success": True,
-            "response": "*Cuantos años de experiencia tienes? (escribe un numero)*",
+            "response": ("*Cuantos años de experiencia tienes? (escribe un numero)*"),
         }
 
     @staticmethod
@@ -144,14 +146,19 @@ class ProviderFlow:
         elif "@" not in email or "." not in email:
             return {
                 "success": True,
-                "response": "*El correo no parece valido. Envialo nuevamente o escribe 'omitir'.*",
+                "response": (
+                    "*El correo no parece valido. Envialo nuevamente o escribe 'omitir'.*"
+                ),
             }
 
         flow["email"] = email
         flow["state"] = "awaiting_social_media"
         return {
             "success": True,
-            "response": "*Tienes alguna red social (Instagram o Facebook) para mostrar tu trabajo? Envia el enlace o escribe 'omitir'.*",
+            "response": (
+                "*Tienes alguna red social (Instagram o Facebook) para mostrar tu trabajo? "
+                "Envia el enlace o escribe 'omitir'.*"
+            ),
         }
 
     @staticmethod
@@ -175,7 +182,10 @@ class ProviderFlow:
         flow["state"] = "awaiting_dni_front_photo"
         return {
             "success": True,
-            "response": "*Perfecto. Ahora necesito la foto de la Cédula (parte frontal). Envia la imagen como adjunto.*",
+            "response": (
+                "*Perfecto. Ahora necesito la foto de la Cédula (parte frontal). "
+                "Envia la imagen como adjunto.*"
+            ),
         }
 
     @staticmethod
@@ -247,7 +257,7 @@ class ProviderFlow:
                 flow["has_consent"] = True
             return {
                 "success": True,
-                "response": "Reiniciemos. *En que ciudad trabajas principalmente?*",
+                "response": ("Reiniciemos. *En que ciudad trabajas principalmente?*"),
             }
 
         if (
@@ -283,7 +293,9 @@ class ProviderFlow:
                     "success": True,
                     "messages": [
                         {
-                            "response": "Registro completado! Tu perfil ha sido creado con verificacion de identidad."
+                            "response": (
+                                "Registro completado! Tu perfil ha sido creado con verificacion de identidad."
+                            ),
                         },
                         {"response": provider_post_registration_menu_message()},
                     ],
@@ -298,10 +310,14 @@ class ProviderFlow:
             logger.error("No se pudo registrar el proveedor")
             return {
                 "success": False,
-                "response": "*Hubo un error al guardar tu informacion. Por favor intenta de nuevo.*",
+                "response": (
+                    "*Hubo un error al guardar tu informacion. Por favor intenta de nuevo.*"
+                ),
             }
 
         return {
             "success": True,
-            "response": "*Por favor selecciona 1 para confirmar o 2 para editar tu informacion.*",
+            "response": (
+                "*Por favor selecciona 1 para confirmar o 2 para editar tu informacion.*"
+            ),
         }

@@ -31,13 +31,13 @@ REGISTRATION_START_PROMPT = (
 
 CONSENT_DECLINED_MESSAGE = (
     "Entendido. Sin tu consentimiento no puedo registrar tu perfil ni compartir tus datos.\n\n"
-    'Si cambias de opinion mas adelante, escribe "registro" y continuamos desde aqui. '
+    'Si cambias de opinión más adelante, escribe "registro" y continuamos desde aquí. '
     "Gracias por tu tiempo."
 )
 
 GUIDANCE_MESSAGE = (
     "Hola, soy TinkuBot Proveedores. Puedo ayudarte a crear o actualizar tu perfil.\n"
-    "Selecciona una opcion del menu para continuar o escribe 'registro' para iniciar de inmediato."
+    "Selecciona una opción del menú para continuar o escribe 'registro' para iniciar de inmediato."
 )
 
 PROVIDER_MAIN_MENU = (

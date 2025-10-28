@@ -1,19 +1,16 @@
 """
 AI Service Proveedores - Versión mejorada con Supabase
-Servicio de gestión de proveedores con búsqueda en Supabase y capacidad de recibir mensajes WhatsApp
+Servicio de gestión de proveedores con búsqueda y capacidad de recibir mensajes WhatsApp
 """
 
-import asyncio
 import json
 import logging
-import math
 import os
 import re
 import unicodedata
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, cast
 
-import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -31,11 +28,11 @@ from templates.prompts import (
 )
 
 from shared_lib.config import settings
-from shared_lib.redis_client import redis_client
-from shared_lib.service_catalog import (
-    normalize_profession_for_search,
-    normalize_text_pair,
+from shared_lib.models import (
+    ProviderCreate,
+    ProviderResponse,
 )
+from shared_lib.redis_client import redis_client
 
 # Configuración desde variables de entorno
 SUPABASE_URL = settings.supabase_url or os.getenv("SUPABASE_URL", "")
@@ -69,7 +66,7 @@ else:
     logger.warning("⚠️ No se configuró OpenAI")
 
 
-# Modelos Pydantic
+# Modelos Pydantic locales para compatibilidad
 class ProviderSearchRequest(BaseModel):
     profession: str
     location: str
@@ -180,7 +177,7 @@ FALLBACK_PROVIDERS = [
     },
 ]
 
-ProviderMatch = Tuple[Dict[str, Any], int, str]
+# ProviderMatch eliminado - ya no se usa con esquema unificado
 
 
 def _safe_json_loads(payload: str) -> Optional[Any]:
@@ -195,7 +192,6 @@ def _safe_json_loads(payload: str) -> Optional[Any]:
                 return json.loads(match.group(0))
             except json.JSONDecodeError:
                 return None
-        return None
 
 
 def _normalize_terms(values: Optional[List[Any]]) -> List[str]:
@@ -241,24 +237,178 @@ RESET_KEYWORDS = {
 }
 
 
-async def get_flow(phone: str) -> Dict[str, Any]:
+async def obtener_flujo(phone: str) -> Dict[str, Any]:
     data = await redis_client.get(FLOW_KEY.format(phone))
     return data or {}
 
 
-async def set_flow(phone: str, data: Dict[str, Any]):
+async def establecer_flujo(phone: str, data: Dict[str, Any]) -> None:
     await redis_client.set(
         FLOW_KEY.format(phone), data, expire=settings.flow_ttl_seconds
     )
 
 
-async def reset_flow(phone: str):
+async def reiniciar_flujo(phone: str) -> None:
     await redis_client.delete(FLOW_KEY.format(phone))
 
 
 def is_registration_trigger(text: str) -> bool:
     low = (text or "").lower()
     return any(t in low for t in TRIGGER_WORDS)
+
+
+# === FUNCIONES SIMPLIFICADAS PARA ESQUEMA UNIFICADO ===
+
+
+def normalizar_texto_para_busqueda(texto: str) -> str:
+    """
+    Normaliza texto para búsqueda: minúsculas, sin acentos, caracteres especiales.
+    """
+    if not texto:
+        return ""
+
+    import re
+    import unicodedata
+
+    # Convertir a minúsculas y eliminar acentos
+    texto = texto.lower().strip()
+    texto = unicodedata.normalize("NFD", texto)
+    texto = "".join(char for char in texto if unicodedata.category(char) != "Mn")
+
+    # Eliminar caracteres especiales except espacios y guiones
+    texto = re.sub(r"[^a-z0-9\s\-]", " ", texto)
+
+    # Unificar espacios múltiples
+    texto = re.sub(r"\s+", " ", texto).strip()
+
+    return texto
+
+
+def procesar_keywords_servicios(lista_servicios: List[str]) -> str:
+    """
+    Convertir lista de servicios a keywords concatenadas para búsqueda.
+    """
+    keywords = []
+    for servicio in lista_servicios:
+        normalizado = normalizar_texto_para_busqueda(servicio)
+        if normalizado:
+            keywords.append(normalizado)
+    return " ".join(keywords)
+
+
+def normalizar_datos_proveedor(datos_crudos: ProviderCreate) -> Dict[str, Any]:
+    """
+    Normaliza datos del formulario para el esquema unificado.
+    """
+    return {
+        "phone": datos_crudos.phone.strip(),
+        "full_name": datos_crudos.full_name.strip().title(),  # Formato legible
+        "email": datos_crudos.email.strip() if datos_crudos.email else None,
+        "city": normalizar_texto_para_busqueda(datos_crudos.city),  # minúsculas
+        "profession": normalizar_texto_para_busqueda(
+            datos_crudos.profession
+        ),  # minúsculas
+        "services": procesar_keywords_servicios(datos_crudos.services_list or []),
+        "experience_years": datos_crudos.experience_years or 0,
+        "has_consent": datos_crudos.has_consent,
+        "available": True,
+        "verified": False,
+        "rating": 0.0,
+    }
+
+
+async def registrar_proveedor(
+    datos_proveedor: ProviderCreate,
+) -> Optional[Dict[str, Any]]:
+    """
+    Registra proveedor usando el esquema unificado simplificado.
+    """
+    if not supabase:
+        return None
+
+    try:
+        # Normalizar datos
+        datos_normalizados = normalizar_datos_proveedor(datos_proveedor)
+
+        # Verificar si teléfono ya existe
+        existente = (
+            supabase.table("providers")
+            .select("id")
+            .eq("phone", datos_normalizados["phone"])
+            .limit(1)
+            .execute()
+        )
+        if existente.data:
+            logger.warning(f"⚠️ Teléfono ya existe: {datos_normalizados['phone']}")
+            return {
+                "success": False,
+                "message": "Ya existe un proveedor con este número de teléfono",
+            }
+
+        # Insertar en tabla unificada
+        resultado = supabase.table("providers").insert(datos_normalizados).execute()
+
+        if resultado.data:
+            id_proveedor = resultado.data[0]["id"]
+            logger.info(f"✅ Proveedor registrado en esquema unificado: {id_proveedor}")
+
+            return {
+                "id": id_proveedor,
+                "phone": datos_normalizados["phone"],
+                "full_name": datos_normalizados["full_name"],
+                "city": datos_normalizados["city"],
+                "profession": datos_normalizados["profession"],
+                "services": datos_normalizados["services"],
+                "experience_years": datos_normalizados["experience_years"],
+                "rating": datos_normalizados["rating"],
+                "available": datos_normalizados["available"],
+                "verified": datos_normalizados["verified"],
+                "has_consent": datos_normalizados["has_consent"],
+                "created_at": datetime.now().isoformat(),
+            }
+        else:
+            logger.error("❌ No se pudo registrar proveedor")
+            return None
+
+    except Exception as e:
+        logger.error(f"❌ Error en registrar_proveedor: {e}")
+        return None
+
+
+async def buscar_proveedores(
+    profesion: str, ubicacion: str = None, limite: int = 10
+) -> List[Dict[str, Any]]:
+    """
+    Búsqueda directa sin joins complejos usando el esquema unificado.
+    """
+    if not supabase:
+        return []
+
+    # Construir filtros para búsqueda flexible
+    filtros_busqueda = "available=eq.true"
+    if profesion:
+        filtros_busqueda += f",profession.ilike.*{profesion}*"
+    if ubicacion:
+        filtros_busqueda += f",city.ilike.*{ubicacion}*"
+
+    try:
+        # Búsqueda directa con OR para mayor flexibilidad
+        consulta = (
+            supabase.table("providers")
+            .select(
+                "id,full_name,phone,city,profession,services,rating,available,"
+                "verified,experience_years,created_at"
+            )
+            .or_(filtros_busqueda)
+            .limit(limite)
+            .execute()
+        )
+
+        return consulta.data or []
+
+    except Exception as e:
+        logger.error(f"Error en búsqueda directa: {e}")
+        return []
 
 
 def extract_first_image_base64(payload: Dict[str, Any]) -> Optional[str]:
@@ -294,808 +444,132 @@ def extract_first_image_base64(payload: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def supabase_resolve_or_create_profession(name: str) -> Optional[str]:
-    if not supabase or not name:
-        return None
-    try:
-        resp = (
-            supabase.table("professions")
-            .select("id,name")
-            .ilike("name", f"%{name}%")
-            .limit(1)
-            .execute()
-        )
-        if resp.data:
-            return resp.data[0]["id"]
-        syn = (
-            supabase.table("profession_synonyms")
-            .select("profession_id,synonym")
-            .ilike("synonym", f"%{name}%")
-            .limit(1)
-            .execute()
-        )
-        if syn.data:
-            return syn.data[0]["profession_id"]
-        # crear si no existe
-        ins = supabase.table("professions").insert({"name": name.title()}).execute()
-        if ins.data:
-            return ins.data[0]["id"]
-    except Exception as e:
-        logger.warning(f"No se pudo resolver/crear profesión '{name}': {e}")
-    return None
+# Funciones obsoletas eliminadas - ahora se usa esquema unificado
 
 
-def supabase_upsert_provider_profession(
-    provider_id: str, profession_id: str, experience_years: Optional[int]
-):
-    if not supabase:
-        return
-    try:
-        sel = (
-            supabase.table("provider_professions")
-            .select("provider_id,profession_id")
-            .eq("provider_id", provider_id)
-            .eq("profession_id", profession_id)
-            .limit(1)
-            .execute()
-        )
-        if sel.data:
-            supabase.table("provider_professions").update(
-                {"experience_years": experience_years or 0}
-            ).eq("provider_id", provider_id).eq(
-                "profession_id", profession_id
-            ).execute()
-        else:
-            supabase.table("provider_professions").insert(
-                {
-                    "provider_id": provider_id,
-                    "profession_id": profession_id,
-                    "experience_years": experience_years or 0,
-                }
-            ).execute()
-    except Exception as e:
-        logger.warning(f"No se pudo upsert provider_profession: {e}")
+# Función obsoleta eliminada - ahora se usa search_providers_direct_query()
 
 
-def supabase_optional_seed_provider_service(
-    provider_id: str,
-    profession_name: Optional[str],
-    specialty_name: Optional[str] = None,
-):
-    if not supabase:
-        return
-    try:
-        base_title = (specialty_name or profession_name or "").strip()
-        title = (
-            base_title.title()
-            if base_title
-            else (profession_name or "Servicio").title()
-        )
-        description_parts = []
-        if profession_name:
-            description_parts.append(f"Profesional en {profession_name.title()}")
-        if specialty_name:
-            description_parts.append(f"Especialidad: {specialty_name.title()}")
-        description = (
-            " - ".join(description_parts)
-            if description_parts
-            else f"Servicio de {title}"
-        )
-        # Crear un servicio base si no hay
-        sel = (
-            supabase.table("provider_services")
-            .select("id")
-            .eq("provider_id", provider_id)
-            .ilike("title", f"%{title}%")
-            .limit(1)
-            .execute()
-        )
-        if not sel.data:
-            supabase.table("provider_services").insert(
-                {
-                    "provider_id": provider_id,
-                    "title": title,
-                    "description": description,
-                }
-            ).execute()
-    except Exception as e:
-        logger.warning(f"Error creating service: {e}")
+# Función expand_query_with_ai eliminada - búsqueda simplificada no requiere expansión
 
 
-# Función para buscar proveedores en Supabase
-async def search_providers_in_supabase(
-    profession: str, location: str, radius: float = 10.0
-) -> List[Dict[str, Any]]:
-    """Buscar proveedores utilizando profesiones, sinónimos y servicios declarados."""
-    if not supabase:
-        return []
+# Funciones de búsqueda complejas eliminadas - ahora se usa búsqueda directa con ILIKE
 
-    raw_search_term = (profession or "").strip()
-    location_term = (location or "").strip()
-    if not raw_search_term:
-        logger.info(
-            "ℹ️ search_providers_in_supabase llamado sin profesión. Retornando vacío."
-        )
-        return []
 
-    normalized_search_term = normalize_profession_for_search(raw_search_term)
-    search_term = (normalized_search_term or raw_search_term).strip()
-    if normalized_search_term and normalized_search_term != raw_search_term:
-        logger.info(
-            "🎯 Profesión normalizada para búsqueda: '%s' -> '%s'",
-            raw_search_term,
-            normalized_search_term,
-        )
+# Función obsoleta eliminada - ahora se usa register_provider_unified()
 
-    try:
-        logger.info(
-            "🔎 Resolviendo profesión y sinónimos para término: '%s' (entrada original: '%s')",
-            search_term,
-            raw_search_term,
-        )
 
-        matched_profession: Optional[Dict[str, Any]] = None
-        profession_id: Optional[str] = None
-        synonym_rows: List[Dict[str, Any]] = []
-
-        # 1) Intentar resolver la profesión directamente
-        try:
-            prof_resp = (
-                supabase.table("professions")
-                .select("id,name")
-                .ilike("name", f"%{search_term}%")
-                .limit(1)
-                .execute()
-            )
-            if prof_resp.data:
-                matched_profession = prof_resp.data[0]
-                profession_id = matched_profession.get("id")
-                logger.info(
-                    f"✅ Profesión encontrada: id={profession_id}, name={matched_profession.get('name')}"
-                )
-        except Exception as err:
-            logger.warning(
-                f"⚠️ Error buscando profesión por nombre '{search_term}': {err}"
-            )
-
-        # 2) Intentar resolver por sinónimo si no se encontró por nombre
-        if not matched_profession:
-            try:
-                syn_resp = (
-                    supabase.table("profession_synonyms")
-                    .select("profession_id,synonym")
-                    .ilike("synonym", f"%{search_term}%")
-                    .limit(1)
-                    .execute()
-                )
-                if syn_resp.data:
-                    synonym_rows = syn_resp.data
-                    profession_id = syn_resp.data[0]["profession_id"]
-                    prof_resp = (
-                        supabase.table("professions")
-                        .select("id,name")
-                        .eq("id", profession_id)
-                        .limit(1)
-                        .execute()
-                    )
-                    if prof_resp.data:
-                        matched_profession = prof_resp.data[0]
-                        logger.info(
-                            f"✅ Profesión resuelta vía sinónimo: id={profession_id}, name={matched_profession.get('name')}"
-                        )
-            except Exception as err:
-                logger.warning(
-                    f"⚠️ Error buscando profesión por sinónimos '{search_term}': {err}"
-                )
-
-        # 3) Construir lista de términos a buscar en servicios
-        seen_terms: Set[str] = set()
-        service_terms: List[str] = []
-
-        def add_term(term: Optional[str]):
-            if not term:
-                return
-            cleaned = term.strip()
-            if not cleaned:
-                return
-            lowered = cleaned.lower()
-            if lowered not in seen_terms:
-                seen_terms.add(lowered)
-                service_terms.append(cleaned)
-
-        candidate_terms = [search_term]
-        if raw_search_term and raw_search_term.lower() != search_term.lower():
-            candidate_terms.append(raw_search_term)
-
-        for candidate in candidate_terms:
-            add_term(candidate)
-            # Dividir el término proporcionado en subcomponentes útiles
-            for fragment in re.split(r"[,\-/]", candidate):
-                if fragment and len(fragment.strip()) >= 4:
-                    add_term(fragment.strip())
-
-        if matched_profession:
-            add_term(matched_profession.get("name"))
-
-        # Añadir sinónimos conocidos de la profesión resuelta
-        if profession_id:
-            try:
-                syn_list = (
-                    supabase.table("profession_synonyms")
-                    .select("synonym")
-                    .eq("profession_id", profession_id)
-                    .execute()
-                )
-                for row in syn_list.data or []:
-                    add_term(row.get("synonym"))
-            except Exception as err:
-                logger.warning(
-                    f"⚠️ No se pudieron obtener sinónimos para profesión {profession_id}: {err}"
-                )
-
-        # También incluir el sinónimo que disparó el match (si aplica)
-        for row in synonym_rows:
-            add_term(row.get("synonym"))
-
-        logger.info(f"📝 Términos finales para búsqueda en servicios: {service_terms}")
-
-        provider_scores: Dict[str, int] = {}
-        match_reasons: Dict[str, set[str]] = {}
-        exp_map: Dict[str, int] = {}
-
-        def boost(provider_id: str, amount: int, reason: str):
-            if not provider_id:
-                return
-            provider_scores[provider_id] = provider_scores.get(provider_id, 0) + amount
-            if reason:
-                match_reasons.setdefault(provider_id, set()).add(reason)
-
-        profession_provider_ids: set[str] = set()
-        service_provider_ids: set[str] = set()
-
-        # 4) Buscar proveedores por profesión asociada
-        if profession_id:
-            try:
-                prof_matches = (
-                    supabase.table("provider_professions")
-                    .select("provider_id,experience_years")
-                    .eq("profession_id", profession_id)
-                    .execute()
-                )
-                for row in prof_matches.data or []:
-                    provider_id = row.get("provider_id")
-                    if not provider_id:
-                        continue
-                    profession_provider_ids.add(provider_id)
-                    exp_map[provider_id] = row.get("experience_years") or 0
-                    boost(provider_id, 100, "profession")
-                logger.info(
-                    f"📚 Coincidencias por profesión directa: {len(profession_provider_ids)}"
-                )
-            except Exception as err:
-                logger.warning(
-                    f"⚠️ Error al consultar provider_professions para profesión {profession_id}: {err}"
-                )
-
-        # 5) Buscar por servicios declarados (title/description)
-        for term in service_terms:
-            try:
-                services_resp = (
-                    supabase.table("provider_services")
-                    .select("provider_id,title,description,is_active")
-                    .eq("is_active", True)
-                    .or_(f"title.ilike.%{term}%,description.ilike.%{term}%")
-                    .execute()
-                )
-            except Exception as err:
-                logger.warning(
-                    f"⚠️ Error consultando provider_services para término '{term}': {err}"
-                )
-                continue
-
-            lower_term = term.lower()
-            for row in services_resp.data or []:
-                provider_id = row.get("provider_id")
-                if not provider_id:
-                    continue
-                title = (row.get("title") or "").lower()
-                description = (row.get("description") or "").lower()
-
-                score = 0
-                if lower_term in title:
-                    score += 50
-                if lower_term in description:
-                    score += 30
-                if score == 0:
-                    # El OR pudo devolver resultados por coincidencia parcial, asignar un puntaje base
-                    score = 20
-
-                boost(provider_id, score, "service")
-                service_provider_ids.add(provider_id)
-
-        all_candidate_ids = set(provider_scores.keys())
-        if not all_candidate_ids:
-            logger.info(
-                "ℹ️ No se encontraron proveedores que coincidan con la búsqueda en Supabase."
-            )
-            return []
-
-        # 6) Obtener detalles de proveedores aplicando filtro por ciudad si está disponible
-        logger.info(
-            f"👤 Recuperando datos de {len(all_candidate_ids)} proveedores candidatos"
-        )
-        provider_query = (
-            supabase.table("providers")
-            .select(
-                "id,full_name,phone_number,city,email,verified,rating,social_media_url,social_media_type,available"
-            )
-            .in_("id", list(all_candidate_ids))
-            .eq("available", True)
-        )
-        if location_term:
-            provider_query = provider_query.ilike("city", f"%{location_term}%")
-
-        providers_resp = provider_query.execute()
-        providers_data = {
-            row["id"]: row for row in providers_resp.data or [] if row.get("id")
-        }
-
-        # Reintentar sin filtro de ciudad si no hubo coincidencias visibles
-        if location_term and not providers_data:
-            logger.info(
-                "ℹ️ No se encontraron proveedores en la ciudad indicada. Reintentando sin filtro de ciudad."
-            )
-            provider_query = (
-                supabase.table("providers")
-                .select(
-                    "id,full_name,phone_number,city,email,verified,rating,social_media_url,social_media_type,available"
-                )
-                .in_("id", list(all_candidate_ids))
-                .eq("available", True)
-            )
-            providers_resp = provider_query.execute()
-            providers_data = {
-                row["id"]: row for row in providers_resp.data or [] if row.get("id")
-            }
-
-        if not providers_data:
-            logger.info(
-                "ℹ️ No se recuperaron proveedores activos para los IDs candidatos."
-            )
-            return []
-
-        profession_label = (
-            matched_profession.get("name") if matched_profession else None
-        ) or search_term
-
-        scored_results: List[Tuple[int, float, Dict[str, Any]]] = []
-        for provider_id, provider in providers_data.items():
-            score = provider_scores.get(provider_id, 0)
-            rating = provider.get("rating", 0.0) or 0.0
-            result = {
-                "id": provider_id,
-                "name": provider.get("full_name"),
-                "profession": profession_label,
-                "phone": provider.get("phone_number"),
-                "city": provider.get("city"),
-                "email": provider.get("email"),
-                "rating": rating if rating > 0 else 4.5,
-                "available": provider.get("available", True),
-                "verified": provider.get("verified", False),
-                "social_media_url": provider.get("social_media_url"),
-                "social_media_type": provider.get("social_media_type"),
-                "experience_years": exp_map.get(provider_id, 0),
-            }
-            scored_results.append((score, rating, result))
-
-        scored_results.sort(key=lambda item: (item[0], item[1]), reverse=True)
-
-        logger.info(
-            f"📦 Total de proveedores devueltos: {len(scored_results)} "
-            f"(profesión={len(profession_provider_ids)}, servicios={len(service_provider_ids)})"
-        )
-        return [item[2] for item in scored_results]
-    except Exception as e:
-        logger.error(f"❌ Error buscando en Supabase: {e}")
-        return []
-
-
-async def expand_query_with_ai(necesidad: str, limit: int = 5) -> List[str]:
-    if not openai_client or not necesidad:
-        return []
-    prompt = (
-        "Genera hasta {limit} términos alternativos y sinónimos prácticos que un cliente "
-        "en Ecuador podría usar para buscar un servicio profesional relacionado con:\n"
-        f'"{necesidad}"\n'
-        "Muestra únicamente la lista en formato JSON simple, por ejemplo:\n"
-        '["termino1", "termino2"]'
-    ).format(limit=limit)
-    try:
-        response = await asyncio.to_thread(
-            openai_client.chat.completions.create,
-            model="gpt-3.5-turbo",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "Responde solo con una lista JSON de términos relacionados.",
-                },
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.5,
-            max_tokens=200,
-        )
-        content = (response.choices[0].message.content or "").strip()
-        parsed = _safe_json_loads(content)
-        if isinstance(parsed, list):
-            return _normalize_terms(parsed)[:limit]
-        terms: List[str] = []
-        for line in content.splitlines():
-            clean = re.sub(r"^[\-\*\d\.\)]+\s*", "", line).strip()
-            if clean:
-                terms.append(clean)
-        return _normalize_terms(terms)[:limit]
-    except Exception as exc:
-        logger.warning("⚠️ No se pudo expandir la consulta '%s': %s", necesidad, exc)
-        return []
-
-
-def combine_and_score_results(matches: List[ProviderMatch]) -> List[Dict[str, Any]]:
-    if not matches:
-        return []
-    aggregated: Dict[str, Dict[str, Any]] = {}
-
-    for provider, weight, reason in matches:
-        if not provider:
-            continue
-        provider_id = (
-            provider.get("id")
-            or provider.get("provider_id")
-            or provider.get("phone")
-            or provider.get("phone_number")
-        )
-        if not provider_id:
-            continue
-        key = str(provider_id)
-        entry = aggregated.setdefault(
-            key,
-            {
-                "data": provider.copy(),
-                "score": 0,
-                "matched_terms": set(),
-                "sources": set(),
-            },
-        )
-        entry["score"] += weight
-        entry["matched_terms"].add(reason)
-        entry["sources"].add(reason.split(":", 1)[0])
-        rating = provider.get("rating")
-        if rating is not None:
-            entry["data"]["rating"] = rating
-
-        existing_terms = entry["data"].get("matched_terms")
-        if isinstance(existing_terms, list):
-            for t in existing_terms:
-                entry["matched_terms"].add(str(t))
-
-    sorted_results: List[Dict[str, Any]] = []
-    for entry in aggregated.values():
-        provider_data = entry["data"]
-        provider_data["match_score"] = entry["score"]
-        provider_data["matched_terms"] = sorted(entry["matched_terms"])
-        provider_data["match_sources"] = sorted(entry["sources"])
-        sorted_results.append(provider_data)
-
-    sorted_results.sort(
-        key=lambda item: (item.get("match_score", 0), item.get("rating", 0)),
-        reverse=True,
-    )
-    return sorted_results
-
-
-async def search_by_profession(profession: str, location: str) -> List[ProviderMatch]:
-    if not profession:
-        return []
-    providers = await search_providers_in_supabase(profession, location)
-    return [(provider, 120, f"profesion:{profession}") for provider in providers]
-
-
-async def search_by_specialties(
-    specialties: List[str], location: str
-) -> List[ProviderMatch]:
-    matches: List[ProviderMatch] = []
-    for specialty in specialties:
-        providers = await search_providers_in_supabase(specialty, location)
-        matches.extend(
-            (provider, 80, f"especialidad:{specialty}") for provider in providers
-        )
-    return matches
-
-
-async def search_by_synonyms(synonyms: List[str], location: str) -> List[ProviderMatch]:
-    matches: List[ProviderMatch] = []
-    for synonym in synonyms:
-        providers = await search_providers_in_supabase(synonym, location)
-        matches.extend((provider, 90, f"sinonimo:{synonym}") for provider in providers)
-    return matches
-
-
-async def search_by_description(
-    necesidad: str, location: str
-) -> Tuple[List[ProviderMatch], List[str]]:
-    matches: List[ProviderMatch] = []
-    expansions_used: List[str] = []
-    if not necesidad:
-        return matches, expansions_used
-
-    providers = await search_providers_in_supabase(necesidad, location)
-    matches.extend((provider, 70, f"descripcion:{necesidad}") for provider in providers)
-
-    if len(matches) < 3:
-        expansions = await expand_query_with_ai(necesidad)
-        expansions_used = expansions
-        for term in expansions:
-            providers = await search_providers_in_supabase(term, location)
-            matches.extend(
-                (provider, 60, f"descripcion_expandida:{term}")
-                for provider in providers
-            )
-    return matches, expansions_used
-
-
-# Registrar proveedor usando nueva tabla providers
-async def register_provider_in_supabase(
-    provider_data: Dict[str, Any],
-) -> Optional[Dict[str, Any]]:
-    """Registrar/actualizar proveedor usando tabla providers con nueva estructura."""
-    if not supabase:
-        return None
-
-    try:
-        phone = provider_data.get("phone")
-        # Normalizar nombre, ciudad y profesión (mantener original + versión buscable)
-        name_raw, name_normalized = normalize_text_pair(
-            provider_data.get("name") or "Proveedor TinkuBot"
-        )
-        email = provider_data.get("email")
-        city_raw, city_normalized = normalize_text_pair(provider_data.get("city"))
-        profession_raw, profession_normalized = normalize_text_pair(
-            provider_data.get("profession")
-        )
-        specialty_raw, specialty_normalized = normalize_text_pair(
-            provider_data.get("specialty")
-        )
-        experience_years = provider_data.get("experience_years") or 0
-        has_consent_value = provider_data.get("has_consent")
-        has_consent = bool(has_consent_value) if has_consent_value is not None else None
-
-        # Nuevos campos opcionales
-        dni_number = provider_data.get("dni_number")
-        social_media_url = provider_data.get("social_media_url")
-        social_media_type = provider_data.get("social_media_type")
-
-        def _display_text(
-            normalized_value: str, fallback: str, default: str = ""
-        ) -> str:
-            if normalized_value:
-                return normalized_value.title()
-            if fallback:
-                return fallback.strip()
-            return default
-
-        display_name = _display_text(name_normalized, name_raw, "Proveedor TinkuBot")
-        display_city = _display_text(city_normalized, city_raw)
-        display_profession = _display_text(profession_normalized, profession_raw)
-        display_specialty = _display_text(specialty_normalized, specialty_raw)
-        profession_name = display_profession or None
-        specialty_name = display_specialty or None
-
-        # 1) Verificar si proveedor ya existe
-        existing_provider = (
-            supabase.table("providers")
-            .select("id")
-            .eq("phone_number", phone)
-            .limit(1)
-            .execute()
-        )
-
-        provider_id = None
-        if existing_provider.data:
-            # Actualizar proveedor existente
-            provider_id = existing_provider.data[0]["id"]
-            update_data = {
-                "full_name": display_name,
-                "email": email,
-                "city": display_city,
-                "updated_at": datetime.now().isoformat(),
-            }
-            if has_consent is not None:
-                update_data["has_consent"] = has_consent
-
-            # Agregar campos opcionales si se proporcionan
-            if dni_number:
-                update_data["dni_number"] = dni_number
-            if social_media_url:
-                update_data["social_media_url"] = social_media_url
-            if social_media_type:
-                update_data["social_media_type"] = social_media_type
-
-            supabase.table("providers").update(update_data).eq(
-                "id", provider_id
-            ).execute()
-            logger.info(f"✅ Proveedor existente actualizado: {provider_id}")
-
-        else:
-            # Crear nuevo proveedor
-            new_provider_data = {
-                "phone_number": phone,
-                "full_name": display_name,
-                "email": email,
-                "city": display_city,
-                "available": True,
-                "verified": False,
-                "rating": 0.0,
-            }
-            if has_consent is not None:
-                new_provider_data["has_consent"] = has_consent
-            # specialty se maneja en provider services para evitar dependencias de esquema
-
-            # Agregar campos opcionales si se proporcionan
-            if dni_number:
-                new_provider_data["dni_number"] = dni_number
-            if social_media_url:
-                new_provider_data["social_media_url"] = social_media_url
-            if social_media_type:
-                new_provider_data["social_media_type"] = social_media_type
-
-            result = supabase.table("providers").insert(new_provider_data).execute()
-
-            if result.data:
-                provider_id = result.data[0]["id"]
-                logger.info(f"✅ Nuevo proveedor creado: {provider_id}")
-            else:
-                logger.error("❌ No se pudo crear el proveedor")
-                return None
-
-        # 2) Resolver/crear profesión y vincular
-        prof_id = supabase_resolve_or_create_profession(profession_name)
-        if prof_id:
-            supabase_upsert_provider_profession(provider_id, prof_id, experience_years)
-
-        # 3) Semilla de servicio base (opcional)
-        if profession_name:
-            supabase_optional_seed_provider_service(
-                provider_id, profession_name, specialty_name
-            )
-
-        # 4) Retornar datos del proveedor (con formato compatible)
-        return {
-            "id": provider_id,
-            "name": display_name,
-            "phone": phone,
-            "email": email,
-            "city": display_city,
-            "city_normalized": city_normalized or None,
-            "profession": display_profession,
-            "profession_normalized": profession_normalized or None,
-            "specialty": display_specialty,
-            "specialty_normalized": specialty_normalized or None,
-            "experience_years": experience_years,
-            "dni_number": dni_number,
-            "social_media_url": social_media_url,
-            "social_media_type": social_media_type,
-            "verified": False,
-            "rating": 0.0,
-            "has_consent": has_consent if has_consent is not None else False,
-        }
-
-    except Exception as e:
-        logger.error(f"❌ Error registrando proveedor en Supabase (providers): {e}")
-        return None
-
-
-def get_provider_profile(phone: str) -> Optional[Dict[str, Any]]:
-    """Obtener perfil de proveedor por telefono desde Supabase."""
+def obtener_perfil_proveedor(phone: str) -> Optional[Dict[str, Any]]:
+    """Obtener perfil de proveedor por telefono desde Supabase (esquema unificado)."""
     if not supabase or not phone:
         return None
 
     try:
         response = (
             supabase.table("providers")
-            .select("id, phone_number, full_name, city, has_consent")
-            .eq("phone_number", phone)
+            .select("id, phone, full_name, city, has_consent")
+            .eq("phone", phone)
             .limit(1)
             .execute()
         )
         if response.data:
-            return response.data[0]
+            return cast(Dict[str, Any], response.data[0])
     except Exception as exc:
         logger.warning(f"No se pudo obtener perfil para {phone}: {exc}")
 
     return None
 
 
-async def request_provider_consent(phone: str) -> Dict[str, Any]:
+async def solicitar_consentimiento_proveedor(phone: str) -> Dict[str, Any]:
     """Generar mensajes de solicitud de consentimiento para proveedores."""
     prompts = consent_prompt_messages()
     messages = [{"response": text} for text in prompts]
     return {"success": True, "messages": messages}
 
 
-def interpret_yes_no(text: str) -> Optional[bool]:
-    """Interpretar respuestas afirmativas o negativas en texto libre."""
+def interpretar_respuesta_usuario(
+    text: Optional[str], modo: str = "menu"
+) -> Optional[object]:
+    """
+    Interpretar respuesta del usuario unificando menú y consentimiento.
+
+    Args:
+        text: Texto a interpretar
+        modo: "menu" para opciones 1-3, "consentimiento" para sí/no
+
+    Returns:
+        - modo="menu": "1", "2", "3" o None
+        - modo="consentimiento": True, False o None
+    """
     value = (text or "").strip().lower()
     if not value:
         return None
 
-    normalized_value = unicodedata.normalize("NFKD", value)
-    normalized_value = normalized_value.encode("ascii", "ignore").decode().strip()
-
-    affirmative = {
-        "1",
-        "si",
-        "s",
-        "acepto",
-        "autorizo",
-        "confirmo",
-        "claro",
-        "de acuerdo",
-    }
-    negative = {
-        "2",
-        "no",
-        "n",
-        "rechazo",
-        "rechazar",
-        "declino",
-        "no autorizo",
-    }
-
-    if normalized_value in affirmative:
-        return True
-    if normalized_value in negative:
-        return False
-    return None
-
-
-def interpret_menu_option(text: Optional[str]) -> Optional[str]:
-    """Interpretar seleccion del menu principal de proveedores."""
-    value = (text or "").strip().lower()
-    if not value:
-        return None
-
+    # Normalización unificada
     normalized_value = unicodedata.normalize("NFKD", value)
     normalized_value = normalized_value.encode("ascii", "ignore").decode().strip()
 
     if not normalized_value:
         return None
 
-    if normalized_value.startswith("1") or normalized_value.startswith("uno"):
-        return "1"
-    if "registro" in normalized_value or "crear" in normalized_value:
-        return "1"
+    # Modo consentimiento (sí/no)
+    if modo == "consentimiento":
+        affirmative = {
+            "1",
+            "si",
+            "s",
+            "acepto",
+            "autorizo",
+            "confirmo",
+            "claro",
+            "de acuerdo",
+        }
+        negative = {"2", "no", "n", "rechazo", "rechazar", "declino", "no autorizo"}
 
-    if normalized_value.startswith("2") or normalized_value.startswith("dos"):
-        return "2"
-    if (
-        "actualizacion" in normalized_value
-        or "actualizar" in normalized_value
-        or "update" in normalized_value
-    ):
-        return "2"
+        if normalized_value in affirmative:
+            return True
+        if normalized_value in negative:
+            return False
+        return None
 
-    if normalized_value.startswith("3") or normalized_value.startswith("tres"):
-        return "3"
-    if (
-        "salir" in normalized_value
-        or "terminar" in normalized_value
-        or "menu" in normalized_value
-    ):
-        return "3"
+    # Modo menú (opciones 1-3)
+    if modo == "menu":
+        # Opción 1 - Registro
+        if (
+            normalized_value.startswith("1")
+            or normalized_value.startswith("uno")
+            or "registro" in normalized_value
+            or "crear" in normalized_value
+        ):
+            return "1"
 
+        # Opción 2 - Actualización
+        if (
+            normalized_value.startswith("2")
+            or normalized_value.startswith("dos")
+            or "actualizacion" in normalized_value
+            or "actualizar" in normalized_value
+            or "update" in normalized_value
+        ):
+            return "2"
+
+        # Opción 3 - Salir
+        if (
+            normalized_value.startswith("3")
+            or normalized_value.startswith("tres")
+            or "salir" in normalized_value
+            or "terminar" in normalized_value
+            or "menu" in normalized_value
+        ):
+            return "3"
+
+        return None
+
+    # Modo no reconocido
     return None
 
 
-def record_provider_consent(
+def registrar_consentimiento_proveedor(
     provider_id: Optional[str], phone: str, payload: Dict[str, Any], response: str
 ) -> None:
     """Persistir registro de consentimiento en tabla consents."""
@@ -1124,7 +598,7 @@ def record_provider_consent(
         logger.error(f"No se pudo guardar consentimiento de proveedor {phone}: {exc}")
 
 
-async def handle_provider_consent_response(
+async def manejar_respuesta_consentimiento(  # noqa: C901
     phone: str,
     flow: Dict[str, Any],
     payload: Dict[str, Any],
@@ -1140,7 +614,7 @@ async def handle_provider_consent_response(
     elif lowered.startswith("2"):
         option = "2"
     else:
-        interpreted = interpret_yes_no(lowered)
+        interpreted = interpretar_respuesta_usuario(lowered, "consentimiento")
         if interpreted is True:
             option = "1"
         elif interpreted is False:
@@ -1148,14 +622,14 @@ async def handle_provider_consent_response(
 
     if option not in {"1", "2"}:
         logger.info("Reenviando solicitud de consentimiento a %s", phone)
-        return await request_provider_consent(phone)
+        return await solicitar_consentimiento_proveedor(phone)
 
     provider_id = provider_profile.get("id") if provider_profile else None
 
     if option == "1":
         flow["has_consent"] = True
         flow["state"] = "awaiting_menu_option"
-        await set_flow(phone, flow)
+        await establecer_flujo(phone, flow)
 
         if supabase and provider_id:
             try:
@@ -1172,7 +646,7 @@ async def handle_provider_consent_response(
                     exc,
                 )
 
-        record_provider_consent(provider_id, phone, payload, "accepted")
+        registrar_consentimiento_proveedor(provider_id, phone, payload, "accepted")
         logger.info("Consentimiento aceptado por proveedor %s", phone)
 
         messages = [
@@ -1198,8 +672,8 @@ async def handle_provider_consent_response(
                 "No se pudo marcar rechazo de consentimiento para %s: %s", phone, exc
             )
 
-    record_provider_consent(provider_id, phone, payload, "declined")
-    await reset_flow(phone)
+    registrar_consentimiento_proveedor(provider_id, phone, payload, "declined")
+    await reiniciar_flujo(phone)
     logger.info("Consentimiento rechazado por proveedor %s", phone)
 
     return {
@@ -1209,7 +683,7 @@ async def handle_provider_consent_response(
 
 
 # Funciones para manejo de imágenes en Supabase Storage
-async def upload_provider_image_to_storage(
+async def subir_imagen_proveedor_almacenamiento(
     provider_id: str, file_data: bytes, file_type: str, file_extension: str = "jpg"
 ) -> Optional[str]:
     """
@@ -1265,7 +739,7 @@ async def upload_provider_image_to_storage(
                 file_path
             )
             logger.info(f"✅ Imagen subida exitosamente: {public_url}")
-            return public_url
+            return cast(str, public_url)
         else:
             logger.error("❌ Error al subir imagen a Supabase Storage")
             return None
@@ -1275,7 +749,7 @@ async def upload_provider_image_to_storage(
         return None
 
 
-async def update_provider_images(
+async def actualizar_imagenes_proveedor(
     provider_id: str,
     dni_front_url: Optional[str] = None,
     dni_back_url: Optional[str] = None,
@@ -1333,7 +807,7 @@ async def update_provider_images(
         return False
 
 
-async def process_base64_image(base64_data: str, file_type: str) -> Optional[bytes]:
+async def procesar_imagen_base64(base64_data: str, file_type: str) -> Optional[bytes]:
     """
     Procesar imagen en formato base64 y convertir a bytes
 
@@ -1362,7 +836,7 @@ async def process_base64_image(base64_data: str, file_type: str) -> Optional[byt
         return None
 
 
-async def get_provider_image_urls(provider_id: str) -> Dict[str, Optional[str]]:
+async def obtener_urls_imagenes_proveedor(provider_id: str) -> Dict[str, Optional[str]]:
     """
     Obtener URLs de todas las imágenes de un proveedor
 
@@ -1398,7 +872,7 @@ async def get_provider_image_urls(provider_id: str) -> Dict[str, Optional[str]]:
         return {}
 
 
-async def upload_identity_media(provider_id: str, flow: Dict[str, Any]) -> None:
+async def subir_medios_identidad(provider_id: str, flow: Dict[str, Any]) -> None:
     if not supabase:
         return
 
@@ -1418,11 +892,11 @@ async def upload_identity_media(provider_id: str, flow: Dict[str, Any]) -> None:
         base64_data = flow.get(key)
         if not base64_data:
             continue
-        image_bytes = await process_base64_image(base64_data, file_type)
+        image_bytes = await procesar_imagen_base64(base64_data, file_type)
         if not image_bytes:
             continue
         try:
-            url = await upload_provider_image_to_storage(
+            url = await subir_imagen_proveedor_almacenamiento(
                 provider_id, image_bytes, file_type, "jpg"
             )
         except Exception as exc:
@@ -1434,7 +908,7 @@ async def upload_identity_media(provider_id: str, flow: Dict[str, Any]) -> None:
             uploads[dest] = url
 
     if any(uploads.values()):
-        await update_provider_images(
+        await actualizar_imagenes_proveedor(
             provider_id,
             uploads.get("front"),
             uploads.get("back"),
@@ -1443,7 +917,7 @@ async def upload_identity_media(provider_id: str, flow: Dict[str, Any]) -> None:
 
 
 # Función para procesar mensajes con OpenAI
-async def process_message_with_openai(message: str, phone: str) -> str:
+async def procesar_mensaje_con_openai(message: str, phone: str) -> str:
     """Procesar mensaje entrante con OpenAI"""
     if not openai_client:
         return "Lo siento, el servicio de IA no está disponible en este momento."
@@ -1477,14 +951,17 @@ Si es una consulta general, responde amablemente."""
             temperature=0.7,
         )
 
-        return response.choices[0].message.content
+        return cast(str, response.choices[0].message.content)
     except Exception as e:
         logger.error(f"❌ Error procesando mensaje con OpenAI: {e}")
-        return "Lo siento, tuve un problema al procesar tu mensaje. Por favor intenta de nuevo."
+        return (
+            "Lo siento, tuve un problema al procesar tu mensaje. "
+            "Por favor intenta de nuevo."
+        )
 
 
 @app.get("/")
-async def root():
+async def root() -> Dict[str, Any]:
     """Endpoint raíz"""
     return {
         "service": "AI Service Proveedores Mejorado",
@@ -1494,7 +971,7 @@ async def root():
 
 
 @app.get("/health", response_model=HealthResponse)
-async def health_check():
+async def health_check() -> HealthResponse:
     """Health check endpoint"""
     try:
         # Verificar conexión a Supabase
@@ -1522,265 +999,148 @@ async def health_check():
 
 
 @app.post("/search-providers", response_model=ProviderSearchResponse)
-async def search_providers(request: ProviderSearchRequest):
-    """
-    Buscar proveedores por profesión y ubicación usando Supabase
-    """
+async def buscar_proveedores_endpoint(
+    request: ProviderSearchRequest,
+) -> ProviderSearchResponse:
+    """Endpoint simplificado de búsqueda usando query directa"""
     try:
         logger.info(f"🔍 Buscando {request.profession}s en {request.location}...")
 
-        # Buscar en Supabase primero
-        matching_providers = await search_providers_in_supabase(
-            request.profession, request.location, request.radius
+        # Usar función de búsqueda en español
+        proveedores = await buscar_proveedores(
+            profesion=request.profession,
+            ubicacion=request.location,
+            limite=request.limit or 10,
         )
 
-        # Si no hay resultados en Supabase, usar fallback
-        if not matching_providers:
-            logger.info("🔄 Usando proveedores de fallback")
-            matching_providers = [
-                provider
-                for provider in FALLBACK_PROVIDERS
-                if (
-                    request.profession.lower() in provider["profession"].lower()
-                    and request.location.lower() in provider["city"].lower()
-                )
-            ]
-
-        logger.info(f"✅ Encontrados {len(matching_providers)} proveedores")
+        # Convertir a formato de respuesta
+        respuestas_proveedores = [
+            ProviderResponse(**proveedor) for proveedor in proveedores
+        ]
 
         return ProviderSearchResponse(
-            providers=matching_providers,
-            count=len(matching_providers),
-            location=request.location,
+            providers=respuestas_proveedores,
+            count=len(respuestas_proveedores),
+            location=request.location or "Ecuador",
             profession=request.profession,
         )
 
     except Exception as e:
-        logger.error(f"❌ Error buscando proveedores: {e}")
-
-        # Usar fallback en caso de error
-        fallback_providers = [
-            {
-                "id": 999,
-                "name": "Proveedor de Ejemplo",
-                "profession": request.profession,
-                "phone": "+593999999999",
-                "email": "ejemplo@email.com",
-                "address": "Dirección de ejemplo",
-                "city": request.location,
-                "rating": 4.0,
-                "distance_km": 0.0,
-                "available": True,
-            }
-        ]
-
-        return ProviderSearchResponse(
-            providers=fallback_providers,
-            count=len(fallback_providers),
-            location=request.location,
-            profession=request.profession,
-        )
+        logger.error(f"Error en búsqueda: {e}")
+        raise HTTPException(status_code=500, detail=f"Error en búsqueda: {str(e)}")
 
 
 @app.post("/intelligent-search")
-async def intelligent_search(request: IntelligentSearchRequest):
+async def busqueda_inteligente(
+    request: IntelligentSearchRequest,
+) -> Dict[str, Any]:
     """
-    Búsqueda inteligente multi dimensional combinando profesión, especialidades y semántica.
+    Búsqueda inteligente simplificada usando búsqueda directa.
     """
     try:
-        location = request.ubicacion or ""
-        profession = request.profesion_principal or (request.necesidad_real or "")
-        if not profession or not location:
+        ubicacion = request.ubicacion or ""
+        profesion = request.profesion_principal or (request.necesidad_real or "")
+        if not profesion:
             raise HTTPException(
                 status_code=400,
-                detail="Se requiere al menos profesión principal y ubicación para la búsqueda.",
+                detail="Se requiere al menos profesión principal para la búsqueda.",
             )
 
-        specialties = _normalize_terms(
-            (request.especialidades or []) + (request.especialidades_requeridas or [])
+        # Usar búsqueda directa en español
+        proveedores = await buscar_proveedores(
+            profesion=profesion, ubicacion=ubicacion, limite=20
         )
-        synonyms = _normalize_terms(
-            (request.sinonimos or []) + (request.sinonimos_posibles or [])
-        )
-        necesidad = request.necesidad_real or profession
-
-        matches: List[ProviderMatch] = []
-        matches.extend(await search_by_profession(profession, location))
-        matches.extend(await search_by_specialties(specialties, location))
-        matches.extend(await search_by_synonyms(synonyms, location))
-        desc_matches, expansions = await search_by_description(necesidad, location)
-        matches.extend(desc_matches)
-
-        combined = combine_and_score_results(matches)
-        limited = combined[:20]
-
-        if not limited:
-            fallback = [
-                provider
-                for provider in FALLBACK_PROVIDERS
-                if profession.lower() in provider["profession"].lower()
-                and location.lower() in provider["city"].lower()
-            ]
-            logger.info(
-                "ℹ️ Búsqueda inteligente sin coincidencias, devolviendo fallback=%s",
-                len(fallback),
-            )
-            return {
-                "providers": fallback,
-                "total": len(fallback),
-                "query_expansions": expansions,
-                "metadata": {
-                    "specialties_used": specialties,
-                    "synonyms_used": synonyms,
-                    "urgency": request.urgencia,
-                    "necesidad_real": necesidad,
-                    "fallback": True,
-                },
-            }
 
         logger.info(
-            "🧠 Búsqueda inteligente completada profesion=%s location=%s resultados=%s",
-            profession,
-            location,
-            len(limited),
+            "🧠 Búsqueda inteligente simplificada profesion=%s ubicacion=%s "
+            "resultados=%s",
+            profesion,
+            ubicacion,
+            len(proveedores),
         )
 
         return {
-            "providers": limited,
-            "total": len(combined),
-            "query_expansions": expansions,
+            "providers": proveedores,
+            "total": len(proveedores),
+            "query_expansions": [],  # Simplificado - sin expansión IA
             "metadata": {
-                "specialties_used": specialties,
-                "synonyms_used": synonyms,
+                "specialties_used": request.especialidades or [],
+                "synonyms_used": request.sinonimos or [],
                 "urgency": request.urgencia,
-                "necesidad_real": necesidad,
+                "necesidad_real": request.necesidad_real,
+                "simplified": True,
             },
         }
     except HTTPException:
         raise
     except Exception as exc:
-        logger.error("❌ Error en intelligent-search: %s", exc)
+        logger.error("❌ Error en busqueda_inteligente: %s", exc)
         raise HTTPException(
             status_code=500,
             detail="No se pudo realizar la búsqueda inteligente en este momento.",
         )
 
 
-@app.post("/register-provider")
-async def register_provider(request: ProviderRegisterRequest):
-    """
-    Registrar un nuevo proveedor en Supabase
-    """
+@app.post("/register-provider", response_model=ProviderResponse)
+async def registrar_proveedor_endpoint(
+    request: ProviderRegisterRequest,
+) -> ProviderResponse:
+    """Endpoint único y simplificado para registro de proveedores"""
     try:
-        logger.info(
-            f"📝 Registrando nuevo proveedor: {request.name} - {request.profession}"
+        # Convertir request del frontend a modelo unificado
+        datos_proveedor = ProviderCreate(
+            phone=request.phone,
+            full_name=request.name,
+            email=request.email,
+            city=request.city,
+            profession=request.profession,
+            services_list=[],  # Request antiguo no tiene services_list
+            experience_years=request.experience_years,
+            has_consent=request.has_consent,
         )
 
-        if not request.has_consent:
-            logger.warning(
-                "Intento de registro sin consentimiento para proveedor %s",
-                request.phone,
-            )
-            return {
-                "success": False,
-                "message": "Se requiere consentimiento expreso antes de registrar al proveedor.",
-            }
+        # Usar función en español
+        resultado = await registrar_proveedor(datos_proveedor)
 
-        # Preparar datos para Supabase
-        provider_data = {
-            "name": request.name,
-            "profession": request.profession,
-            "phone": request.phone,
-            "email": request.email,
-            "city": request.city,
-            "specialty": request.specialty,
-            "experience_years": request.experience_years,
-            "latitude": request.latitude,
-            "longitude": request.longitude,
-            "rating": 5.0,
-            "available": True,
-            "created_at": datetime.now().isoformat(),
-            "has_consent": request.has_consent,
-        }
+        if not resultado:
+            raise HTTPException(status_code=500, detail="Error al registrar proveedor")
 
-        # Registrar conforme al esquema (users + provider_professions + provider_services)
-        registered_provider = await register_provider_in_supabase(provider_data)
+        return ProviderResponse(**resultado)
 
-        if registered_provider:
-            logger.info(
-                f"✅ Proveedor registrado exitosamente en Supabase: {registered_provider.get('id')}"
-            )
-            return {
-                "success": True,
-                "message": "Proveedor registrado exitosamente en Supabase",
-                "provider_id": registered_provider.get("id"),
-                "provider": registered_provider,
-            }
-        else:
-            logger.warning("⚠️ No se pudo registrar en Supabase (users + relations)")
-            return {
-                "success": False,
-                "message": "No se pudo registrar en Supabase, intenta más tarde",
-            }
-
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"❌ Error registrando proveedor: {e}")
-        return {"success": False, "message": f"Error registrando proveedor: {str(e)}"}
+        logger.error(f"Error en endpoint de registro: {e}")
+        raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
 
 
 @app.post("/send-whatsapp")
-async def send_whatsapp_message(request: WhatsAppMessageRequest):
+async def send_whatsapp_message(
+    request: WhatsAppMessageRequest,
+) -> Dict[str, Any]:
     """
     Enviar mensaje de WhatsApp usando el servicio de WhatsApp
     """
     try:
         logger.info(
-            f"📱 Enviando mensaje WhatsApp a {request.phone}: {request.message[:50]}..."
+            f"📱 Enviando mensaje WhatsApp a {request.phone}: "
+            f"{request.message[:50]}..."
         )
 
-        # NOTA: El servicio de WhatsApp tiene problemas con whatsapp-web.js (Error: Evaluation failed)
-        # Esta es una simulación para demostrar que la comunicación entre servicios funciona
+        # NOTA: El servicio de WhatsApp tiene problemas con whatsapp-web.js
+        # Esta es una simulación para demostrar que la comunicación funciona
 
-        # Simular envío exitoso (comentar cuando el servicio de WhatsApp esté funcionando)
+        # Simular envío exitoso (descomentar cuando WhatsApp esté funcionando)
         logger.info(f"✅ Mensaje simulado enviado exitosamente a {request.phone}")
         return {
             "success": True,
-            "message": "Mensaje enviado exitosamente (simulado - servicio WhatsApp en mantenimiento)",
+            "message": (
+                "Mensaje enviado exitosamente (simulado - WhatsApp en mantenimiento)"
+            ),
             "simulated": True,
             "phone": request.phone,
-            "message_preview": request.message[:50] + "...",
+            "message_preview": (request.message[:50] + "..."),
         }
-
-        # Código real (descomentar cuando el servicio de WhatsApp esté funcionando)
-        """
-        # URL del servicio de WhatsApp para clientes (estable)
-        whatsapp_url = "http://whatsapp-service-clientes:5002/send"
-
-        # Preparar payload
-        payload = {
-            "phone": request.phone,
-            "message": request.message
-        }
-
-        # Enviar mensaje al servicio de WhatsApp
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.post(whatsapp_url, json=payload)
-
-            if response.status_code == 200:
-                result = response.json()
-                logger.info(f"✅ Mensaje enviado exitosamente")
-                return {
-                    "success": True,
-                    "message": "Mensaje enviado exitosamente",
-                    "response": result
-                }
-            else:
-                logger.error(f"❌ Error enviando mensaje: {response.status_code}")
-                return {
-                    "success": False,
-                    "message": f"Error enviando mensaje: {response.status_code}"
-                }
-        """
 
     except Exception as e:
         logger.error(f"❌ Error enviando WhatsApp: {e}")
@@ -1788,7 +1148,9 @@ async def send_whatsapp_message(request: WhatsAppMessageRequest):
 
 
 @app.post("/handle-whatsapp-message")
-async def handle_whatsapp_message(request: WhatsAppMessageReceive):
+async def manejar_mensaje_whatsapp(  # noqa: C901
+    request: WhatsAppMessageReceive,
+) -> Dict[str, Any]:
     """
     Recibir y procesar mensajes entrantes de WhatsApp
     """
@@ -1796,25 +1158,25 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
         phone = request.phone or request.from_number or "unknown"
         message_text = request.message or request.content or ""
         payload = request.model_dump()
-        menu_choice = interpret_menu_option(message_text)
+        menu_choice = interpretar_respuesta_usuario(message_text, "menu")
 
         logger.info(f"📨 Mensaje WhatsApp recibido de {phone}: {message_text[:50]}...")
 
         if (message_text or "").strip().lower() in RESET_KEYWORDS:
-            await reset_flow(phone)
+            await reiniciar_flujo(phone)
             new_flow = {"state": "awaiting_consent", "has_consent": False}
-            await set_flow(phone, new_flow)
-            consent_prompt = await request_provider_consent(phone)
+            await establecer_flujo(phone, new_flow)
+            consent_prompt = await solicitar_consentimiento_proveedor(phone)
             return {
                 "success": True,
                 "messages": [{"response": "Reiniciemos desde el inicio."}]
                 + consent_prompt.get("messages", []),
             }
 
-        flow = await get_flow(phone)
+        flow = await obtener_flujo(phone)
         state = flow.get("state")
 
-        provider_profile = get_provider_profile(phone)
+        provider_profile = obtener_perfil_proveedor(phone)
         if provider_profile and provider_profile.get("has_consent"):
             if not flow.get("has_consent"):
                 flow["has_consent"] = True
@@ -1826,31 +1188,32 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
                 provider_profile and provider_profile.get("id")
             )
             flow["registration_allowed"] = registration_allowed
-            await set_flow(phone, flow)
+            await establecer_flujo(phone, flow)
 
         if not state:
             if menu_choice == "1":
                 flow["mode"] = "registration" if registration_allowed else "update"
                 flow["state"] = "awaiting_city"
-                await set_flow(phone, flow)
-                prompt = (
-                    "*Ingresa la ciudad donde trabajas principalmente.*"
-                    if flow["mode"] == "registration"
-                    else "*Actualicemos tus datos. ¿En qué ciudad trabajas principalmente?*"
-                )
+                await establecer_flujo(phone, flow)
+                if flow["mode"] == "registration":
+                    prompt = "*Ingresa la ciudad donde trabajas principalmente.*"
+                else:
+                    prompt = "*Actualicemos tus datos. ¿En qué ciudad trabajas principalmente?*"
                 return {"success": True, "response": prompt}
             if menu_choice == "2":
-                await reset_flow(phone)
-                await set_flow(phone, {"has_consent": True})
+                await reiniciar_flujo(phone)
+                await establecer_flujo(phone, {"has_consent": True})
                 return {
                     "success": True,
-                    "response": "Perfecto. Si necesitas algo mas, escribe 'registro' o responde con una opcion del menu.",
+                    "response": (
+                        "Perfecto. Si necesitas algo mas, escribe 'registro' o responde con opción."
+                    ),
                 }
 
             if not has_consent:
                 flow = {**flow, "state": "awaiting_consent", "has_consent": False}
-                await set_flow(phone, flow)
-                return await request_provider_consent(phone)
+                await establecer_flujo(phone, flow)
+                return await solicitar_consentimiento_proveedor(phone)
 
             flow = {**flow, "state": "awaiting_menu_option", "has_consent": True}
             menu_message = (
@@ -1858,7 +1221,7 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
                 if registration_allowed
                 else provider_post_registration_menu_message()
             )
-            await set_flow(phone, flow)
+            await establecer_flujo(phone, flow)
             return {
                 "success": True,
                 "messages": [
@@ -1870,7 +1233,7 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
         if state == "awaiting_consent":
             if has_consent:
                 flow["state"] = "awaiting_menu_option"
-                await set_flow(phone, flow)
+                await establecer_flujo(phone, flow)
                 menu_message = (
                     provider_main_menu_message()
                     if registration_allowed
@@ -1880,7 +1243,7 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
                     "success": True,
                     "messages": [{"response": menu_message}],
                 }
-            consent_reply = await handle_provider_consent_response(
+            consent_reply = await manejar_respuesta_consentimiento(
                 phone, flow, payload, provider_profile
             )
             return consent_reply
@@ -1890,39 +1253,45 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
             if choice == "1":
                 flow["mode"] = "registration" if registration_allowed else "update"
                 flow["state"] = "awaiting_city"
-                await set_flow(phone, flow)
+                await establecer_flujo(phone, flow)
                 prompt = (
                     "*Perfecto. Empecemos. En que ciudad trabajas principalmente?*"
                     if flow["mode"] == "registration"
-                    else "*Actualicemos tus datos. En que ciudad trabajas principalmente?*"
+                    else "*Actualicemos datos. ¿En qué ciudad trabajas principalmente?*"
                 )
                 return {"success": True, "response": prompt}
             if choice == "2":
                 if registration_allowed:
                     flow["state"] = "awaiting_city"
                     flow["mode"] = "update"
-                    await set_flow(phone, flow)
+                    await establecer_flujo(phone, flow)
                     return {
                         "success": True,
-                        "response": "*Actualicemos tus datos. ¿En qué ciudad trabajas principalmente?*",
+                        "response": (
+                            "*Actualicemos datos. ¿En qué ciudad trabajas principalmente?*"
+                        ),
                     }
-                await reset_flow(phone)
-                await set_flow(
+                await reiniciar_flujo(phone)
+                await establecer_flujo(
                     phone, {"has_consent": True, "registration_allowed": False}
                 )
                 return {
                     "success": True,
-                    "response": "Perfecto. Si necesitas algo mas, escribe 'registro' o responde con una opcion del menu.",
+                    "response": (
+                        "Perfecto. Si necesitas algo, escribe 'registro' o responde."
+                    ),
                 }
             if choice == "3":
-                await reset_flow(phone)
-                await set_flow(phone, {"has_consent": True})
+                await reiniciar_flujo(phone)
+                await establecer_flujo(phone, {"has_consent": True})
                 return {
                     "success": True,
-                    "response": "Perfecto. Si necesitas algo mas, escribe 'registro' o responde con una opcion del menu.",
+                    "response": (
+                        "Perfecto. Si necesitas algo, escribe 'registro' o responde."
+                    ),
                 }
 
-            await set_flow(phone, flow)
+            await establecer_flujo(phone, flow)
             menu_message = (
                 provider_main_menu_message()
                 if registration_allowed
@@ -1943,50 +1312,52 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
 
         if not has_consent:
             flow = {"state": "awaiting_consent", "has_consent": False}
-            await set_flow(phone, flow)
-            return await request_provider_consent(phone)
+            await establecer_flujo(phone, flow)
+            return await solicitar_consentimiento_proveedor(phone)
 
         if state == "awaiting_dni":
             flow["state"] = "awaiting_city"
-            await set_flow(phone, flow)
+            await establecer_flujo(phone, flow)
             return {
                 "success": True,
-                "response": "*Actualicemos tu registro. ¿En qué ciudad trabajas principalmente?*",
+                "response": (
+                    "*Actualicemos tu registro. ¿En qué ciudad trabajas principalmente?*"
+                ),
             }
 
         if state == "awaiting_city":
             reply = ProviderFlow.handle_awaiting_city(flow, message_text)
-            await set_flow(phone, flow)
+            await establecer_flujo(phone, flow)
             return reply
 
         if state == "awaiting_name":
             reply = ProviderFlow.handle_awaiting_name(flow, message_text)
-            await set_flow(phone, flow)
+            await establecer_flujo(phone, flow)
             return reply
 
         if state == "awaiting_profession":
             reply = ProviderFlow.handle_awaiting_profession(flow, message_text)
-            await set_flow(phone, flow)
+            await establecer_flujo(phone, flow)
             return reply
 
         if state == "awaiting_specialty":
             reply = ProviderFlow.handle_awaiting_specialty(flow, message_text)
-            await set_flow(phone, flow)
+            await establecer_flujo(phone, flow)
             return reply
 
         if state == "awaiting_experience":
             reply = ProviderFlow.handle_awaiting_experience(flow, message_text)
-            await set_flow(phone, flow)
+            await establecer_flujo(phone, flow)
             return reply
 
         if state == "awaiting_email":
             reply = ProviderFlow.handle_awaiting_email(flow, message_text)
-            await set_flow(phone, flow)
+            await establecer_flujo(phone, flow)
             return reply
 
         if state == "awaiting_social_media":
             reply = ProviderFlow.handle_awaiting_social_media(flow, message_text)
-            await set_flow(phone, flow)
+            await establecer_flujo(phone, flow)
             return reply
 
         if state == "awaiting_dni_front_photo":
@@ -1998,10 +1369,11 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
                 }
             flow["dni_front_image"] = image_b64
             flow["state"] = "awaiting_dni_back_photo"
-            await set_flow(phone, flow)
+            await establecer_flujo(phone, flow)
             return {
                 "success": True,
-                "response": "*Excelente. Ahora envia la foto de la parte posterior de la Cédula (parte de atrás). Envia la imagen como adjunto.*",
+                "response": "*Excelente. Ahora envia la foto de la parte posterior de la Cédula (parte de atrás)."
+                + " Envía la imagen como adjunto.*",
             }
 
         if state == "awaiting_dni_back_photo":
@@ -2009,11 +1381,12 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
             if not image_b64:
                 return {
                     "success": True,
-                    "response": "*Necesito la foto de la parte posterior de la Cédula (parte de atrás). Envia la imagen como adjunto.*",
+                    "response": "*Necesito la foto de la parte posterior de la Cédula (parte de atrás)."
+                    + " Envía la imagen como adjunto.*",
                 }
             flow["dni_back_image"] = image_b64
             flow["state"] = "awaiting_face_photo"
-            await set_flow(phone, flow)
+            await establecer_flujo(phone, flow)
             return {
                 "success": True,
                 "response": "*Gracias. Finalmente envia una selfie (rostro visible).*",
@@ -2024,12 +1397,14 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
             if not image_b64:
                 return {
                     "success": True,
-                    "response": "Necesito una selfie clara para finalizar. Envia la foto como adjunto.",
+                    "response": (
+                        "Necesito una selfie clara para finalizar. Envía la foto como adjunto."
+                    ),
                 }
             flow["face_image"] = image_b64
             summary = ProviderFlow.build_confirmation_summary(flow)
             flow["state"] = "confirm"
-            await set_flow(phone, flow)
+            await establecer_flujo(phone, flow)
             return {
                 "success": True,
                 "messages": [
@@ -2042,7 +1417,7 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
 
         if state == "awaiting_address":
             flow["state"] = "awaiting_email"
-            await set_flow(phone, flow)
+            await establecer_flujo(phone, flow)
             return {
                 "success": True,
                 "response": "Opcional: tu correo electronico (o escribe 'omitir').",
@@ -2053,20 +1428,20 @@ async def handle_whatsapp_message(request: WhatsAppMessageReceive):
                 flow,
                 message_text,
                 phone,
-                register_provider_in_supabase,
-                upload_identity_media,
-                lambda: reset_flow(phone),
+                registrar_proveedor,
+                subir_medios_identidad,
+                lambda: reiniciar_flujo(phone),
                 logger,
             )
             new_flow = reply.pop("new_flow", None)
-            should_reset = reply.pop("reset_flow", False)
+            should_reset = reply.pop("reiniciar_flujo", False)
             if new_flow:
-                await set_flow(phone, new_flow)
+                await establecer_flujo(phone, new_flow)
             elif not should_reset:
-                await set_flow(phone, flow)
+                await establecer_flujo(phone, flow)
             return reply
 
-        await reset_flow(phone)
+        await reiniciar_flujo(phone)
         return {
             "success": True,
             "response": "Empecemos de nuevo. Escribe 'registro' para crear tu perfil de proveedor.",
@@ -2082,13 +1457,13 @@ async def get_providers(
     profession: Optional[str] = Query(None, description="Filtrar por profesión"),
     city: Optional[str] = Query(None, description="Filtrar por ciudad"),
     available: Optional[bool] = Query(True, description="Solo disponibles"),
-):
+) -> Dict[str, Any]:
     """Obtener lista de proveedores con filtros desde Supabase"""
     try:
         if supabase:
             # Reusar lógica de búsqueda principal para mantener consistencia
-            providers = await search_providers_in_supabase(
-                profession or "", city or "", 10.0
+            lista_proveedores = await buscar_proveedores(
+                profession or "", city or "", 10
             )
         else:
             # Usar datos de fallback
@@ -2098,12 +1473,14 @@ async def get_providers(
                 filtered_providers = [
                     p
                     for p in filtered_providers
-                    if profession.lower() in p["profession"].lower()
+                    if profession.lower() in str(p["profession"]).lower()
                 ]
 
             if city:
                 filtered_providers = [
-                    p for p in filtered_providers if city.lower() in p["city"].lower()
+                    p
+                    for p in filtered_providers
+                    if city.lower() in str(p["city"]).lower()
                 ]
 
             if available is not None:
@@ -2111,9 +1488,9 @@ async def get_providers(
                     p for p in filtered_providers if p["available"] == available
                 ]
 
-            providers = filtered_providers
+            lista_proveedores = filtered_providers
 
-        return {"providers": providers, "count": len(providers)}
+        return {"providers": lista_proveedores, "count": len(lista_proveedores)}
 
     except Exception as e:
         logger.error(f"Error getting providers: {e}")
@@ -2121,7 +1498,7 @@ async def get_providers(
 
 
 @app.post("/test-message")
-async def test_message():
+async def test_message() -> Dict[str, Any]:
     """
     Endpoint de prueba para enviar mensaje al número especificado
     """
@@ -2134,8 +1511,11 @@ async def test_message():
             "message": "Mensaje de prueba enviado exitosamente (simulado)",
             "simulated": True,
             "phone": "+593959091325",
-            "message_preview": "🤖 Prueba de mensaje desde AI Service Proveedores Mejorado. Sistema funcionando correctamente.",
-            "note": "El servicio real de WhatsApp está en mantenimiento debido a problemas con whatsapp-web.js",
+            "message_preview": (
+                "🤖 Prueba de mensaje desde AI Service Proveedores Mejorado. "
+                + "Sistema funcionando correctamente."
+            ),
+            "note": "El servicio real de WhatsApp está en mantenimiento por problemas con whatsapp-web.js",
         }
 
     except Exception as e:
@@ -2143,7 +1523,7 @@ async def test_message():
 
 
 if __name__ == "__main__":
-    server_host = os.getenv("SERVER_HOST", "0.0.0.0")
+    server_host = os.getenv("SERVER_HOST", "127.0.0.1")
     server_port = int(
         os.getenv("PROVEEDORES_SERVER_PORT")
         or os.getenv("AI_SERVICE_PROVEEDORES_PORT")
