@@ -350,21 +350,11 @@
                   <p class="text-muted">Última actualización: <span id="last-update"></span></p>
                 </div>
                 <div class="col-md-6">
-                  <h6>Acciones Rápidas</h6>
-                  <button
-                    class="btn btn-outline-primary btn-sm me-2 mb-2"
-                    onclick="refreshWhatsAppStatus()"
-                  >
-                    <i class="fas fa-sync-alt me-1"></i>
-                    Refrescar WhatsApp
-                  </button>
-                  <button
-                    class="btn btn-outline-info btn-sm mb-2"
-                    onclick="refreshWhatsAppStatus()"
-                  >
-                    <i class="fas fa-sync-alt me-1"></i>
-                    Refrescar Estado
-                  </button>
+                  <h6>Información</h6>
+                  <p class="text-muted small mb-2">
+                    <i class="fas fa-info-circle me-1"></i>
+                    Para actualizar datos, usa el botón "Actualizar" en el header principal
+                  </p>
                 </div>
               </div>
             </div>
@@ -540,11 +530,7 @@
         updateLastUpdateTime();
       }
 
-      // Refrescar estado de WhatsApp
-      function refreshWhatsAppStatus() {
-        loadWhatsAppStatus();
-      }
-
+  
       // Actualizar última actualización
       function updateLastUpdateTime() {
         document.getElementById('last-update').textContent = new Date().toLocaleString();
