@@ -652,9 +652,9 @@ async def manejar_respuesta_consentimiento(  # noqa: C901
         # Determinar si el usuario está registrado para mostrar el menú correcto
         is_registered = bool(provider_profile and provider_profile.get("id"))
         menu_message = (
-            provider_main_menu_message()
+            provider_post_registration_menu_message()
             if is_registered
-            else provider_post_registration_menu_message()
+            else provider_main_menu_message()
         )
 
         messages = [
