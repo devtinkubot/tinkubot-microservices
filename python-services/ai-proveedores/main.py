@@ -462,8 +462,16 @@ def extract_first_image_base64(payload: Dict[str, Any]) -> Optional[str]:
 def determinar_estado_registro_proveedor(
     provider_profile: Optional[Dict[str, Any]],
 ) -> bool:
-    """Determina si el proveedor está registrado (True) o es nuevo (False)."""
-    return bool(provider_profile and provider_profile.get("id"))
+    """
+    Determina si el proveedor está COMPLETAMENTE registrado (True) o es nuevo (False).
+    Un proveedor con solo consentimiento pero sin datos completos no está registrado.
+    """
+    return bool(
+        provider_profile
+        and provider_profile.get("id")
+        and provider_profile.get("full_name")  # Verificar datos completos
+        and provider_profile.get("profession")
+    )
 
 
 def obtener_perfil_proveedor(phone: str) -> Optional[Dict[str, Any]]:
@@ -656,11 +664,17 @@ async def manejar_respuesta_consentimiento(  # noqa: C901
         registrar_consentimiento_proveedor(provider_id, phone, payload, "accepted")
         logger.info("Consentimiento aceptado por proveedor %s", phone)
 
-        # Determinar si el usuario está registrado para mostrar el menú correcto
-        is_registered = bool(provider_profile and provider_profile.get("id"))
+        # Determinar si el usuario está COMPLETAMENTE registrado (no solo consentimiento)
+        # Un usuario con solo consentimiento no está completamente registrado
+        is_fully_registered = bool(
+            provider_profile
+            and provider_profile.get("id")
+            and provider_profile.get("full_name")  # Verificar que tiene datos completos
+            and provider_profile.get("profession")
+        )
         menu_message = (
             provider_post_registration_menu_message()
-            if is_registered
+            if is_fully_registered
             else provider_main_menu_message()
         )
 
