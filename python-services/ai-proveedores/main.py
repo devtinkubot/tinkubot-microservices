@@ -459,6 +459,13 @@ def extract_first_image_base64(payload: Dict[str, Any]) -> Optional[str]:
 # Función obsoleta eliminada - ahora se usa register_provider_unified()
 
 
+def determinar_estado_registro_proveedor(
+    provider_profile: Optional[Dict[str, Any]],
+) -> bool:
+    """Determina si el proveedor está registrado (True) o es nuevo (False)."""
+    return bool(provider_profile and provider_profile.get("id"))
+
+
 def obtener_perfil_proveedor(phone: str) -> Optional[Dict[str, Any]]:
     """Obtener perfil de proveedor por telefono desde Supabase (esquema unificado)."""
     if not supabase or not phone:
@@ -1190,13 +1197,13 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                 flow["has_consent"] = True
 
         has_consent = bool(flow.get("has_consent"))
-        registration_allowed = not bool(provider_profile and provider_profile.get("id"))
-        flow["registration_allowed"] = registration_allowed
+        esta_registrado = determinar_estado_registro_proveedor(provider_profile)
+        flow["esta_registrado"] = esta_registrado
         await establecer_flujo(phone, flow)
 
         if not state:
             if menu_choice == "1":
-                flow["mode"] = "registration" if registration_allowed else "update"
+                flow["mode"] = "registration" if not esta_registrado else "update"
                 flow["state"] = "awaiting_city"
                 await establecer_flujo(phone, flow)
                 if flow["mode"] == "registration":
@@ -1222,7 +1229,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
             flow = {**flow, "state": "awaiting_menu_option", "has_consent": True}
             menu_message = (
                 provider_main_menu_message()
-                if registration_allowed
+                if not esta_registrado
                 else provider_post_registration_menu_message()
             )
             await establecer_flujo(phone, flow)
@@ -1240,7 +1247,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                 await establecer_flujo(phone, flow)
                 menu_message = (
                     provider_main_menu_message()
-                    if registration_allowed
+                    if not esta_registrado
                     else provider_post_registration_menu_message()
                 )
                 return {
@@ -1255,7 +1262,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
         if state == "awaiting_menu_option":
             choice = menu_choice
             if choice == "1":
-                flow["mode"] = "registration" if registration_allowed else "update"
+                flow["mode"] = "registration" if not esta_registrado else "update"
                 flow["state"] = "awaiting_city"
                 await establecer_flujo(phone, flow)
                 prompt = (
@@ -1265,7 +1272,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                 )
                 return {"success": True, "response": prompt}
             if choice == "2":
-                if registration_allowed:
+                if not esta_registrado:
                     flow["state"] = "awaiting_city"
                     flow["mode"] = "update"
                     await establecer_flujo(phone, flow)
@@ -1277,7 +1284,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                     }
                 await reiniciar_flujo(phone)
                 await establecer_flujo(
-                    phone, {"has_consent": True, "registration_allowed": False}
+                    phone, {"has_consent": True, "esta_registrado": True}
                 )
                 return {
                     "success": True,
@@ -1298,12 +1305,12 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
             await establecer_flujo(phone, flow)
             menu_message = (
                 provider_main_menu_message()
-                if registration_allowed
+                if not esta_registrado
                 else provider_post_registration_menu_message()
             )
             invalid_prompt = (
                 "No reconoci esa opcion. Por favor elige 1 o 2."
-                if not registration_allowed
+                if esta_registrado
                 else "No reconoci esa opcion. Por favor elige 1, 2 o 3."
             )
             return {
