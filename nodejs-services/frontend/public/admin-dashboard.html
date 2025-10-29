@@ -224,10 +224,6 @@
                 <i class="fas fa-cog me-2"></i>
                 Configuración
               </a>
-              <a class="nav-link" href="#" onclick="refreshAllData()">
-                <i class="fas fa-sync-alt me-2"></i>
-                Refrescar
-              </a>
             </nav>
           </div>
         </div>
@@ -243,7 +239,7 @@
               </div>
               <div>
                 <span class="badge bg-primary me-2">Administrador</span>
-                <button class="refresh-btn" onclick="refreshAllData()">
+                <button class="refresh-btn" onclick="actualizarTodosDatos()">
                   <i class="fas fa-sync-alt me-1"></i>
                   Actualizar
                   <div class="spinner-border spinner-border-sm loading-spinner" role="status">
@@ -272,10 +268,10 @@
                         class="instance-refresh-btn"
                         data-refresh="bot-clientes"
                         data-loading="false"
-                        onclick="regenerateWhatsApp('bot-clientes')"
+                        onclick="regenerarConexionWhatsApp('bot-clientes')"
                       >
                         <i class="fas fa-sync-alt"></i>
-                        <span>Regenerar</span>
+                        <span>Restablecer Conexión</span>
                         <span
                           class="spinner-border spinner-border-sm"
                           role="status"
@@ -309,10 +305,10 @@
                         class="instance-refresh-btn"
                         data-refresh="bot-proveedores"
                         data-loading="false"
-                        onclick="regenerateWhatsApp('bot-proveedores')"
+                        onclick="regenerarConexionWhatsApp('bot-proveedores')"
                       >
                         <i class="fas fa-sync-alt"></i>
-                        <span>Regenerar</span>
+                        <span>Restablecer Conexión</span>
                         <span
                           class="spinner-border spinner-border-sm"
                           role="status"
@@ -365,175 +361,279 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-      // Configuración global
-      const API_BASE_URL = '';
+      /**
+       * Namespace global TinkuBot - Module Pattern Implementation
+       * Organización del código en módulos para mejor mantenibilidad
+       */
+      const TinkuBot = TinkuBot || {};
 
-      // Cargar datos directamente sin autenticación
-      document.addEventListener('DOMContentLoaded', () => {
-        loadWhatsAppStatus();
-        updateLastUpdateTime();
-      });
+      /**
+       * Módulo de utilidades generales
+       */
+      TinkuBot.Utils = (function() {
+        'use strict';
 
-      // Navegación del sidebar
-      document.querySelectorAll('.sidebar .nav-link[data-section]').forEach(link => {
-        link.addEventListener('click', e => {
+        // Configuración global
+        const API_BASE_URL = '';
+
+        return {
+          getApiBaseUrl: () => API_BASE_URL,
+
+          /**
+           * Formatea timestamp a string local
+           */
+          formatTimestamp: function() {
+            return new Date().toLocaleString();
+          },
+
+          /**
+           * Muestra/oculta spinner de carga
+           */
+          toggleSpinner: function(show) {
+            const spinner = document.querySelector('.refresh-btn .loading-spinner');
+            if (spinner) {
+              spinner.style.display = show ? 'inline-block' : 'none';
+            }
+          }
+        };
+      })();
+
+      /**
+       * Módulo de navegación del dashboard
+       */
+      TinkuBot.Navigation = (function() {
+        'use strict';
+
+        function initSidebarNavigation() {
+          document.querySelectorAll('.sidebar .nav-link[data-section]').forEach(link => {
+            link.addEventListener('click', handleSectionClick);
+          });
+        }
+
+        function handleSectionClick(e) {
           e.preventDefault();
           const section = e.currentTarget.dataset.section;
 
           // Actualizar navegación activa
-          document
-            .querySelectorAll('.sidebar .nav-link')
+          document.querySelectorAll('.sidebar .nav-link')
             .forEach(l => l.classList.remove('active'));
           e.currentTarget.classList.add('active');
 
           // Mostrar sección correspondiente
           document.querySelectorAll('[id$="-section"]').forEach(s => (s.style.display = 'none'));
           document.getElementById(`${section}-section`).style.display = 'block';
-        });
+        }
+
+        return {
+          init: function() {
+            initSidebarNavigation();
+          }
+        };
+      })();
+
+      /**
+       * Módulo de gestión de WhatsApp
+       */
+      TinkuBot.WhatsAppManager = (function() {
+        'use strict';
+
+        /**
+         * Establece estado de botón de actualización
+         */
+        function establecerEstadoBotonActualizacion(instanceId, isLoading) {
+          const button = document.querySelector(
+            `.instance-refresh-btn[data-refresh="${instanceId}"]`
+          );
+          if (!button) return;
+
+          button.dataset.loading = isLoading ? 'true' : 'false';
+          button.disabled = isLoading;
+        }
+
+        /**
+         * Muestra mensajes de estado en la interfaz
+         */
+        function mostrarMensajeEstado(instanceId, message, type = 'success') {
+          const messageDiv = document.getElementById(`${instanceId}-message`);
+          if (!messageDiv) return;
+
+          messageDiv.classList.remove('success', 'error');
+
+          if (!message) {
+            messageDiv.style.display = 'none';
+            messageDiv.textContent = '';
+            return;
+          }
+
+          messageDiv.textContent = message;
+          messageDiv.classList.add(type === 'error' ? 'error' : 'success');
+          messageDiv.style.display = 'block';
+        }
+
+        /**
+         * Regenera conexión de WhatsApp (genera nuevo QR)
+         */
+        async function regenerarConexionWhatsApp(instanceId) {
+          establecerEstadoBotonActualizacion(instanceId, true);
+          mostrarMensajeEstado(instanceId, '');
+
+          const infoDiv = document.getElementById(`${instanceId}-info`);
+          if (infoDiv) {
+            infoDiv.innerHTML = `
+              <p class="text-primary mb-0"><strong>Generando nuevo código QR...</strong></p>
+              <p class="text-muted small mb-0">Solicitando nuevo código, espera unos segundos...</p>
+            `;
+          }
+
+          try {
+            const response = await fetch(`/api/whatsapp/${instanceId}/refresh`, {
+              method: 'POST',
+            });
+            const payload = await response.json().catch(() => ({}));
+
+            if (!response.ok) {
+              throw new Error(payload.error || payload.message || 'No se pudo generar el nuevo QR.');
+            }
+
+            await cargarEstadoWhatsApp();
+            mostrarMensajeEstado(
+              instanceId,
+              payload.message || 'Escanea el nuevo código QR generado.',
+              'success'
+            );
+          } catch (error) {
+            console.error('Error al generar QR:', error);
+            mostrarMensajeEstado(
+              instanceId,
+              error?.message || 'Ocurrió un problema al generar el nuevo QR.',
+              'error'
+            );
+          } finally {
+            establecerEstadoBotonActualizacion(instanceId, false);
+          }
+        }
+
+        /**
+         * Carga estado actual de conexiones WhatsApp
+         */
+        async function cargarEstadoWhatsApp() {
+          try {
+            const response = await fetch('/whatsapp-status');
+            const data = await response.json();
+            actualizarVisualizacionWhatsApp('bot-clientes', data['bot-clientes']);
+            actualizarVisualizacionWhatsApp('bot-proveedores', data['bot-proveedores']);
+          } catch (error) {
+            console.error('Error al cargar estado de WhatsApp:', error);
+            mostrarMensajeEstado(
+              'bot-clientes',
+              'No se pudo cargar el estado. Intenta nuevamente.',
+              'error'
+            );
+            mostrarMensajeEstado(
+              'bot-proveedores',
+              'No se pudo cargar el estado. Intenta nuevamente.',
+              'error'
+            );
+          }
+        }
+
+        /**
+         * Actualiza visualización del estado de WhatsApp
+         */
+        function actualizarVisualizacionWhatsApp(service, data) {
+          const statusIndicator = document.getElementById(`${service}-status`);
+          const infoDiv = document.getElementById(`${service}-info`);
+          const qrDiv = document.getElementById(`${service}-qr`);
+          const messageDiv = document.getElementById(`${service}-message`);
+          const statusData = data || {};
+
+          if (statusData.connected) {
+            statusIndicator.className = 'status-indicator connected';
+            infoDiv.innerHTML = `
+              <p class="text-success mb-0"><strong>Conectado</strong></p>
+              <p class="text-muted small mb-0">Listo para enviar mensajes</p>
+            `;
+            qrDiv.style.display = 'none';
+            if (messageDiv) {
+              messageDiv.style.display = 'none';
+              messageDiv.textContent = '';
+              messageDiv.classList.remove('success', 'error');
+            }
+          } else {
+            statusIndicator.className = 'status-indicator disconnected';
+            infoDiv.innerHTML = `
+              <p class="text-danger mb-0"><strong>Desconectado</strong></p>
+              <p class="text-muted small mb-0">Necesita escanear código QR</p>
+            `;
+            qrDiv.style.display = 'block';
+            if (statusData.qr) {
+              document.getElementById(`${service}-qr-img`).src = statusData.qr;
+            }
+            if (messageDiv) {
+              messageDiv.style.display = 'none';
+              messageDiv.textContent = '';
+              messageDiv.classList.remove('success', 'error');
+            }
+          }
+        }
+
+        /**
+         * Actualiza todos los datos del dashboard
+         */
+        async function actualizarTodosDatos() {
+          TinkuBot.Utils.toggleSpinner(true);
+          await Promise.all([cargarEstadoWhatsApp()]);
+          TinkuBot.Utils.toggleSpinner(false);
+          actualizarHoraUltimaActualizacion();
+        }
+
+        /**
+         * Actualiza timestamp de última actualización
+         */
+        function actualizarHoraUltimaActualizacion() {
+          const timestampElement = document.getElementById('last-update');
+          if (timestampElement) {
+            timestampElement.textContent = TinkuBot.Utils.formatTimestamp();
+          }
+        }
+
+        // API pública del módulo
+        return {
+          init: function() {
+            // Inicialización del módulo
+          },
+
+          // Funciones públicas para compatibilidad con HTML
+          actualizarTodosDatos: actualizarTodosDatos,
+          regenerarConexionWhatsApp: regenerarConexionWhatsApp,
+          cargarEstadoWhatsApp: cargarEstadoWhatsApp,
+          actualizarHoraUltimaActualizacion: actualizarHoraUltimaActualizacion
+        };
+      })();
+
+      /**
+       * Punto de entrada principal - Inicialización de la aplicación
+       */
+      document.addEventListener('DOMContentLoaded', () => {
+        // Inicializar módulos
+        TinkuBot.Navigation.init();
+        TinkuBot.WhatsAppManager.init();
+
+        // Cargar datos iniciales
+        TinkuBot.WhatsAppManager.cargarEstadoWhatsApp();
+        TinkuBot.WhatsAppManager.actualizarHoraUltimaActualizacion();
       });
 
-      function setRefreshButtonState(instanceId, isLoading) {
-        const button = document.querySelector(
-          `.instance-refresh-btn[data-refresh="${instanceId}"]`
-        );
-        if (!button) return;
-
-        button.dataset.loading = isLoading ? 'true' : 'false';
-        button.disabled = isLoading;
+      /**
+       * Funciones globales para compatibilidad con eventos onclick del HTML
+       * Mantienen la misma funcionalidad pero usan los módulos internamente
+       */
+      function actualizarTodosDatos() {
+        TinkuBot.WhatsAppManager.actualizarTodosDatos();
       }
 
-      function showStatusMessage(instanceId, message, type = 'success') {
-        const messageDiv = document.getElementById(`${instanceId}-message`);
-        if (!messageDiv) return;
-
-        messageDiv.classList.remove('success', 'error');
-
-        if (!message) {
-          messageDiv.style.display = 'none';
-          messageDiv.textContent = '';
-          return;
-        }
-
-        messageDiv.textContent = message;
-        messageDiv.classList.add(type === 'error' ? 'error' : 'success');
-        messageDiv.style.display = 'block';
-      }
-
-      async function regenerateWhatsApp(instanceId) {
-        setRefreshButtonState(instanceId, true);
-        showStatusMessage(instanceId, '');
-
-        const infoDiv = document.getElementById(`${instanceId}-info`);
-        if (infoDiv) {
-          infoDiv.innerHTML = `
-                    <p class="text-primary mb-0"><strong>Regenerando QR...</strong></p>
-                    <p class="text-muted small mb-0">Solicitando un nuevo código, espera unos segundos.</p>
-                `;
-        }
-
-        try {
-          const response = await fetch(`/api/whatsapp/${instanceId}/refresh`, {
-            method: 'POST',
-          });
-          const payload = await response.json().catch(() => ({}));
-
-          if (!response.ok) {
-            throw new Error(payload.error || payload.message || 'No se pudo regenerar el QR.');
-          }
-
-          await loadWhatsAppStatus();
-          showStatusMessage(
-            instanceId,
-            payload.message || 'Solicita escanear el nuevo código QR.',
-            'success'
-          );
-        } catch (error) {
-          console.error('Error al regenerar QR:', error);
-          showStatusMessage(
-            instanceId,
-            error?.message || 'Ocurrió un problema al solicitar el nuevo QR.',
-            'error'
-          );
-        } finally {
-          setRefreshButtonState(instanceId, false);
-        }
-      }
-
-      // Cargar estado de WhatsApp
-      async function loadWhatsAppStatus() {
-        try {
-          const response = await fetch('/whatsapp-status');
-          const data = await response.json();
-          updateWhatsAppDisplay('bot-clientes', data['bot-clientes']);
-          updateWhatsAppDisplay('bot-proveedores', data['bot-proveedores']);
-        } catch (error) {
-          console.error('Error al cargar estado de WhatsApp:', error);
-          showStatusMessage(
-            'bot-clientes',
-            'No se pudo cargar el estado. Intenta nuevamente.',
-            'error'
-          );
-          showStatusMessage(
-            'bot-proveedores',
-            'No se pudo cargar el estado. Intenta nuevamente.',
-            'error'
-          );
-        }
-      }
-
-      // Actualizar display de WhatsApp
-      function updateWhatsAppDisplay(service, data) {
-        const statusIndicator = document.getElementById(`${service}-status`);
-        const infoDiv = document.getElementById(`${service}-info`);
-        const qrDiv = document.getElementById(`${service}-qr`);
-        const messageDiv = document.getElementById(`${service}-message`);
-        const statusData = data || {};
-
-        if (statusData.connected) {
-          statusIndicator.className = 'status-indicator connected';
-          infoDiv.innerHTML = `
-                    <p class="text-success mb-0"><strong>Conectado</strong></p>
-                    <p class="text-muted small mb-0">Listo para enviar mensajes</p>
-                `;
-          qrDiv.style.display = 'none';
-          if (messageDiv) {
-            messageDiv.style.display = 'none';
-            messageDiv.textContent = '';
-            messageDiv.classList.remove('success', 'error');
-          }
-        } else {
-          statusIndicator.className = 'status-indicator disconnected';
-          infoDiv.innerHTML = `
-                    <p class="text-danger mb-0"><strong>Desconectado</strong></p>
-                    <p class="text-muted small mb-0">Necesita escanear código QR</p>
-                `;
-          qrDiv.style.display = 'block';
-          if (statusData.qr) {
-            document.getElementById(`${service}-qr-img`).src = statusData.qr;
-          }
-          if (messageDiv) {
-            messageDiv.style.display = 'none';
-            messageDiv.textContent = '';
-            messageDiv.classList.remove('success', 'error');
-          }
-        }
-      }
-
-      // Refrescar todos los datos
-      async function refreshAllData() {
-        const spinner = document.querySelector('.refresh-btn .loading-spinner');
-        spinner.style.display = 'inline-block';
-
-        await Promise.all([loadWhatsAppStatus()]);
-
-        spinner.style.display = 'none';
-        updateLastUpdateTime();
-      }
-
-  
-      // Actualizar última actualización
-      function updateLastUpdateTime() {
-        document.getElementById('last-update').textContent = new Date().toLocaleString();
+      function regenerarConexionWhatsApp(instanceId) {
+        TinkuBot.WhatsAppManager.regenerarConexionWhatsApp(instanceId);
       }
     </script>
   </body>
