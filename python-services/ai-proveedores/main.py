@@ -649,9 +649,17 @@ async def manejar_respuesta_consentimiento(  # noqa: C901
         registrar_consentimiento_proveedor(provider_id, phone, payload, "accepted")
         logger.info("Consentimiento aceptado por proveedor %s", phone)
 
+        # Determinar si el usuario está registrado para mostrar el menú correcto
+        is_registered = bool(provider_profile and provider_profile.get("id"))
+        menu_message = (
+            provider_main_menu_message()
+            if is_registered
+            else provider_post_registration_menu_message()
+        )
+
         messages = [
             {"response": consent_acknowledged_message()},
-            {"response": provider_main_menu_message()},
+            {"response": menu_message},
         ]
         return {
             "success": True,
@@ -1182,13 +1190,9 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                 flow["has_consent"] = True
 
         has_consent = bool(flow.get("has_consent"))
-        registration_allowed = flow.get("registration_allowed")
-        if registration_allowed is None:
-            registration_allowed = not bool(
-                provider_profile and provider_profile.get("id")
-            )
-            flow["registration_allowed"] = registration_allowed
-            await establecer_flujo(phone, flow)
+        registration_allowed = not bool(provider_profile and provider_profile.get("id"))
+        flow["registration_allowed"] = registration_allowed
+        await establecer_flujo(phone, flow)
 
         if not state:
             if menu_choice == "1":
