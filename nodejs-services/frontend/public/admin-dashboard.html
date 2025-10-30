@@ -365,7 +365,8 @@
        * Namespace global TinkuBot - Module Pattern Implementation
        * Organización del código en módulos para mejor mantenibilidad
        */
-      const TinkuBot = TinkuBot || {};
+      window.TinkuBot = window.TinkuBot || {};
+      const TinkuBot = window.TinkuBot;
 
       /**
        * Módulo de utilidades generales
