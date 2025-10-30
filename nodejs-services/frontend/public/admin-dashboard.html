@@ -486,9 +486,8 @@
           }
 
           try {
-            // Determinar el puerto correcto según la instancia
-            const port = instanceId === 'bot-clientes' ? '5001' : '5002';
-            const response = await fetch(`http://localhost:${port}/refresh`, {
+            // Usar endpoint del backend para regenerar conexión
+            const response = await fetch(`/api/whatsapp/${instanceId}/refresh`, {
               method: 'POST',
             });
             const payload = await response.json().catch(() => ({}));
@@ -520,50 +519,13 @@
          */
         async function cargarEstadoWhatsApp() {
           try {
-            // Consultar ambos servicios de WhatsApp individualmente
-            const [clientesResponse, proveedoresResponse] = await Promise.all([
-              fetch('http://localhost:5001/status'),
-              fetch('http://localhost:5002/status')
-            ]);
+            // Usar API Gateway del backend para obtener estado de ambos servicios
+            const response = await fetch('/whatsapp-status');
+            const data = await response.json();
 
-            const clientesData = await clientesResponse.json();
-            const proveedoresData = await proveedoresResponse.json();
-
-            // Obtener QR codes si están disponibles
-            let clientesQr = null;
-            let proveedoresQr = null;
-
-            try {
-              const clientesQrResponse = await fetch('http://localhost:5001/qr');
-              if (clientesQrResponse.ok) {
-                clientesQr = await clientesQrResponse.json();
-              }
-            } catch (e) {
-              // QR no disponible, ignorar
-            }
-
-            try {
-              const proveedoresQrResponse = await fetch('http://localhost:5002/qr');
-              if (proveedoresQrResponse.ok) {
-                proveedoresQr = await proveedoresQrResponse.json();
-              }
-            } catch (e) {
-              // QR no disponible, ignorar
-            }
-
-            // Construir datos para cada servicio
-            const clientesStatus = {
-              connected: clientesData.status === 'connected',
-              qr: clientesQr?.qr || null
-            };
-
-            const proveedoresStatus = {
-              connected: proveedoresData.status === 'connected',
-              qr: proveedoresQr?.qr || null
-            };
-
-            actualizarVisualizacionWhatsApp('bot-clientes', clientesStatus);
-            actualizarVisualizacionWhatsApp('bot-proveedores', proveedoresStatus);
+            // Actualizar visualización con datos del backend
+            actualizarVisualizacionWhatsApp('bot-clientes', data['bot-clientes']);
+            actualizarVisualizacionWhatsApp('bot-proveedores', data['bot-proveedores']);
           } catch (error) {
             console.error('Error al cargar estado de WhatsApp:', error);
             mostrarMensajeEstado(
