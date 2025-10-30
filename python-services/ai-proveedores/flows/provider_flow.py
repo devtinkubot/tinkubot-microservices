@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Awaitable, Callable, Dict, Optional
 
+from pydantic import ValidationError
+
+from shared_lib.models import ProviderCreate
 from templates.prompts import provider_post_registration_menu_message
 
 
@@ -240,7 +244,7 @@ class ProviderFlow:
         message_text: Optional[str],
         phone: str,
         register_provider_fn: Callable[
-            [Dict[str, Any]], Awaitable[Optional[Dict[str, Any]]]
+            [ProviderCreate], Awaitable[Optional[Dict[str, Any]]]
         ],
         upload_media_fn: Callable[[str, Dict[str, Any]], Awaitable[None]],
         reset_flow_fn: Callable[[], Awaitable[None]],
@@ -265,21 +269,40 @@ class ProviderFlow:
             or text.startswith("confirm")
             or text in {"si", "ok", "listo", "confirmar"}
         ):
-            provider_data = {
-                "phone": phone,
-                "name": flow.get("name"),
-                "email": flow.get("email"),
-                "city": flow.get("city"),
-                "profession": flow.get("profession"),
-                "specialty": flow.get("specialty"),
-                "experience_years": flow.get("experience_years"),
-                "dni_number": None,
-                "social_media_url": flow.get("social_media_url"),
-                "social_media_type": flow.get("social_media_type"),
-                "has_consent": flow.get("has_consent", False),
-            }
+            specialty = flow.get("specialty")
+            services_list = []
+            if isinstance(specialty, str):
+                services_list = [
+                    item.strip()
+                    for item in re.split(r"[;,/\n]+", specialty)
+                    if item and item.strip()
+                ]
+                if not services_list and specialty.strip():
+                    services_list = [specialty.strip()]
 
-            registered_provider = await register_provider_fn(provider_data)
+            try:
+                provider_payload = ProviderCreate(
+                    phone=phone,
+                    full_name=flow.get("name") or "",
+                    email=flow.get("email"),
+                    city=flow.get("city") or "",
+                    profession=flow.get("profession") or "",
+                    services_list=services_list,
+                    experience_years=flow.get("experience_years"),
+                    has_consent=flow.get("has_consent", False),
+                    social_media_url=flow.get("social_media_url"),
+                    social_media_type=flow.get("social_media_type"),
+                )
+            except ValidationError as exc:
+                logger.error("Datos de registro invalidos para %s: %s", phone, exc)
+                return {
+                    "success": False,
+                    "response": (
+                        "*No pude validar tus datos. Revisa que nombre, ciudad y profesion sean correctos.*"
+                    ),
+                }
+
+            registered_provider = await register_provider_fn(provider_payload)
             if registered_provider:
                 logger.info(
                     "Proveedor registrado exitosamente: %s",

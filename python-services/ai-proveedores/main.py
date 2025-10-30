@@ -284,16 +284,59 @@ def normalizar_texto_para_busqueda(texto: str) -> str:
     return texto
 
 
+STOPWORDS_SERVICIOS: Set[str] = {
+    "de",
+    "del",
+    "la",
+    "las",
+    "el",
+    "los",
+    "a",
+    "al",
+    "en",
+    "y",
+    "o",
+    "u",
+    "para",
+    "por",
+    "con",
+    "sin",
+    "sobre",
+    "un",
+    "una",
+    "uno",
+    "unos",
+    "unas",
+    "the",
+    "and",
+    "of",
+}
+
+
 def procesar_keywords_servicios(lista_servicios: List[str]) -> str:
     """
     Convertir lista de servicios a keywords concatenadas para búsqueda.
     """
-    keywords = []
+    keywords: List[str] = []
     for servicio in lista_servicios:
         normalizado = normalizar_texto_para_busqueda(servicio)
         if normalizado:
-            keywords.append(normalizado)
-    return " ".join(keywords)
+            palabras = [
+                palabra
+                for palabra in normalizado.split()
+                if palabra and palabra not in STOPWORDS_SERVICIOS
+            ]
+            keywords.extend(palabras)
+
+    # Eliminar duplicados preservando orden original
+    resultado: List[str] = []
+    vistos: Set[str] = set()
+    for palabra in keywords:
+        if palabra not in vistos:
+            vistos.add(palabra)
+            resultado.append(palabra)
+
+    return " ".join(resultado)
 
 
 def normalizar_datos_proveedor(datos_crudos: ProviderCreate) -> Dict[str, Any]:
@@ -314,6 +357,8 @@ def normalizar_datos_proveedor(datos_crudos: ProviderCreate) -> Dict[str, Any]:
         "available": True,
         "verified": False,
         "rating": 0.0,
+        "social_media_url": datos_crudos.social_media_url,
+        "social_media_type": datos_crudos.social_media_type,
     }
 
 
@@ -356,6 +401,7 @@ async def registrar_proveedor(
                 "id": id_proveedor,
                 "phone": datos_normalizados["phone"],
                 "full_name": datos_normalizados["full_name"],
+                "email": datos_normalizados["email"],
                 "city": datos_normalizados["city"],
                 "profession": datos_normalizados["profession"],
                 "services": datos_normalizados["services"],
@@ -364,6 +410,8 @@ async def registrar_proveedor(
                 "available": datos_normalizados["available"],
                 "verified": datos_normalizados["verified"],
                 "has_consent": datos_normalizados["has_consent"],
+                "social_media_url": datos_normalizados["social_media_url"],
+                "social_media_type": datos_normalizados["social_media_type"],
                 "created_at": datetime.now().isoformat(),
             }
         else:
@@ -482,7 +530,7 @@ def obtener_perfil_proveedor(phone: str) -> Optional[Dict[str, Any]]:
     try:
         response = (
             supabase.table("providers")
-            .select("id, phone, full_name, city, has_consent")
+            .select("id, phone, full_name, city, profession, has_consent")
             .eq("phone", phone)
             .limit(1)
             .execute()
@@ -1117,13 +1165,21 @@ async def registrar_proveedor_endpoint(
     """Endpoint único y simplificado para registro de proveedores"""
     try:
         # Convertir request del frontend a modelo unificado
+        services_entries: List[str] = []
+        if request.specialty:
+            services_entries = [
+                part.strip()
+                for part in re.split(r"[;,/\n]+", request.specialty)
+                if part and part.strip()
+            ]
+
         datos_proveedor = ProviderCreate(
             phone=request.phone,
             full_name=request.name,
             email=request.email,
             city=request.city,
             profession=request.profession,
-            services_list=[],  # Request antiguo no tiene services_list
+            services_list=services_entries,
             experience_years=request.experience_years,
             has_consent=request.has_consent,
         )
@@ -1287,13 +1343,12 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                 return {"success": True, "response": prompt}
             if choice == "2":
                 if not esta_registrado:
-                    flow["state"] = "awaiting_city"
-                    flow["mode"] = "update"
-                    await establecer_flujo(phone, flow)
+                    await reiniciar_flujo(phone)
+                    await establecer_flujo(phone, {"has_consent": True})
                     return {
                         "success": True,
                         "response": (
-                            "*Actualicemos datos. ¿En qué ciudad trabajas principalmente?*"
+                            "Perfecto. Si necesitas algo, escribe 'registro' para empezar de nuevo."
                         ),
                     }
                 await reiniciar_flujo(phone)
@@ -1322,11 +1377,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                 if not esta_registrado
                 else provider_post_registration_menu_message()
             )
-            invalid_prompt = (
-                "No reconoci esa opcion. Por favor elige 1 o 2."
-                if esta_registrado
-                else "No reconoci esa opcion. Por favor elige 1, 2 o 3."
-            )
+            invalid_prompt = "No reconoci esa opcion. Por favor elige 1 o 2."
             return {
                 "success": True,
                 "messages": [

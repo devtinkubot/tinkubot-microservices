@@ -46,8 +46,7 @@ PROVIDER_MAIN_MENU = (
     "-----------------------------\n"
     "\n"
     "1. Registro\n"
-    "2. Actualizacion de datos\n"
-    "3. Salir\n"
+    "2. Salir\n"
     "\n"
     "-----------------------------"
 )
