@@ -25,6 +25,7 @@ from templates.prompts import (
     provider_guidance_message,
     provider_main_menu_message,
     provider_post_registration_menu_message,
+    provider_services_menu_message,
 )
 
 from shared_lib.config import settings
@@ -284,6 +285,9 @@ def normalizar_texto_para_busqueda(texto: str) -> str:
     return texto
 
 
+SERVICIOS_MAXIMOS = 5
+
+
 STOPWORDS_SERVICIOS: Set[str] = {
     "de",
     "del",
@@ -313,36 +317,131 @@ STOPWORDS_SERVICIOS: Set[str] = {
 }
 
 
+def limpiar_servicio_texto(servicio: str) -> str:
+    """Normaliza y elimina stopwords de una descripción de servicio."""
+    normalizado = normalizar_texto_para_busqueda(servicio)
+    if not normalizado:
+        return ""
+    palabras = [
+        palabra
+        for palabra in normalizado.split()
+        if palabra and palabra not in STOPWORDS_SERVICIOS
+    ]
+    return " ".join(palabras)
+
+
+def sanitizar_servicios(lista_servicios: Optional[List[str]]) -> List[str]:
+    """Genera lista única de servicios limpios, limitada a SERVICIOS_MAXIMOS."""
+    servicios_limpios: List[str] = []
+    if not lista_servicios:
+        return servicios_limpios
+
+    for servicio in lista_servicios:
+        texto = limpiar_servicio_texto(servicio)
+        if not texto or texto in servicios_limpios:
+            continue
+        servicios_limpios.append(texto)
+        if len(servicios_limpios) >= SERVICIOS_MAXIMOS:
+            break
+
+    return servicios_limpios
+
+
+def formatear_servicios(servicios: List[str]) -> str:
+    """Convierte lista de servicios en cadena persistible."""
+    return " | ".join(servicios)
+
+
+def dividir_cadena_servicios(texto: str) -> List[str]:
+    """Separa un texto en posibles servicios usando separadores conocidos."""
+    cleaned = texto.strip()
+    if not cleaned:
+        return []
+
+    if re.search(r"[|;,/\n]", cleaned):
+        candidatos = re.split(r"[|;,/\n]+", cleaned)
+    else:
+        candidatos = [cleaned]
+
+    return [item.strip() for item in candidatos if item and item.strip()]
+
+
 def procesar_keywords_servicios(lista_servicios: List[str]) -> str:
     """
-    Convertir lista de servicios a keywords concatenadas para búsqueda.
+    Convertir lista de servicios a cadena normalizada para almacenamiento.
     """
-    keywords: List[str] = []
-    for servicio in lista_servicios:
-        normalizado = normalizar_texto_para_busqueda(servicio)
-        if normalizado:
-            palabras = [
-                palabra
-                for palabra in normalizado.split()
-                if palabra and palabra not in STOPWORDS_SERVICIOS
-            ]
-            keywords.extend(palabras)
+    servicios_limpios = sanitizar_servicios(lista_servicios)
+    return formatear_servicios(servicios_limpios)
 
-    # Eliminar duplicados preservando orden original
+
+def extraer_servicios_guardados(valor: Optional[str]) -> List[str]:
+    """Convierte la cadena almacenada en lista de servicios."""
+    if not valor:
+        return []
+
+    import re
+
+    cleaned = valor.strip()
+    if not cleaned:
+        return []
+
+    servicios = dividir_cadena_servicios(cleaned)
+    # Mantener máximo permitido y eliminar duplicados preservando orden
     resultado: List[str] = []
-    vistos: Set[str] = set()
-    for palabra in keywords:
-        if palabra not in vistos:
-            vistos.add(palabra)
-            resultado.append(palabra)
+    for servicio in servicios:
+        if servicio not in resultado:
+            resultado.append(servicio)
+        if len(resultado) >= SERVICIOS_MAXIMOS:
+            break
+    return resultado
 
-    return " ".join(resultado)
+
+async def actualizar_servicios_proveedor(
+    provider_id: str, servicios: List[str]
+) -> List[str]:
+    """Actualiza los servicios del proveedor en Supabase."""
+    if not supabase:
+        return servicios
+
+    servicios_limpios = sanitizar_servicios(servicios)
+    cadena_servicios = formatear_servicios(servicios_limpios)
+
+    try:
+        supabase.table("providers").update({"services": cadena_servicios}).eq(
+            "id", provider_id
+        ).execute()
+        logger.info("✅ Servicios actualizados para proveedor %s", provider_id)
+    except Exception as exc:
+        logger.error(
+            "❌ Error actualizando servicios para proveedor %s: %s",
+            provider_id,
+            exc,
+        )
+        raise
+
+    return servicios_limpios
+
+
+def construir_mensaje_servicios(servicios: List[str]) -> str:
+    """Genera mensaje para mostrar servicios y opciones."""
+    return provider_services_menu_message(servicios, SERVICIOS_MAXIMOS)
+
+
+def construir_listado_servicios(servicios: List[str]) -> str:
+    """Genera listado numerado de servicios actuales."""
+    if not servicios:
+        return "_No tienes servicios registrados._"
+
+    lines = ["Servicios registrados:"]
+    lines.extend(f"{idx + 1}. {servicio}" for idx, servicio in enumerate(servicios))
+    return "\n".join(lines)
 
 
 def normalizar_datos_proveedor(datos_crudos: ProviderCreate) -> Dict[str, Any]:
     """
     Normaliza datos del formulario para el esquema unificado.
     """
+    servicios_limpios = sanitizar_servicios(datos_crudos.services_list or [])
     return {
         "phone": datos_crudos.phone.strip(),
         "full_name": datos_crudos.full_name.strip().title(),  # Formato legible
@@ -351,7 +450,7 @@ def normalizar_datos_proveedor(datos_crudos: ProviderCreate) -> Dict[str, Any]:
         "profession": normalizar_texto_para_busqueda(
             datos_crudos.profession
         ),  # minúsculas
-        "services": procesar_keywords_servicios(datos_crudos.services_list or []),
+        "services": formatear_servicios(servicios_limpios),
         "experience_years": datos_crudos.experience_years or 0,
         "has_consent": datos_crudos.has_consent,
         "available": True,
@@ -530,13 +629,19 @@ def obtener_perfil_proveedor(phone: str) -> Optional[Dict[str, Any]]:
     try:
         response = (
             supabase.table("providers")
-            .select("id, phone, full_name, city, profession, has_consent")
+            .select(
+                "id, phone, full_name, city, profession, has_consent, services, face_photo_url"
+            )
             .eq("phone", phone)
             .limit(1)
             .execute()
         )
         if response.data:
-            return cast(Dict[str, Any], response.data[0])
+            registro = cast(Dict[str, Any], response.data[0])
+            registro["services_list"] = extraer_servicios_guardados(
+                registro.get("services")
+            )
+            return registro
     except Exception as exc:
         logger.warning(f"No se pudo obtener perfil para {phone}: {exc}")
 
@@ -1262,9 +1367,16 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
         state = flow.get("state")
 
         provider_profile = obtener_perfil_proveedor(phone)
-        if provider_profile and provider_profile.get("has_consent"):
-            if not flow.get("has_consent"):
+        provider_id = provider_profile.get("id") if provider_profile else None
+        if provider_profile:
+            if provider_profile.get("has_consent") and not flow.get("has_consent"):
                 flow["has_consent"] = True
+            if provider_id:
+                flow["provider_id"] = provider_id
+            servicios_guardados = provider_profile.get("services_list") or []
+            flow["services"] = servicios_guardados
+        else:
+            flow.setdefault("services", [])
 
         has_consent = bool(flow.get("has_consent"))
         esta_registrado = determinar_estado_registro_proveedor(provider_profile)
@@ -1272,44 +1384,27 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
         await establecer_flujo(phone, flow)
 
         if not state:
-            if menu_choice == "1":
-                flow["mode"] = "registration" if not esta_registrado else "update"
-                flow["state"] = "awaiting_city"
-                await establecer_flujo(phone, flow)
-                if flow["mode"] == "registration":
-                    prompt = "*Ingresa la ciudad donde trabajas principalmente.*"
-                else:
-                    prompt = "*Actualicemos tus datos. ¿En qué ciudad trabajas principalmente?*"
-                return {"success": True, "response": prompt}
-            if menu_choice == "2":
-                await reiniciar_flujo(phone)
-                await establecer_flujo(phone, {"has_consent": True})
-                return {
-                    "success": True,
-                    "response": (
-                        "Perfecto. Si necesitas algo mas, escribe 'registro' o responde con opción."
-                    ),
-                }
-
             if not has_consent:
-                flow = {**flow, "state": "awaiting_consent", "has_consent": False}
-                await establecer_flujo(phone, flow)
+                nuevo_flujo = {"state": "awaiting_consent", "has_consent": False}
+                await establecer_flujo(phone, nuevo_flujo)
                 return await solicitar_consentimiento_proveedor(phone)
 
-            flow = {**flow, "state": "awaiting_menu_option", "has_consent": True}
+            flow = {
+                **flow,
+                "state": "awaiting_menu_option",
+                "has_consent": True,
+            }
             menu_message = (
                 provider_main_menu_message()
                 if not esta_registrado
                 else provider_post_registration_menu_message()
             )
             await establecer_flujo(phone, flow)
-            return {
-                "success": True,
-                "messages": [
-                    {"response": provider_guidance_message()},
-                    {"response": menu_message},
-                ],
-            }
+            mensajes = []
+            if not esta_registrado:
+                mensajes.append({"response": provider_guidance_message()})
+            mensajes.append({"response": menu_message})
+            return {"success": True, "messages": mensajes}
 
         if state == "awaiting_consent":
             if has_consent:
@@ -1331,58 +1426,356 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
 
         if state == "awaiting_menu_option":
             choice = menu_choice
-            if choice == "1":
-                flow["mode"] = "registration" if not esta_registrado else "update"
-                flow["state"] = "awaiting_city"
-                await establecer_flujo(phone, flow)
-                prompt = (
-                    "*Perfecto. Empecemos. En que ciudad trabajas principalmente?*"
-                    if flow["mode"] == "registration"
-                    else "*Actualicemos datos. ¿En qué ciudad trabajas principalmente?*"
-                )
-                return {"success": True, "response": prompt}
-            if choice == "2":
-                if not esta_registrado:
+            lowered = (message_text or "").strip().lower()
+
+            if not esta_registrado:
+                if choice == "1" or "registro" in lowered:
+                    flow["mode"] = "registration"
+                    flow["state"] = "awaiting_city"
+                    await establecer_flujo(phone, flow)
+                    return {
+                        "success": True,
+                        "response": "*Perfecto. Empecemos. ¿En qué ciudad trabajas principalmente?*",
+                    }
+                if choice == "2" or "salir" in lowered:
                     await reiniciar_flujo(phone)
                     await establecer_flujo(phone, {"has_consent": True})
                     return {
-                        "success": True,
-                        "response": (
-                            "Perfecto. Si necesitas algo, escribe 'registro' para empezar de nuevo."
-                        ),
+                    "success": True,
+                    "response": "*Perfecto. Si necesitas algo más, solo escríbeme.*",
                     }
-                await reiniciar_flujo(phone)
-                await establecer_flujo(
-                    phone, {"has_consent": True, "esta_registrado": True}
-                )
+
+                await establecer_flujo(phone, flow)
                 return {
                     "success": True,
-                    "response": (
-                        "Perfecto. Si necesitas algo, escribe 'registro' o responde."
-                    ),
+                    "messages": [
+                        {"response": "No reconoci esa opcion. Por favor elige 1 o 2."},
+                        {"response": provider_main_menu_message()},
+                    ],
                 }
-            if choice == "3":
-                await reiniciar_flujo(phone)
-                await establecer_flujo(phone, {"has_consent": True})
+
+            # Menú para proveedores registrados
+            servicios_actuales = flow.get("services") or []
+            if choice == "1" or "servicio" in lowered:
+                flow["state"] = "awaiting_service_action"
+                await establecer_flujo(phone, flow)
                 return {
                     "success": True,
-                    "response": (
-                        "Perfecto. Si necesitas algo, escribe 'registro' o responde."
-                    ),
+                    "messages": [{"response": construir_mensaje_servicios(servicios_actuales)}],
+                }
+            if choice == "2" or "selfie" in lowered or "foto" in lowered:
+                flow["state"] = "awaiting_face_photo_update"
+                await establecer_flujo(phone, flow)
+                return {
+                    "success": True,
+                    "response": "*Envíame la nueva selfie con tu rostro visible.*",
+                }
+            if choice == "3" or "salir" in lowered or "volver" in lowered:
+                flujo_base = {
+                    "has_consent": True,
+                    "esta_registrado": True,
+                    "provider_id": flow.get("provider_id"),
+                    "services": servicios_actuales,
+                }
+                await establecer_flujo(phone, flujo_base)
+                return {
+                "success": True,
+                "response": "*Perfecto. Si necesitas algo más, solo escríbeme.*",
                 }
 
             await establecer_flujo(phone, flow)
-            menu_message = (
-                provider_main_menu_message()
-                if not esta_registrado
-                else provider_post_registration_menu_message()
-            )
-            invalid_prompt = "No reconoci esa opcion. Por favor elige 1 o 2."
             return {
                 "success": True,
                 "messages": [
-                    {"response": invalid_prompt},
-                    {"response": menu_message},
+                    {"response": "No reconoci esa opcion. Por favor elige 1, 2 o 3."},
+                    {"response": provider_post_registration_menu_message()},
+                ],
+            }
+
+        if state == "awaiting_service_action":
+            choice = menu_choice
+            lowered = (message_text or "").strip().lower()
+            servicios_actuales = flow.get("services") or []
+
+            if choice == "1" or "agregar" in lowered:
+                if len(servicios_actuales) >= SERVICIOS_MAXIMOS:
+                    return {
+                        "success": True,
+                        "messages": [
+                            {
+                                "response": (
+                                    f"Ya tienes {SERVICIOS_MAXIMOS} servicios registrados. "
+                                    "Elimina uno antes de agregar otro."
+                                )
+                            },
+                            {"response": construir_mensaje_servicios(servicios_actuales)},
+                        ],
+                    }
+                flow["state"] = "awaiting_service_add"
+                await establecer_flujo(phone, flow)
+                return {
+                    "success": True,
+                    "response": (
+                        "Escribe el nuevo servicio que deseas agregar. "
+                        "Si son varios, sepáralos con comas (ej: 'gasfitería de emergencia, mantenimiento')."
+                    ),
+                }
+
+            if choice == "2" or "eliminar" in lowered:
+                if not servicios_actuales:
+                    flow["state"] = "awaiting_service_action"
+                    await establecer_flujo(phone, flow)
+                    return {
+                        "success": True,
+                        "messages": [
+                            {"response": "Aún no tienes servicios para eliminar."},
+                            {"response": construir_mensaje_servicios(servicios_actuales)},
+                        ],
+                    }
+                flow["state"] = "awaiting_service_remove"
+                await establecer_flujo(phone, flow)
+                listado = construir_listado_servicios(servicios_actuales)
+                return {
+                    "success": True,
+                    "messages": [
+                        {"response": listado},
+                        {"response": "Responde con el número del servicio que deseas eliminar."},
+                    ],
+                }
+
+            if choice == "3" or "volver" in lowered or "salir" in lowered:
+                flow["state"] = "awaiting_menu_option"
+                await establecer_flujo(phone, flow)
+                return {
+                    "success": True,
+                    "messages": [{"response": provider_post_registration_menu_message()}],
+                }
+
+            await establecer_flujo(phone, flow)
+            return {
+                "success": True,
+                "messages": [
+                    {"response": "No reconoci esa opcion. Elige 1, 2 o 3."},
+                    {"response": construir_mensaje_servicios(servicios_actuales)},
+                ],
+            }
+
+        if state == "awaiting_service_add":
+            provider_id = flow.get("provider_id")
+            if not provider_id:
+                flow["state"] = "awaiting_menu_option"
+                await establecer_flujo(phone, flow)
+                return {
+                    "success": True,
+                    "messages": [{"response": provider_post_registration_menu_message()}],
+                }
+
+            servicios_actuales = flow.get("services") or []
+            espacio_restante = SERVICIOS_MAXIMOS - len(servicios_actuales)
+            if espacio_restante <= 0:
+                return {
+                    "success": True,
+                    "messages": [
+                        {
+                            "response": (
+                                f"Ya tienes {SERVICIOS_MAXIMOS} servicios registrados. "
+                                "Elimina uno antes de agregar otro."
+                            )
+                        },
+                        {"response": construir_mensaje_servicios(servicios_actuales)},
+                    ],
+                }
+
+            candidatos = dividir_cadena_servicios(message_text or "")
+            if not candidatos:
+                return {
+                    "success": True,
+                    "messages": [
+                        {
+                            "response": (
+                                "No pude interpretar ese servicio. Usa una descripción corta y separa con comas si son varios (ej: 'gasfitería, mantenimiento')."
+                            )
+                        },
+                        {"response": construir_mensaje_servicios(servicios_actuales)},
+                    ],
+                }
+
+            nuevos_sanitizados: List[str] = []
+            for candidato in candidatos:
+                texto = limpiar_servicio_texto(candidato)
+                if (
+                    not texto
+                    or texto in servicios_actuales
+                    or texto in nuevos_sanitizados
+                ):
+                    continue
+                nuevos_sanitizados.append(texto)
+
+            if not nuevos_sanitizados:
+                return {
+                    "success": True,
+                    "messages": [
+                        {
+                            "response": (
+                                "Todos esos servicios ya estaban registrados o no los pude interpretar. "
+                                "Recuerda separarlos con comas y usar descripciones cortas."
+                            )
+                        },
+                        {"response": construir_mensaje_servicios(servicios_actuales)},
+                    ],
+                }
+
+            nuevos_recortados = nuevos_sanitizados[:espacio_restante]
+            if len(nuevos_recortados) < len(nuevos_sanitizados):
+                aviso_limite = True
+            else:
+                aviso_limite = False
+
+            servicios_actualizados = servicios_actuales + nuevos_recortados
+            try:
+                servicios_finales = await actualizar_servicios_proveedor(
+                    provider_id, servicios_actualizados
+                )
+            except Exception:
+                flow["state"] = "awaiting_service_action"
+                await establecer_flujo(phone, flow)
+                return {
+                    "success": False,
+                    "response": (
+                        "No pude guardar el servicio en este momento. Intenta nuevamente más tarde."
+                    ),
+                }
+
+            flow["services"] = servicios_finales
+            flow["state"] = "awaiting_service_action"
+            await establecer_flujo(phone, flow)
+
+            if len(nuevos_recortados) == 1:
+                agregado_msg = f"Servicio agregado: *{nuevos_recortados[0]}*."
+            else:
+                listado = ", ".join(f"*{servicio}*" for servicio in nuevos_recortados)
+                agregado_msg = f"Servicios agregados: {listado}."
+
+            response_messages = [
+                {"response": agregado_msg},
+                {"response": construir_mensaje_servicios(servicios_finales)},
+            ]
+            if aviso_limite:
+                response_messages.insert(
+                    1,
+                    {
+                        "response": (
+                            f"Solo se agregaron {len(nuevos_recortados)} servicio(s) por alcanzar el máximo de {SERVICIOS_MAXIMOS}."
+                        )
+                    },
+                )
+
+            return {
+                "success": True,
+                "messages": response_messages,
+            }
+
+        if state == "awaiting_service_remove":
+            provider_id = flow.get("provider_id")
+            servicios_actuales = flow.get("services") or []
+            if not provider_id or not servicios_actuales:
+                flow["state"] = "awaiting_menu_option"
+                await establecer_flujo(phone, flow)
+                return {
+                    "success": True,
+                    "messages": [{"response": provider_post_registration_menu_message()}],
+                }
+
+            texto = (message_text or "").strip()
+            indice = None
+            if texto.isdigit():
+                indice = int(texto) - 1
+            else:
+                try:
+                    indice = int(re.findall(r"\d+", texto)[0]) - 1
+                except Exception:
+                    indice = None
+
+            if indice is None or indice < 0 or indice >= len(servicios_actuales):
+                await establecer_flujo(phone, flow)
+                listado = construir_listado_servicios(servicios_actuales)
+                return {
+                    "success": True,
+                    "messages": [
+                        {"response": "No pude identificar esa opción. Indica el número del servicio que deseas eliminar."},
+                        {"response": listado},
+                    ],
+                }
+
+            servicio_eliminado = servicios_actuales.pop(indice)
+            try:
+                servicios_finales = await actualizar_servicios_proveedor(
+                    provider_id, servicios_actuales
+                )
+            except Exception:
+                # Restaurar lista local si falla
+                servicios_actuales.insert(indice, servicio_eliminado)
+                flow["state"] = "awaiting_service_action"
+                await establecer_flujo(phone, flow)
+                return {
+                    "success": False,
+                    "response": (
+                        "No pude eliminar el servicio en este momento. Intenta nuevamente."
+                    ),
+                }
+
+            flow["services"] = servicios_finales
+            flow["state"] = "awaiting_service_action"
+            await establecer_flujo(phone, flow)
+            return {
+                "success": True,
+                "messages": [
+                    {"response": f"Servicio eliminado: *{servicio_eliminado}*."},
+                    {"response": construir_mensaje_servicios(servicios_finales)},
+                ],
+            }
+
+        if state == "awaiting_face_photo_update":
+            provider_id = flow.get("provider_id")
+            if not provider_id:
+                flow["state"] = "awaiting_menu_option"
+                await establecer_flujo(phone, flow)
+                return {
+                    "success": True,
+                    "messages": [{"response": provider_post_registration_menu_message()}],
+                }
+
+            image_b64 = extract_first_image_base64(payload)
+            if not image_b64:
+                return {
+                    "success": True,
+                    "response": "Necesito la selfie como imagen adjunta para poder actualizarla.",
+                }
+
+            try:
+                await subir_medios_identidad(
+                    provider_id,
+                    {
+                        "face_image": image_b64,
+                    },
+                )
+            except Exception:
+                flow["state"] = "awaiting_menu_option"
+                await establecer_flujo(phone, flow)
+                return {
+                    "success": False,
+                    "response": (
+                        "No pude actualizar la selfie en este momento. Intenta nuevamente más tarde."
+                    ),
+                }
+
+            flow["state"] = "awaiting_menu_option"
+            await establecer_flujo(phone, flow)
+            return {
+                "success": True,
+                "messages": [
+                    {"response": "Selfie actualizada correctamente."},
+                    {"response": provider_post_registration_menu_message()},
                 ],
             }
 

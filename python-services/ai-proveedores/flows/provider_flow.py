@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Awaitable, Callable, Dict, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from pydantic import ValidationError
 
@@ -40,6 +40,27 @@ def parse_experience_years(text: Optional[str]) -> Optional[int]:
 
 class ProviderFlow:
     """Encapsula manejadores de cada estado del flujo de registro."""
+
+    @staticmethod
+    def parse_services_string(value: Optional[str]) -> List[str]:
+        if not value:
+            return []
+
+        cleaned = value.strip()
+        if not cleaned:
+            return []
+
+        if re.search(r"[|;,\n]", cleaned):
+            candidates = re.split(r"[|;,\n]+", cleaned)
+        else:
+            candidates = [cleaned]
+
+        servicios: List[str] = []
+        for item in candidates:
+            servicio = item.strip()
+            if servicio and servicio not in servicios:
+                servicios.append(servicio)
+        return servicios[:5]
 
     @staticmethod
     def handle_awaiting_city(
@@ -92,7 +113,10 @@ class ProviderFlow:
         flow["state"] = "awaiting_specialty"
         return {
             "success": True,
-            "response": "*Que servicios ofreces dentro de tu profesion?*",
+            "response": (
+                "*¿Qué servicios ofreces dentro de tu profesión?* "
+                "Sepáralos con comas (ej: instalación eléctrica, mantenimiento industrial)."
+            ),
         }
 
     @staticmethod
@@ -105,14 +129,17 @@ class ProviderFlow:
             return {
                 "success": True,
                 "response": (
-                    "*La especialidad es obligatoria. Por favor escribela tal como la trabajas.*"
+                    "*La especialidad es obligatoria. Por favor escríbela tal como la trabajas, separando con comas si hay varias.*"
                 ),
             }
 
         if len(specialty) < 2:
             return {
                 "success": True,
-                "response": ("*La especialidad debe tener al menos 2 caracteres.*"),
+                "response": (
+                    "*La especialidad debe tener al menos 2 caracteres. "
+                    "Incluye tus servicios separados por comas (ej: gasfitería, mantenimiento).*"
+                ),
             }
 
         flow["specialty"] = specialty
@@ -309,6 +336,10 @@ class ProviderFlow:
                     registered_provider.get("id"),
                 )
                 provider_id = registered_provider.get("id")
+                servicios_registrados = ProviderFlow.parse_services_string(
+                    registered_provider.get("services")
+                )
+                flow["services"] = servicios_registrados
                 if provider_id:
                     await upload_media_fn(provider_id, flow)
                 await reset_flow_fn()
@@ -327,6 +358,8 @@ class ProviderFlow:
                         "state": "awaiting_menu_option",
                         "has_consent": True,
                         "registration_allowed": False,
+                        "provider_id": provider_id,
+                        "services": servicios_registrados,
                     },
                 }
 

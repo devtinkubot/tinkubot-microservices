@@ -94,8 +94,9 @@ PROVIDER_POST_REGISTRATION_MENU = (
     "\n"
     "-----------------------------\n"
     "\n"
-    "1. Actualizacion de datos\n"
-    "2. Salir\n"
+    "1. Gestionar servicios\n"
+    "2. Actualizar selfie\n"
+    "3. Salir\n"
     "\n"
     "-----------------------------"
 )
@@ -103,3 +104,33 @@ PROVIDER_POST_REGISTRATION_MENU = (
 
 def provider_post_registration_menu_message() -> str:
     return f"{PROVIDER_POST_REGISTRATION_MENU}\n\n{CONSENT_FOOTER}"
+
+
+def provider_services_menu_message(servicios: List[str], max_servicios: int) -> str:
+    encabezado = ["**Gestión de Servicios**", ""]
+
+    if servicios:
+        listado = ["_Servicios registrados:_"]
+        listado.extend(
+            [f"{idx + 1}. {servicio}" for idx, servicio in enumerate(servicios)]
+        )
+    else:
+        listado = ["_Todavía no registras servicios._"]
+
+    limite_texto = (
+        f"(Puedes tener hasta {max_servicios} servicios activos)."
+        if max_servicios
+        else ""
+    )
+
+    opciones = [
+        "",
+        "1. Agregar servicio",
+        "2. Eliminar servicio",
+        "3. Volver al menú principal",
+        "",
+        f"*Responde con el número de tu opción.* {limite_texto}".strip(),
+    ]
+
+    cuerpo = encabezado + listado + opciones
+    return "\n".join(part for part in cuerpo if part is not None)
