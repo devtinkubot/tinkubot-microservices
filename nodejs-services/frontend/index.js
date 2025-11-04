@@ -2,31 +2,33 @@ const express = require('express');
 const axios = require('axios');
 const path = require('path');
 const QRCode = require('qrcode');
+const fs = require('fs');
+const adminProvidersRouter = require('./routes/adminProviders');
 const app = express();
 
-const parsePort = value => {
-  const num = Number(value);
-  return Number.isFinite(num) && num > 0 ? num : undefined;
+const parsearPuerto = valor => {
+  const numero = Number(valor);
+  return Number.isFinite(numero) && numero > 0 ? numero : undefined;
 };
 
-const resolvePort = (defaultValue, ...candidates) => {
-  for (const candidate of candidates) {
-    const parsed = parsePort(candidate);
-    if (parsed !== undefined) {
-      return parsed;
+const resolverPuerto = (valorPorDefecto, ...candidatos) => {
+  for (const candidato of candidatos) {
+    const puerto = parsearPuerto(candidato);
+    if (puerto !== undefined) {
+      return puerto;
     }
   }
-  return defaultValue;
+  return valorPorDefecto;
 };
 
 // Configuración
-const PORT = resolvePort(5000, process.env.FRONTEND_SERVICE_PORT);
-const clientesPort = resolvePort(
+const PORT = resolverPuerto(5000, process.env.FRONTEND_SERVICE_PORT);
+const clientesPort = resolverPuerto(
   5001,
   process.env.CLIENTES_WHATSAPP_PORT,
   process.env.WHATSAPP_CLIENTES_PORT
 );
-const proveedoresPort = resolvePort(
+const proveedoresPort = resolverPuerto(
   5002,
   process.env.PROVEEDORES_WHATSAPP_PORT,
   process.env.WHATSAPP_PROVEEDORES_PORT
@@ -69,9 +71,24 @@ WHATSAPP_INSTANCES.forEach(instance => {
   console.warn(`  - ${instance.name}: ${instance.url}`);
 });
 
+const dashboardDistPath = path.join(__dirname, 'apps', 'admin-dashboard', 'dist');
+const publicPath = path.join(__dirname, 'public');
+
+const existeCompilacionDashboard = () => fs.existsSync(path.join(dashboardDistPath, 'index.html'));
+
+if (fs.existsSync(dashboardDistPath)) {
+  console.warn(`🧱 Dashboard compilado encontrado en: ${dashboardDistPath}`);
+} else {
+  console.warn('⚠️ No se encontró build del dashboard, sirviendo versión legacy desde /public.');
+}
+
 // Middleware
-app.use(express.static('public'));
+if (fs.existsSync(dashboardDistPath)) {
+  app.use(express.static(dashboardDistPath));
+}
+app.use(express.static(publicPath));
 app.use(express.json());
+app.use('/admin/providers', adminProvidersRouter);
 
 // Health check para monitoreo básico
 app.get('/health', (req, res) => {
@@ -84,7 +101,10 @@ app.get('/health', (req, res) => {
 
 // Rutas
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'admin-dashboard.html'));
+  if (existeCompilacionDashboard()) {
+    return res.sendFile(path.join(dashboardDistPath, 'index.html'));
+  }
+  return res.sendFile(path.join(publicPath, 'admin-dashboard.html'));
 });
 
 app.get('/login.html', (req, res) => {

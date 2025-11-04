@@ -378,22 +378,22 @@
         const API_BASE_URL = '';
 
         return {
-          getApiBaseUrl: () => API_BASE_URL,
+          obtenerUrlBaseApi: () => API_BASE_URL,
 
           /**
            * Formatea timestamp a string local
            */
-          formatTimestamp: function() {
+          formatearMarcaDeTiempo: function() {
             return new Date().toLocaleString();
           },
 
           /**
            * Muestra/oculta spinner de carga
            */
-          toggleSpinner: function(show) {
+          alternarSpinner: function(mostrar) {
             const spinner = document.querySelector('.refresh-btn .loading-spinner');
             if (spinner) {
-              spinner.style.display = show ? 'inline-block' : 'none';
+              spinner.style.display = mostrar ? 'inline-block' : 'none';
             }
           }
         };
@@ -405,20 +405,20 @@
       TinkuBot.Navigation = (function() {
         'use strict';
 
-        function initSidebarNavigation() {
+        function inicializarNavegacionLateral() {
           document.querySelectorAll('.sidebar .nav-link[data-section]').forEach(link => {
-            link.addEventListener('click', handleSectionClick);
+            link.addEventListener('click', manejarClicDeSeccion);
           });
         }
 
-        function handleSectionClick(e) {
-          e.preventDefault();
-          const section = e.currentTarget.dataset.section;
+        function manejarClicDeSeccion(evento) {
+          evento.preventDefault();
+          const section = evento.currentTarget.dataset.section;
 
           // Actualizar navegación activa
           document.querySelectorAll('.sidebar .nav-link')
             .forEach(l => l.classList.remove('active'));
-          e.currentTarget.classList.add('active');
+          evento.currentTarget.classList.add('active');
 
           // Mostrar sección correspondiente
           document.querySelectorAll('[id$="-section"]').forEach(s => (s.style.display = 'none'));
@@ -426,8 +426,8 @@
         }
 
         return {
-          init: function() {
-            initSidebarNavigation();
+          iniciar: function() {
+            inicializarNavegacionLateral();
           }
         };
       })();
@@ -586,9 +586,9 @@
          * Actualiza todos los datos del dashboard
          */
         async function actualizarTodosDatos() {
-          TinkuBot.Utils.toggleSpinner(true);
+          TinkuBot.Utils.alternarSpinner(true);
           await Promise.all([cargarEstadoWhatsApp()]);
-          TinkuBot.Utils.toggleSpinner(false);
+          TinkuBot.Utils.alternarSpinner(false);
           actualizarHoraUltimaActualizacion();
         }
 
@@ -598,13 +598,13 @@
         function actualizarHoraUltimaActualizacion() {
           const timestampElement = document.getElementById('last-update');
           if (timestampElement) {
-            timestampElement.textContent = TinkuBot.Utils.formatTimestamp();
+            timestampElement.textContent = TinkuBot.Utils.formatearMarcaDeTiempo();
           }
         }
 
         // API pública del módulo
         return {
-          init: function() {
+          iniciar: function() {
             // Inicialización del módulo
           },
 
@@ -621,8 +621,8 @@
        */
       document.addEventListener('DOMContentLoaded', () => {
         // Inicializar módulos
-        TinkuBot.Navigation.init();
-        TinkuBot.WhatsAppManager.init();
+        TinkuBot.Navigation.iniciar();
+        TinkuBot.WhatsAppManager.iniciar();
 
         // Cargar datos iniciales
         TinkuBot.WhatsAppManager.cargarEstadoWhatsApp();

@@ -49,14 +49,16 @@ class SearchClient:
             }
 
             # Agregar filtros si se proporcionan
-            filters = {}
+            filters = {
+                "verified_only": True,
+                "available_only": True,
+            }
             if city:
                 filters["city"] = city
             if profession:
                 filters["profession"] = profession
 
-            if filters:
-                payload["filters"] = filters
+            payload["filters"] = filters
 
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.post(

@@ -585,7 +585,11 @@ async def _fallback_search_providers_remote(payload: Dict[str, Any]) -> Dict[str
         if resp.status_code == 200:
             data = resp.json()
             providers = data.get("providers") or []
-            total = data.get("total") or data.get("count") or len(providers)
+            providers = [
+                provider for provider in providers if provider.get("verified", False)
+            ]
+            total = len(providers)
+            logger.info("📦 Fallback inteligente filtró %s proveedores verificados", total)
             return {"ok": True, "providers": providers, "total": total}
         logger.warning(
             "⚠️ Respuesta no exitosa en búsqueda inteligente %s cuerpo=%s",
@@ -668,8 +672,11 @@ async def _fallback_search_providers_simple(
             data = resp.json()
             # Adapt to both possible response shapes
             providers = data.get("providers") or []
-            total = data.get("count") or data.get("total_found") or len(providers)
-            logger.info(f"📦 Proveedores recibidos: total={total}")
+            providers = [
+                provider for provider in providers if provider.get("verified", False)
+            ]
+            total = len(providers)
+            logger.info(f"📦 Proveedores verificados tras fallback: total={total}")
             return {"ok": True, "providers": providers, "total": total}
         else:
             body_preview = None

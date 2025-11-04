@@ -1,0 +1,726 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Panel de Administración - TinkuBot</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --primary-color: #6366f1;
+        --success-color: #10b981;
+        --warning-color: #f59e0b;
+        --danger-color: #ef4444;
+        --dark-color: #1f2937;
+        --light-bg: #f8fafc;
+      }
+
+      body {
+        background-color: var(--light-bg);
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      }
+
+      .sidebar {
+        background: linear-gradient(135deg, var(--dark-color) 0%, #374151 100%);
+        min-height: 100vh;
+        color: white;
+        box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+      }
+
+      .sidebar .nav-link {
+        color: rgba(255, 255, 255, 0.8);
+        padding: 12px 20px;
+        border-radius: 8px;
+        margin: 4px 0;
+        transition: all 0.3s ease;
+      }
+
+      .sidebar .nav-link:hover,
+      .sidebar .nav-link.active {
+        background-color: var(--primary-color);
+        color: white;
+        transform: translateX(5px);
+      }
+
+      .main-content {
+        padding: 2rem;
+      }
+
+      .status-card {
+        background: white;
+        border-radius: 12px;
+        padding: 1.5rem;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+        border: 1px solid rgba(0, 0, 0, 0.05);
+        transition:
+          transform 0.2s ease,
+          box-shadow 0.2s ease;
+      }
+
+      .status-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+      }
+
+      .status-indicator {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 8px;
+        animation: pulse 2s infinite;
+      }
+
+      .status-indicator.connected {
+        background-color: var(--success-color);
+      }
+
+      .status-indicator.disconnected {
+        background-color: var(--danger-color);
+      }
+
+      .status-indicator.loading {
+        background-color: var(--warning-color);
+      }
+
+      @keyframes pulse {
+        0% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+        100% {
+          opacity: 1;
+        }
+      }
+
+      .qr-container {
+        text-align: center;
+        padding: 1rem;
+        background: #f8f9fa;
+        border-radius: 8px;
+        margin-top: 1rem;
+      }
+
+      .qr-container img {
+        max-width: 200px;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+      }
+
+      .badge {
+        font-size: 0.75rem;
+        padding: 0.4rem 0.8rem;
+      }
+
+      .header-section {
+        background: white;
+        border-radius: 12px;
+        padding: 2rem;
+        margin-bottom: 2rem;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+      }
+
+      .refresh-btn {
+        background-color: var(--primary-color);
+        border: none;
+        color: white;
+        padding: 0.5rem 1rem;
+        border-radius: 6px;
+        transition: background-color 0.3s ease;
+      }
+
+      .refresh-btn:hover {
+        background-color: #5558e3;
+        color: white;
+      }
+
+      .loading-spinner {
+        display: none;
+        width: 1rem;
+        height: 1rem;
+        margin-left: 0.5rem;
+      }
+
+      .instance-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+      }
+
+      .instance-refresh-btn {
+        border: 1px solid var(--primary-color);
+        background: transparent;
+        color: var(--primary-color);
+        border-radius: 8px;
+        padding: 0.35rem 0.75rem;
+        font-size: 0.85rem;
+        font-weight: 500;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        transition: all 0.2s ease;
+      }
+
+      .instance-refresh-btn:hover:not(:disabled) {
+        background-color: var(--primary-color);
+        color: white;
+      }
+
+      .instance-refresh-btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      .instance-refresh-btn .spinner-border {
+        display: none;
+        width: 1rem;
+        height: 1rem;
+      }
+
+      .instance-refresh-btn[data-loading='true'] .spinner-border {
+        display: inline-block;
+      }
+
+      .status-message {
+        display: none;
+        margin-top: 0.75rem;
+        font-size: 0.9rem;
+      }
+
+      .status-message.success {
+        color: var(--success-color);
+      }
+
+      .status-message.error {
+        color: var(--danger-color);
+      }
+
+      .provider-detail-modal .modal-header {
+        align-items: flex-start;
+      }
+
+      .provider-detail-modal .modal-title {
+        font-weight: 600;
+      }
+
+      .provider-detail-subtitle {
+        font-size: 0.9rem;
+        color: #6b7280;
+      }
+
+      .provider-detail-section {
+        margin-bottom: 1.5rem;
+      }
+
+      .provider-detail-section h6 {
+        font-size: 0.95rem;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+        color: var(--primary-color);
+        margin-bottom: 0.75rem;
+      }
+
+      .provider-detail-item {
+        margin-bottom: 0.6rem;
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+      }
+
+      .provider-detail-label {
+        font-weight: 600;
+        min-width: 140px;
+        color: var(--dark-color);
+      }
+
+      .provider-service-badge {
+        display: inline-block;
+        background-color: rgba(99, 102, 241, 0.12);
+        color: var(--primary-color);
+        padding: 0.35rem 0.75rem;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        margin: 0 0.35rem 0.35rem 0;
+      }
+
+      .provider-document-card {
+        background: #f8fafc;
+        border-radius: 10px;
+        padding: 0.75rem;
+        text-align: center;
+        border: 1px solid rgba(99, 102, 241, 0.1);
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      }
+
+      .provider-document-thumb {
+        border-radius: 8px;
+        overflow: hidden;
+        margin-bottom: 0.75rem;
+        background: white;
+        box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.04);
+      }
+
+      .provider-document-thumb img {
+        width: 100%;
+        height: 160px;
+        object-fit: cover;
+      }
+
+      .provider-document-label {
+        font-size: 0.85rem;
+        color: #4b5563;
+        margin-bottom: 0;
+      }
+
+      .provider-review-form textarea {
+        min-height: 110px;
+      }
+
+      .provider-review-processing {
+        display: none;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.85rem;
+        color: var(--primary-color);
+      }
+
+      .provider-detail-contact-actions {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      .provider-detail-copy-feedback {
+        font-size: 0.75rem;
+        color: var(--success-color);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container-fluid">
+      <div class="row">
+        <!-- Sidebar -->
+        <div class="col-md-3 col-lg-2 sidebar">
+          <div class="p-3">
+            <h4 class="mb-4">
+              <i class="fas fa-robot me-2"></i>
+              TinkuBot Admin
+            </h4>
+            <nav class="nav flex-column">
+              <a class="nav-link active" href="#" data-section="dashboard">
+                <i class="fas fa-tachometer-alt me-2"></i>
+                Dashboard
+              </a>
+              <a class="nav-link" href="#" data-section="providers">
+                <i class="fas fa-user-check me-2"></i>
+                Proveedores
+              </a>
+              <a class="nav-link" href="#" data-section="settings">
+                <i class="fas fa-cog me-2"></i>
+                Configuración
+              </a>
+            </nav>
+          </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="col-md-9 col-lg-10 main-content">
+          <!-- Header -->
+          <div class="header-section">
+            <div class="d-flex justify-content-between align-items-center">
+              <div>
+                <h1 class="h3 mb-1">Panel de Administración</h1>
+                <p class="text-muted mb-0">Gestiona el estado del sistema TinkuBot</p>
+              </div>
+              <div>
+                <span class="badge bg-primary me-2">Administrador</span>
+                <button class="refresh-btn" onclick="actualizarTodosDatos()">
+                  <i class="fas fa-sync-alt me-1"></i>
+                  Actualizar
+                  <div class="spinner-border spinner-border-sm loading-spinner" role="status">
+                    <span class="visually-hidden">Cargando...</span>
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Dashboard Section -->
+          <div id="dashboard-section">
+            <!-- WhatsApp Status Cards -->
+            <div class="row mb-4">
+              <div class="col-md-6">
+                <div class="status-card">
+                  <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="mb-0">
+                      <i class="fab fa-whatsapp me-2 text-success"></i>
+                      WhatsApp Clientes
+                    </h5>
+                    <div class="instance-actions">
+                      <span class="status-indicator loading" id="bot-clientes-status"></span>
+                      <button
+                        type="button"
+                        class="instance-refresh-btn"
+                        data-refresh="bot-clientes"
+                        data-loading="false"
+                        onclick="regenerarConexionWhatsApp('bot-clientes')"
+                      >
+                        <i class="fas fa-sync-alt"></i>
+                        <span>Restablecer Conexión</span>
+                        <span
+                          class="spinner-border spinner-border-sm"
+                          role="status"
+                          aria-hidden="true"
+                        ></span>
+                      </button>
+                    </div>
+                  </div>
+                  <div id="bot-clientes-info">
+                    <p class="text-muted">Verificando estado...</p>
+                  </div>
+                  <div id="bot-clientes-qr" class="qr-container" style="display: none">
+                    <h6 class="mb-3">Escanea este código QR</h6>
+                    <img id="bot-clientes-qr-img" src="" alt="QR Clientes" />
+                    <p class="text-muted small mt-2">Abre WhatsApp Web > Dispositivos vinculados</p>
+                  </div>
+                  <div class="status-message" id="bot-clientes-message" role="status"></div>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="status-card">
+                  <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="mb-0">
+                      <i class="fab fa-whatsapp me-2 text-success"></i>
+                      WhatsApp Proveedores
+                    </h5>
+                    <div class="instance-actions">
+                      <span class="status-indicator loading" id="bot-proveedores-status"></span>
+                      <button
+                        type="button"
+                        class="instance-refresh-btn"
+                        data-refresh="bot-proveedores"
+                        data-loading="false"
+                        onclick="regenerarConexionWhatsApp('bot-proveedores')"
+                      >
+                        <i class="fas fa-sync-alt"></i>
+                        <span>Restablecer Conexión</span>
+                        <span
+                          class="spinner-border spinner-border-sm"
+                          role="status"
+                          aria-hidden="true"
+                        ></span>
+                      </button>
+                    </div>
+                  </div>
+                  <div id="bot-proveedores-info">
+                    <p class="text-muted">Verificando estado...</p>
+                  </div>
+                  <div id="bot-proveedores-qr" class="qr-container" style="display: none">
+                    <h6 class="mb-3">Escanea este código QR</h6>
+                    <img id="bot-proveedores-qr-img" src="" alt="QR Proveedores" />
+                    <p class="text-muted small mt-2">Abre WhatsApp Web > Dispositivos vinculados</p>
+                  </div>
+                  <div class="status-message" id="bot-proveedores-message" role="status"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Providers Section -->
+          <div id="providers-section" style="display: none">
+            <div class="status-card">
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                  <h5 class="mb-0">
+                    <i class="fas fa-user-check me-2 text-primary"></i>
+                    Verificación de Proveedores
+                  </h5>
+                  <p class="text-muted small mb-0">
+                    Revisa y aprueba a los proveedores registrados antes de habilitarlos en el sistema.
+                  </p>
+                </div>
+                <button class="refresh-btn" id="providers-refresh-btn" type="button">
+                  <i class="fas fa-sync-alt me-1"></i>
+                  Actualizar lista
+                  <div class="spinner-border spinner-border-sm loading-spinner" role="status">
+                    <span class="visually-hidden">Cargando...</span>
+                  </div>
+                </button>
+              </div>
+              <div id="providers-feedback" class="alert" style="display: none"></div>
+              <div id="providers-loading" class="text-center text-muted py-4">
+                <div class="spinner-border text-primary" role="status">
+                  <span class="visually-hidden">Cargando...</span>
+                </div>
+                <p class="mt-2 mb-0">Obteniendo proveedores pendientes...</p>
+              </div>
+              <div id="providers-empty" class="alert alert-info" style="display: none">
+                No hay proveedores pendientes de verificación.
+              </div>
+              <div class="table-responsive" id="providers-table-wrapper" style="display: none">
+                <table class="table align-middle">
+                  <thead>
+                    <tr>
+                      <th>Proveedor</th>
+                      <th>Ciudad</th>
+                      <th>Contacto</th>
+                      <th>Registrado</th>
+                      <th>Notas</th>
+                      <th class="text-end">Revisión</th>
+                    </tr>
+                  </thead>
+                  <tbody id="providers-table-body"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Provider Review Modal -->
+          <div
+            class="modal fade"
+            id="provider-review-modal"
+            tabindex="-1"
+            aria-labelledby="provider-review-modal-title"
+            aria-hidden="true"
+          >
+            <div class="modal-dialog modal-lg modal-dialog-scrollable">
+              <div class="modal-content provider-detail-modal">
+                <div class="modal-header">
+                  <div>
+                    <h5 class="modal-title" id="provider-review-modal-title">
+                      <span id="provider-detail-name">Proveedor</span>
+                    </h5>
+                    <div class="provider-detail-subtitle">
+                      <span id="provider-detail-profession">Profesión pendiente</span>
+                      <span
+                        class="badge bg-warning text-dark ms-2"
+                        id="provider-detail-status-badge"
+                      ></span>
+                    </div>
+                    <small class="text-muted">
+                      Registrado:
+                      <span id="provider-detail-registered">—</span>
+                    </small>
+                  </div>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                </div>
+                <div class="modal-body">
+                  <div class="provider-detail-section">
+                    <h6>Resumen</h6>
+                    <div class="row g-3">
+                      <div class="col-md-6">
+                        <div class="provider-detail-item">
+                          <span class="provider-detail-label">Ubicación</span>
+                          <span id="provider-detail-location" class="text-muted">Ubicación pendiente</span>
+                        </div>
+                        <div class="provider-detail-item">
+                          <span class="provider-detail-label">Experiencia</span>
+                          <span id="provider-detail-experience" class="text-muted">No especifica</span>
+                        </div>
+                        <div class="provider-detail-item">
+                          <span class="provider-detail-label">Disponibilidad</span>
+                          <span id="provider-detail-availability" class="text-muted">Sin información</span>
+                        </div>
+                      </div>
+                      <div class="col-md-6">
+                        <div class="provider-detail-item">
+                          <span class="provider-detail-label">Consentimiento</span>
+                          <span id="provider-detail-consent" class="text-muted">Sin datos</span>
+                        </div>
+                        <div class="provider-detail-item">
+                          <span class="provider-detail-label">Calificación</span>
+                          <span id="provider-detail-rating" class="text-muted">Sin calificación</span>
+                        </div>
+                        <div class="provider-detail-item">
+                          <span class="provider-detail-label">Última revisión</span>
+                          <span id="provider-detail-verifier" class="text-muted">Pendiente de revisión</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="provider-detail-section">
+                    <h6>Contacto</h6>
+                    <div class="provider-detail-item">
+                      <span class="provider-detail-label">Persona</span>
+                      <span id="provider-detail-contact-name">—</span>
+                    </div>
+                    <div class="provider-detail-item provider-detail-contact-actions">
+                      <div>
+                        <span class="provider-detail-label">Teléfono</span>
+                        <span id="provider-detail-phone" class="text-muted">Sin número</span>
+                      </div>
+                      <button class="btn btn-outline-secondary btn-sm" type="button" id="provider-detail-copy-phone">
+                        <i class="fas fa-copy me-1"></i>
+                        Copiar
+                      </button>
+                      <a
+                        href="#"
+                        id="provider-detail-open-whatsapp"
+                        class="btn btn-success btn-sm"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style="display: none"
+                      >
+                        <i class="fab fa-whatsapp me-1"></i>
+                        Abrir chat
+                      </a>
+                      <span class="provider-detail-copy-feedback" id="provider-detail-copy-feedback"></span>
+                    </div>
+                    <div class="provider-detail-item">
+                      <span class="provider-detail-label">Correo</span>
+                      <a
+                        id="provider-detail-email"
+                        class="text-decoration-none"
+                        href="#"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Sin correo
+                      </a>
+                    </div>
+                    <div class="provider-detail-item" id="provider-detail-social-wrapper" style="display: none">
+                      <span class="provider-detail-label">Red social</span>
+                      <a
+                        id="provider-detail-social-link"
+                        class="text-decoration-none"
+                        href="#"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        —
+                      </a>
+                    </div>
+                  </div>
+
+                  <div class="provider-detail-section">
+                    <h6>Servicios ofrecidos</h6>
+                    <div id="provider-detail-services"></div>
+                  </div>
+
+                  <div class="provider-detail-section">
+                    <h6>Documentos cargados</h6>
+                    <div class="row g-3" id="provider-detail-documents"></div>
+                    <div
+                      id="provider-detail-documents-empty"
+                      class="alert alert-light border mt-2"
+                      role="alert"
+                      style="display: none"
+                    >
+                      El proveedor aún no cargó documentos para revisión.
+                    </div>
+                  </div>
+
+                  <div class="provider-detail-section">
+                    <h6>Observaciones previas</h6>
+                    <div class="alert alert-secondary" id="provider-detail-existing-notes"></div>
+                  </div>
+
+                  <div class="provider-detail-section provider-review-form">
+                    <h6>Revisión administrativa</h6>
+                    <div class="mb-3">
+                      <label class="form-label" for="provider-reviewer-name">Tu nombre</label>
+                      <input
+                        type="text"
+                        class="form-control"
+                        id="provider-reviewer-name"
+                        placeholder="Ej. María López"
+                      />
+                    </div>
+                    <div class="form-check mb-3">
+                      <input
+                        class="form-check-input"
+                        type="checkbox"
+                        value=""
+                        id="provider-review-check-docs"
+                      />
+                      <label class="form-check-label" for="provider-review-check-docs">
+                        Confirmo que verifiqué la identidad y documentación del proveedor.
+                      </label>
+                    </div>
+                    <div class="mb-3">
+                      <label class="form-label" for="provider-review-notes">
+                        Notas para registro interno
+                      </label>
+                      <textarea
+                        class="form-control"
+                        id="provider-review-notes"
+                        placeholder="Detalle conclusiones de la revisión, coincidencias con redes sociales, observaciones relevantes..."
+                      ></textarea>
+                    </div>
+                    <div
+                      class="alert alert-warning d-none"
+                      id="provider-review-error"
+                      role="alert"
+                    ></div>
+                    <div class="provider-review-processing" id="provider-review-processing">
+                      <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                      <span>Procesando solicitud...</span>
+                    </div>
+                    <input type="hidden" id="provider-review-provider-id" />
+                  </div>
+                </div>
+                <div class="modal-footer justify-content-between">
+                  <div class="text-muted small">
+                    Se notificará al proveedor vía WhatsApp según el resultado.
+                  </div>
+                  <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-danger" id="provider-review-reject-btn">
+                      <i class="fas fa-times me-1"></i>
+                      Rechazar
+                    </button>
+                    <button type="button" class="btn btn-success" id="provider-review-approve-btn">
+                      <i class="fas fa-check me-1"></i>
+                      Aprobar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Settings Section -->
+          <div id="settings-section" style="display: none">
+            <div class="status-card">
+              <h5 class="mb-4">
+                <i class="fas fa-cog me-2"></i>
+                Configuración del Sistema
+              </h5>
+              <div class="row">
+                <div class="col-md-6">
+                  <h6>Información del Sistema</h6>
+                  <p class="text-muted">Versión: 1.0.0</p>
+                  <p class="text-muted">Entorno: Desarrollo</p>
+                  <p class="text-muted">Última actualización: <span id="last-update"></span></p>
+                </div>
+                <div class="col-md-6">
+                  <h6>Información</h6>
+                  <p class="text-muted small mb-2">
+                    <i class="fas fa-info-circle me-1"></i>
+                    Para actualizar datos, usa el botón "Actualizar" en el header principal
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,11 +1,19 @@
 {
-  "name": "frontend-service",
+  "name": "@tinkubot/frontend",
   "version": "1.0.0",
   "description": "Frontend Service para TinkuBot - Node.js + Express + Bootstrap 5",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
+    "dev:dashboard": "npm run dev --workspace @tinkubot/admin-dashboard",
+    "build": "npm run build --workspace @tinkubot/admin-dashboard",
+    "preview:dashboard": "npm run preview --workspace @tinkubot/admin-dashboard",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",

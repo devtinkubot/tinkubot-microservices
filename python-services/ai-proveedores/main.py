@@ -39,6 +39,11 @@ from shared_lib.redis_client import redis_client
 SUPABASE_URL = settings.supabase_url or os.getenv("SUPABASE_URL", "")
 # settings expone la clave JWT de servicio para Supabase
 SUPABASE_SERVICE_KEY = settings.supabase_service_key
+SUPABASE_PROVIDERS_BUCKET = (
+    os.getenv("SUPABASE_PROVIDERS_BUCKET")
+    or os.getenv("SUPABASE_BUCKET_NAME")
+    or "tinkubot-providers"
+)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 ENABLE_DIRECT_WHATSAPP_SEND = (
     os.getenv("AI_PROV_SEND_DIRECT", "false").lower() == "true"
@@ -901,7 +906,11 @@ async def subir_imagen_proveedor_almacenamiento(
 
         logger.info(f"📤 Subiendo imagen a Supabase Storage: {file_path}")
 
-        storage_bucket = supabase.storage.from_("tinkubot-providers")
+        if not SUPABASE_PROVIDERS_BUCKET:
+            logger.error("❌ Bucket de almacenamiento para proveedores no configurado")
+            return None
+
+        storage_bucket = supabase.storage.from_(SUPABASE_PROVIDERS_BUCKET)
         try:
             storage_bucket.remove([file_path])
         except Exception as remove_error:
@@ -912,12 +921,12 @@ async def subir_imagen_proveedor_almacenamiento(
         result = storage_bucket.upload(
             path=file_path,
             file=file_data,
-            file_options={"content-type": f"image/{file_extension}", "upsert": True},
+            file_options={"contentType": f"image/{file_extension}"},
         )
 
         if result.data:
             # Obtener URL pública
-            public_url = supabase.storage.from_("tinkubot-providers").get_public_url(
+            public_url = supabase.storage.from_(SUPABASE_PROVIDERS_BUCKET).get_public_url(
                 file_path
             )
             logger.info(f"✅ Imagen subida exitosamente: {public_url}")

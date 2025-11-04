@@ -92,6 +92,14 @@ WHATSAPP_CLIENTES_PORT=5001
 WHATSAPP_PROVEEDORES_PORT=5002
 
 # ===========================================
+# SERVICIO DE PROVEEDORES (BFF)
+# ===========================================
+PROVIDERS_SERVICE_URL=http://providers-service:7000
+PROVIDERS_SERVICE_HOST=providers-service
+PROVIDERS_SERVICE_PORT=7000
+PROVIDERS_SERVICE_TIMEOUT_MS=5000
+
+# ===========================================
 # SERVICIOS AI (Python)
 # ===========================================
 SEARCH_TOKEN_PORT=8000
