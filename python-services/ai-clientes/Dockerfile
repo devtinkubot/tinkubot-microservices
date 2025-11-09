@@ -10,15 +10,15 @@ RUN apt-get update && apt-get install -y \
   && rm -rf /var/lib/apt/lists/*
 
 # Copiar requirements primero para mejor caché de Docker
-COPY ai-clientes/requirements.txt ./requirements.txt
+COPY python-services/ai-clientes/requirements.txt ./requirements.txt
 
 # Instalar dependencias de Python
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Copiar código fuente
-COPY ai-clientes/ .
+COPY python-services/ai-clientes/ .
 # Copiar librería compartida (módulo shared_lib)
-COPY shared-lib ./shared_lib
+COPY python-services/shared-lib ./shared_lib
 
 # Asegurar que /app esté siempre en PYTHONPATH
 ENV PYTHONPATH="/app"
@@ -35,4 +35,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8001/health || exit 1
 
 # Comando de inicio unificado
-CMD ["python", "-m", "uvicorn", "main:app", "--app-dir", "/app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["python3", "-m", "uvicorn", "main:app", "--app-dir", "/app", "--host", "0.0.0.0", "--port", "8001"]

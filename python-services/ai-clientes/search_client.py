@@ -172,6 +172,7 @@ class SearchClient:
                 "id": provider.get("id"),
                 "phone_number": provider.get("phone_number"),
                 "full_name": provider.get("full_name"),
+                "name": provider.get("full_name"),
                 "city": provider.get("city"),
                 "rating": provider.get("rating", 0.0),
                 "available": provider.get("available", True),
@@ -180,6 +181,8 @@ class SearchClient:
                 "services": provider.get("services", []),
                 "years_of_experience": provider.get("years_of_experience"),
                 "created_at": provider.get("created_at"),
+                "social_media_url": provider.get("social_media_url"),
+                "social_media_type": provider.get("social_media_type"),
                 # Calcular score basado en rating y disponibilidad
                 "score": self._calculate_legacy_score(provider),
             }

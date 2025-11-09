@@ -59,11 +59,22 @@ def provider_options_block(providers: List[Dict[str, Any]]) -> str:
             or provider.get("price_display")
             or provider.get("price")
         )
+        social_url = provider.get("social_media_url") or provider.get(
+            "socialMediaUrl"
+        )
+        social_type = provider.get("social_media_type") or provider.get(
+            "socialMediaType"
+        )
         details: List[str] = []
         if service and service.lower() not in name.lower():
             details.append(service)
         if price:
             details.append(price)
+        if social_url:
+            social_label = (
+                social_type.capitalize() if isinstance(social_type, str) else "Red"
+            )
+            details.append(f"{social_label}: {social_url}")
         detail_suffix = f" — {' — '.join(details)}" if details else ""
         lines.append(f"{idx}. {name}{detail_suffix}")
     lines.extend(["", SEPARATOR_LINE])
