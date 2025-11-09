@@ -1,5 +1,13 @@
 const express = require('express');
+const axios = require('axios');
 const proveedoresBff = require('../bff/providers');
+
+// Configuración de Supabase Storage
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_BACKEND_API_KEY;
+const supabaseStorageUrl = supabaseUrl ? `${supabaseUrl.replace(/\/$/, '')}/storage/v1` : null;
+const supabaseProvidersBucket =
+  (process.env.SUPABASE_PROVIDERS_BUCKET || 'tinkubot-providers').trim();
 
 const router = express.Router();
 
@@ -44,8 +52,48 @@ async function rechazarProveedor(req, res) {
   }
 }
 
+async function servirImagen(req, res) {
+  try {
+    const filePath = req.params[0]; // Para wildcard router.get('/image/*')
+
+    if (!supabaseStorageUrl || !supabaseKey) {
+      return res.status(500).json({ error: 'Storage no configurado' });
+    }
+
+    const sanitizedPath = (filePath || '')
+      .split('/')
+      .filter(segment => segment && segment !== '.' && segment !== '..')
+      .join('/');
+
+    if (!sanitizedPath) {
+      return res.status(400).json({ error: 'Ruta de archivo inválida' });
+    }
+
+    const imageUrl = `${supabaseStorageUrl}/object/${supabaseProvidersBucket}/${sanitizedPath}`;
+
+    const response = await axios.get(imageUrl, {
+      headers: {
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`
+      },
+      responseType: 'stream'
+    });
+
+    // Pasar headers de la respuesta original
+    res.set('Content-Type', response.headers['content-type']);
+    res.set('Content-Length', response.headers['content-length']);
+    res.set('Cache-Control', 'public, max-age=3600'); // Cache por 1 hora
+
+    response.data.pipe(res);
+  } catch (error) {
+    console.error('Error sirviendo imagen:', error);
+    res.status(404).json({ error: 'Imagen no encontrada' });
+  }
+}
+
 router.get('/pending', obtenerPendientes);
 router.post('/:providerId/approve', aprobarProveedor);
 router.post('/:providerId/reject', rechazarProveedor);
+router.get('/image/*', servirImagen);
 
 module.exports = router;

@@ -21,10 +21,69 @@ const supabaseServiceKey = (
 ).trim();
 const supabaseProvidersTable =
   (process.env.SUPABASE_PROVIDERS_TABLE || 'providers').trim();
+const supabaseProvidersBucket = (
+  process.env.SUPABASE_PROVIDERS_BUCKET || 'tinkubot-providers'
+).trim();
 
 const supabaseRestBaseUrl = supabaseUrl
   ? `${supabaseUrl.replace(/\/$/, '')}/rest/v1`
   : null;
+
+const bucketPattern = supabaseProvidersBucket.replace(
+  /[.*+?^${}()|[\]\\]/g,
+  '\\$&'
+);
+
+const generarUrlFirmadaSupabase = filePath => {
+  if (!filePath) return null;
+  const trimmed = filePath.trim();
+  if (!trimmed) return null;
+
+  if (
+    trimmed.startsWith('/admin/providers/image/') ||
+    trimmed.includes('apikey=')
+  ) {
+    return trimmed;
+  }
+
+  const [pathWithoutQuery] = trimmed.split('?');
+  let storagePath = null;
+
+  if (
+    bucketPattern &&
+    pathWithoutQuery.includes(`/storage/v1/object/${supabaseProvidersBucket}/`)
+  ) {
+    const match = pathWithoutQuery.match(
+      new RegExp(`/storage/v1/object/${bucketPattern}/(.+)`)
+    );
+    if (match && match[1]) {
+      storagePath = match[1];
+    }
+  } else if (bucketPattern && pathWithoutQuery.includes('/object/')) {
+    const match = pathWithoutQuery.match(
+      new RegExp(`/object/(?:public/)?${bucketPattern}/(.+)`)
+    );
+    if (match && match[1]) {
+      storagePath = match[1];
+    }
+  }
+
+  if (!storagePath && !pathWithoutQuery.includes('://')) {
+    storagePath = pathWithoutQuery.replace(/^\/+/, '');
+  }
+
+  if (storagePath) {
+    const sanitizedSegments = storagePath
+      .split('/')
+      .filter(segment => segment && segment !== '.' && segment !== '..');
+    const sanitizedPath = sanitizedSegments.join('/');
+    if (sanitizedPath) {
+      return `/admin/providers/image/${sanitizedPath}`;
+    }
+  }
+
+  return trimmed;
+};
 
 const supabaseClient =
   supabaseRestBaseUrl && supabaseServiceKey
@@ -60,6 +119,54 @@ const limpiarTexto = valor => {
     return trimmed.length > 0 ? trimmed : undefined;
   }
   return undefined;
+};
+
+const extraerUrlDocumento = valor => {
+  if (!valor) return undefined;
+  if (typeof valor === 'string') {
+    return limpiarTexto(valor);
+  }
+  if (typeof valor !== 'object') {
+    return undefined;
+  }
+
+  const recopilar = origen => {
+    if (!origen || typeof origen !== 'object') return undefined;
+    const claves = [
+      'publicUrl',
+      'public_url',
+      'signedUrl',
+      'signed_url',
+      'url',
+      'href'
+    ];
+    for (const clave of claves) {
+      const candidato = origen[clave];
+      if (typeof candidato === 'string') {
+        const limpio = candidato.trim();
+        if (limpio.length > 0) {
+          return limpio;
+        }
+      }
+    }
+    const path = origen.path || origen.filePath;
+    if (typeof path === 'string' && path.trim().length > 0) {
+      return path.trim();
+    }
+    return undefined;
+  };
+
+  return recopilar(valor) || recopilar(valor.data);
+};
+
+const prepararUrlDocumento = (...valores) => {
+  for (const valor of valores) {
+    const candidato = extraerUrlDocumento(valor);
+    if (candidato) {
+      return generarUrlFirmadaSupabase(candidato);
+    }
+  }
+  return null;
 };
 
 const normalizarEstadoProveedor = registro => {
@@ -131,18 +238,21 @@ const normalizarProveedorSupabase = registro => {
     limpiarTexto(registro?.verification_notes) ||
     limpiarTexto(registro?.notes) ||
     null;
-  const dniFrontPhotoUrl =
-    limpiarTexto(registro?.dni_front_photo_url) ||
-    limpiarTexto(registro?.dni_front_url) ||
-    null;
-  const dniBackPhotoUrl =
-    limpiarTexto(registro?.dni_back_photo_url) ||
-    limpiarTexto(registro?.dni_back_url) ||
-    null;
-  const facePhotoUrl =
-    limpiarTexto(registro?.face_photo_url) ||
-    limpiarTexto(registro?.selfie_url) ||
-    null;
+  const dniFrontPhotoUrl = prepararUrlDocumento(
+    registro?.dni_front_photo_url,
+    registro?.dni_front_url,
+    registro?.documents?.dni_front
+  );
+  const dniBackPhotoUrl = prepararUrlDocumento(
+    registro?.dni_back_photo_url,
+    registro?.dni_back_url,
+    registro?.documents?.dni_back
+  );
+  const facePhotoUrl = prepararUrlDocumento(
+    registro?.face_photo_url,
+    registro?.selfie_url,
+    registro?.documents?.face
+  );
   const verificationReviewer =
     limpiarTexto(registro?.verification_reviewer) || null;
   const verificationReviewedAt = registro?.verification_reviewed_at || null;

@@ -186,6 +186,90 @@ FALLBACK_PROVIDERS = [
 # ProviderMatch eliminado - ya no se usa con esquema unificado
 
 
+def _coerce_storage_string(value: Any) -> Optional[str]:
+    """
+    Normaliza diferentes formatos devueltos por Supabase Storage (string, dict o StorageResponse)
+    y retorna una URL o path utilizable.
+    """
+
+    def _from_mapping(mapping: Dict[str, Any]) -> Optional[str]:
+        if not isinstance(mapping, dict):
+            return None
+
+        for key in ("publicUrl", "public_url", "signedUrl", "signed_url", "url", "href"):
+            candidate = mapping.get(key)
+            if isinstance(candidate, str):
+                candidate = candidate.strip()
+                if candidate:
+                    return candidate
+
+        path_candidate = mapping.get("path") or mapping.get("filePath")
+        if isinstance(path_candidate, str):
+            path_candidate = path_candidate.strip()
+            if path_candidate:
+                return path_candidate
+
+        return None
+
+    if not value:
+        return None
+
+    if isinstance(value, str):
+        value = value.strip()
+        return value or None
+
+    if isinstance(value, dict):
+        direct = _from_mapping(value)
+        if direct:
+            return direct
+        nested = value.get("data")
+        if isinstance(nested, dict):
+            nested_value = _from_mapping(nested)
+            if nested_value:
+                return nested_value
+        return None
+
+    data_attr = getattr(value, "data", None)
+    if isinstance(data_attr, dict):
+        nested_value = _from_mapping(data_attr)
+        if nested_value:
+            return nested_value
+
+    for attr_name in ("public_url", "publicUrl", "signed_url", "signedUrl", "url"):
+        attr_value = getattr(value, attr_name, None)
+        if isinstance(attr_value, str):
+            attr_value = attr_value.strip()
+            if attr_value:
+                return attr_value
+
+    path_attr = getattr(value, "path", None)
+    if isinstance(path_attr, str):
+        path_attr = path_attr.strip()
+        if path_attr:
+            return path_attr
+
+    json_candidate = None
+    if hasattr(value, "json"):
+        try:
+            json_candidate = value.json()
+        except Exception:
+            json_candidate = None
+        if isinstance(json_candidate, dict):
+            nested_value = _from_mapping(json_candidate)
+            if nested_value:
+                return nested_value
+
+    text_attr = getattr(value, "text", None)
+    if isinstance(text_attr, str) and text_attr.strip():
+        parsed = _safe_json_loads(text_attr.strip())
+        if isinstance(parsed, dict):
+            nested_value = _from_mapping(parsed)
+            if nested_value:
+                return nested_value
+
+    return None
+
+
 def _safe_json_loads(payload: str) -> Optional[Any]:
     if not payload:
         return None
@@ -918,22 +1002,48 @@ async def subir_imagen_proveedor_almacenamiento(
                 f"No se pudo eliminar archivo previo {file_path}: {remove_error}"
             )
 
+        # Supabase Python SDK expects lowercase header keys (e.g. "content-type").
+        # Using camelCase leaves the MIME unset, so Storage defaults to text/plain.
         result = storage_bucket.upload(
             path=file_path,
             file=file_data,
-            file_options={"contentType": f"image/{file_extension}"},
+            file_options={"content-type": "image/jpeg"},
         )
 
-        if result.data:
-            # Obtener URL pública
-            public_url = supabase.storage.from_(SUPABASE_PROVIDERS_BUCKET).get_public_url(
-                file_path
-            )
-            logger.info(f"✅ Imagen subida exitosamente: {public_url}")
-            return cast(str, public_url)
+        upload_error = None
+        if isinstance(result, dict):
+            upload_error = result.get("error")
         else:
-            logger.error("❌ Error al subir imagen a Supabase Storage")
+            upload_error = getattr(result, "error", None)
+
+        if (
+            upload_error is None
+            and hasattr(result, "status_code")
+            and getattr(result, "status_code") is not None
+        ):
+            status_code = getattr(result, "status_code")
+            if isinstance(status_code, int) and status_code >= 400:
+                upload_error = f"HTTP_{status_code}"
+
+        if upload_error:
+            logger.error(
+                "❌ Error reportado por Supabase Storage al subir %s: %s",
+                file_path,
+                upload_error,
+            )
             return None
+
+        logger.debug(
+            "📨 Respuesta de upload Supabase (%s)",
+            type(result).__name__,
+        )
+
+        raw_public_url = supabase.storage.from_(SUPABASE_PROVIDERS_BUCKET).get_public_url(
+            file_path
+        )
+        public_url = _coerce_storage_string(raw_public_url) or file_path
+        logger.info(f"✅ Imagen subida exitosamente: {public_url}")
+        return public_url
 
     except Exception as e:
         logger.error(f"❌ Error subiendo imagen a Storage: {e}")
@@ -965,14 +1075,23 @@ async def actualizar_imagenes_proveedor(
     try:
         update_data = {}
 
-        if dni_front_url:
-            update_data["dni_front_photo_url"] = dni_front_url
-        if dni_back_url:
-            update_data["dni_back_photo_url"] = dni_back_url
-        if face_url:
-            update_data["face_photo_url"] = face_url
+        front_url = _coerce_storage_string(dni_front_url)
+        back_url = _coerce_storage_string(dni_back_url)
+        face_clean_url = _coerce_storage_string(face_url)
+
+        if front_url:
+            update_data["dni_front_photo_url"] = front_url
+        if back_url:
+            update_data["dni_back_photo_url"] = back_url
+        if face_clean_url:
+            update_data["face_photo_url"] = face_clean_url
 
         if update_data:
+            logger.info(
+                "🗂️ Campos a actualizar para %s: %s",
+                provider_id,
+                {k: bool(v) for k, v in update_data.items()},
+            )
             update_data["updated_at"] = datetime.now().isoformat()
 
             result = (
@@ -983,7 +1102,11 @@ async def actualizar_imagenes_proveedor(
             )
 
             if result.data:
-                logger.info(f"✅ Imágenes actualizadas para proveedor {provider_id}")
+                logger.info(
+                    "✅ Imágenes actualizadas para proveedor %s (filas=%s)",
+                    provider_id,
+                    len(result.data),
+                )
                 return True
             else:
                 logger.error(
@@ -991,6 +1114,10 @@ async def actualizar_imagenes_proveedor(
                 )
                 return False
 
+        logger.warning(
+            "⚠️ No hay datos de documentos para actualizar en %s (todos vacíos)",
+            provider_id,
+        )
         return True
 
     except Exception as e:
@@ -1097,14 +1224,29 @@ async def subir_medios_identidad(provider_id: str, flow: Dict[str, Any]) -> None
             url = None
         if url:
             uploads[dest] = url
+            logger.info(
+                "📤 Documento %s almacenado para %s -> %s",
+                file_type,
+                provider_id,
+                url,
+            )
 
     if any(uploads.values()):
+        logger.info(
+            "📝 Actualizando documentos en tabla para %s (frente=%s, reverso=%s, rostro=%s)",
+            provider_id,
+            bool(uploads.get("front")),
+            bool(uploads.get("back")),
+            bool(uploads.get("face")),
+        )
         await actualizar_imagenes_proveedor(
             provider_id,
             uploads.get("front"),
             uploads.get("back"),
             uploads.get("face"),
         )
+    else:
+        logger.warning("⚠️ No se subieron documentos válidos para %s", provider_id)
 
 
 # Función para procesar mensajes con OpenAI

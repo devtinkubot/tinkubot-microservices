@@ -179,7 +179,8 @@ function actualizarDocumentos(proveedor: ProviderRecord) {
               <a href="${escaparHtml(item.url)}" target="_blank" rel="noopener noreferrer">
                 <img src="${escaparHtml(
                   item.url
-                )}" alt="${escaparHtml(item.etiqueta)}" loading="lazy" />
+                )}" alt="${escaparHtml(item.etiqueta)}" loading="lazy"
+                     onerror="this.onerror=null; this.src='data:image/svg+xml;base64,${btoa('<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100\" height=\"100\" viewBox=\"0 0 100 100\"><rect width=\"100\" height=\"100\" fill=\"#f8f9fa\"/><text x=\"50\" y=\"50\" text-anchor=\"middle\" dy=\".3em\" fill=\"#6c757d\" font-family=\"Arial\" font-size=\"12\">Imagen no disponible</text></svg>')}; this.style.background='#f8f9fa'; this.style.border='1px solid #dee2e6';" />
               </a>
             </div>
             <p class="provider-document-label">${escaparHtml(item.etiqueta)}</p>
