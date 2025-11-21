@@ -17,14 +17,13 @@ class SearchClient:
     """Cliente para Search Service"""
 
     def __init__(self, base_url: str = None):
-        self.base_url = base_url or f"http://search-token:{settings.search_token_port}"
+        self.base_url = base_url or f"http://ai-search:{settings.ai_search_port}"
         self.timeout = 10.0  # 10 segundos timeout
 
     async def search_providers(
         self,
         query: str,
         city: Optional[str] = None,
-        profession: Optional[str] = None,
         limit: int = 10,
         use_ai_enhancement: bool = True,
     ) -> Dict[str, Any]:
@@ -34,7 +33,6 @@ class SearchClient:
         Args:
             query: Texto de búsqueda
             city: Ciudad para filtrar
-            profession: Profesión para filtrar
             limit: Límite de resultados
             use_ai_enhancement: Usar mejora con IA
 
@@ -54,9 +52,7 @@ class SearchClient:
                 "available_only": True,
             }
             if city:
-                filters["city"] = city
-            if profession:
-                filters["profession"] = profession
+                filters["city"] = city.lower()  # Normalizar a minúsculas para case-insensitive
 
             payload["filters"] = filters
 
@@ -183,6 +179,7 @@ class SearchClient:
                 "created_at": provider.get("created_at"),
                 "social_media_url": provider.get("social_media_url"),
                 "social_media_type": provider.get("social_media_type"),
+                "face_photo_url": provider.get("face_photo_url"),
                 # Calcular score basado en rating y disponibilidad
                 "score": self._calculate_legacy_score(provider),
             }

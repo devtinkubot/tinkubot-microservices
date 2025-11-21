@@ -418,6 +418,57 @@ def _safe_json_loads(payload: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+async def save_service_relation(
+    user_query: str,
+    inferred_profession: str,
+    search_terms: List[str],
+    confidence_score: float = 0.8
+):
+    """Guarda relación de servicio inferida por la IA para aprendizaje continuo"""
+    if not supabase:
+        return False
+
+    try:
+        # Verificar si ya existe esta relación
+        existing = (
+            supabase.table("service_relations")
+            .select("id, usage_count")
+            .eq("user_query", user_query.lower().strip())
+            .eq("inferred_profession", inferred_profession.lower().strip())
+            .execute()
+        )
+
+        if existing.data:
+            # Actualizar contador de uso
+            relation_id = existing.data[0]["id"]
+            current_count = existing.data[0].get("usage_count", 1)
+
+            supabase.table("service_relations").update({
+                "usage_count": current_count + 1,
+                "updated_at": datetime.utcnow().isoformat()
+            }).eq("id", relation_id).execute()
+
+            logger.info(f"🔄 Relación actualizada: '{user_query}' → '{inferred_profession}' (usos: {current_count + 1})")
+        else:
+            # Crear nueva relación
+            supabase.table("service_relations").insert({
+                "user_query": user_query.lower().strip(),
+                "inferred_profession": inferred_profession.lower().strip(),
+                "confidence_score": confidence_score,
+                "search_terms": search_terms,
+                "created_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat(),
+                "usage_count": 1
+            }).execute()
+
+            logger.info(f"✅ Nueva relación guardada: '{user_query}' → '{inferred_profession}'")
+
+        return True
+    except Exception as e:
+        logger.warning(f"⚠️ Error guardando relación de servicio: {e}")
+        return False
+
+
 async def intelligent_need_extraction(
     message: str, context: str
 ) -> Optional[Dict[str, Any]]:
@@ -434,23 +485,36 @@ async def intelligent_need_extraction(
     )
     trimmed_context = context[-2000:] if context else ""
     system_prompt = (
-        "Eres un analista experto en servicios profesionales en Ecuador. "
+        "Eres un experto en servicios profesionales en Ecuador con conocimiento profundo de estética, belleza, cuidado personal y salud. "
+        "Tu tarea es inferir inteligentemente la profesión real detrás de las necesidades del cliente.\n\n"
+        "EJEMPLOS DE INFERENCIA INTELIGENTE:\n"
+        "- 'cuidado de piel' → esteticista, cosmetóloga, facial, belleza\n"
+        "- 'limpieza facial' → esteticista, cosmetóloga, tratamientos faciales\n"
+        "- 'maquillaje' → maquilladora, makeup artist, esteticista\n"
+        "- 'cejas' → esteticista, micropigmentación, cejista\n"
+        "- 'tratamientos faciales' → esteticista, cosmetóloga, facial\n"
+        "- 'cuidado corporal' → masajista, esteticista, terapeuta\n"
+        "- 'spa' → esteticista, masajista, terapeuta de bienestar\n\n"
         "Devuelve un JSON válido sin texto adicional."
     )
     user_prompt = (
-        "Analiza el mensaje y el contexto para identificar las necesidades reales del cliente.\n"
+        "Analiza el mensaje y el contexto para identificar las necesidades reales del cliente. "
+        "INFIERE la profesión profesional más allá de las palabras literales.\n\n"
         'MENSAJE_ACTUAL: "{message}"\n'
         'CONTEXTO_RECIENTE: "{context}"\n\n'
         "Responde con JSON usando los campos:\n"
         "{\n"
-        '  "necesidad_real": string,\n'
-        '  "profesion_principal": string,\n'
-        '  "especialidades_requeridas": [string],\n'
+        '  "necesidad_real": string,  // descripción clara de lo que necesita\n'
+        '  "profesion_principal": string,  // profesión inferida (ej: "esteticista", "cosmetologa")\n'
+        '  "profesiones_secundarias": [string],  // otras profesiones relacionadas\n'
+        '  "especialidades_requeridas": [string],  // servicios específicos\n'
         '  "urgencia": "baja" | "media" | "alta",\n'
-        '  "sinonimos_posibles": [string],\n'
+        '  "sinonimos_posibles": [string],  // términos alternativos de búsqueda\n'
+        '  "terminos_de_busqueda": [string],  // palabras clave para buscar en services\n'
         '  "ubicacion": string | null\n'
         "}\n"
-        "Usa null cuando no se identifique un dato."
+        "Usa null cuando no se identifique un dato. "
+        "PIENSA COMO UN EXPERTO: si dice 'cuidado de piel', infiere 'esteticista' aunque no lo mencione explícitamente."
     ).format(message=message, context=trimmed_context)
 
     def _failure_result(
@@ -488,6 +552,7 @@ async def intelligent_need_extraction(
             content = re.sub(r"```$", "", content).strip()
 
         logger.debug("🧠 Respuesta OpenAI (recorte 400c): %s", content[:400])
+        logger.info("🧠 Respuesta OpenAI completa: %s", content)
         if not content:
             logger.warning(
                 "⚠️ OpenAI devolvió contenido vacío en intelligent_need_extraction"
@@ -540,7 +605,6 @@ async def intelligent_search_providers_remote(
         result = await search_client.search_providers(
             query=query,
             city=location,
-            profession=profession,
             limit=10,
             use_ai_enhancement=True,
         )
@@ -614,13 +678,12 @@ async def search_providers(
     )
 
     try:
-        # Usar el nuevo Search Service
+        # Primera búsqueda: en la ciudad del usuario
         result = await search_client.search_providers(
             query=query,
             city=location,
-            profession=profession,
             limit=10,
-            use_ai_enhancement=False,  # Búsqueda simple sin IA
+            use_ai_enhancement=True,  # Búsqueda AI-first optimizada
         )
 
         if result.get("ok"):
@@ -630,12 +693,52 @@ async def search_providers(
             # Log de metadatos
             metadata = result.get("search_metadata", {})
             logger.info(
-                f"✅ Búsqueda simple exitosa: {total} proveedores "
+                f"✅ Búsqueda local en {location}: {total} proveedores "
                 f"(estrategia: {metadata.get('strategy')}, "
                 f"tiempo: {metadata.get('search_time_ms')}ms)"
             )
 
-            return {"ok": True, "providers": providers, "total": total}
+            # Si no hay resultados locales, buscar statewide
+            if total == 0:
+                logger.info(f"🔄 Sin resultados en {location}, buscando statewide...")
+                state_result = await search_client.search_providers(
+                    query=profession,  # Query sin restricción de ciudad
+                    limit=10,
+                    use_ai_enhancement=True,
+                )
+
+                if state_result.get("ok"):
+                    state_providers = state_result.get("providers", [])
+                    state_total = state_result.get("total", len(state_providers))
+
+                    state_metadata = state_result.get("search_metadata", {})
+                    logger.info(
+                        f"✅ Búsqueda statewide: {state_total} proveedores "
+                        f"(estrategia: {state_metadata.get('strategy')}, "
+                        f"tiempo: {state_metadata.get('search_time_ms')}ms)"
+                    )
+
+                    if state_total > 0:
+                        # Agregar información de ubicación a cada proveedor
+                        for provider in state_providers:
+                            provider['is_statewide'] = True
+                            provider['search_scope'] = 'statewide'
+                            provider['user_city'] = location
+
+                        return {
+                            "ok": True,
+                            "providers": state_providers,
+                            "total": state_total,
+                            "search_scope": "statewide",
+                            "note": f"No hay proveedores en {location}, pero encontramos {state_total} proveedores disponibles en otras ciudades."
+                        }
+
+            return {
+                "ok": True,
+                "providers": providers,
+                "total": total,
+                "search_scope": "local"
+            }
         else:
             error = result.get("error", "Error desconocido")
             logger.warning(f"⚠️ Search Service simple falló: {error}")
@@ -935,11 +1038,25 @@ def formal_connection_message(provider: Dict[str, Any], service: str, city: str)
         raw = raw.lstrip("+")
         return f"https://wa.me/{raw}"
 
-    name = provider.get("name") or "Proveedor"
-    link = wa_click_to_chat(provider.get("phone") or provider.get("phone_number"))
+    name = provider.get("name") or provider.get("full_name") or "Proveedor"
+    phone_raw = provider.get("phone") or provider.get("phone_number")
+    phone_display = pretty_phone(phone_raw)
+    link = wa_click_to_chat(phone_raw)
+    selfie_url = (
+        provider.get("face_photo_url")
+        or provider.get("selfie_url")
+        or provider.get("photo_url")
+    )
+    selfie_line = (
+        f"📸 Selfie: {selfie_url}"
+        if selfie_url
+        else "📸 Selfie no disponible por el momento."
+    )
     return (
         f"Proveedor asignado: {name}.\n"
-        f"Abrir chat: {link}\n\n"
+        f"{selfie_line}\n"
+        f"📱 WhatsApp: {phone_display}\n"
+        f"🔗 Abrir chat: {link}\n\n"
         f"💬 Chat abierto para coordinar tu servicio."
     )
 
@@ -1150,6 +1267,9 @@ async def process_client_message(request: AIProcessingRequest):
         need_profession = _normalize_optional_text(
             insights_payload.get("profesion_principal")
         )
+        need_secondary_professions = _ensure_list(
+            insights_payload.get("profesiones_secundarias") or []
+        )
         need_location = _normalize_optional_text(insights_payload.get("ubicacion"))
         need_summary = _normalize_optional_text(insights_payload.get("necesidad_real"))
         need_urgency = _normalize_optional_text(insights_payload.get("urgencia"))
@@ -1157,6 +1277,14 @@ async def process_client_message(request: AIProcessingRequest):
             insights_payload.get("especialidades_requeridas") or []
         )
         need_synonyms = _ensure_list(insights_payload.get("sinonimos_posibles") or [])
+        need_search_terms = _ensure_list(insights_payload.get("terminos_de_busqueda") or [])
+
+        # Guardar relaciones inferidas por la IA para aprendizaje continuo
+        if need_profession and message:
+            confidence = 0.9 if not insights_error else 0.7
+            asyncio.create_task(
+                save_service_relation(message, need_profession, need_search_terms, confidence)
+            )
 
         detected_profession, detected_location = extract_profession_and_location(
             conversation_context, request.message
@@ -1186,10 +1314,12 @@ async def process_client_message(request: AIProcessingRequest):
             search_payload = {
                 "necesidad_real": need_summary or profession,
                 "profesion_principal": profession,
+                "profesiones_secundarias": need_secondary_professions,
                 "especialidades": need_specialties,
                 "especialidades_requeridas": need_specialties,
                 "sinonimos": need_synonyms,
                 "sinonimos_posibles": need_synonyms,
+                "terminos_de_busqueda": need_search_terms,
                 "ubicacion": location,
                 "urgencia": need_urgency,
             }
@@ -1272,6 +1402,8 @@ async def process_client_message(request: AIProcessingRequest):
                         "urgency": need_urgency,
                         "need_specialties": need_specialties,
                         "need_synonyms": need_synonyms,
+                        "need_search_terms": need_search_terms,
+                        "need_secondary_professions": need_secondary_professions,
                         "extraction_error": insights_error,
                     },
                     confidence=0.9,
@@ -1294,6 +1426,8 @@ async def process_client_message(request: AIProcessingRequest):
                     "need_summary": need_summary,
                     "need_specialties": need_specialties,
                     "need_synonyms": need_synonyms,
+                    "need_search_terms": need_search_terms,
+                    "need_secondary_professions": need_secondary_professions,
                     "extraction_error": insights_error,
                 },
                 confidence=0.5,
