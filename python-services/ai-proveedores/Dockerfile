@@ -13,12 +13,12 @@ RUN apt-get update && apt-get install -y \
 COPY ai-proveedores/requirements.txt ./requirements.txt
 
 # Instalar dependencias de Python
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Copiar código fuente del servicio
 COPY ai-proveedores/ .
 
-# (Opcional) Copiar librería compartida si se requiere en el futuro
+# Copiar librería compartida si se requiere en el futuro
 COPY shared-lib ./shared_lib
 
 # Asegurar que /app esté en PYTHONPATH para resolver main.py
@@ -36,4 +36,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8002/health || exit 1
 
 # Comando de inicio
-CMD ["python", "-m", "uvicorn", "main:app", "--app-dir", "/app", "--host", "0.0.0.0", "--port", "8002"]
+CMD ["python3", "-m", "uvicorn", "main:app", "--app-dir", "/app", "--host", "0.0.0.0", "--port", "8002"]

@@ -63,10 +63,10 @@ async def lifespan(app: FastAPI):
         logger.info("✅ Servicio de búsqueda inicializado")
 
         logger.info(
-            f"🎯 Search Service listo en http://{settings.search_api_host}:{settings.search_token_port}"
+            f"🎯 AI Search Service listo en http://{settings.search_api_host}:{settings.ai_search_port}"
         )
         logger.info(
-            f"📚 API docs en http://{settings.search_api_host}:{settings.search_token_port}/docs"
+            f"📚 API docs en http://{settings.search_api_host}:{settings.ai_search_port}/docs"
         )
 
         yield
@@ -127,11 +127,11 @@ async def log_requests(request: Request, call_next):
 
     # Log de entrada
     logger.info(
-        "request_started",
-        method=request.method,
-        url=str(request.url),
-        request_id=request_id,
-        client_ip=request.client.host if request.client else None,
+        f"Request started | "
+        f"Method: {request.method} | "
+        f"URL: {str(request.url)} | "
+        f"Request ID: {request_id} | "
+        f"Client IP: {request.client.host if request.client else None}"
     )
 
     try:
@@ -140,12 +140,12 @@ async def log_requests(request: Request, call_next):
 
         # Log de salida
         logger.info(
-            "request_completed",
-            method=request.method,
-            url=str(request.url),
-            status_code=response.status_code,
-            process_time_ms=process_time,
-            request_id=request_id,
+            f"Request completed | "
+            f"Method: {request.method} | "
+            f"URL: {str(request.url)} | "
+            f"Status Code: {response.status_code} | "
+            f"Process Time: {process_time}ms | "
+            f"Request ID: {request_id}"
         )
 
         # Agregar headers
@@ -157,12 +157,12 @@ async def log_requests(request: Request, call_next):
     except Exception as e:
         process_time = int((time.time() - start_time) * 1000)
         logger.error(
-            "request_failed",
-            method=request.method,
-            url=str(request.url),
-            error=str(e),
-            process_time_ms=process_time,
-            request_id=request_id,
+            f"Request failed | "
+            f"Method: {request.method} | "
+            f"URL: {request.url} | "
+            f"Error: {str(e)} | "
+            f"Process time: {process_time}ms | "
+            f"Request ID: {request_id}"
         )
         raise
 
@@ -208,12 +208,11 @@ async def global_exception_handler(request: Request, exc: Exception):
     request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
 
     logger.error(
-        "unhandled_exception",
-        error=str(exc),
-        path=request.url.path,
-        method=request.method,
-        request_id=request_id,
-        exc_info=True,
+        f"Unhandled exception | "
+        f"Exception: {str(exc)} | "
+        f"Path: {request.url.path} | "
+        f"Method: {request.method} | "
+        f"Request ID: {request_id}"
     )
 
     return JSONResponse(
@@ -246,7 +245,7 @@ if __name__ == "__main__":
     uvicorn.run(
         "app.main:app",
         host=settings.search_api_host,
-        port=settings.search_token_port,
+        port=settings.ai_search_port,
         reload=False,
         log_level=settings.log_level.lower(),
     )

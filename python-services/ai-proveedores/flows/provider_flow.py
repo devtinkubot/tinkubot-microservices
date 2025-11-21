@@ -164,7 +164,7 @@ class ProviderFlow:
         flow["state"] = "awaiting_email"
         return {
             "success": True,
-            "response": "*Tienes un correo electronico donde pueda escribirte? (responde el correo o 'omitir')*",
+            "response": "*Escribe tu correo electrónico o escribe \"omitir\" si no deseas agregarlo.*",
         }
 
     @staticmethod

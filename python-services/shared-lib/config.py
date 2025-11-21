@@ -17,6 +17,7 @@ class Settings(BaseSettings):
 
     # Redis Configuration (Upstash)
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379")
+    redis_password: str = os.getenv("REDIS_PASSWORD", "")
 
     # Service Ports (actualizados según nuevo esquema simplificado)
     frontend_service_port: int = int(os.getenv("FRONTEND_SERVICE_PORT", "5000"))
@@ -36,7 +37,7 @@ class Settings(BaseSettings):
         os.getenv("PROVEEDORES_WHATSAPP_PORT")
         or os.getenv("WHATSAPP_PROVEEDORES_PORT", "5002")
     )
-    search_token_port: int = int(os.getenv("SEARCH_TOKEN_PORT", "8000"))
+    ai_search_port: int = int(os.getenv("AI_SEARCH_PORT", "8000"))
     session_service_port: int = int(os.getenv("SESSION_SERVICE_PORT", "8004"))
     api_gateway_port: int = int(os.getenv("API_GATEWAY_PORT", "8003"))
 

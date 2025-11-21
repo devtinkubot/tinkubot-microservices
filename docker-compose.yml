@@ -116,21 +116,21 @@ services:
       - tinkubot-network
     restart: unless-stopped
 
-  # Search Token Service - Servicio de búsqueda con tokenización
-  search-token:
+  # AI Search Service - Servicio de búsqueda optimizado con IA
+  ai-search:
     build:
-      context: ./python-services/search-token
-      dockerfile: Dockerfile
-    container_name: tinkubot-search-token
+      context: ./python-services
+      dockerfile: ai-search/Dockerfile
+    container_name: tinkubot-ai-search
     ports:
-      - "${SEARCH_TOKEN_PORT:-8000}:${SEARCH_TOKEN_PORT:-8000}"
+      - "${AI_SEARCH_PORT:-8000}:${AI_SEARCH_PORT:-8000}"
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
       - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_KEY=${SUPABASE_SERVICE_KEY}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - API_PORT=${SEARCH_TOKEN_PORT}
+      - AI_SEARCH_PORT=${AI_SEARCH_PORT}
       - NODE_ENV=production
     networks:
       - tinkubot-network

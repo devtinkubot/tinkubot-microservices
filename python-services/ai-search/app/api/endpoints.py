@@ -313,48 +313,7 @@ async def rebuild_index_task(provider_ids: List[str], force_reindex: bool):
         logger.error(f"❌ Error en reindexación: {e}")
 
 
-# Manejador de errores global
-@router.exception_handler(Exception)
-async def global_exception_handler(request, exc):
-    """Manejador global de excepciones"""
-    logger.error(f"Error no manejado en {request.url}: {exc}")
-
-    return JSONResponse(
-        status_code=500,
-        content=ErrorResponse(
-            error="internal_error",
-            message="Error interno del servidor",
-            details={"path": str(request.url.path)},
-            timestamp=datetime.now(),
-            request_id=getattr(request.state, "request_id", None),
-        ).model_dump(),
-    )
+# Nota: El manejador de excepciones global está definido en main.py usando app.exception_handler()
 
 
-# Middleware para logging de requests
-@router.middleware("http")
-async def log_requests(request, call_next):
-    """Middleware para loguear todas las requests"""
-    start_time = time.time()
-    request_id = str(uuid.uuid4())
-    request.state.request_id = request_id
-
-    logger.info(f"📥 Request [{request_id}] {request.method} {request.url}")
-
-    try:
-        response = await call_next(request)
-        process_time = int((time.time() - start_time) * 1000)
-
-        logger.info(
-            f"📤 Response [{request_id}] {response.status_code} ({process_time}ms)"
-        )
-
-        response.headers["X-Request-ID"] = request_id
-        response.headers["X-Process-Time"] = str(process_time)
-
-        return response
-
-    except Exception as e:
-        process_time = int((time.time() - start_time) * 1000)
-        logger.error(f"❌ Error [{request_id}] después de {process_time}ms: {e}")
-        raise
+# Nota: El middleware de logging está definido en main.py usando @app.middleware("http")

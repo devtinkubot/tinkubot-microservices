@@ -10,15 +10,15 @@ RUN apt-get update && apt-get install -y \
   && rm -rf /var/lib/apt/lists/*
 
 # Copiar requirements primero para mejor caché de Docker
-COPY python-services/ai-clientes/requirements.txt ./requirements.txt
+COPY ai-clientes/requirements.txt ./requirements.txt
 
 # Instalar dependencias de Python
 RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Copiar código fuente
-COPY python-services/ai-clientes/ .
+COPY ai-clientes/ .
 # Copiar librería compartida (módulo shared_lib)
-COPY python-services/shared-lib ./shared_lib
+COPY shared-lib ./shared_lib
 
 # Asegurar que /app esté siempre en PYTHONPATH
 ENV PYTHONPATH="/app"

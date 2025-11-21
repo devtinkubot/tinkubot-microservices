@@ -13,14 +13,18 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     gcc \
     postgresql-client \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copiar y instalar dependencias de Python
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY ai-search/requirements.txt .
+RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Copiar código de la aplicación
-COPY . .
+COPY ai-search/ .
+
+# Copiar librería compartida
+COPY shared-lib ./shared_lib
 
 # Crear usuario no root para seguridad
 RUN addgroup --system appgroup && adduser --system --group appuser
@@ -30,5 +34,9 @@ USER appuser
 # Exponer puerto
 EXPOSE 8000
 
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/api/v1/health || exit 1
+
 # Comando de inicio
-CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python3", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
