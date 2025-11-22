@@ -3,6 +3,7 @@ const { Client, RemoteAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const cors = require('cors');
 const axios = require('axios');
+const mqtt = require('mqtt');
 const http = require('http');
 const { Server } = require('socket.io');
 const SupabaseStore = require('./SupabaseStore');
@@ -30,6 +31,14 @@ const port = resolvePort(
 );
 const instanceId = process.env.PROVEEDORES_INSTANCE_ID || 'bot-proveedores';
 const instanceName = process.env.PROVEEDORES_INSTANCE_NAME || 'TinkuBot Proveedores';
+
+// MQTT para disponibilidad de proveedores
+const mqttHost = process.env.MQTT_HOST || 'mosquitto';
+const mqttPort = parseInt(process.env.MQTT_PORT || '1883', 10);
+const mqttUsuario = process.env.MQTT_USUARIO;
+const mqttPassword = process.env.MQTT_PASSWORD;
+const mqttTemaSolicitud = process.env.MQTT_TEMA_SOLICITUD || 'av-proveedores/solicitud';
+const mqttTemaRespuesta = process.env.MQTT_TEMA_RESPUESTA || 'av-proveedores/respuesta';
 
 // Configuración de servicios externos
 // ESPECIALIZADO: Siempre usa el AI Service Proveedores
@@ -65,6 +74,9 @@ console.warn('✅ Supabase Store inicializado');
 // Configuración de instancia
 console.warn(`🤖 Iniciando ${instanceName} (ID: ${instanceId})`);
 console.warn(`📱 Puerto: ${port}`);
+console.warn(
+  `📡 MQTT disponibilidad: host=${mqttHost}:${mqttPort} tema_solicitud=${mqttTemaSolicitud} tema_respuesta=${mqttTemaRespuesta}`
+);
 
 // Middleware
 app.use(cors());
@@ -107,6 +119,121 @@ function shouldAutoReconnect(reason) {
     return true;
   }
   return true;
+}
+
+function normalizarNumeroWhatsApp(numero) {
+  if (!numero) return null;
+  const raw = String(numero).trim();
+  if (raw.endsWith('@c.us') || raw.endsWith('@g.us')) return raw;
+
+  const soloDigitos = raw.replace(/[^\d]/g, '');
+  if (!soloDigitos) return null;
+
+  let normalizado = soloDigitos;
+  if (normalizado.startsWith('0')) {
+    normalizado = normalizado.replace(/^0+/, '');
+  }
+  if (normalizado.startsWith('593')) {
+    normalizado = normalizado.replace(/^593+/, '593');
+  } else if (normalizado.length === 9 && normalizado.startsWith('9')) {
+    // Celular de Ecuador sin prefijo
+    normalizado = `593${normalizado}`;
+  }
+
+  if (!normalizado.startsWith('593')) {
+    console.warn(`⚠️ Número sin prefijo de país, se usa tal cual: ${normalizado}`);
+  }
+
+  return `${normalizado}@c.us`;
+}
+
+// --- MQTT helper para disponibilidad ---
+const mqttOptions = {};
+if (mqttUsuario && mqttPassword) {
+  mqttOptions.username = mqttUsuario;
+  mqttOptions.password = mqttPassword;
+}
+
+let mqttClient = null;
+const solicitudesActivas = new Map(); // providerPhone -> req_id (simple demo)
+
+function conectarMqtt() {
+  try {
+    const url = `mqtt://${mqttHost}:${mqttPort}`;
+    mqttClient = mqtt.connect(url, mqttOptions);
+
+    mqttClient.on('connect', () => {
+      console.warn(`📡 MQTT conectado a ${url}`);
+      mqttClient.subscribe(mqttTemaSolicitud, err => {
+        if (err) {
+          console.error('❌ No se pudo suscribir a solicitudes:', err.message || err);
+        } else {
+          console.warn(`✅ Suscrito a ${mqttTemaSolicitud}`);
+        }
+      });
+    });
+
+    mqttClient.on('error', err => {
+      console.error('❌ Error MQTT:', err.message || err);
+    });
+
+    mqttClient.on('message', async (topic, message) => {
+      if (topic !== mqttTemaSolicitud) return;
+      try {
+    const data = JSON.parse(message.toString());
+    await manejarSolicitudDisponibilidad(data);
+  } catch (err) {
+    console.error('❌ Error procesando solicitud MQTT:', err.message || err);
+  }
+    });
+  } catch (err) {
+    console.error('❌ No se pudo inicializar MQTT:', err.message || err);
+  }
+}
+
+async function manejarSolicitudDisponibilidad(data) {
+  const reqId = data.req_id || 'sin-id';
+  const servicio = data.servicio || 'servicio';
+  const ciudad = data.ciudad || '';
+  const candidatos = Array.isArray(data.candidatos) ? data.candidatos : [];
+
+  for (const cand of candidatos) {
+    const phoneRaw = cand.phone || cand.phone_number || cand.contact || cand.contact_phone;
+    const phone = normalizarNumeroWhatsApp(phoneRaw);
+    if (!phone) {
+      console.warn(`⚠️ Candidato sin número válido: ${JSON.stringify(cand)}`);
+      continue;
+    }
+    solicitudesActivas.set(phone, reqId);
+    const texto = `¿Puedes atender "${servicio}"${ciudad ? ' en ' + ciudad : ''}? Responde 1) Sí  2) No. Ref: ${reqId}`;
+    try {
+      await enviarTextoWhatsApp(phone, texto);
+      console.warn(`📨 Ping disponibilidad enviado a ${phone} req=${reqId}`);
+    } catch (err) {
+      console.error(`❌ No se pudo enviar ping a ${phone}:`, err.message || err);
+    }
+  }
+}
+
+async function publicarRespuestaDisponibilidad(reqId, providerId, estado) {
+  if (!mqttClient || !mqttClient.connected) return;
+  const payload = JSON.stringify({ req_id: reqId, provider_id: providerId, estado });
+  mqttClient.publish(mqttTemaRespuesta, payload, err => {
+    if (err) {
+      console.error('❌ No se pudo publicar respuesta MQTT:', err.message || err);
+    } else {
+      console.warn(`📤 Respuesta disponibilidad publicada req=${reqId} provider=${providerId} estado=${estado}`);
+    }
+  });
+}
+
+async function enviarTextoWhatsApp(numero, texto) {
+  const destino = normalizarNumeroWhatsApp(numero);
+  if (!destino) {
+    throw new Error(`Número de WhatsApp inválido: ${numero}`);
+  }
+  const contenido = texto || ' ';
+  return client.sendMessage(destino, contenido);
 }
 
 async function resetWhatsAppSession(trigger = 'manual', { attemptLogout = true } = {}) {
@@ -415,6 +542,9 @@ client.on('disconnected', reason => {
 });
 
 client.initialize();
+
+// --- Suscripción MQTT para disponibilidad ---
+conectarMqtt();
 
 // --- Endpoints de la API ---
 
