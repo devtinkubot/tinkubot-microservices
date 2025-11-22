@@ -6,6 +6,9 @@ const fs = require('fs');
 const adminProvidersRouter = require('./routes/adminProviders');
 const app = express();
 
+const ADMIN_USER = process.env.ADMIN_USER || 'hvillalba';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+
 const parsearPuerto = valor => {
   const numero = Number(valor);
   return Number.isFinite(numero) && numero > 0 ? numero : undefined;
@@ -82,7 +85,37 @@ if (fs.existsSync(dashboardDistPath)) {
   console.warn('⚠️ No se encontró build del dashboard, sirviendo versión legacy desde /public.');
 }
 
+// Autenticación HTTP básica (protege UI y APIs). Requiere ADMIN_PASSWORD.
+const authEnabled = !!ADMIN_PASSWORD;
+if (authEnabled) {
+  console.warn('🔒 Autenticación básica habilitada para el panel.');
+} else {
+  console.warn('⚠️ ADMIN_PASSWORD no configurado; panel sin autenticación.');
+}
+
+const basicAuth = (req, res, next) => {
+  if (!authEnabled) return next();
+  if (req.path === '/health') return next();
+
+  const header = req.headers.authorization || '';
+  const [scheme, encoded] = header.split(' ');
+  if (scheme === 'Basic' && encoded) {
+    try {
+      const decoded = Buffer.from(encoded, 'base64').toString();
+      const [user, pass] = decoded.split(':');
+      if (user === ADMIN_USER && pass === ADMIN_PASSWORD) {
+        return next();
+      }
+    } catch (err) {
+      console.warn('Error decodificando cabecera Authorization:', err.message || err);
+    }
+  }
+  res.set('WWW-Authenticate', 'Basic realm="TinkuBot Admin"');
+  return res.status(401).send('Autenticación requerida');
+};
+
 // Middleware
+app.use(basicAuth);
 if (fs.existsSync(dashboardDistPath)) {
   app.use(express.static(dashboardDistPath));
 }

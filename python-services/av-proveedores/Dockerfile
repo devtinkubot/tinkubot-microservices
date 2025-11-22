@@ -1,0 +1,14 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+ENV PYTHONUNBUFFERED=1
+ENV AV_PROVEEDORES_PUERTO=8005
+EXPOSE 8005
+
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${AV_PROVEEDORES_PUERTO:-8005}"]

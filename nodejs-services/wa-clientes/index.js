@@ -1,5 +1,5 @@
 const express = require('express');
-const { Client, RemoteAuth } = require('whatsapp-web.js');
+const { Client, MessageMedia, RemoteAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const cors = require('cors');
 const axios = require('axios');
@@ -136,6 +136,13 @@ async function sendButtons(to, text) {
 
 async function sendProviderResults(to, text) {
   await sendText(to, text || 'Responde con el número del proveedor.');
+}
+
+async function sendMedia(to, mediaUrl, caption) {
+  if (!mediaUrl) return;
+  const media = await MessageMedia.fromUrl(mediaUrl, { unsafeMime: true });
+  const options = caption ? { caption } : {};
+  return sendWithRetry(() => client.sendMessage(to, media, options));
 }
 
 // Helpers HTTP con reintentos
@@ -470,14 +477,30 @@ client.on('message', async message => {
     async function sendAiObject(obj) {
       const text = obj.ai_response || obj.response || obj.text;
       const ui = obj.ui || {};
+      const mediaUrl = obj.media_url || obj.image_url || (obj.media && obj.media.url);
+      const mediaCaption = obj.media_caption || obj.caption || text;
+      let mediaSent = false;
+
+      if (mediaUrl) {
+        try {
+          await sendMedia(message.from, mediaUrl, mediaCaption);
+          mediaSent = true;
+        } catch (err) {
+          console.error('No se pudo enviar la foto (media):', err?.message || err);
+        }
+      }
 
       if (ui.type === 'buttons' && Array.isArray(ui.buttons)) {
         await sendButtons(message.from, text || 'Elige una opción:', ui.buttons);
+        console.warn('Respuesta enviada (IA):', text || ui.type || '[sin texto]');
+        return;
       } else if (ui.type === 'location_request') {
         await sendText(
           message.from,
           text || 'Por favor comparte tu ubicación 📎 para mostrarte los más cercanos.'
         );
+        console.warn('Respuesta enviada (IA):', text || ui.type || '[sin texto]');
+        return;
       } else if (ui.type === 'provider_results') {
         try {
           const names = (ui.providers || []).map(p => p.name || 'Proveedor');
@@ -488,17 +511,34 @@ client.on('message', async message => {
           text || 'Encontré estas opciones:',
           ui.providers || []
         );
+        console.warn('Respuesta enviada (IA):', text || ui.type || '[sin texto]');
+        return;
       } else if (ui.type === 'feedback' && Array.isArray(ui.options)) {
         await sendButtons(message.from, text || 'Califica tu experiencia:', ui.options);
+        console.warn('Respuesta enviada (IA):', text || ui.type || '[sin texto]');
+        return;
       } else if (ui.type === 'silent') {
-        // No enviar nada
-      } else if (text) {
-        await sendText(message.from, text);
-      } else {
-        await sendText(message.from, 'Procesando tu mensaje...');
+        return;
       }
 
-      console.warn('Respuesta enviada (IA):', text || ui.type || '[sin texto]');
+      if (mediaSent && (!text || mediaCaption === text)) {
+        console.warn('Respuesta enviada (IA): media');
+        return;
+      }
+
+      if (mediaSent && text && mediaCaption !== text) {
+        await sendText(message.from, text);
+        console.warn('Respuesta enviada (IA): media + texto');
+        return;
+      }
+
+      if (text) {
+        await sendText(message.from, text);
+        console.warn('Respuesta enviada (IA):', text || ui.type || '[sin texto]');
+      } else {
+        await sendText(message.from, 'Procesando tu mensaje...');
+        console.warn('Respuesta enviada (IA): procesamiento');
+      }
     }
 
     // Permitir múltiples mensajes en una sola respuesta de IA

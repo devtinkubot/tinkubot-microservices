@@ -80,6 +80,9 @@ PROVEEDORES_AI_SERVICE_URL = os.getenv(
     "PROVEEDORES_AI_SERVICE_URL",
     f"http://ai-proveedores:{settings.proveedores_service_port}",
 )
+SUPABASE_PROVIDERS_BUCKET = os.getenv(
+    "SUPABASE_PROVIDERS_BUCKET", "tinkubot-providers"
+)
 
 # WhatsApp Clientes URL para envíos salientes (scheduler)
 _clientes_whatsapp_port = (
@@ -1022,7 +1025,7 @@ def normalize_button(val: Optional[str]) -> Optional[str]:
     return text
 
 
-def formal_connection_message(provider: Dict[str, Any], service: str, city: str) -> str:
+def formal_connection_message(provider: Dict[str, Any], service: str, city: str) -> Dict[str, Any]:
     def pretty_phone(val: Optional[str]) -> str:
         raw = (val or "").strip()
         if raw.endswith("@c.us"):
@@ -1042,23 +1045,103 @@ def formal_connection_message(provider: Dict[str, Any], service: str, city: str)
     phone_raw = provider.get("phone") or provider.get("phone_number")
     phone_display = pretty_phone(phone_raw)
     link = wa_click_to_chat(phone_raw)
-    selfie_url = (
+    selfie_url_raw = (
         provider.get("face_photo_url")
         or provider.get("selfie_url")
         or provider.get("photo_url")
     )
+    selfie_url = build_public_media_url(selfie_url_raw)
     selfie_line = (
-        f"📸 Selfie: {selfie_url}"
+        "📸 Selfie adjunta."
         if selfie_url
         else "📸 Selfie no disponible por el momento."
     )
-    return (
+    message = (
         f"Proveedor asignado: {name}.\n"
         f"{selfie_line}\n"
-        f"📱 WhatsApp: {phone_display}\n"
         f"🔗 Abrir chat: {link}\n\n"
         f"💬 Chat abierto para coordinar tu servicio."
     )
+    payload: Dict[str, Any] = {"response": message}
+    if selfie_url:
+        payload.update(
+            {
+                "media_url": selfie_url,
+                "media_type": "image",
+                "media_caption": message,
+            }
+        )
+    return payload
+
+
+def _extract_storage_path(raw_url: str) -> Optional[str]:
+    cleaned = (raw_url or "").strip()
+    if not cleaned:
+        return None
+    no_query = cleaned.split("?", 1)[0].lstrip("/")
+
+    # Si viene con el prefijo de admin o endpoint de storage, obtener solo la ruta interna
+    markers = [
+        f"storage/v1/object/sign/{SUPABASE_PROVIDERS_BUCKET}/",
+        f"storage/v1/object/public/{SUPABASE_PROVIDERS_BUCKET}/",
+        f"storage/v1/object/{SUPABASE_PROVIDERS_BUCKET}/",
+        "admin/providers/image/",
+    ]
+    for marker in markers:
+        if marker in no_query:
+            return no_query.split(marker, 1)[-1].lstrip("/")
+
+    # Si no tiene slashes, asumir carpeta faces (formato estándar de subida)
+    if "/" not in no_query:
+        return f"faces/{no_query}"
+
+    return no_query
+
+
+def build_public_media_url(raw_url: Optional[str]) -> Optional[str]:
+    if not raw_url:
+        return None
+
+    text = str(raw_url).strip()
+    if not text:
+        return None
+
+    storage_path = _extract_storage_path(text)
+    if not storage_path:
+        # Si no se pudo extraer, pero es una URL completa, devolverla
+        return text if "://" in text else None
+
+    # Intentar URL firmada (si supabase disponible)
+    try:
+        if supabase and SUPABASE_PROVIDERS_BUCKET:
+            signed = supabase.storage.from_(SUPABASE_PROVIDERS_BUCKET).create_signed_url(
+                storage_path, 6 * 60 * 60  # 6 horas
+            )
+            if isinstance(signed, dict):
+                signed_url = signed.get("signedURL") or signed.get("signed_url")
+            else:
+                signed_url = getattr(signed, "signedURL", None) or getattr(
+                    signed, "signed_url", None
+                )
+            if signed_url:
+                return signed_url
+            public_url = (
+                supabase.storage.from_(SUPABASE_PROVIDERS_BUCKET).get_public_url(
+                    storage_path
+                )
+            )
+            if public_url:
+                return public_url
+    except Exception:
+        # Fallback a URL pública si no se pudo firmar
+        pass
+
+    # Fallback a URL pública construida manualmente
+    supabase_base = (settings.supabase_url or "").rstrip("/")
+    if supabase_base and SUPABASE_PROVIDERS_BUCKET:
+        return f"{supabase_base}/storage/v1/object/public/{SUPABASE_PROVIDERS_BUCKET}/{storage_path}"
+
+    return storage_path
 
 
 def get_or_create_customer(
@@ -1660,11 +1743,18 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                 )
             return reply_obj
 
-        async def save_bot_message(message: Optional[str]):
+        async def save_bot_message(message: Optional[Any]):
             if not message:
                 return
+            text_to_store = (
+                message.get("response") if isinstance(message, dict) else message
+            )
+            if not text_to_store:
+                return
             try:
-                await session_manager.save_session(phone, message, is_bot=True)
+                await session_manager.save_session(
+                    phone, text_to_store, is_bot=True
+                )
             except Exception:
                 pass
 

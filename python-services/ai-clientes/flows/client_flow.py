@@ -1,7 +1,7 @@
 """Lógica modularizada del flujo conversacional de clientes."""
 
 from datetime import datetime
-from typing import Any, Awaitable, Callable, Dict, Optional, Tuple
+from typing import Any, Awaitable, Callable, Dict, Optional, Tuple, Union
 
 from templates.prompts import (
     CONSENT_BUTTONS,
@@ -167,7 +167,9 @@ class ClientFlow:
         phone: str,
         set_flow_fn: Callable[[Dict[str, Any]], Awaitable[None]],
         save_bot_message_fn: Callable[[Optional[str]], Awaitable[None]],
-        formal_connection_message_fn: Callable[[Dict[str, Any], str, str], str],
+        formal_connection_message_fn: Callable[
+            [Dict[str, Any], str, str], Union[Dict[str, Any], str]
+        ],
         confirm_prompt_messages_fn: Callable[..., list[Dict[str, Any]]],
         schedule_feedback_fn: Optional[
             Callable[[str, Dict[str, Any], str, str], Awaitable[None]]
@@ -228,6 +230,7 @@ class ClientFlow:
         message = formal_connection_message_fn(
             provider or {}, flow.get("service", ""), flow.get("city", "")
         )
+        message_obj = message if isinstance(message, dict) else {"response": message}
 
         await set_flow_fn(flow)
         await save_bot_message_fn(message)
@@ -248,7 +251,7 @@ class ClientFlow:
             except Exception as exc:  # pragma: no cover - logging auxiliar
                 logger.warning(f"No se pudo agendar feedback: {exc}")
 
-        return {"messages": [{"response": message}, *confirm_msgs]}
+        return {"messages": [message_obj, *confirm_msgs]}
 
     @staticmethod
     async def handle_confirm_new_search(
