@@ -37,7 +37,13 @@ class ClientFlow:
             profession = None
 
         service_val = profession or text
-        flow.update({"service": service_val, "state": "awaiting_city"})
+        flow.update(
+            {
+                "service": service_val,
+                "service_full": text or service_val,
+                "state": "awaiting_city",
+            }
+        )
         return flow, {"response": "*Perfecto, ¿en qué ciudad lo necesitas?*"}
 
     @staticmethod

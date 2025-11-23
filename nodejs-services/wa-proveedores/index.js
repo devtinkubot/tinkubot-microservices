@@ -39,6 +39,7 @@ const mqttUsuario = process.env.MQTT_USUARIO;
 const mqttPassword = process.env.MQTT_PASSWORD;
 const mqttTemaSolicitud = process.env.MQTT_TEMA_SOLICITUD || 'av-proveedores/solicitud';
 const mqttTemaRespuesta = process.env.MQTT_TEMA_RESPUESTA || 'av-proveedores/respuesta';
+const SEPARATOR_LINE = '..................';
 
 // Configuración de servicios externos
 // ESPECIALIZADO: Siempre usa el AI Service Proveedores
@@ -155,7 +156,8 @@ if (mqttUsuario && mqttPassword) {
 }
 
 let mqttClient = null;
-const solicitudesActivas = new Map(); // providerPhone -> req_id (simple demo)
+// solicitudesActivas: providerPhone -> { reqId, providerId }
+const solicitudesActivas = new Map();
 
 function conectarMqtt() {
   try {
@@ -204,8 +206,25 @@ async function manejarSolicitudDisponibilidad(data) {
       console.warn(`⚠️ Candidato sin número válido: ${JSON.stringify(cand)}`);
       continue;
     }
-    solicitudesActivas.set(phone, reqId);
-    const texto = `¿Puedes atender "${servicio}"${ciudad ? ' en ' + ciudad : ''}? Responde 1) Sí  2) No. Ref: ${reqId}`;
+    solicitudesActivas.set(phone, { reqId, providerId: cand.id || cand.provider_id || null });
+    const providerName =
+      cand.name || cand.provider_name || cand.nombre || cand.display_name || 'Proveedor';
+    const ubicacion = ciudad ? ` en ${ciudad}` : '';
+    const lineas = [
+      SEPARATOR_LINE,
+      '',
+      `Hola, ${providerName}.`,
+      '',
+      `¿Tienes disponibilidad para atender "${servicio}"${ubicacion} y coordinar con el cliente?`,
+      '',
+      '1 Sí, disponible',
+      '2 No, no disponible',
+      '',
+      SEPARATOR_LINE,
+      '*Responde con el número de tu opción.*',
+      `Ref: ${reqId}`,
+    ];
+    const texto = lineas.join('\n');
     try {
       await enviarTextoWhatsApp(phone, texto);
       console.warn(`📨 Ping disponibilidad enviado a ${phone} req=${reqId}`);
@@ -494,8 +513,25 @@ client.on('message', async message => {
     return;
   }
 
-  // ACTUALIZADO: La gestión de sesiones está integrada en processWithAI()
-  // Ya no es necesario llamar a saveSession() por separado
+  // Responder solicitudes de disponibilidad sin pasar por IA
+  const solicitud = solicitudesActivas.get(message.from);
+  if (solicitud) {
+    const opcion = (message.body || '').trim().toLowerCase();
+    const isYes = opcion === '1' || opcion === 'si' || opcion === 'sí';
+    const estado = isYes ? 'accepted' : 'declined';
+    try {
+      await publicarRespuestaDisponibilidad(solicitud.reqId, solicitud.providerId, estado);
+    } catch (err) {
+      console.error('❌ No se pudo publicar respuesta de disponibilidad:', err.message || err);
+    }
+    solicitudesActivas.delete(message.from);
+    const chat = await message.getChat();
+    const gracias = isYes
+      ? '✅ Gracias, tomamos nota de tu disponibilidad.'
+      : 'Gracias por tu respuesta.';
+    await chat.sendMessage(`${gracias}\n\nSi necesitas actualizar tu disponibilidad más tarde, avísanos.`);
+    return;
+  }
 
   // Procesar con IA y responder (ahora incluye gestión automática de sesiones)
   try {

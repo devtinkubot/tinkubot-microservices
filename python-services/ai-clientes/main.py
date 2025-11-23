@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import re
+import uuid
 import unicodedata
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -49,6 +50,11 @@ from shared_lib.service_catalog import (
     normalize_profession_for_search,
 )
 from shared_lib.session_manager import session_manager
+try:
+    from asyncio_mqtt import Client as MQTTClient, MqttError
+except Exception:  # pragma: no cover - import guard
+    MQTTClient = None
+    MqttError = Exception
 
 # Configurar logging
 logging.basicConfig(level=getattr(logging, settings.log_level))
@@ -102,6 +108,20 @@ WHATSAPP_CLIENTES_URL = os.getenv(
     _default_whatsapp_clientes_url,
 )
 
+# MQTT Availability configuration (para coordinar con AV Proveedores)
+MQTT_HOST = os.getenv("MQTT_HOST", "mosquitto")
+MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
+MQTT_USER = os.getenv("MQTT_USUARIO")
+MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
+MQTT_TEMA_SOLICITUD = os.getenv("MQTT_TEMA_SOLICITUD", "av-proveedores/solicitud")
+MQTT_TEMA_RESPUESTA = os.getenv("MQTT_TEMA_RESPUESTA", "av-proveedores/respuesta")
+AVAILABILITY_TIMEOUT_SECONDS = int(os.getenv("AVAILABILITY_TIMEOUT_SECONDS", "45"))
+AVAILABILITY_TIMEOUT_SECONDS = max(10, AVAILABILITY_TIMEOUT_SECONDS)
+AVAILABILITY_STATE_TTL_SECONDS = int(os.getenv("AVAILABILITY_STATE_TTL_SECONDS", "300"))
+AVAILABILITY_POLL_INTERVAL_SECONDS = float(
+    os.getenv("AVAILABILITY_POLL_INTERVAL_SECONDS", "1.5")
+)
+
 # Supabase client (opcional) para persistencia
 SUPABASE_URL = settings.supabase_url
 # settings expone la clave JWT de servicio para Supabase
@@ -111,6 +131,258 @@ supabase = (
     if (SUPABASE_URL and SUPABASE_KEY)
     else None
 )
+
+
+# --- Coordinador de disponibilidad en vivo vía MQTT ---
+def _normalize_phone_for_match(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    raw = str(value).strip()
+    if raw.endswith("@c.us"):
+        raw = raw.replace("@c.us", "")
+    raw = raw.replace("+", "").replace(" ", "")
+    return raw or None
+
+
+class AvailabilityCoordinator:
+    def __init__(self):
+        self.listener_task: Optional[asyncio.Task] = None
+
+    def _client_params(self) -> Dict[str, Any]:
+        params: Dict[str, Any] = {"hostname": MQTT_HOST, "port": MQTT_PORT}
+        if MQTT_USER and MQTT_PASSWORD:
+            params.update({"username": MQTT_USER, "password": MQTT_PASSWORD})
+        return params
+
+    def _state_key(self, req_id: str) -> str:
+        return f"availability:{req_id}"
+
+    async def start_listener(self):
+        if not MQTTClient:
+            logger.warning("⚠️ asyncio-mqtt no instalado; disponibilidad en vivo deshabilitada.")
+            return
+        if self.listener_task and not self.listener_task.done():
+            return
+        self.listener_task = asyncio.create_task(self._listener_loop())
+
+    async def _listener_loop(self):
+        if not MQTTClient:
+            return
+        while True:
+            try:
+                async with MQTTClient(**self._client_params()) as client:
+                    async with client.unfiltered_messages() as messages:
+                        await client.subscribe(MQTT_TEMA_RESPUESTA)
+                        logger.info(
+                            f"📡 Suscrito a MQTT para respuestas de disponibilidad: {MQTT_TEMA_RESPUESTA}"
+                        )
+                        async for message in messages:
+                            await self._handle_response_message(message)
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:  # pragma: no cover - loop resiliente
+                logger.warning(f"⚠️ Error en listener MQTT: {exc}")
+                await asyncio.sleep(3)
+
+    async def _handle_response_message(self, message):
+        try:
+            payload = json.loads(message.payload.decode())
+        except Exception as exc:
+            logger.warning(f"⚠️ Payload MQTT inválido: {exc}")
+            return
+
+        req_id = payload.get("req_id") or payload.get("request_id")
+        if not req_id:
+            return
+
+        provider_id = (
+            payload.get("provider_id")
+            or payload.get("id")
+            or payload.get("proveedor_id")
+        )
+        provider_phone = (
+            payload.get("provider_phone")
+            or payload.get("phone")
+            or payload.get("provider_number")
+        )
+        status_raw = payload.get("estado") or payload.get("status") or ""
+        status = str(status_raw).strip().lower()
+
+        accepted_labels = {"accepted", "yes", "si", "1", "disponible", "available"}
+        declined_labels = {"declined", "no", "0", "not_available", "ocupado"}
+
+        state_key = self._state_key(req_id)
+        state = await redis_client.get(state_key) or {}
+        accepted = state.get("accepted", [])
+        declined = state.get("declined", [])
+
+        record = {
+            "provider_id": provider_id,
+            "provider_phone": provider_phone,
+            "status": status,
+            "received_at": datetime.utcnow().isoformat(),
+        }
+
+        def _append_unique(target: List[Dict[str, Any]]):
+            for item in target:
+                if (
+                    item.get("provider_id") == provider_id
+                    and item.get("provider_phone") == provider_phone
+                ):
+                    return
+            target.append(record)
+
+        if status in accepted_labels:
+            _append_unique(accepted)
+        elif status in declined_labels:
+            _append_unique(declined)
+        else:
+            # Si no se reconoce el estado, no guardamos nada
+            return
+
+        state.update({"accepted": accepted, "declined": declined})
+        await redis_client.set(
+            state_key, state, expire=AVAILABILITY_STATE_TTL_SECONDS
+        )
+        logger.info(
+            f"📥 Respuesta disponibilidad req={req_id} status={status} provider_id={provider_id}"
+        )
+
+    async def publish_request(self, payload: Dict[str, Any]):
+        if not MQTTClient:
+            logger.warning("⚠️ MQTT no disponible, no se publica solicitud de disponibilidad.")
+            return False
+        try:
+            async with MQTTClient(**self._client_params()) as client:
+                await client.publish(
+                    MQTT_TEMA_SOLICITUD, json.dumps(payload).encode("utf-8")
+                )
+                logger.info(
+                    f"📤 Solicitud disponibilidad publicada en {MQTT_TEMA_SOLICITUD} req={payload.get('req_id')}"
+                )
+                return True
+        except MqttError as exc:  # pragma: no cover - red
+            logger.error(f"❌ No se pudo publicar en MQTT: {exc}")
+            return False
+        except Exception as exc:  # pragma: no cover - red
+            logger.error(f"❌ Error publicando solicitud MQTT: {exc}")
+            return False
+
+    async def request_and_wait(
+        self,
+        *,
+        phone: str,
+        service: str,
+        city: str,
+        need_summary: Optional[str],
+        providers: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Publica solicitud de disponibilidad y espera respuestas."""
+        await self.start_listener()
+
+        if not MQTTClient:
+            logger.warning("⚠️ MQTT no instalado; se omite disponibilidad en vivo.")
+            return {"accepted": [], "req_id": None}
+
+        req_id = f"req-{uuid.uuid4().hex[:8]}"
+        normalized_candidates: List[Dict[str, Any]] = []
+        seen_ids = set()
+        seen_phones = set()
+        for p in providers:
+            pid = p.get("id") or p.get("provider_id")
+            phone_norm = _normalize_phone_for_match(
+                p.get("phone") or p.get("phone_number")
+            )
+            if pid and pid in seen_ids:
+                continue
+            if phone_norm and phone_norm in seen_phones:
+                continue
+            if pid:
+                seen_ids.add(pid)
+            if phone_norm:
+                seen_phones.add(phone_norm)
+            normalized_candidates.append(
+                {
+                    "id": pid,
+                    "phone": p.get("phone") or p.get("phone_number"),
+                    "name": p.get("name") or p.get("provider_name"),
+                }
+            )
+
+        state_key = self._state_key(req_id)
+        await redis_client.set(
+            state_key,
+            {
+                "req_id": req_id,
+                "providers": normalized_candidates,
+                "accepted": [],
+                "declined": [],
+                "phone": phone,
+                "service": service,
+                "city": city,
+                "created_at": datetime.utcnow().isoformat(),
+            },
+            expire=AVAILABILITY_STATE_TTL_SECONDS,
+        )
+
+        payload = {
+            "req_id": req_id,
+            "servicio": need_summary or service,
+            "ciudad": city,
+            "candidatos": normalized_candidates,
+            "tiempo_espera_segundos": AVAILABILITY_TIMEOUT_SECONDS,
+        }
+        await self.publish_request(payload)
+
+        deadline = asyncio.get_event_loop().time() + AVAILABILITY_TIMEOUT_SECONDS
+        accepted_providers: List[Dict[str, Any]] = []
+
+        while asyncio.get_event_loop().time() < deadline:
+            state = await redis_client.get(state_key) or {}
+            accepted_providers = state.get("accepted") or []
+            if accepted_providers:
+                break
+            await asyncio.sleep(AVAILABILITY_POLL_INTERVAL_SECONDS)
+
+        # Leer estado final
+        state_final = await redis_client.get(state_key) or {}
+        accepted_providers = state_final.get("accepted") or []
+        filtered = self._filter_providers_by_response(
+            providers, accepted_providers
+        )
+        return {"accepted": filtered, "req_id": req_id, "state": state_final}
+
+    def _filter_providers_by_response(
+        self, providers: List[Dict[str, Any]], accepted_records: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        if not accepted_records:
+            return []
+
+        accepted_ids = set()
+        accepted_phones = set()
+        for rec in accepted_records:
+            pid = rec.get("provider_id")
+            if pid:
+                accepted_ids.add(str(pid))
+            pphone = _normalize_phone_for_match(rec.get("provider_phone"))
+            if pphone:
+                accepted_phones.add(pphone)
+
+        filtered: List[Dict[str, Any]] = []
+        for p in providers:
+            pid = str(p.get("id") or p.get("provider_id") or "")
+            phone_norm = _normalize_phone_for_match(
+                p.get("phone") or p.get("phone_number")
+            )
+            if pid and pid in accepted_ids:
+                filtered.append(p)
+                continue
+            if phone_norm and phone_norm in accepted_phones:
+                filtered.append(p)
+        return filtered
+
+
+availability_coordinator = AvailabilityCoordinator()
 
 
 # --- Scheduler de feedback diferido ---
@@ -234,6 +506,68 @@ async def feedback_scheduler_loop():
         pass
     except Exception as e:
         logger.error(f"Scheduler loop error: {e}")
+
+
+async def background_search_and_notify(phone: str, flow: Dict[str, Any]):
+    """Ejecuta búsqueda + disponibilidad y envía resultado vía WhatsApp en segundo plano."""
+    try:
+        service = (flow.get("service") or "").strip()
+        city = (flow.get("city") or "").strip()
+        service_full = flow.get("service_full") or service
+        if not service or not city:
+            return
+
+        # Búsqueda inicial
+        results = await search_providers(service, city)
+        providers = results.get("providers") or []
+
+        # Filtrar por disponibilidad en vivo
+        availability = await availability_coordinator.request_and_wait(
+            phone=phone,
+            service=service,
+            city=city,
+            need_summary=service_full,
+            providers=providers,
+        )
+        accepted = availability.get("accepted") or []
+        providers_final = accepted if accepted else []
+
+        # Si no hubo aceptados pero sí resultados, ofrecer los originales como fallback
+        if not providers_final and providers:
+            providers_final = providers[:3]
+
+        # Construir texto para enviar
+        messages_to_send: List[str] = []
+        if providers_final:
+            intro = provider_options_intro(city)
+            block = provider_options_block(providers_final)
+            prompt = provider_options_prompt(len(providers_final))
+            messages_to_send.append(f"{intro}\n\n{block}")
+            messages_to_send.append(prompt)
+        else:
+            messages_to_send.append(
+                f"No hay proveedores disponibles ahora mismo para {service_full or service}"
+                + (f" en {city}" if city else "")
+                + ". ¿Quieres buscar en otra ciudad o intentarlo más tarde?"
+            )
+            messages_to_send.append(
+                "0 Buscar en otra ciudad\n1 Sí, buscar otro servicio\n2 No, por ahora está bien"
+            )
+
+        # Actualizar flow con proveedores finales y estado
+        flow["providers"] = providers_final
+        flow["state"] = "presenting_results"
+        await set_flow(phone, flow)
+
+        for msg in messages_to_send:
+            if msg:
+                await send_whatsapp_text(phone, msg)
+                try:
+                    await session_manager.save_session(phone, msg, is_bot=True)
+                except Exception:
+                    pass
+    except Exception as exc:
+        logger.error(f"❌ Error en background_search_and_notify: {exc}")
 
 
 # --- Helpers for detection and providers search ---
@@ -1249,6 +1583,7 @@ async def startup_event():
     """Inicializar conexiones al arrancar el servicio"""
     logger.info("🚀 Iniciando AI Service Clientes...")
     await redis_client.connect()
+    await availability_coordinator.start_listener()
     logger.info("✅ AI Service Clientes listo")
 
 
@@ -1760,12 +2095,58 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
 
         # Reusable search step (centraliza la transición a 'searching')
         async def do_search():
-            return await ClientFlow.handle_searching(
+            async def send_with_availability(city: str):
+                providers_for_check = flow.get("providers", [])
+                service_text = flow.get("service", "")
+                service_full = flow.get("service_full") or service_text
+
+                availability_result = await availability_coordinator.request_and_wait(
+                    phone=phone,
+                    service=service_text,
+                    city=city,
+                    need_summary=service_full,
+                    providers=providers_for_check,
+                )
+                accepted = availability_result.get("accepted") or []
+
+                if accepted:
+                    flow["providers"] = accepted
+                    await set_flow(phone, flow)
+                    prompt = await send_provider_prompt(phone, flow, city)
+                    if prompt.get("messages"):
+                        return {"messages": prompt["messages"]}
+                    return {"messages": [prompt]}
+
+                # Sin aceptados: ofrecer volver a buscar o cambiar ciudad
+                flow["state"] = "confirm_new_search"
+                flow["confirm_attempts"] = 0
+                flow["confirm_title"] = "No hay proveedores disponibles ahora mismo."
+                flow["confirm_include_city_option"] = True
+                flow["confirm_include_provider_option"] = False
+                await set_flow(phone, flow)
+                no_msg = {
+                    "response": (
+                        f"No hay proveedores disponibles ahora mismo para {service_text or 'tu solicitud'}"
+                        + (f" en {city}" if city else "")
+                        + ". ¿Quieres buscar en otra ciudad o intentarlo más tarde?"
+                    )
+                }
+                await save_bot_message(no_msg["response"])
+                confirm_msgs = confirm_prompt_messages(
+                    flow.get("confirm_title") or CONFIRM_PROMPT_TITLE_DEFAULT,
+                    include_city_option=True,
+                    include_provider_option=False,
+                )
+                for cmsg in confirm_msgs:
+                    await save_bot_message(cmsg.get("response"))
+                return {"messages": [no_msg, *confirm_msgs]}
+
+            result = await ClientFlow.handle_searching(
                 flow,
                 phone,
                 respond,
                 lambda svc, cty: search_providers(svc, cty),
-                lambda cty: send_provider_prompt(phone, flow, cty),
+                send_with_availability,
                 lambda data: set_flow(phone, data),
                 save_bot_message,
                 confirm_prompt_messages,
@@ -1774,18 +2155,21 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                 logger,
                 supabase,
             )
+            return result
 
         # Start or restart
         if not state or selected == "Sí, buscar otro servicio":
             cleaned = text.strip().lower() if text else ""
             if text and cleaned not in GREETINGS:
                 service_value = (detected_profession or text).strip()
-                flow.update({"service": service_value})
+                flow.update({"service": service_value, "service_full": text})
 
                 if flow.get("service") and flow.get("city"):
                     flow["state"] = "searching"
+                    flow["searching_dispatched"] = True
                     await set_flow(phone, flow)
-                    return await do_search()
+                    asyncio.create_task(background_search_and_notify(phone, flow.copy()))
+                    return {"response": "⏳ Estoy confirmando disponibilidad con proveedores y te aviso en breve."}
 
                 flow["state"] = "awaiting_city"
                 flow["city_confirmed"] = False
@@ -1814,9 +2198,22 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
             )
             flow = updated_flow
             if flow.get("service") and flow.get("city"):
+                waiting_msg = {
+                    "response": "⏳ Estoy confirmando disponibilidad con proveedores y te aviso en breve."
+                }
+                await save_bot_message(waiting_msg.get("response"))
                 flow["state"] = "searching"
+                flow["searching_dispatched"] = True
                 await set_flow(phone, flow)
-                return await do_search()
+                asyncio.create_task(background_search_and_notify(phone, flow.copy()))
+                return {"messages": [waiting_msg]}
+
+            # Si tenemos servicio pero falta ciudad, solo pedimos ciudad
+            if flow.get("service"):
+                flow["state"] = "awaiting_city"
+                await set_flow(phone, flow)
+                return {"response": "*¿En qué ciudad lo necesitas?*"}
+
             return await respond(flow, reply)
 
         if state == "awaiting_city":
@@ -1844,10 +2241,26 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
 
             flow = updated_flow
             flow["state"] = "searching"
+            flow["searching_dispatched"] = True
             await set_flow(phone, flow)
-            return await do_search()
+
+            waiting_msg = {
+                "response": "⏳ Estoy confirmando disponibilidad con proveedores y te aviso en breve."
+            }
+            await save_bot_message(waiting_msg.get("response"))
+            asyncio.create_task(background_search_and_notify(phone, flow.copy()))
+            return {"messages": [waiting_msg]}
 
         if state == "searching":
+            # Si ya despachamos la búsqueda, evitar duplicarla y avisar que seguimos procesando
+            if flow.get("searching_dispatched"):
+                return {"response": "⏳ Estoy confirmando disponibilidad, dame unos segundos."}
+            # Si por alguna razón no se despachó, lanzarla ahora
+            if flow.get("service") and flow.get("city"):
+                flow["searching_dispatched"] = True
+                await set_flow(phone, flow)
+                asyncio.create_task(background_search_and_notify(phone, flow.copy()))
+                return {"response": "⏳ Estoy confirmando disponibilidad con proveedores y te aviso en breve."}
             return await do_search()
 
         if state == "presenting_results":

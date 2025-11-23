@@ -84,6 +84,21 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Endpoint simple para envíos salientes desde otros servicios
+app.post('/send', async (req, res) => {
+  try {
+    const { to, message } = req.body || {};
+    if (!to || !message) {
+      return res.status(400).json({ error: 'to and message are required' });
+    }
+    await sendText(to, message);
+    return res.json({ status: 'sent' });
+  } catch (err) {
+    console.error('Error en /send:', err.message || err);
+    return res.status(500).json({ error: 'failed to send message' });
+  }
+});
+
 // Configurar servidor HTTP y WebSocket
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -220,8 +235,8 @@ async function processWithAI(message) {
     }
 
     const response = await postWithRetry(`${AI_SERVICE_URL}/handle-whatsapp-message`, payload, {
-      timeout: 15000,
-      retries: 2,
+      timeout: 70000, // espera suficiente para disponibilidad en vivo
+      retries: 0, // evitar duplicar solicitudes en casos de espera larga
     });
     return response.data;
   } catch (error) {
