@@ -136,6 +136,7 @@ class ClientFlow:
         flow["state"] = "presenting_results"
         flow["confirm_include_city_option"] = False
         flow["confirm_include_provider_option"] = len(flow["providers"]) > 1
+        flow.pop("provider_detail_idx", None)
 
         if supabase_client:
             try:
@@ -182,16 +183,47 @@ class ClientFlow:
         ],
         logger: Any,
         confirm_title_default: str,
+        provider_detail_block_fn: Callable[[Dict[str, Any]], str],
+        provider_detail_options_prompt_fn: Callable[[], str],
+        initial_prompt: str,
+        farewell_message: str,
     ) -> Dict[str, Any]:
-        """Procesa el estado `presenting_results`.
-
-        Devuelve el payload con los mensajes a enviar (proveedor asignado + confirmación).
-        """
+        """Procesa el estado `presenting_results` (listado de proveedores)."""
 
         choice = (selected or text or "").strip()
         choice_lower = choice.lower()
         choice_normalized = choice_lower.strip().strip("*").rstrip(".)")
-        if choice_normalized in ("0", "opcion 0", "opción 0") or (
+
+        if choice_normalized in ("1", "opcion 1", "opción 1") or (
+            "buscar" in choice_lower and "servicio" in choice_lower
+        ):
+            for key in [
+                "providers",
+                "chosen_provider",
+                "confirm_attempts",
+                "confirm_title",
+                "confirm_include_city_option",
+                "confirm_include_provider_option",
+                "provider_detail_idx",
+                "service",
+                "city",
+                "city_confirmed",
+            ]:
+                flow.pop(key, None)
+            flow["state"] = "awaiting_service"
+            await set_flow_fn(flow)
+            message = {"response": initial_prompt}
+            await save_bot_message_fn(message["response"])
+            return message
+
+        if choice_normalized in (
+            "2",
+            "opcion 2",
+            "opción 2",
+            "0",
+            "opcion 0",
+            "opción 0",
+        ) or (
             "cambio" in choice_lower and "ciudad" in choice_lower
         ):
             flow["state"] = "awaiting_city"
@@ -209,6 +241,26 @@ class ClientFlow:
             await save_bot_message_fn(message["response"])
             return message
 
+        if choice_normalized in ("3", "opcion 3", "opción 3", "salir", "adios"):
+            for key in [
+                "providers",
+                "chosen_provider",
+                "confirm_attempts",
+                "confirm_title",
+                "confirm_include_city_option",
+                "confirm_include_provider_option",
+                "provider_detail_idx",
+                "service",
+                "city",
+                "city_confirmed",
+            ]:
+                flow.pop(key, None)
+            flow["state"] = "ended"
+            await set_flow_fn(flow)
+            farewell = {"response": farewell_message}
+            await save_bot_message_fn(farewell["response"])
+            return farewell
+
         providers_list = flow.get("providers", [])
 
         provider = None
@@ -216,8 +268,12 @@ class ClientFlow:
             idx = int(choice)
             if 1 <= idx <= len(providers_list):
                 provider = providers_list[idx - 1]
+        elif choice_normalized in ("a", "b", "c", "d", "e"):
+            idx = ord(choice_normalized) - ord("a")
+            if 0 <= idx < len(providers_list):
+                provider = providers_list[idx]
 
-        if not provider and choice.lower().startswith("conectar con"):
+        if not provider and choice_lower.startswith("conectar con"):
             name = choice.split("con", 1)[-1].strip()
             for item in providers_list:
                 ref_name = (item.get("name") or "").lower()
@@ -225,7 +281,128 @@ class ClientFlow:
                     provider = item
                     break
 
-        provider = provider or (providers_list or [None])[0]
+        if not provider:
+            return {
+                "response": "Indica la letra (a-e) del proveedor que quieres ver."
+            }
+
+        flow["state"] = "viewing_provider_detail"
+        flow["provider_detail_idx"] = providers_list.index(provider)
+        await set_flow_fn(flow)
+        detail_message = provider_detail_block_fn(provider)
+        options_message = provider_detail_options_prompt_fn()
+        await save_bot_message_fn(detail_message)
+        await save_bot_message_fn(options_message)
+        return {
+            "messages": [
+                {"response": detail_message},
+                {"response": options_message},
+            ]
+        }
+
+    @staticmethod
+    async def handle_viewing_provider_detail(
+        flow: Dict[str, Any],
+        text: Optional[str],
+        selected: Optional[str],
+        phone: str,
+        set_flow_fn: Callable[[Dict[str, Any]], Awaitable[None]],
+        save_bot_message_fn: Callable[[Optional[str]], Awaitable[None]],
+        formal_connection_message_fn: Callable[
+            [Dict[str, Any], str, str], Union[Dict[str, Any], str]
+        ],
+        confirm_prompt_messages_fn: Callable[..., list[Dict[str, Any]]],
+        schedule_feedback_fn: Optional[
+            Callable[[str, Dict[str, Any], str, str], Awaitable[None]]
+        ],
+        logger: Any,
+        confirm_title_default: str,
+        send_provider_prompt_fn: Callable[[], Awaitable[Dict[str, Any]]],
+        initial_prompt: str,
+        farewell_message: str,
+        provider_detail_options_prompt_fn: Callable[[], str],
+    ) -> Dict[str, Any]:
+        """Procesa el estado `viewing_provider_detail` (submenú de detalle)."""
+
+        choice = (selected or text or "").strip()
+        choice_lower = choice.lower()
+        choice_normalized = choice_lower.strip().strip("*").rstrip(".)")
+
+        providers_list = flow.get("providers", [])
+        idx = flow.get("provider_detail_idx")
+        provider = None
+        if isinstance(idx, int) and 0 <= idx < len(providers_list):
+            provider = providers_list[idx]
+
+        if choice_normalized in ("2", "opcion 2", "opción 2", "regresar", "0"):
+            flow["state"] = "presenting_results"
+            flow.pop("provider_detail_idx", None)
+            await set_flow_fn(flow)
+            return await send_provider_prompt_fn()
+
+        if choice_normalized in ("3", "opcion 3", "opción 3"):
+            for key in [
+                "providers",
+                "chosen_provider",
+                "confirm_attempts",
+                "confirm_title",
+                "confirm_include_city_option",
+                "confirm_include_provider_option",
+                "provider_detail_idx",
+                "service",
+                "city",
+                "city_confirmed",
+            ]:
+                flow.pop(key, None)
+            flow["state"] = "awaiting_service"
+            await set_flow_fn(flow)
+            message = {"response": initial_prompt}
+            await save_bot_message_fn(message["response"])
+            return message
+
+        if choice_normalized in ("1", "opcion 1", "opción 1", "elegir"):
+            if not provider:
+                return {"response": "No encontré ese proveedor, elige otra opción."}
+            return await ClientFlow._connect_and_confirm(
+                flow,
+                provider,
+                providers_list,
+                phone,
+                set_flow_fn,
+                save_bot_message_fn,
+                formal_connection_message_fn,
+                confirm_prompt_messages_fn,
+                schedule_feedback_fn,
+                logger,
+                confirm_title_default,
+            )
+
+        if choice:
+            return {"response": provider_detail_options_prompt_fn()}
+
+        return {"response": provider_detail_options_prompt_fn()}
+
+    @staticmethod
+    async def _connect_and_confirm(
+        flow: Dict[str, Any],
+        provider: Dict[str, Any],
+        providers_list: list[Dict[str, Any]],
+        phone: str,
+        set_flow_fn: Callable[[Dict[str, Any]], Awaitable[None]],
+        save_bot_message_fn: Callable[[Optional[str]], Awaitable[None]],
+        formal_connection_message_fn: Callable[
+            [Dict[str, Any], str, str], Union[Dict[str, Any], str]
+        ],
+        confirm_prompt_messages_fn: Callable[..., list[Dict[str, Any]]],
+        schedule_feedback_fn: Optional[
+            Callable[[str, Dict[str, Any], str, str], Awaitable[None]]
+        ],
+        logger: Any,
+        confirm_title_default: str,
+    ) -> Dict[str, Any]:
+        """Conecta con proveedor y muestra confirmación posterior."""
+
+        flow.pop("provider_detail_idx", None)
         flow["chosen_provider"] = provider
         flow["state"] = "confirm_new_search"
         flow["confirm_attempts"] = 0
@@ -239,7 +416,7 @@ class ClientFlow:
         message_obj = message if isinstance(message, dict) else {"response": message}
 
         await set_flow_fn(flow)
-        await save_bot_message_fn(message)
+        await save_bot_message_fn(message_obj.get("response"))
 
         confirm_msgs = confirm_prompt_messages_fn(
             flow.get("confirm_title") or confirm_title_default,

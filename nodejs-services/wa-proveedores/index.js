@@ -39,7 +39,7 @@ const mqttUsuario = process.env.MQTT_USUARIO;
 const mqttPassword = process.env.MQTT_PASSWORD;
 const mqttTemaSolicitud = process.env.MQTT_TEMA_SOLICITUD || 'av-proveedores/solicitud';
 const mqttTemaRespuesta = process.env.MQTT_TEMA_RESPUESTA || 'av-proveedores/respuesta';
-const SEPARATOR_LINE = '..................';
+const MAX_RESPUESTAS_DISPONIBILIDAD = 5;
 
 // Configuración de servicios externos
 // ESPECIALIZADO: Siempre usa el AI Service Proveedores
@@ -156,8 +156,12 @@ if (mqttUsuario && mqttPassword) {
 }
 
 let mqttClient = null;
-// solicitudesActivas: providerPhone -> { reqId, providerId }
+// solicitudesActivas: providerPhone -> { reqId, providerId, expiresAt, timer }
 const solicitudesActivas = new Map();
+// solicitudesPorReq: reqId -> Set(providerPhone)
+const solicitudesPorReq = new Map();
+// respuestasPorReq: reqId -> count de aceptadas
+const respuestasPorReq = new Map();
 
 function conectarMqtt() {
   try {
@@ -193,11 +197,47 @@ function conectarMqtt() {
   }
 }
 
+function formatearTiempo(segundos) {
+  const s = Number(segundos) || 0;
+  if (s >= 60) {
+    const mins = Math.round(s / 60);
+    return `${mins} minuto${mins === 1 ? '' : 's'}`;
+  }
+  return `${s} segundo${s === 1 ? '' : 's'}`;
+}
+
+function registrarSolicitud(reqId, phone, expiresAt, providerId) {
+  const current = solicitudesPorReq.get(reqId) || new Set();
+  current.add(phone);
+  solicitudesPorReq.set(reqId, current);
+  const timer = setTimeout(async () => {
+    const active = solicitudesActivas.get(phone);
+    if (!active || active.reqId !== reqId) return;
+    solicitudesActivas.delete(phone);
+    current.delete(phone);
+    if (current.size === 0) {
+      solicitudesPorReq.delete(reqId);
+    }
+    try {
+      await enviarTextoWhatsApp(
+        phone,
+        '*El tiempo de respuesta ha caducado y tu respuesta ya no contará para este requerimiento.*'
+      );
+    } catch (err) {
+      console.error(`❌ No se pudo notificar expiración a ${phone}:`, err.message || err);
+    }
+  }, Math.max(1000, expiresAt - Date.now()));
+
+  solicitudesActivas.set(phone, { reqId, providerId, expiresAt, timer });
+}
+
 async function manejarSolicitudDisponibilidad(data) {
   const reqId = data.req_id || 'sin-id';
   const servicio = data.servicio || 'servicio';
-  const ciudad = data.ciudad || '';
+    const ciudad = data.ciudad || '';
   const candidatos = Array.isArray(data.candidatos) ? data.candidatos : [];
+  const timeoutSeg = Number(data.tiempo_espera_segundos) || 60;
+  const textoTiempo = formatearTiempo(timeoutSeg);
 
   for (const cand of candidatos) {
     const phoneRaw = cand.phone || cand.phone_number || cand.contact || cand.contact_phone;
@@ -209,24 +249,36 @@ async function manejarSolicitudDisponibilidad(data) {
     solicitudesActivas.set(phone, { reqId, providerId: cand.id || cand.provider_id || null });
     const providerName =
       cand.name || cand.provider_name || cand.nombre || cand.display_name || 'Proveedor';
-    const ubicacion = ciudad ? ` en ${ciudad}` : '';
-    const lineas = [
-      SEPARATOR_LINE,
-      '',
+    const ciudadTexto = (ciudad || '').trim();
+    const ubicacion = ciudadTexto ? ` en **${ciudadTexto}**` : '';
+    const expiresAt = Date.now() + timeoutSeg * 1000;
+    registrarSolicitud(reqId, phone, expiresAt, cand.id || cand.provider_id || null);
+    const servicioEnfatizado = servicio ? `**${servicio}**` : '**servicio**';
+    const lineasPregunta = [
       `Hola, ${providerName}.`,
       '',
-      `¿Tienes disponibilidad para atender "${servicio}"${ubicacion} y coordinar con el cliente?`,
+      `¿Tienes disponibilidad para atender ${servicioEnfatizado}${ubicacion} y coordinar con el cliente?`,
       '',
-      '1 Sí, disponible',
-      '2 No, no disponible',
+      `*⏳ Tienes ${textoTiempo} para responder. Luego tu respuesta ya no contará para este requerimiento.*`,
       '',
-      SEPARATOR_LINE,
-      '*Responde con el número de tu opción.*',
       `Ref: ${reqId}`,
     ];
-    const texto = lineas.join('\n');
+    const lineasOpciones = [
+      '*Responde con el número de tu opción:*',
+      '',
+      '1) Sí, disponible',
+      '2) No, no disponible',
+      '',
+      `Ref: ${reqId}`,
+    ];
+    const textoPregunta = lineasPregunta.join('\n');
+    const textoOpciones = lineasOpciones.join('\n');
+    console.warn(
+      `[PROMPT DISPONIBILIDAD] req=${reqId} destino=${phone} ->\n${textoPregunta}\n--\n${textoOpciones}`
+    );
     try {
-      await enviarTextoWhatsApp(phone, texto);
+      await enviarTextoWhatsApp(phone, textoPregunta);
+      await enviarTextoWhatsApp(phone, textoOpciones);
       console.warn(`📨 Ping disponibilidad enviado a ${phone} req=${reqId}`);
     } catch (err) {
       console.error(`❌ No se pudo enviar ping a ${phone}:`, err.message || err);
@@ -518,18 +570,75 @@ client.on('message', async message => {
   if (solicitud) {
     const opcion = (message.body || '').trim().toLowerCase();
     const isYes = opcion === '1' || opcion === 'si' || opcion === 'sí';
+    const ahora = Date.now();
+    const chat = await message.getChat();
+    const reqId = solicitud.reqId;
+
+    // Si la solicitud ya expiró
+    if (solicitud.expiresAt && ahora > solicitud.expiresAt) {
+      solicitudesActivas.delete(message.from);
+      const setReq = solicitudesPorReq.get(reqId);
+      if (setReq) {
+        setReq.delete(message.from);
+        if (setReq.size === 0) solicitudesPorReq.delete(reqId);
+      }
+      await chat.sendMessage(
+        '*El tiempo de respuesta ha caducado y tu respuesta ya no contará para este requerimiento.*'
+      );
+      return;
+    }
+
+    // Control de cupo máximo
+    const aceptadasPrevias = respuestasPorReq.get(reqId) || 0;
+    if (aceptadasPrevias >= MAX_RESPUESTAS_DISPONIBILIDAD) {
+      solicitudesActivas.delete(message.from);
+      const setReq = solicitudesPorReq.get(reqId);
+      if (setReq) {
+        setReq.delete(message.from);
+        if (setReq.size === 0) solicitudesPorReq.delete(reqId);
+      }
+      await chat.sendMessage('*Las plazas para este requerimiento ya han sido ocupadas.*');
+      return;
+    }
+
     const estado = isYes ? 'accepted' : 'declined';
     try {
-      await publicarRespuestaDisponibilidad(solicitud.reqId, solicitud.providerId, estado);
+      await publicarRespuestaDisponibilidad(reqId, solicitud.providerId, estado);
     } catch (err) {
       console.error('❌ No se pudo publicar respuesta de disponibilidad:', err.message || err);
     }
     solicitudesActivas.delete(message.from);
-    const chat = await message.getChat();
-    const gracias = isYes
-      ? '✅ Gracias, tomamos nota de tu disponibilidad.'
-      : 'Gracias por tu respuesta.';
-    await chat.sendMessage(`${gracias}\n\nSi necesitas actualizar tu disponibilidad más tarde, avísanos.`);
+    const setReq = solicitudesPorReq.get(reqId);
+    if (setReq) {
+      setReq.delete(message.from);
+      if (setReq.size === 0) solicitudesPorReq.delete(reqId);
+    }
+
+    if (isYes) {
+      const nuevoConteo = aceptadasPrevias + 1;
+      respuestasPorReq.set(reqId, nuevoConteo);
+
+      await chat.sendMessage('*Gracias, tomamos nota de tu disponibilidad.*');
+
+      if (nuevoConteo >= MAX_RESPUESTAS_DISPONIBILIDAD && setReq && setReq.size > 0) {
+        // Notificar a pendientes que ya no hay cupo
+        const pendientes = Array.from(setReq);
+        solicitudesPorReq.delete(reqId);
+        for (const phone of pendientes) {
+          solicitudesActivas.delete(phone);
+          try {
+            await enviarTextoWhatsApp(
+              phone,
+              '*Las plazas para este requerimiento ya han sido ocupadas.*'
+            );
+          } catch (err) {
+            console.error(`❌ No se pudo notificar cierre de cupo a ${phone}:`, err.message || err);
+          }
+        }
+      }
+    } else {
+      await chat.sendMessage('*Entendido, registramos que no estás disponible para esta solicitud.*');
+    }
     return;
   }
 

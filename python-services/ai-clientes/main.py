@@ -31,6 +31,8 @@ from templates.prompts import (
     confirm_options_block,
     consent_options_block,
     consent_prompt_messages,
+    provider_detail_block,
+    provider_detail_options_prompt,
     provider_options_block,
     provider_options_intro,
     provider_options_prompt,
@@ -530,11 +532,7 @@ async def background_search_and_notify(phone: str, flow: Dict[str, Any]):
             providers=providers,
         )
         accepted = availability.get("accepted") or []
-        providers_final = accepted if accepted else []
-
-        # Si no hubo aceptados pero sí resultados, ofrecer los originales como fallback
-        if not providers_final and providers:
-            providers_final = providers[:3]
+        providers_final = (accepted if accepted else [])[:5]
 
         # Construir texto para enviar
         messages_to_send: List[str] = []
@@ -545,18 +543,26 @@ async def background_search_and_notify(phone: str, flow: Dict[str, Any]):
             messages_to_send.append(f"{intro}\n\n{block}")
             messages_to_send.append(prompt)
         else:
-            messages_to_send.append(
-                f"No hay proveedores disponibles ahora mismo para {service_full or service}"
-                + (f" en {city}" if city else "")
-                + ". ¿Quieres buscar en otra ciudad o intentarlo más tarde?"
+            svc_txt = (service_full or service or "").strip()
+            city_txt = (city or "").strip()
+            destino = f"**{svc_txt}**" if svc_txt else "este servicio"
+            ciudad = f" en **{city_txt}**" if city_txt else ""
+            no_providers_msg = (
+                f"No hay proveedores disponibles ahora mismo para {destino}{ciudad}. "
+                "¿Quieres buscar en otra ciudad o intentarlo más tarde?"
             )
+            messages_to_send.append(no_providers_msg)
             messages_to_send.append(
-                "0 Buscar en otra ciudad\n1 Sí, buscar otro servicio\n2 No, por ahora está bien"
+                "*Responde con el número de tu opción:*\n\n"
+                "1) Buscar en otra ciudad\n"
+                "2) Buscar otro servicio\n"
+                "3) Salir"
             )
 
         # Actualizar flow con proveedores finales y estado
         flow["providers"] = providers_final
         flow["state"] = "presenting_results"
+        flow.pop("provider_detail_idx", None)
         await set_flow(phone, flow)
 
         for msg in messages_to_send:
@@ -623,7 +629,7 @@ RESET_KEYWORDS = {
 MAX_CONFIRM_ATTEMPTS = 2
 
 FAREWELL_MESSAGE = (
-    "¡Gracias por utilizar nuestros servicios! Si necesitas otro apoyo, solo escríbeme."
+    "*¡Gracias por utilizar nuestros servicios!* Si necesitas otro apoyo, solo escríbeme."
 )
 
 AFFIRMATIVE_WORDS = {
@@ -1175,9 +1181,13 @@ def ui_buttons(text: str, labels: list[str]):
 
 
 def ui_provider_results(text: str, providers: list[Dict[str, Any]]):
+    labeled = []
+    for idx, provider in enumerate(providers[:5], start=1):
+        option_label = chr(ord("a") + idx - 1)
+        labeled.append({**provider, "_option_label": option_label})
     return {
         "response": text,
-        "ui": {"type": "provider_results", "providers": providers},
+        "ui": {"type": "provider_results", "providers": labeled},
     }
 
 
@@ -2169,7 +2179,9 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                     flow["searching_dispatched"] = True
                     await set_flow(phone, flow)
                     asyncio.create_task(background_search_and_notify(phone, flow.copy()))
-                    return {"response": "⏳ Estoy confirmando disponibilidad con proveedores y te aviso en breve."}
+                    return {
+                        "response": "⏳ *Estoy confirmando disponibilidad con proveedores y te aviso en breve.*"
+                    }
 
                 flow["state"] = "awaiting_city"
                 flow["city_confirmed"] = False
@@ -2199,7 +2211,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
             flow = updated_flow
             if flow.get("service") and flow.get("city"):
                 waiting_msg = {
-                    "response": "⏳ Estoy confirmando disponibilidad con proveedores y te aviso en breve."
+                    "response": "⏳ *Estoy confirmando disponibilidad con proveedores y te aviso en breve.*"
                 }
                 await save_bot_message(waiting_msg.get("response"))
                 flow["state"] = "searching"
@@ -2245,7 +2257,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
             await set_flow(phone, flow)
 
             waiting_msg = {
-                "response": "⏳ Estoy confirmando disponibilidad con proveedores y te aviso en breve."
+                "response": "⏳ *Estoy confirmando disponibilidad con proveedores y te aviso en breve.*"
             }
             await save_bot_message(waiting_msg.get("response"))
             asyncio.create_task(background_search_and_notify(phone, flow.copy()))
@@ -2254,13 +2266,15 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
         if state == "searching":
             # Si ya despachamos la búsqueda, evitar duplicarla y avisar que seguimos procesando
             if flow.get("searching_dispatched"):
-                return {"response": "⏳ Estoy confirmando disponibilidad, dame unos segundos."}
+                return {"response": "⏳ *Estoy confirmando disponibilidad, dame unos segundos.*"}
             # Si por alguna razón no se despachó, lanzarla ahora
             if flow.get("service") and flow.get("city"):
                 flow["searching_dispatched"] = True
                 await set_flow(phone, flow)
                 asyncio.create_task(background_search_and_notify(phone, flow.copy()))
-                return {"response": "⏳ Estoy confirmando disponibilidad con proveedores y te aviso en breve."}
+                return {
+                    "response": "⏳ *Estoy confirmando disponibilidad con proveedores y te aviso en breve.*"
+                }
             return await do_search()
 
         if state == "presenting_results":
@@ -2276,6 +2290,29 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                 schedule_feedback_request,
                 logger,
                 "¿Te ayudo con otro servicio?",
+                provider_detail_block,
+                provider_detail_options_prompt,
+                INITIAL_PROMPT,
+                FAREWELL_MESSAGE,
+            )
+
+        if state == "viewing_provider_detail":
+            return await ClientFlow.handle_viewing_provider_detail(
+                flow,
+                text,
+                selected,
+                phone,
+                lambda data: set_flow(phone, data),
+                save_bot_message,
+                formal_connection_message,
+                confirm_prompt_messages,
+                schedule_feedback_request,
+                logger,
+                "¿Te ayudo con otro servicio?",
+                lambda: send_provider_prompt(phone, flow, flow.get("city", "")),
+                INITIAL_PROMPT,
+                FAREWELL_MESSAGE,
+                provider_detail_options_prompt,
             )
 
         if state == "confirm_new_search":

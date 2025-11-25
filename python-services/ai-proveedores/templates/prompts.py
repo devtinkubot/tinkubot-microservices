@@ -23,7 +23,7 @@ CONSENT_OPTIONS = [
     "No autorizo el uso de mis datos",
 ]
 
-CONSENT_FOOTER = "*Responde con el numero de tu opcion:*"
+CONSENT_FOOTER = "*Responde con el número de tu opción:*"
 
 REGISTRATION_START_PROMPT = (
     "Perfecto. Empecemos. En que ciudad trabajas principalmente?"
@@ -43,31 +43,26 @@ GUIDANCE_MESSAGE = (
 PROVIDER_MAIN_MENU = (
     "**Menú de Proveedores**\n"
     "\n"
-    "-----------------------------\n"
+    f"{CONSENT_FOOTER}\n"
     "\n"
-    "1. Registro\n"
-    "2. Salir\n"
-    "\n"
-    "-----------------------------"
+    "1) Registro\n"
+    "2) Salir\n"
 )
 
 
 def consent_options_block() -> str:
-    lines = [
-        "..................",
-        "",
-        "1 Si, autorizo el uso de mis datos",
-        "2 No autorizo el uso de mis datos",
-        "",
-        "..................",
-    ]
-    return "\n".join(lines)
+    return "\n".join(
+        [
+            "1) Si, autorizo el uso de mis datos",
+            "2) No autorizo el uso de mis datos",
+        ]
+    )
 
 
 def consent_prompt_messages() -> List[str]:
     return [
         f"{CONSENT_PROMPT}\n\n{CONSENT_SCOPE_BLOCK}",
-        f"{consent_options_block()}\n{CONSENT_FOOTER}",
+        f"{CONSENT_FOOTER}\n\n{consent_options_block()}",
     ]
 
 
@@ -86,24 +81,22 @@ def provider_guidance_message() -> str:
 
 
 def provider_main_menu_message() -> str:
-    return f"{PROVIDER_MAIN_MENU}\n\n{CONSENT_FOOTER}"
+    return f"{PROVIDER_MAIN_MENU}"
 
 
 PROVIDER_POST_REGISTRATION_MENU = (
     "**Menú de Proveedor**\n"
     "\n"
-    "-----------------------------\n"
+    f"{CONSENT_FOOTER}\n"
     "\n"
-    "1. Gestionar servicios\n"
-    "2. Actualizar selfie\n"
-    "3. Salir\n"
-    "\n"
-    "-----------------------------"
+    "1) Gestionar servicios\n"
+    "2) Actualizar selfie\n"
+    "3) Salir\n"
 )
 
 
 def provider_post_registration_menu_message() -> str:
-    return f"{PROVIDER_POST_REGISTRATION_MENU}\n\n{CONSENT_FOOTER}"
+    return f"{PROVIDER_POST_REGISTRATION_MENU}"
 
 
 def provider_services_menu_message(servicios: List[str], max_servicios: int) -> str:
@@ -124,12 +117,11 @@ def provider_services_menu_message(servicios: List[str], max_servicios: int) -> 
     )
 
     opciones = [
+        f"{CONSENT_FOOTER} {limite_texto}".strip(),
         "",
-        "1. Agregar servicio",
-        "2. Eliminar servicio",
-        "3. Volver al menú principal",
-        "",
-        f"*Responde con el número de tu opción.* {limite_texto}".strip(),
+        "1) Agregar servicio",
+        "2) Eliminar servicio",
+        "3) Volver al menú principal",
     ]
 
     cuerpo = encabezado + listado + opciones
