@@ -25,6 +25,8 @@ from templates.prompts import (
     provider_guidance_message,
     provider_main_menu_message,
     provider_post_registration_menu_message,
+    provider_under_review_message,
+    provider_verified_message,
     provider_services_menu_message,
 )
 
@@ -542,7 +544,7 @@ def normalizar_datos_proveedor(datos_crudos: ProviderCreate) -> Dict[str, Any]:
         "services": formatear_servicios(servicios_limpios),
         "experience_years": datos_crudos.experience_years or 0,
         "has_consent": datos_crudos.has_consent,
-        "available": True,
+        "available": False,  # Se habilita tras verificación/aprobación manual
         "verified": False,
         "rating": 0.0,
         "social_media_url": datos_crudos.social_media_url,
@@ -719,7 +721,7 @@ def obtener_perfil_proveedor(phone: str) -> Optional[Dict[str, Any]]:
         response = (
             supabase.table("providers")
             .select(
-                "id, phone, full_name, city, profession, has_consent, services, face_photo_url"
+                "id, phone, full_name, city, profession, has_consent, services, face_photo_url, available, verified"
             )
             .eq("phone", phone)
             .limit(1)
@@ -1532,7 +1534,43 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
         has_consent = bool(flow.get("has_consent"))
         esta_registrado = determinar_estado_registro_proveedor(provider_profile)
         flow["esta_registrado"] = esta_registrado
+        is_verified = bool(provider_profile and provider_profile.get("verified"))
+        is_pending_review = bool(esta_registrado and not is_verified)
         await establecer_flujo(phone, flow)
+
+        # Si el perfil está pendiente de revisión, limitar la interacción a la notificación
+        if is_pending_review:
+            flow.update(
+                {
+                    "state": "pending_verification",
+                    "has_consent": True,
+                    "provider_id": provider_id,
+                }
+            )
+            await establecer_flujo(phone, flow)
+            return {
+                "success": True,
+                "messages": [{"response": provider_under_review_message()}],
+            }
+
+        # Si el perfil acaba de ser aprobado, notificar y habilitar menú
+        if flow.get("state") == "pending_verification" and is_verified:
+            flow.update(
+                {
+                    "state": "awaiting_menu_option",
+                    "has_consent": True,
+                    "esta_registrado": True,
+                    "verification_notified": True,
+                }
+            )
+            await establecer_flujo(phone, flow)
+            return {
+                "success": True,
+                "messages": [
+                    {"response": provider_verified_message()},
+                    {"response": provider_post_registration_menu_message()},
+                ],
+            }
 
         if not state:
             if not has_consent:
@@ -1545,6 +1583,16 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                 "state": "awaiting_menu_option",
                 "has_consent": True,
             }
+            if is_verified and not flow.get("verification_notified"):
+                flow["verification_notified"] = True
+                await establecer_flujo(phone, flow)
+                return {
+                    "success": True,
+                    "messages": [
+                        {"response": provider_verified_message()},
+                        {"response": provider_post_registration_menu_message()},
+                    ],
+                }
             menu_message = (
                 provider_main_menu_message()
                 if not esta_registrado

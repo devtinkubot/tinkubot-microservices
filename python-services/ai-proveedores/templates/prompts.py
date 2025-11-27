@@ -99,6 +99,20 @@ def provider_post_registration_menu_message() -> str:
     return f"{PROVIDER_POST_REGISTRATION_MENU}"
 
 
+def provider_under_review_message() -> str:
+    return (
+        "Registro completado. Tu perfil está en revisión por el equipo de TinkuBot. "
+        "Te avisaremos en breve cuando sea aprobado. Mientras tanto, mantén tus datos listos."
+    )
+
+
+def provider_verified_message() -> str:
+    return (
+        "✅ Tu perfil ha sido verificado y autorizado para unirte a la comunidad TinkuBot. "
+        "Ya puedes gestionar tu perfil y atender solicitudes de clientes."
+    )
+
+
 def provider_services_menu_message(servicios: List[str], max_servicios: int) -> str:
     encabezado = ["**Gestión de Servicios**", ""]
 

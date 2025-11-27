@@ -8,7 +8,10 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional
 from pydantic import ValidationError
 
 from shared_lib.models import ProviderCreate
-from templates.prompts import provider_post_registration_menu_message
+from templates.prompts import (
+    provider_post_registration_menu_message,
+    provider_under_review_message,
+)
 
 
 def normalize_text(value: Optional[str]) -> str:
@@ -348,18 +351,20 @@ class ProviderFlow:
                     "messages": [
                         {
                             "response": (
-                                "Registro completado! Tu perfil ha sido creado con verificacion de identidad."
+                                "Registro completado. Revisaremos y validaremos tu perfil para autorizarlo. "
+                                "Te avisaremos en breve."
                             ),
                         },
-                        {"response": provider_post_registration_menu_message()},
+                        {"response": provider_under_review_message()},
                     ],
                     "reset_flow": True,
                     "new_flow": {
-                        "state": "awaiting_menu_option",
+                        "state": "pending_verification",
                         "has_consent": True,
                         "registration_allowed": False,
                         "provider_id": provider_id,
                         "services": servicios_registrados,
+                        "awaiting_verification": True,
                     },
                 }
 

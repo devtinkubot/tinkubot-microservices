@@ -47,7 +47,7 @@ class ProviderCreate(BaseModel):
     full_name: str = Field(..., min_length=2, max_length=255)
     email: Optional[str] = None
     city: str = Field(..., min_length=2, max_length=100)
-    profession: str = Field(..., min_length=2, max_length=100)
+    profession: str = Field(..., min_length=2, max_length=150)
     services: Optional[str] = ""
     services_list: Optional[List[str]] = Field(default_factory=list)
     experience_years: Optional[int] = Field(default=0, ge=0)

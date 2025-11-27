@@ -150,7 +150,8 @@ async function sendButtons(to, text) {
 }
 
 async function sendProviderResults(to, text) {
-  await sendText(to, text || 'Responde con el número del proveedor.');
+  // No añadir menú numérico aquí; ai-clientes ya envía la instrucción adecuada.
+  await sendText(to, text || ''); // texto ya viene con la instrucción a-e
 }
 
 async function sendMedia(to, mediaUrl, caption) {
