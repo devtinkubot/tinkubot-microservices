@@ -6,10 +6,17 @@ from typing import Any, Dict, List
 # Mantener este módulo enfocado en textos y plantillas simples para evitar
 # mezclar lógica de flujo con contenido.
 
-INITIAL_PROMPT = "*Cuéntame, ¿qué servicio necesitas hoy?*"
+mensaje_inicial_solicitud_servicio = "*Cuéntame, ¿qué servicio necesitas hoy?*"
+texto_opcion_buscar_otro_servicio = "Buscar otro servicio"
+mensaje_confirmando_disponibilidad = (
+    "⏳ *Estoy confirmando disponibilidad con proveedores y te aviso en breve.*"
+)
+instruccion_seleccionar_proveedor = (
+    "**Responde con la letra (a-e) del proveedor para ver detalles.**"
+)
 
 # Consentimiento de protección de datos
-CONSENT_PROMPT = """¡Hola! Soy TinkuBot, tu asistente virtual para encontrar servicios confiables de forma rápida y segura.
+mensaje_consentimiento_datos = """¡Hola! Soy TinkuBot, tu asistente virtual para encontrar servicios confiables de forma rápida y segura.
 
 Para poder conectararte con proveedores de servicios, necesito tu consentimiento para compartir tus datos de contacto únicamente con los profesionales seleccionados.
 
@@ -22,10 +29,13 @@ Para poder conectararte con proveedores de servicios, necesito tu consentimiento
 
 *¿Aceptas compartir tus datos con proveedores?*"""
 
-CONSENT_BUTTONS = ["Acepto", "No acepto"]
-CONFIRM_NEW_SEARCH_BUTTONS = ["Sí, buscar otro servicio", "No, por ahora está bien"]
-CONFIRM_PROMPT_TITLE_DEFAULT = "¿Te ayudo con otro servicio?"
-CONFIRM_PROMPT_FOOTER = "*Responde con el número de tu opción:*"
+opciones_consentimiento_textos = ["Acepto", "No acepto"]
+opciones_confirmar_nueva_busqueda_textos = [
+    f"{texto_opcion_buscar_otro_servicio}",
+    "No, por ahora está bien",
+]
+titulo_confirmacion_repetir_busqueda = "¿Te ayudo con otro servicio?"
+pie_instrucciones_respuesta_numerica = "*Responde con el número de tu opción:*"
 
 
 def _bold(text: str) -> str:
@@ -38,13 +48,13 @@ def _bold(text: str) -> str:
     return f"**{stripped}**"
 
 
-def provider_options_intro(city: str) -> str:
+def mensaje_intro_listado_proveedores(city: str) -> str:
     if city:
         return f"**Encontré estas opciones en {city}:**"
     return "**Encontré estas opciones para ti:**"
 
 
-def provider_options_block(providers: List[Dict[str, Any]]) -> str:
+def bloque_listado_proveedores_compacto(providers: List[Dict[str, Any]]) -> str:
     """Genera listado de proveedores con letras (a-e) y solo nombre."""
     lines: List[str] = [""]
     for idx, provider in enumerate(providers[:5], start=1):
@@ -57,18 +67,7 @@ def provider_options_block(providers: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def provider_options_prompt(_: int) -> str:
-    lines = [
-        "**Responde con la letra (a-e) del proveedor para ver detalles.**",
-        "",
-        "1) Buscar un nuevo servicio",
-        "2) Cambiar de Ciudad",
-        "3) Salir",
-    ]
-    return "\n".join(lines)
-
-
-def provider_detail_block(provider: Dict[str, Any]) -> str:
+def bloque_detalle_proveedor(provider: Dict[str, Any]) -> str:
     """Ficha detallada del proveedor con submenú numérico."""
 
     def parse_services(raw: Any) -> List[str]:
@@ -181,22 +180,22 @@ def provider_detail_block(provider: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def provider_detail_options_prompt() -> str:
+def menu_opciones_detalle_proveedor() -> str:
     """Bloque de acciones para detalle de proveedor."""
     return "\n".join(
         [
-            CONFIRM_PROMPT_FOOTER,
+            pie_instrucciones_respuesta_numerica,
             "",
-            "1) Elegir",
+            "1) Seleccionar a este proveedor",
             "2) Regresar al listado de proveedores",
-            "3) Buscar un nuevo servicio",
+            "3) Salir",
         ]
     )
 
 
-def provider_no_results_block(city: str) -> str:
+def mensaje_listado_sin_resultados(city: str) -> str:
     lines = [
-        provider_options_intro(city),
+        mensaje_intro_listado_proveedores(city),
         "",
         "    -- No tenemos aún proveedores --",
         "",
@@ -204,11 +203,19 @@ def provider_no_results_block(city: str) -> str:
     return "\n".join(lines)
 
 
-def provider_no_results_prompt() -> str:
-    return ""
+def mensaje_sin_disponibilidad(service: str, city: str) -> str:
+    """Mensaje cuando no hay disponibilidad inmediata en proveedores aceptados."""
+    svc_txt = (service or "").strip() or "tu solicitud"
+    city_txt = (city or "").strip()
+    destino = f"**{svc_txt}**" if svc_txt else "este servicio"
+    ciudad = f" en **{city_txt}**" if city_txt else ""
+    return (
+        f"No hay proveedores disponibles ahora mismo para {destino}{ciudad}. "
+        "¿Quieres buscar en otra ciudad o intentarlo más tarde?"
+    )
 
 
-def consent_options_block() -> str:
+def menu_opciones_consentimiento() -> str:
     """Genera el bloque de opciones numeradas para consentimiento."""
     return "\n".join(
         [
@@ -218,27 +225,32 @@ def consent_options_block() -> str:
     )
 
 
-def consent_prompt_messages() -> List[str]:
+def mensajes_flujo_consentimiento() -> List[str]:
     """Genera los mensajes completos para solicitud de consentimiento."""
     return [
-        f"{CONSENT_PROMPT}",
-        f"{CONFIRM_PROMPT_FOOTER}\n\n{consent_options_block()}",
+        f"{mensaje_consentimiento_datos}",
+        f"{pie_instrucciones_respuesta_numerica}\n\n{menu_opciones_consentimiento()}",
     ]
 
 
-def confirm_options_block(
-    include_city_option: bool = False, include_provider_option: bool = False
-) -> str:
-    lines = [CONFIRM_PROMPT_FOOTER, ""]
-    if include_provider_option:
-        lines.append("0) Elegir otro proveedor")
-    elif include_city_option:
-        lines.append("0) Buscar en otra ciudad")
-    lines.extend(
-        [
-            f"1) {CONFIRM_NEW_SEARCH_BUTTONS[0]}",
-            f"2) {CONFIRM_NEW_SEARCH_BUTTONS[1]}",
-            "",
-        ]
-    )
+def menu_opciones_confirmacion(include_city_option: bool = False) -> str:
+    """Menú de confirmación de búsqueda (solo opciones 1/2/3)."""
+    lines = [pie_instrucciones_respuesta_numerica, ""]
+    if include_city_option:
+        lines.extend(
+            [
+                "1) Buscar en otra ciudad",
+                f"2) {opciones_confirmar_nueva_busqueda_textos[0]}",
+                "3) Salir",
+                "",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                f"1) {opciones_confirmar_nueva_busqueda_textos[0]}",
+                "2) Salir",
+                "",
+            ]
+        )
     return "\n".join(lines)
