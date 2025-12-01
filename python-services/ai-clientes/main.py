@@ -527,16 +527,24 @@ async def background_search_and_notify(phone: str, flow: Dict[str, Any]):
         results = await search_providers(service, city)
         providers = results.get("providers") or []
 
-        # Filtrar por disponibilidad en vivo
-        availability = await availability_coordinator.request_and_wait(
-            phone=phone,
-            service=service,
-            city=city,
-            need_summary=service_full,
-            providers=providers,
-        )
-        accepted = availability.get("accepted") or []
-        providers_final = (accepted if accepted else [])[:5]
+        providers_final: List[Dict[str, Any]] = []
+
+        if not providers:
+            logger.info(
+                "🔍 Sin proveedores tras búsqueda inicial",
+                extra={"service": service, "city": city, "query": service_full},
+            )
+        else:
+            # Filtrar por disponibilidad en vivo
+            availability = await availability_coordinator.request_and_wait(
+                phone=phone,
+                service=service,
+                city=city,
+                need_summary=service_full,
+                providers=providers,
+            )
+            accepted = availability.get("accepted") or []
+            providers_final = (accepted if accepted else [])[:5]
 
         # Construir texto para enviar
         messages_to_send: List[str] = []
@@ -2024,8 +2032,8 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                 "messages": [
                 {
                     "response": (
-                        "**No he tenido respuesta de tu parte, por inactividad he reiniciado la conversación para ayudarte mejor. "
-                        "Gracias por usar TinkiBot; escríbeme cuando quieras.**"
+                        "**No tuve respuesta y reinicié la conversación para ayudarte mejor. "
+                        "Gracias por usar TinkuBot; escríbeme cuando quieras.**"
                     )
                 },
                 {"response": mensaje_inicial_solicitud_servicio},

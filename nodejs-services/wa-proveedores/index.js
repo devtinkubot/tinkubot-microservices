@@ -39,6 +39,7 @@ const mqttUsuario = process.env.MQTT_USUARIO;
 const mqttPassword = process.env.MQTT_PASSWORD;
 const mqttTemaSolicitud = process.env.MQTT_TEMA_SOLICITUD || 'av-proveedores/solicitud';
 const mqttTemaRespuesta = process.env.MQTT_TEMA_RESPUESTA || 'av-proveedores/respuesta';
+const mqttTemaAprobado = process.env.MQTT_TEMA_PROVEEDOR_APROBADO || 'providers/approved';
 const MAX_RESPUESTAS_DISPONIBILIDAD = 5;
 
 // Configuración de servicios externos
@@ -60,6 +61,7 @@ const AI_SERVICE_URL =
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_BACKEND_API_KEY;
 const supabaseBucket = process.env.SUPABASE_BUCKET_NAME;
+const supabaseProvidersTable = process.env.SUPABASE_PROVIDERS_TABLE || 'providers';
 
 // Validar configuración de Supabase
 if (!supabaseUrl || !supabaseKey || !supabaseBucket) {
@@ -76,7 +78,7 @@ console.warn('✅ Supabase Store inicializado');
 console.warn(`🤖 Iniciando ${instanceName} (ID: ${instanceId})`);
 console.warn(`📱 Puerto: ${port}`);
 console.warn(
-  `📡 MQTT disponibilidad: host=${mqttHost}:${mqttPort} tema_solicitud=${mqttTemaSolicitud} tema_respuesta=${mqttTemaRespuesta}`
+  `📡 MQTT disponibilidad: host=${mqttHost}:${mqttPort} tema_solicitud=${mqttTemaSolicitud} tema_respuesta=${mqttTemaRespuesta} tema_aprobado=${mqttTemaAprobado}`
 );
 
 // Middleware
@@ -177,6 +179,13 @@ function conectarMqtt() {
           console.warn(`✅ Suscrito a ${mqttTemaSolicitud}`);
         }
       });
+      mqttClient.subscribe(mqttTemaAprobado, err => {
+        if (err) {
+          console.error('❌ No se pudo suscribir a aprobaciones:', err.message || err);
+        } else {
+          console.warn(`✅ Suscrito a ${mqttTemaAprobado}`);
+        }
+      });
     });
 
     mqttClient.on('error', err => {
@@ -184,13 +193,19 @@ function conectarMqtt() {
     });
 
     mqttClient.on('message', async (topic, message) => {
-      if (topic !== mqttTemaSolicitud) return;
       try {
-    const data = JSON.parse(message.toString());
-    await manejarSolicitudDisponibilidad(data);
-  } catch (err) {
-    console.error('❌ Error procesando solicitud MQTT:', err.message || err);
-  }
+        if (topic === mqttTemaSolicitud) {
+          const data = JSON.parse(message.toString());
+          await manejarSolicitudDisponibilidad(data);
+          return;
+        }
+        if (topic === mqttTemaAprobado) {
+          const data = JSON.parse(message.toString());
+          await manejarAprobacionProveedor(data);
+        }
+      } catch (err) {
+        console.error('❌ Error procesando mensaje MQTT:', err.message || err);
+      }
     });
   } catch (err) {
     console.error('❌ No se pudo inicializar MQTT:', err.message || err);
@@ -305,6 +320,66 @@ async function enviarTextoWhatsApp(numero, texto) {
   }
   const contenido = texto || ' ';
   return client.sendMessage(destino, contenido);
+}
+
+const supabaseRest = axios.create({
+  baseURL: `${supabaseUrl.replace(/\/$/, '')}/rest/v1`,
+  headers: {
+    apikey: supabaseKey,
+    Authorization: `Bearer ${supabaseKey}`,
+    'Content-Type': 'application/json',
+    Prefer: 'return=minimal',
+  },
+  timeout: 5000,
+});
+
+async function marcarAprobacionNotificada(providerId) {
+  if (!providerId) return;
+  try {
+    const fecha = new Date().toISOString();
+    await supabaseRest.patch(
+      `/${supabaseProvidersTable}?id=eq.${providerId}`,
+      { approved_notified_at: fecha }
+    );
+    console.warn(`🗂️ approved_notified_at registrado en Supabase para ${providerId}`);
+  } catch (err) {
+    console.error(
+      `⚠️ No se pudo registrar approved_notified_at para ${providerId}:`,
+      err.message || err
+    );
+  }
+}
+
+function construirMensajeAprobacion(nombre) {
+  const saludo = nombre ? `Hola ${nombre},` : 'Hola,';
+  return `${saludo} ✅ Perfil aprobado. Ya estás en TinkuBot; estate atento a las solicitudes.`;
+}
+
+async function manejarAprobacionProveedor(data) {
+  const providerId = data?.provider_id || data?.id;
+  const phone = data?.phone;
+  const fullName = data?.full_name || '';
+
+  if (!phone) {
+    console.warn('⚠️ Evento de aprobación sin teléfono, se ignora');
+    return;
+  }
+
+  try {
+    const mensaje = construirMensajeAprobacion(fullName);
+    await enviarTextoWhatsApp(phone, mensaje);
+    console.warn(
+      `✅ Notificación de aprobación enviada a ${phone} (provider_id=${providerId || 'n/a'})`
+    );
+    if (providerId) {
+      await marcarAprobacionNotificada(providerId);
+    }
+  } catch (err) {
+    console.error(
+      `❌ Error enviando notificación de aprobación a ${phone}:`,
+      err.message || err
+    );
+  }
 }
 
 async function resetWhatsAppSession(trigger = 'manual', { attemptLogout = true } = {}) {

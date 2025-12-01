@@ -21,12 +21,14 @@ class SearchStrategy(str, Enum):
 class SearchFilters(BaseModel):
     """Filtros para búsqueda de proveedores"""
 
-    available_only: bool = True
     verified_only: bool = False
     min_rating: float = Field(default=0.0, ge=0.0, le=5.0)
     city: Optional[str] = None
     profession: Optional[str] = None
     max_distance_km: Optional[int] = None
+
+    class Config:
+        extra = "ignore"
 
 
 class SearchRequest(BaseModel):

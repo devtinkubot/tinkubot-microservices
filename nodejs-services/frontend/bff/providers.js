@@ -1,4 +1,5 @@
 const axios = require('axios');
+const mqtt = require('mqtt');
 
 const toPositiveInt = value => {
   const parsed = Number(value);
@@ -9,11 +10,17 @@ const requestTimeoutMs =
   toPositiveInt(process.env.PROVIDERS_SERVICE_TIMEOUT_MS) ?? 5000;
 const pendingLimit = toPositiveInt(process.env.PROVIDERS_PENDING_LIMIT) ?? 100;
 
-const providerHost = process.env.PROVIDERS_SERVICE_HOST || 'providers-service';
+const providerHost =
+  process.env.PROVIDERS_SERVICE_HOST ||
+  'ai-proveedores' || // fallback a servicio python
+  'providers-service';
 const providerPort =
-  toPositiveInt(process.env.PROVIDERS_SERVICE_PORT) ?? 7000;
+  toPositiveInt(process.env.PROVIDERS_SERVICE_PORT) ||
+  toPositiveInt(process.env.PROVEEDORES_SERVER_PORT) ||
+  8002;
 const providerBaseUrl =
-  process.env.PROVIDERS_SERVICE_URL || `http://${providerHost}:${providerPort}`;
+  process.env.PROVIDERS_SERVICE_URL ||
+  `http://${providerHost}:${providerPort}`;
 
 const supabaseUrl = (process.env.SUPABASE_URL || '').trim();
 const supabaseServiceKey = (
@@ -159,6 +166,58 @@ const extraerUrlDocumento = valor => {
   return recopilar(valor) || recopilar(valor.data);
 };
 
+// --- MQTT para eventos de aprobación ---
+const mqttHost = process.env.MQTT_HOST || 'mosquitto';
+const mqttPort = toPositiveInt(process.env.MQTT_PORT) || 1883;
+const mqttUser = process.env.MQTT_USUARIO || process.env.MQTT_USER;
+const mqttPassword = process.env.MQTT_PASSWORD || process.env.MQTT_PASS;
+const mqttTopicProviderApproved =
+  process.env.MQTT_TEMA_PROVEEDOR_APROBADO || 'providers/approved';
+
+const mqttOptions = {};
+if (mqttUser && mqttPassword) {
+  mqttOptions.username = mqttUser;
+  mqttOptions.password = mqttPassword;
+}
+
+let mqttClient = null;
+const initMqttClient = () => {
+  try {
+    const url = `mqtt://${mqttHost}:${mqttPort}`;
+    mqttClient = mqtt.connect(url, mqttOptions);
+    mqttClient.on('connect', () => {
+      console.warn(
+        `📡 MQTT conectado (${url}) tópico aprobación=${mqttTopicProviderApproved}`
+      );
+    });
+    mqttClient.on('error', err => {
+      console.error('❌ Error MQTT (bff):', err?.message || err);
+    });
+  } catch (err) {
+    console.error('❌ No se pudo inicializar MQTT en BFF:', err?.message || err);
+  }
+};
+
+const publishProviderApproved = payload => {
+  if (!mqttClient || !mqttClient.connected) return false;
+  try {
+    const body = JSON.stringify({
+      approved_at: new Date().toISOString(),
+      ...payload
+    });
+    mqttClient.publish(mqttTopicProviderApproved, body);
+    return true;
+  } catch (err) {
+    console.error(
+      '❌ No se pudo publicar provider approved via MQTT:',
+      err?.message || err
+    );
+    return false;
+  }
+};
+
+initMqttClient();
+
 const prepararUrlDocumento = (...valores) => {
   for (const valor of valores) {
     const candidato = extraerUrlDocumento(valor);
@@ -221,8 +280,6 @@ const normalizarProveedorSupabase = registro => {
     null;
   const hasConsent =
     typeof registro?.has_consent === 'boolean' ? registro.has_consent : null;
-  const available =
-    typeof registro?.available === 'boolean' ? registro.available : null;
   const rating =
     typeof registro?.rating === 'number'
       ? registro.rating
@@ -278,7 +335,6 @@ const normalizarProveedorSupabase = registro => {
     socialMediaUrl,
     socialMediaType,
     hasConsent,
-    available,
     rating,
     documents: {
       dniFront: dniFrontPhotoUrl,
@@ -472,6 +528,13 @@ async function aprobarProveedor(providerId, payload = {}) {
           ? 'Proveedor aprobado con observaciones.'
           : 'Proveedor aprobado correctamente.';
 
+      // Publicar evento de aprobación por MQTT para que wa-proveedores envíe el WhatsApp
+      publishProviderApproved({
+        provider_id: providerId,
+        phone: registro?.phone,
+        full_name: registro?.full_name,
+      });
+
       return construirRespuestaAccion(providerId, 'approved', mensaje, registro);
     }
 
@@ -479,13 +542,20 @@ async function aprobarProveedor(providerId, payload = {}) {
       `/providers/${providerId}/approve`,
       payload
     );
-    return (
+    const respData =
       response.data ?? {
         providerId,
         status: 'approved',
         message: 'Proveedor aprobado correctamente.'
-      }
-    );
+      };
+
+    publishProviderApproved({
+      provider_id: providerId,
+      phone: respData.phone,
+      full_name: respData.full_name,
+    });
+
+    return respData;
   } catch (error) {
     throw gestionarErrorAxios(error);
   }

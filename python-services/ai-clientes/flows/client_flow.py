@@ -511,10 +511,12 @@ class ClientFlow:
 
         if choice in no_choices:
             await reset_flow_fn()
-            await save_bot_message_fn(farewell_message)
             flow.pop("confirm_include_city_option", None)
             flow.pop("", None)
-            return {"response": farewell_message}
+            return await respond_fn(
+                {"state": "ended"},
+                {"response": farewell_message},
+            )
 
         attempts = int(flow.get("confirm_attempts") or 0) + 1
         flow["confirm_attempts"] = attempts

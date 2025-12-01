@@ -40,7 +40,6 @@ export interface ProviderRecord {
   socialMediaUrl?: string | null;
   socialMediaType?: string | null;
   hasConsent?: boolean | null;
-  available?: boolean | null;
   rating?: number | null;
   documents?: ProviderDocuments;
   verificationReviewer?: string | null;

@@ -361,17 +361,6 @@ function actualizarDetalleProveedor(proveedor: ProviderRecord) {
     { fallback: 'No especifica' }
   );
 
-  const disponibilidadTexto =
-    proveedor.available === true
-      ? 'Disponible'
-      : proveedor.available === false
-        ? 'No disponible'
-        : null;
-
-  establecerTexto('#provider-detail-availability', disponibilidadTexto, {
-    fallback: 'Sin información'
-  });
-
   establecerTexto(
     '#provider-detail-consent',
     proveedor.hasConsent ? 'Consentimiento registrado' : 'Sin consentimiento',

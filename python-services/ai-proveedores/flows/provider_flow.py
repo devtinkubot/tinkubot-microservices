@@ -98,7 +98,10 @@ class ProviderFlow:
         flow["state"] = "awaiting_profession"
         return {
             "success": True,
-            "response": "*¿Qué profesion u oficio ofreces?*",
+            "response": (
+                '*¿Cuál es tu profesión u oficio? Escribe el título, por ejemplo: '
+                '"Carpintero", "Ingeniero Electrico", "Abogado".*'
+            ),
         }
 
     @staticmethod
@@ -109,7 +112,18 @@ class ProviderFlow:
         if len(profession) < 2:
             return {
                 "success": True,
-                "response": "*Indica tu profesion u oficio (ej: plomero, electricista).*",
+                "response": (
+                    '*Indica tu profesión u oficio. Ejemplos: "Carpintero", '
+                    '"Ingeniero Electrico", "Abogado".*'
+                ),
+            }
+        if len(profession) > 150:
+            return {
+                "success": True,
+                "response": (
+                    "*Tu profesión debe ser breve (máximo 150 caracteres).* "
+                    "Envía una versión resumida (ej: 'Ingeniera en marketing' o 'Contratación pública')."
+                ),
             }
 
         flow["profession"] = profession
@@ -145,7 +159,39 @@ class ProviderFlow:
                 ),
             }
 
-        flow["specialty"] = specialty
+        if len(specialty) > 300:
+            return {
+                "success": True,
+                "response": (
+                    "*El listado de servicios es muy largo (máx. 300 caracteres).* "
+                    "Envía una versión resumida con tus principales servicios separados por comas."
+                ),
+            }
+
+        services_list = [
+            item.strip()
+            for item in re.split(r"[;,/\n]+", specialty)
+            if item and item.strip()
+        ]
+
+        if len(services_list) > 10:
+            return {
+                "success": True,
+                "response": (
+                    "*Incluye máximo 10 servicios.* Envía nuevamente tus principales servicios separados por comas."
+                ),
+            }
+
+        if any(len(srv) > 120 for srv in services_list):
+            return {
+                "success": True,
+                "response": (
+                    "*Cada servicio debe ser breve (máx. 120 caracteres).* "
+                    "Recorta descripciones muy largas y envía de nuevo la lista."
+                ),
+            }
+
+        flow["specialty"] = ", ".join(services_list) if services_list else specialty
         flow["state"] = "awaiting_experience"
         return {
             "success": True,
@@ -325,10 +371,13 @@ class ProviderFlow:
                 )
             except ValidationError as exc:
                 logger.error("Datos de registro invalidos para %s: %s", phone, exc)
+                first_error = exc.errors()[0] if exc.errors() else {}
+                reason = first_error.get("msg") or "Datos inválidos"
                 return {
                     "success": False,
                     "response": (
-                        "*No pude validar tus datos. Revisa que nombre, ciudad y profesion sean correctos.*"
+                        f"*No pude validar tus datos:* {reason}. "
+                        "Revisa que nombre, ciudad y profesión cumplan con el formato y longitud."
                     ),
                 }
 
@@ -348,15 +397,7 @@ class ProviderFlow:
                 await reset_flow_fn()
                 return {
                     "success": True,
-                    "messages": [
-                        {
-                            "response": (
-                                "Registro completado. Revisaremos y validaremos tu perfil para autorizarlo. "
-                                "Te avisaremos en breve."
-                            ),
-                        },
-                        {"response": provider_under_review_message()},
-                    ],
+                    "messages": [{"response": provider_under_review_message()}],
                     "reset_flow": True,
                     "new_flow": {
                         "state": "pending_verification",

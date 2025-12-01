@@ -47,10 +47,7 @@ class SearchClient:
             }
 
             # Agregar filtros si se proporcionan
-            filters = {
-                "verified_only": True,
-                "available_only": True,
-            }
+            filters = {"verified_only": True}
             if city:
                 filters["city"] = city.lower()  # Normalizar a minúsculas para case-insensitive
 

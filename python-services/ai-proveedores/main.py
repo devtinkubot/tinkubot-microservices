@@ -11,6 +11,7 @@ import unicodedata
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set, cast
 
+import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,6 +24,7 @@ from templates.prompts import (
     consent_declined_message,
     consent_prompt_messages,
     provider_guidance_message,
+    provider_approved_notification,
     provider_main_menu_message,
     provider_post_registration_menu_message,
     provider_under_review_message,
@@ -50,6 +52,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 ENABLE_DIRECT_WHATSAPP_SEND = (
     os.getenv("AI_PROV_SEND_DIRECT", "false").lower() == "true"
 )
+WA_PROVEEDORES_URL = os.getenv("WA_PROVEEDORES_URL", "http://wa-proveedores:5002/send")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
@@ -544,12 +547,33 @@ def normalizar_datos_proveedor(datos_crudos: ProviderCreate) -> Dict[str, Any]:
         "services": formatear_servicios(servicios_limpios),
         "experience_years": datos_crudos.experience_years or 0,
         "has_consent": datos_crudos.has_consent,
-        "available": False,  # Se habilita tras verificación/aprobación manual
         "verified": False,
-        "rating": 0.0,
+        # Arrancamos en 5 para promediar con futuras calificaciones de clientes.
+        "rating": 5.0,
         "social_media_url": datos_crudos.social_media_url,
         "social_media_type": datos_crudos.social_media_type,
     }
+
+
+def aplicar_valores_por_defecto_proveedor(
+    registro: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """
+    Garantiza que los campos obligatorios existan aunque la tabla no los tenga.
+    """
+    datos = dict(registro or {})
+    datos.setdefault("verified", False)
+
+    available_value = datos.get("available")
+    if available_value is None:
+        available_value = datos.get("verified", True)
+    datos["available"] = bool(available_value)
+
+    datos["rating"] = float(datos.get("rating") or 5.0)
+    datos["experience_years"] = int(datos.get("experience_years") or 0)
+    datos["services"] = datos.get("services") or ""
+    datos["has_consent"] = bool(datos.get("has_consent"))
+    return datos
 
 
 async def registrar_proveedor(
@@ -582,28 +606,76 @@ async def registrar_proveedor(
 
         # Insertar en tabla unificada
         resultado = supabase.table("providers").insert(datos_normalizados).execute()
+        error_respuesta = getattr(resultado, "error", None)
+        if error_respuesta:
+            logger.error("❌ Supabase rechazó el registro: %s", error_respuesta)
+            return None
 
-        if resultado.data:
-            id_proveedor = resultado.data[0]["id"]
+        registro_insertado: Optional[Dict[str, Any]] = None
+        data_resultado = getattr(resultado, "data", None)
+        if isinstance(data_resultado, list) and data_resultado:
+            registro_insertado = data_resultado[0]
+        elif isinstance(data_resultado, dict) and data_resultado:
+            registro_insertado = data_resultado
+
+        # Algunos proyectos usan Prefer: return=minimal, hacer fetch adicional
+        if registro_insertado is None:
+            try:
+                refetch = (
+                    supabase.table("providers")
+                    .select("*")
+                    .eq("phone", datos_normalizados["phone"])
+                    .limit(1)
+                    .execute()
+                )
+                if refetch.data:
+                    registro_insertado = refetch.data[0]
+            except Exception as refetch_error:
+                logger.warning(
+                    "⚠️ No se pudo recuperar proveedor recién creado: %s",
+                    refetch_error,
+                )
+
+        if registro_insertado:
+            id_proveedor = registro_insertado.get("id")
             logger.info(f"✅ Proveedor registrado en esquema unificado: {id_proveedor}")
 
-            return {
+            provider_record = {
                 "id": id_proveedor,
-                "phone": datos_normalizados["phone"],
-                "full_name": datos_normalizados["full_name"],
-                "email": datos_normalizados["email"],
-                "city": datos_normalizados["city"],
-                "profession": datos_normalizados["profession"],
-                "services": datos_normalizados["services"],
-                "experience_years": datos_normalizados["experience_years"],
-                "rating": datos_normalizados["rating"],
-                "available": datos_normalizados["available"],
-                "verified": datos_normalizados["verified"],
-                "has_consent": datos_normalizados["has_consent"],
-                "social_media_url": datos_normalizados["social_media_url"],
-                "social_media_type": datos_normalizados["social_media_type"],
-                "created_at": datetime.now().isoformat(),
+                "phone": registro_insertado.get("phone", datos_normalizados["phone"]),
+                "full_name": registro_insertado.get(
+                    "full_name", datos_normalizados["full_name"]
+                ),
+                "email": registro_insertado.get("email", datos_normalizados["email"]),
+                "city": registro_insertado.get("city", datos_normalizados["city"]),
+                "profession": registro_insertado.get(
+                    "profession", datos_normalizados["profession"]
+                ),
+                "services": registro_insertado.get(
+                    "services", datos_normalizados["services"]
+                ),
+                "experience_years": registro_insertado.get(
+                    "experience_years", datos_normalizados["experience_years"]
+                ),
+                "rating": registro_insertado.get("rating", datos_normalizados["rating"]),
+                "verified": registro_insertado.get(
+                    "verified", datos_normalizados["verified"]
+                ),
+                "has_consent": registro_insertado.get(
+                    "has_consent", datos_normalizados["has_consent"]
+                ),
+                "social_media_url": registro_insertado.get(
+                    "social_media_url", datos_normalizados["social_media_url"]
+                ),
+                "social_media_type": registro_insertado.get(
+                    "social_media_type", datos_normalizados["social_media_type"]
+                ),
+                "created_at": registro_insertado.get(
+                    "created_at", datetime.now().isoformat()
+                ),
             }
+
+            return aplicar_valores_por_defecto_proveedor(provider_record)
         else:
             logger.error("❌ No se pudo registrar proveedor")
             return None
@@ -622,30 +694,34 @@ async def buscar_proveedores(
     if not supabase:
         return []
 
-    # Construir filtros para búsqueda flexible
-    filtros_busqueda = "available=eq.true"
+    filtros: List[str] = []
     if profesion:
-        filtros_busqueda += f",profession.ilike.*{profesion}*"
+        filtros.append(f"profession.ilike.*{profesion}*")
     if ubicacion:
-        filtros_busqueda += f",city.ilike.*{ubicacion}*"
+        filtros.append(f"city.ilike.*{ubicacion}*")
 
     try:
-        # Búsqueda directa con OR para mayor flexibilidad
-        consulta = (
-            supabase.table("providers")
-            .select(
-                "id,full_name,phone,city,profession,services,rating,available,"
-                "verified,experience_years,created_at"
-            )
-            .or_(filtros_busqueda)
-            .limit(limite)
-            .execute()
-        )
-
-        return consulta.data or []
+        query = supabase.table("providers").select("*").eq("verified", True)
+        if filtros:
+            query = query.or_(",".join(filtros))
+        consulta = query.limit(limite).execute()
+        resultados = consulta.data or []
+        return [aplicar_valores_por_defecto_proveedor(item) for item in resultados]
 
     except Exception as e:
-        logger.error(f"Error en búsqueda directa: {e}")
+        logger.warning(
+            "⚠️ Error en búsqueda con filtro de verificación: %s. "
+            "Reintentando sin filtro de estado.",
+            e,
+        )
+        try:
+            consulta = supabase.table("providers").select("*")
+            if filtros:
+                consulta = consulta.or_(",".join(filtros))
+            resultados = consulta.limit(limite).execute().data or []
+            return [aplicar_valores_por_defecto_proveedor(item) for item in resultados]
+        except Exception as fallback_error:
+            logger.error(f"Error en búsqueda directa: {fallback_error}")
         return []
 
 
@@ -720,15 +796,15 @@ def obtener_perfil_proveedor(phone: str) -> Optional[Dict[str, Any]]:
     try:
         response = (
             supabase.table("providers")
-            .select(
-                "id, phone, full_name, city, profession, has_consent, services, face_photo_url, available, verified"
-            )
+            .select("*")
             .eq("phone", phone)
             .limit(1)
             .execute()
         )
         if response.data:
-            registro = cast(Dict[str, Any], response.data[0])
+            registro = aplicar_valores_por_defecto_proveedor(
+                cast(Dict[str, Any], response.data[0])
+            )
             registro["services_list"] = extraer_servicios_guardados(
                 registro.get("services")
             )
@@ -1467,27 +1543,82 @@ async def send_whatsapp_message(
     try:
         logger.info(
             f"📱 Enviando mensaje WhatsApp a {request.phone}: "
-            f"{request.message[:50]}..."
+            f"{request.message[:80]}..."
         )
 
-        # NOTA: El servicio de WhatsApp tiene problemas con whatsapp-web.js
-        # Esta es una simulación para demostrar que la comunicación funciona
+        if not ENABLE_DIRECT_WHATSAPP_SEND:
+            logger.info(
+                "📨 Envío simulado (AI_PROV_SEND_DIRECT=false). No se llamó a wa-proveedores."
+            )
+            return {
+                "success": True,
+                "message": (
+                    "Mensaje enviado exitosamente (simulado - AI_PROV_SEND_DIRECT=false)"
+                ),
+                "simulated": True,
+                "phone": request.phone,
+                "message_preview": (request.message[:80] + "..."),
+            }
 
-        # Simular envío exitoso (descomentar cuando WhatsApp esté funcionando)
-        logger.info(f"✅ Mensaje simulado enviado exitosamente a {request.phone}")
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                WA_PROVEEDORES_URL,
+                json={"phone": request.phone, "message": request.message},
+            )
+            resp.raise_for_status()
+        logger.info(f"✅ Mensaje enviado a {request.phone} via wa-proveedores")
         return {
             "success": True,
-            "message": (
-                "Mensaje enviado exitosamente (simulado - WhatsApp en mantenimiento)"
-            ),
-            "simulated": True,
+            "simulated": False,
             "phone": request.phone,
-            "message_preview": (request.message[:50] + "..."),
+            "message_preview": (request.message[:80] + "..."),
         }
 
     except Exception as e:
         logger.error(f"❌ Error enviando WhatsApp: {e}")
         return {"success": False, "message": f"Error enviando WhatsApp: {str(e)}"}
+
+
+@app.post("/api/v1/providers/{provider_id}/notify-approval")
+async def notify_provider_approval(provider_id: str) -> Dict[str, Any]:
+    """Notifica por WhatsApp que un proveedor fue aprobado."""
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Supabase no configurado")
+
+    try:
+        resp = (
+            supabase.table("providers")
+            .select("id, phone, full_name, verified")
+            .eq("id", provider_id)
+            .limit(1)
+            .execute()
+        )
+    except Exception as exc:
+        logger.error(f"No se pudo obtener proveedor {provider_id}: {exc}")
+        raise HTTPException(status_code=500, detail="No se pudo obtener proveedor")
+
+    if not resp.data:
+        raise HTTPException(status_code=404, detail="Proveedor no encontrado")
+
+    provider = resp.data[0]
+    phone = provider.get("phone")
+    if not phone:
+        raise HTTPException(status_code=400, detail="Proveedor sin teléfono registrado")
+
+    name = provider.get("full_name") or ""
+    message = provider_approved_notification(name)
+    send_result = await send_whatsapp_message(
+        WhatsAppMessageRequest(phone=phone, message=message)
+    )
+
+    try:
+        supabase.table("providers").update(
+            {"approved_notified_at": datetime.utcnow().isoformat()}
+        ).eq("id", provider_id).execute()
+    except Exception as exc:  # pragma: no cover - tolerante a esquema
+        logger.warning(f"No se pudo registrar approved_notified_at: {exc}")
+
+    return {"success": True, "notified": send_result}
 
 
 @app.post("/handle-whatsapp-message")

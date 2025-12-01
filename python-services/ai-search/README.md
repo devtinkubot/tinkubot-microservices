@@ -73,7 +73,7 @@ Content-Type: application/json
 {
   "query": "necesito médico en Quito urgente",
   "filters": {
-    "available_only": true,
+    "verified_only": true,
     "min_rating": 4.0,
     "city": "Quito"
   },

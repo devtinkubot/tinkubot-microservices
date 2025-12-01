@@ -101,8 +101,7 @@ def provider_post_registration_menu_message() -> str:
 
 def provider_under_review_message() -> str:
     return (
-        "Registro completado. Tu perfil está en revisión por el equipo de TinkuBot. "
-        "Te avisaremos en breve cuando sea aprobado. Mientras tanto, mantén tus datos listos."
+        "**Listo. Estamos revisando tu perfil; si falta algo, te escribimos.**"
     )
 
 
@@ -111,6 +110,11 @@ def provider_verified_message() -> str:
         "✅ Tu perfil ha sido verificado y autorizado para unirte a la comunidad TinkuBot. "
         "Ya puedes gestionar tu perfil y atender solicitudes de clientes."
     )
+
+
+def provider_approved_notification(name: str = "") -> str:
+    saludo = f"Hola {name}," if name else "Hola,"
+    return f"{saludo} ✅ Perfil aprobado. Ya estás en TinkuBot; estate atento a las solicitudes."
 
 
 def provider_services_menu_message(servicios: List[str], max_servicios: int) -> str:

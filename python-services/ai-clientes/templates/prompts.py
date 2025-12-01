@@ -235,7 +235,7 @@ def mensajes_flujo_consentimiento() -> List[str]:
 
 def menu_opciones_confirmacion(include_city_option: bool = False) -> str:
     """Menú de confirmación de búsqueda (solo opciones 1/2/3)."""
-    lines = [pie_instrucciones_respuesta_numerica, ""]
+    lines: List[str] = []
     if include_city_option:
         lines.extend(
             [

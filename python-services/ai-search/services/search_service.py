@@ -3,10 +3,12 @@ Servicio principal de búsqueda para Search Service
 """
 
 import asyncio
+import json
 import hashlib
 import logging
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from openai import AsyncOpenAI
@@ -35,6 +37,7 @@ class SearchService:
         self.supabase: Optional[Client] = None
         self.openai_client: Optional[AsyncOpenAI] = None
         self.text_processor = TextProcessor()
+        self.intent_aliases: Dict[str, set[str]] = self._load_intent_aliases()
 
     async def initialize(self):
         """Inicializar conexión a Supabase y OpenAI"""
@@ -68,7 +71,7 @@ class SearchService:
         # Crear string canónico
         canonical = f"{query.lower().strip()}"
         if filters:
-            canonical += f":{filters.city}:{filters.profession}:{filters.min_rating}:{filters.available_only}"
+            canonical += f":{filters.city}:{filters.profession}:{filters.min_rating}:{filters.verified_only}"
 
         # Generar hash SHA-256
         return hashlib.sha256(canonical.encode()).hexdigest()[:16]
@@ -92,6 +95,10 @@ class SearchService:
         # 2. Analizar la consulta
         query_analysis = analyze_query(request.query)
         logger.info(f"🔍 Análisis: {query_analysis}")
+        base_intent_tokens = query_analysis.get("service_tokens") or query_analysis.get(
+            "tokens", []
+        )
+        base_city = query_analysis.get("city")
 
         # 3. Seleccionar estrategia de búsqueda
         strategy = await self._select_search_strategy(request, query_analysis)
@@ -112,6 +119,9 @@ class SearchService:
         # 5. Aplicar filtros adicionales
         if request.filters:
             providers = await self._apply_filters(providers, request.filters)
+
+        # 5.1. Filtrar por intención original para evitar falsos positivos de expansión
+        providers = self._filter_by_intent(providers, base_intent_tokens, base_city)
 
         # 6. Ordenar y limitar resultados
         providers = self._sort_and_limit_results(
@@ -187,7 +197,7 @@ class SearchService:
                 query = query.or_(",".join(or_conditions))
 
             # Ordenar resultados
-            query = query.order("available", desc=True).order("rating", desc=True).order("created_at", desc=True)
+            query = query.order("rating", desc=True).order("created_at", desc=True)
 
             # Aplicar paginación
             query = query.range(request.offset, request.offset + request.limit - 1)
@@ -243,7 +253,7 @@ class SearchService:
                 query = query.or_(",".join(or_conditions))
 
             # Ordenar resultados
-            query = query.order("available", desc=True).order("rating", desc=True).order("created_at", desc=True)
+            query = query.order("rating", desc=True).order("created_at", desc=True)
 
             # Aplicar paginación
             query = query.range(request.offset, request.offset + request.limit - 1)
@@ -376,6 +386,54 @@ class SearchService:
             logger.warning(f"⚠️ Error mejorando consulta con IA: {e}")
             return original_query
 
+    def _load_intent_aliases(self) -> Dict[str, set[str]]:
+        """Carga alias de intención desde archivo JSON (configurable)."""
+        config_path = (
+            Path(__file__).resolve().parents[1] / "app" / "config" / "intent_aliases.json"
+        )
+        if not config_path.exists():
+            return {}
+
+        try:
+            data = json.loads(config_path.read_text(encoding="utf-8"))
+            aliases: Dict[str, set[str]] = {}
+            for key, values in data.items():
+                if isinstance(values, list):
+                    aliases[key.lower()] = {v.lower() for v in values if v}
+            logger.info("🔧 Alias de intención cargados")
+            return aliases
+        except Exception as exc:  # pragma: no cover - logging auxiliar
+            logger.warning(f"No se pudieron cargar alias de intención: {exc}")
+            return {}
+
+    def _filter_by_intent(
+        self,
+        providers: List[ProviderInfo],
+        intent_tokens: List[str],
+        city: Optional[str],
+    ) -> List[ProviderInfo]:
+        """Filtra resultados que no coinciden con los tokens clave del servicio."""
+        if not intent_tokens:
+            return providers
+
+        tokens: set[str] = set()
+        for raw in intent_tokens:
+            if not raw:
+                continue
+            base = raw.lower()
+            if city and base == city.lower():
+                continue
+            aliases = self.intent_aliases.get(base, set())
+            tokens.update({base, *aliases})
+
+        filtered: List[ProviderInfo] = []
+        for provider in providers:
+            professions_text = " ".join(provider.professions or []).lower()
+            services = " ".join(provider.services or []).lower()
+            if any(token in professions_text or token in services for token in tokens):
+                filtered.append(provider)
+        return filtered
+
     async def _apply_filters(
         self, providers: List[ProviderInfo], filters: SearchFilters
     ) -> List[ProviderInfo]:
@@ -383,10 +441,6 @@ class SearchService:
         filtered_providers = []
 
         for provider in providers:
-            # Filtro de disponibilidad
-            if filters.available_only and not provider.available:
-                continue
-
             # Filtro de verificación
             if filters.verified_only and not provider.verified:
                 continue
@@ -413,9 +467,9 @@ class SearchService:
         self, providers: List[ProviderInfo], limit: int, offset: int
     ) -> List[ProviderInfo]:
         """Ordenar y paginar resultados"""
-        # Ordenar por rating (descendente) y disponibilidad
+        # Ordenar por rating (descendente) y fecha (más recientes primero)
         sorted_providers = sorted(
-            providers, key=lambda p: (p.available, p.rating), reverse=True
+            providers, key=lambda p: (p.rating, p.created_at), reverse=True
         )
 
         # Aplicar paginación
@@ -432,15 +486,21 @@ class SearchService:
 
         # Factores de confianza
         avg_rating = sum(p.rating for p in providers) / len(providers)
-        available_ratio = sum(1 for p in providers if p.available) / len(providers)
         verified_ratio = sum(1 for p in providers if p.verified) / len(providers)
 
-        # Ponderación
-        confidence = (
-            (avg_rating / 5.0) * 0.4 + available_ratio * 0.3 + verified_ratio * 0.3
-        )
+        # Ponderación (solo rating y verificación)
+        confidence = (avg_rating / 5.0) * 0.6 + verified_ratio * 0.4
 
         return min(1.0, confidence)
+
+    def _normalize_available(self, available: Any, verified: Any) -> bool:
+        """
+        Normaliza el estado de disponibilidad. Si no viene en la BD (None),
+        se asume True o el valor de verificación para evitar descartar resultados.
+        """
+        if available is None:
+            return bool(verified if verified is not None else True)
+        return bool(available)
 
     def _row_to_provider_info(self, row) -> ProviderInfo:
         """Convertir fila de BD a ProviderInfo (para funciones antiguas)"""
@@ -452,7 +512,9 @@ class SearchService:
             full_name=provider_data.get("full_name", ""),
             city=provider_data.get("city"),
             rating=float(provider_data.get("rating", 0.0)),
-            available=provider_data.get("available", True),
+            available=self._normalize_available(
+                provider_data.get("available"), provider_data.get("verified")
+            ),
             verified=provider_data.get("verified", False),
             professions=provider_data.get("professions", []),
             services=provider_data.get("services", []),
@@ -480,7 +542,9 @@ class SearchService:
             full_name=row.get("full_name", ""),
             city=row.get("city"),
             rating=float(row.get("rating", 0.0)),
-            available=row.get("available", True),
+            available=self._normalize_available(
+                row.get("available"), row.get("verified")
+            ),
             verified=row.get("verified", False),
             professions=[row.get("profession", "")] if row.get("profession") else [],
             services=services,
@@ -508,7 +572,9 @@ class SearchService:
             full_name=row.get("full_name", ""),
             city=row.get("city"),
             rating=float(row.get("rating", 0.0)),
-            available=row.get("available", True),
+            available=self._normalize_available(
+                row.get("available"), row.get("verified")
+            ),
             verified=row.get("verified", False),
             professions=[row.get("profession", "")] if row.get("profession") else [],
             services=services,
