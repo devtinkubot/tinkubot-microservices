@@ -123,6 +123,9 @@ MQTT_TEMA_SOLICITUD = os.getenv("MQTT_TEMA_SOLICITUD", "av-proveedores/solicitud
 MQTT_TEMA_RESPUESTA = os.getenv("MQTT_TEMA_RESPUESTA", "av-proveedores/respuesta")
 AVAILABILITY_TIMEOUT_SECONDS = int(os.getenv("AVAILABILITY_TIMEOUT_SECONDS", "45"))
 AVAILABILITY_TIMEOUT_SECONDS = max(10, AVAILABILITY_TIMEOUT_SECONDS)
+AVAILABILITY_ACCEPT_GRACE_SECONDS = float(
+    os.getenv("AVAILABILITY_ACCEPT_GRACE_SECONDS", "5")
+)
 AVAILABILITY_STATE_TTL_SECONDS = int(os.getenv("AVAILABILITY_STATE_TTL_SECONDS", "300"))
 AVAILABILITY_POLL_INTERVAL_SECONDS = float(
     os.getenv("AVAILABILITY_POLL_INTERVAL_SECONDS", "1.5")
@@ -341,13 +344,23 @@ class AvailabilityCoordinator:
         await self.publish_request(payload)
 
         deadline = asyncio.get_event_loop().time() + AVAILABILITY_TIMEOUT_SECONDS
+        early_deadline = deadline
         accepted_providers: List[Dict[str, Any]] = []
 
         while asyncio.get_event_loop().time() < deadline:
             state = await redis_client.get(state_key) or {}
             accepted_providers = state.get("accepted") or []
             if accepted_providers:
-                break
+                # Cuando llega la primera aceptación, dejamos una ventana breve
+                # para acumular más respuestas antes de cerrar.
+                if early_deadline == deadline:
+                    early_deadline = min(
+                        deadline,
+                        asyncio.get_event_loop().time()
+                        + AVAILABILITY_ACCEPT_GRACE_SECONDS,
+                    )
+                if asyncio.get_event_loop().time() >= early_deadline:
+                    break
             await asyncio.sleep(AVAILABILITY_POLL_INTERVAL_SECONDS)
 
         # Leer estado final
@@ -598,7 +611,7 @@ async def background_search_and_notify(phone: str, flow: Dict[str, Any]):
 ECUADOR_CITY_SYNONYMS = {
     "Quito": {"quito"},
     "Guayaquil": {"guayaquil"},
-    "Cuenca": {"cuenca"},
+    "Cuenca": {"cuenca", "cueca"},
     "Santo Domingo": {"santo domingo", "santo domingo de los tsachilas"},
     "Manta": {"manta"},
     "Portoviejo": {"portoviejo"},
@@ -695,6 +708,23 @@ def _normalize_text_for_matching(text: str) -> str:
     )
     cleaned = re.sub(r"[^a-z0-9\s]", " ", without_accents)
     return re.sub(r"\s+", " ", cleaned).strip()
+
+
+def normalize_city_input(text: Optional[str]) -> Optional[str]:
+    """Devuelve la ciudad canónica si coincide con la lista de ciudades de Ecuador."""
+    if not text:
+        return None
+    normalized = _normalize_text_for_matching(text)
+    if not normalized:
+        return None
+    for canonical_city, synonyms in ECUADOR_CITY_SYNONYMS.items():
+        canonical_norm = _normalize_text_for_matching(canonical_city)
+        if normalized == canonical_norm:
+            return canonical_city
+        for syn in synonyms:
+            if normalized == _normalize_text_for_matching(syn):
+                return canonical_city
+    return None
 
 
 def interpret_yes_no(text: Optional[str]) -> Optional[bool]:
@@ -2305,14 +2335,26 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                         },
                     )
 
+            normalized_city_input = normalize_city_input(text)
+            if text and not normalized_city_input:
+                return await respond(
+                    flow,
+                    {
+                        "response": (
+                            "No reconocí la ciudad. Escríbela de nuevo usando una ciudad de Ecuador "
+                            "(ej: Quito, Guayaquil, Cuenca)."
+                        )
+                    },
+                )
+
             updated_flow, reply = ClientFlow.handle_awaiting_city(
                 flow,
-                text,
+                normalized_city_input or text,
                 "Indica la ciudad por favor (por ejemplo: Quito, Cuenca).",
             )
 
             if text:
-                normalized_input = text.strip().title()
+                normalized_input = (normalized_city_input or text).strip().title()
                 updated_flow["city"] = normalized_input
                 updated_flow["city_confirmed"] = True
                 update_result = update_customer_city(
