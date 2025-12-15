@@ -335,10 +335,10 @@ CREATE INDEX idx_providers_location ON providers USING GIST (
 
 ```bash
 # Construir imágenes
-docker-compose build
+docker compose build
 
 # Iniciar servicios
-docker-compose up -d
+docker compose up -d
 ```
 
 ### Migración desde Session Service
@@ -383,7 +383,7 @@ Si vienes de la arquitectura anterior con Session Service:
 python start_services.py
 
 # O con Docker
-docker-compose logs -f
+docker compose logs -f
 ```
 
 ### Métricas

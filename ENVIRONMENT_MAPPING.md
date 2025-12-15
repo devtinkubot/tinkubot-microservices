@@ -191,7 +191,7 @@ fi
 ### **3. Validación de Servicios Individuales**
 ```bash
 # Validar cada servicio individualmente
-docker-compose config && docker-compose ps
+docker compose config && docker compose ps
 ```
 
 ---
@@ -301,11 +301,11 @@ nano .env  # o tu editor preferido
 ./validate-environment.sh
 
 # 4. Construir y probar
-docker-compose build --no-cache
-docker-compose up -d
+docker compose build --no-cache
+docker compose up -d
 
 # 5. Verificar logs
-docker-compose logs -f ai-clientes ai-proveedores search-token
+docker compose logs -f ai-clientes ai-proveedores search-token
 ```
 
 ### **Para despliegue en producción:**
@@ -313,7 +313,7 @@ docker-compose logs -f ai-clientes ai-proveedores search-token
 # 1. Configurar variables de producción en .env
 # 2. Usar docker-compose.prod.yml (si existe)
 # 3. Ejecutar con modo producción
-docker-compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml up -d
 ```
 
 ---

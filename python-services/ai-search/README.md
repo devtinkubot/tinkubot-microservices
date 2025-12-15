@@ -45,7 +45,7 @@ El servicio search-token se ejecuta como parte del docker-compose principal del 
 
 ```bash
 # Desde la raíz del proyecto
-docker-compose up -d search-token
+docker compose up -d search-token
 ```
 
 ### 3. Local
