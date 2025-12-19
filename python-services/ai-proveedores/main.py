@@ -3,17 +3,19 @@ AI Service Proveedores - Versión mejorada con Supabase
 Servicio de gestión de proveedores con búsqueda y capacidad de recibir mensajes WhatsApp
 """
 
+import asyncio
 import json
 import logging
 import os
 import re
 import unicodedata
+from time import perf_counter
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set, cast
 
 import httpx
 import uvicorn
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from flows.provider_flow import ProviderFlow
 from openai import OpenAI
@@ -55,6 +57,13 @@ ENABLE_DIRECT_WHATSAPP_SEND = (
 WA_PROVEEDORES_URL = os.getenv("WA_PROVEEDORES_URL", "http://wa-proveedores:5002/send")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+SUPABASE_TIMEOUT_SECONDS = float(os.getenv("SUPABASE_TIMEOUT_SECONDS", "5"))
+PROFILE_CACHE_TTL_SECONDS = int(
+    os.getenv("PROFILE_CACHE_TTL_SECONDS", str(settings.cache_ttl_seconds))
+)
+PROFILE_CACHE_KEY = "prov_profile_cache:{}"
+PERF_LOG_ENABLED = os.getenv("PERF_LOG_ENABLED", "true").lower() == "true"
+SLOW_QUERY_THRESHOLD_MS = int(os.getenv("SLOW_QUERY_THRESHOLD_MS", "800"))
 
 # Configurar logging
 logging.basicConfig(level=getattr(logging, LOG_LEVEL))
@@ -75,6 +84,28 @@ if OPENAI_API_KEY:
     logger.info("✅ Conectado a OpenAI")
 else:
     logger.warning("⚠️ No se configuró OpenAI")
+
+
+async def run_supabase(op, timeout: float = SUPABASE_TIMEOUT_SECONDS, label: str = "supabase_op"):
+    """
+    Ejecuta una operación de Supabase en un executor para no bloquear el event loop.
+    """
+    loop = asyncio.get_running_loop()
+    start = perf_counter()
+    try:
+        return await asyncio.wait_for(loop.run_in_executor(None, op), timeout=timeout)
+    finally:
+        if PERF_LOG_ENABLED:
+            elapsed_ms = (perf_counter() - start) * 1000
+            if elapsed_ms >= SLOW_QUERY_THRESHOLD_MS:
+                logger.info(
+                    "perf_supabase",
+                    extra={
+                        "op": label,
+                        "elapsed_ms": round(elapsed_ms, 2),
+                        "threshold_ms": SLOW_QUERY_THRESHOLD_MS,
+                    },
+                )
 
 
 # Modelos Pydantic locales para compatibilidad
@@ -379,6 +410,27 @@ def normalizar_texto_para_busqueda(texto: str) -> str:
     return texto
 
 
+def normalizar_profesion_para_storage(profesion: str) -> str:
+    """
+    Normaliza la profesión para guardarla consistente en la BD.
+    - Minúsculas, sin acentos
+    - Expande abreviaturas tipo "ing." a "ingeniero"
+    """
+    base = normalizar_texto_para_busqueda(profesion)
+    if not base:
+        return ""
+
+    tokens = base.split()
+    if not tokens:
+        return ""
+
+    primer = tokens[0]
+    if primer in {"ing", "ing.", "ingeniero", "ingeniera"}:
+        tokens[0] = "ingeniero"
+
+    return " ".join(tokens)
+
+
 SERVICIOS_MAXIMOS = 5
 
 
@@ -501,9 +553,13 @@ async def actualizar_servicios_proveedor(
     cadena_servicios = formatear_servicios(servicios_limpios)
 
     try:
-        supabase.table("providers").update({"services": cadena_servicios}).eq(
-            "id", provider_id
-        ).execute()
+        await run_supabase(
+            lambda: supabase.table("providers")
+            .update({"services": cadena_servicios})
+            .eq("id", provider_id)
+            .execute(),
+            label="providers.update_services",
+        )
         logger.info("✅ Servicios actualizados para proveedor %s", provider_id)
     except Exception as exc:
         logger.error(
@@ -541,9 +597,9 @@ def normalizar_datos_proveedor(datos_crudos: ProviderCreate) -> Dict[str, Any]:
         "full_name": datos_crudos.full_name.strip().title(),  # Formato legible
         "email": datos_crudos.email.strip() if datos_crudos.email else None,
         "city": normalizar_texto_para_busqueda(datos_crudos.city),  # minúsculas
-        "profession": normalizar_texto_para_busqueda(
+        "profession": normalizar_profesion_para_storage(
             datos_crudos.profession
-        ),  # minúsculas
+        ),  # minúsculas y abreviaturas expandidas
         "services": formatear_servicios(servicios_limpios),
         "experience_years": datos_crudos.experience_years or 0,
         "has_consent": datos_crudos.has_consent,
@@ -573,6 +629,7 @@ def aplicar_valores_por_defecto_proveedor(
     datos["experience_years"] = int(datos.get("experience_years") or 0)
     datos["services"] = datos.get("services") or ""
     datos["has_consent"] = bool(datos.get("has_consent"))
+    datos["status"] = "approved" if datos.get("verified") else "pending"
     return datos
 
 
@@ -589,26 +646,22 @@ async def registrar_proveedor(
         # Normalizar datos
         datos_normalizados = normalizar_datos_proveedor(datos_proveedor)
 
-        # Verificar si teléfono ya existe
-        existente = (
-            supabase.table("providers")
-            .select("id")
-            .eq("phone", datos_normalizados["phone"])
-            .limit(1)
-            .execute()
-        )
-        if existente.data:
-            logger.warning(f"⚠️ Teléfono ya existe: {datos_normalizados['phone']}")
-            return {
-                "success": False,
-                "message": "Ya existe un proveedor con este número de teléfono",
-            }
+        # Upsert por teléfono: reabre rechazados como pending, evita doble round-trip
+        upsert_payload = {
+            **datos_normalizados,
+            "verified": False,
+            "updated_at": datetime.utcnow().isoformat(),
+        }
 
-        # Insertar en tabla unificada
-        resultado = supabase.table("providers").insert(datos_normalizados).execute()
+        resultado = await run_supabase(
+            lambda: supabase.table("providers")
+            .upsert(upsert_payload, on_conflict="phone")
+            .execute(),
+            label="providers.upsert",
+        )
         error_respuesta = getattr(resultado, "error", None)
         if error_respuesta:
-            logger.error("❌ Supabase rechazó el registro: %s", error_respuesta)
+            logger.error("❌ Supabase rechazó el registro/upsert: %s", error_respuesta)
             return None
 
         registro_insertado: Optional[Dict[str, Any]] = None
@@ -621,8 +674,8 @@ async def registrar_proveedor(
         # Algunos proyectos usan Prefer: return=minimal, hacer fetch adicional
         if registro_insertado is None:
             try:
-                refetch = (
-                    supabase.table("providers")
+                refetch = await run_supabase(
+                    lambda: supabase.table("providers")
                     .select("*")
                     .eq("phone", datos_normalizados["phone"])
                     .limit(1)
@@ -675,7 +728,12 @@ async def registrar_proveedor(
                 ),
             }
 
-            return aplicar_valores_por_defecto_proveedor(provider_record)
+            perfil_normalizado = aplicar_valores_por_defecto_proveedor(provider_record)
+            await cachear_perfil_proveedor(
+                perfil_normalizado.get("phone", datos_normalizados["phone"]),
+                perfil_normalizado,
+            )
+            return perfil_normalizado
         else:
             logger.error("❌ No se pudo registrar proveedor")
             return None
@@ -704,24 +762,14 @@ async def buscar_proveedores(
         query = supabase.table("providers").select("*").eq("verified", True)
         if filtros:
             query = query.or_(",".join(filtros))
-        consulta = query.limit(limite).execute()
+        consulta = await run_supabase(
+            lambda: query.limit(limite).execute(), label="providers.search"
+        )
         resultados = consulta.data or []
         return [aplicar_valores_por_defecto_proveedor(item) for item in resultados]
 
     except Exception as e:
-        logger.warning(
-            "⚠️ Error en búsqueda con filtro de verificación: %s. "
-            "Reintentando sin filtro de estado.",
-            e,
-        )
-        try:
-            consulta = supabase.table("providers").select("*")
-            if filtros:
-                consulta = consulta.or_(",".join(filtros))
-            resultados = consulta.limit(limite).execute().data or []
-            return [aplicar_valores_por_defecto_proveedor(item) for item in resultados]
-        except Exception as fallback_error:
-            logger.error(f"Error en búsqueda directa: {fallback_error}")
+        logger.error("❌ Error en búsqueda de proveedores: %s", e)
         return []
 
 
@@ -788,18 +836,19 @@ def determinar_estado_registro_proveedor(
     )
 
 
-def obtener_perfil_proveedor(phone: str) -> Optional[Dict[str, Any]]:
+async def obtener_perfil_proveedor(phone: str) -> Optional[Dict[str, Any]]:
     """Obtener perfil de proveedor por telefono desde Supabase (esquema unificado)."""
     if not supabase or not phone:
         return None
 
     try:
-        response = (
-            supabase.table("providers")
+        response = await run_supabase(
+            lambda: supabase.table("providers")
             .select("*")
             .eq("phone", phone)
             .limit(1)
-            .execute()
+            .execute(),
+            label="providers.by_phone",
         )
         if response.data:
             registro = aplicar_valores_por_defecto_proveedor(
@@ -813,6 +862,50 @@ def obtener_perfil_proveedor(phone: str) -> Optional[Dict[str, Any]]:
         logger.warning(f"No se pudo obtener perfil para {phone}: {exc}")
 
     return None
+
+
+async def cachear_perfil_proveedor(phone: str, perfil: Dict[str, Any]) -> None:
+    """Guarda el perfil de proveedor en cache con TTL definido."""
+    try:
+        await redis_client.set(
+            PROFILE_CACHE_KEY.format(phone),
+            perfil,
+            expire=PROFILE_CACHE_TTL_SECONDS,
+        )
+    except Exception as exc:
+        logger.debug(f"No se pudo cachear perfil de {phone}: {exc}")
+
+
+async def refrescar_cache_perfil_proveedor(phone: str) -> None:
+    """Refresca el cache de perfil en segundo plano."""
+    try:
+        perfil_actual = await obtener_perfil_proveedor(phone)
+        if perfil_actual:
+            await cachear_perfil_proveedor(phone, perfil_actual)
+    except Exception as exc:
+        logger.debug(f"No se pudo refrescar cache de {phone}: {exc}")
+
+
+async def obtener_perfil_proveedor_cacheado(phone: str) -> Optional[Dict[str, Any]]:
+    """
+    Obtiene perfil de proveedor desde cache; refresca en background si hay hit.
+    """
+    cache_key = PROFILE_CACHE_KEY.format(phone)
+    try:
+        cacheado = await redis_client.get(cache_key)
+    except Exception as exc:
+        logger.debug(f"No se pudo leer cache de {phone}: {exc}")
+        cacheado = None
+
+    if cacheado:
+        # Disparar refresco sin bloquear la respuesta
+        asyncio.create_task(refrescar_cache_perfil_proveedor(phone))
+        return cacheado
+
+    perfil = await obtener_perfil_proveedor(phone)
+    if perfil:
+        await cachear_perfil_proveedor(phone, perfil)
+    return perfil
 
 
 async def solicitar_consentimiento_proveedor(phone: str) -> Dict[str, Any]:
@@ -904,7 +997,7 @@ def interpretar_respuesta_usuario(
     return None
 
 
-def registrar_consentimiento_proveedor(
+async def registrar_consentimiento_proveedor(
     provider_id: Optional[str], phone: str, payload: Dict[str, Any], response: str
 ) -> None:
     """Persistir registro de consentimiento en tabla consents."""
@@ -928,7 +1021,10 @@ def registrar_consentimiento_proveedor(
             "response": response,
             "message_log": json.dumps(consent_data, ensure_ascii=False),
         }
-        supabase.table("consents").insert(record).execute()
+        await run_supabase(
+            lambda: supabase.table("consents").insert(record).execute(),
+            label="consents.insert",
+        )
     except Exception as exc:
         logger.error(f"No se pudo guardar consentimiento de proveedor {phone}: {exc}")
 
@@ -968,12 +1064,18 @@ async def manejar_respuesta_consentimiento(  # noqa: C901
 
         if supabase and provider_id:
             try:
-                supabase.table("providers").update(
-                    {
-                        "has_consent": True,
-                        "updated_at": datetime.now().isoformat(),
-                    }
-                ).eq("id", provider_id).execute()
+                await run_supabase(
+                    lambda: supabase.table("providers")
+                    .update(
+                        {
+                            "has_consent": True,
+                            "updated_at": datetime.now().isoformat(),
+                        }
+                    )
+                    .eq("id", provider_id)
+                    .execute(),
+                    label="providers.update_consent_true",
+                )
             except Exception as exc:
                 logger.error(
                     "No se pudo actualizar flag de consentimiento para %s: %s",
@@ -981,7 +1083,9 @@ async def manejar_respuesta_consentimiento(  # noqa: C901
                     exc,
                 )
 
-        registrar_consentimiento_proveedor(provider_id, phone, payload, "accepted")
+        await registrar_consentimiento_proveedor(
+            provider_id, phone, payload, "accepted"
+        )
         logger.info("Consentimiento aceptado por proveedor %s", phone)
 
         # Determinar si el usuario está COMPLETAMENTE registrado (no solo consentimiento)
@@ -1010,18 +1114,26 @@ async def manejar_respuesta_consentimiento(  # noqa: C901
     # Rechazo de consentimiento
     if supabase and provider_id:
         try:
-            supabase.table("providers").update(
-                {
-                    "has_consent": False,
-                    "updated_at": datetime.now().isoformat(),
-                }
-            ).eq("id", provider_id).execute()
+            await run_supabase(
+                lambda: supabase.table("providers")
+                .update(
+                    {
+                        "has_consent": False,
+                        "updated_at": datetime.now().isoformat(),
+                    }
+                )
+                .eq("id", provider_id)
+                .execute(),
+                label="providers.update_consent_false",
+            )
         except Exception as exc:
             logger.error(
                 "No se pudo marcar rechazo de consentimiento para %s: %s", phone, exc
             )
 
-    registrar_consentimiento_proveedor(provider_id, phone, payload, "declined")
+    await registrar_consentimiento_proveedor(
+        provider_id, phone, payload, "declined"
+    )
     await reiniciar_flujo(phone)
     logger.info("Consentimiento rechazado por proveedor %s", phone)
 
@@ -1072,55 +1184,53 @@ async def subir_imagen_proveedor_almacenamiento(
             logger.error("❌ Bucket de almacenamiento para proveedores no configurado")
             return None
 
-        storage_bucket = supabase.storage.from_(SUPABASE_PROVIDERS_BUCKET)
-        try:
-            storage_bucket.remove([file_path])
-        except Exception as remove_error:
-            logger.debug(
-                f"No se pudo eliminar archivo previo {file_path}: {remove_error}"
+        def _upload():
+            storage_bucket = supabase.storage.from_(SUPABASE_PROVIDERS_BUCKET)
+            try:
+                storage_bucket.remove([file_path])
+            except Exception as remove_error:
+                logger.debug(
+                    f"No se pudo eliminar archivo previo {file_path}: {remove_error}"
+                )
+
+            result = storage_bucket.upload(
+                path=file_path,
+                file=file_data,
+                file_options={"content-type": "image/jpeg"},
             )
 
-        # Supabase Python SDK expects lowercase header keys (e.g. "content-type").
-        # Using camelCase leaves the MIME unset, so Storage defaults to text/plain.
-        result = storage_bucket.upload(
-            path=file_path,
-            file=file_data,
-            file_options={"content-type": "image/jpeg"},
-        )
+            upload_error = None
+            if isinstance(result, dict):
+                upload_error = result.get("error")
+            else:
+                upload_error = getattr(result, "error", None)
 
-        upload_error = None
-        if isinstance(result, dict):
-            upload_error = result.get("error")
-        else:
-            upload_error = getattr(result, "error", None)
+            if (
+                upload_error is None
+                and hasattr(result, "status_code")
+                and getattr(result, "status_code") is not None
+            ):
+                status_code = getattr(result, "status_code")
+                if isinstance(status_code, int) and status_code >= 400:
+                    upload_error = f"HTTP_{status_code}"
 
-        if (
-            upload_error is None
-            and hasattr(result, "status_code")
-            and getattr(result, "status_code") is not None
-        ):
-            status_code = getattr(result, "status_code")
-            if isinstance(status_code, int) and status_code >= 400:
-                upload_error = f"HTTP_{status_code}"
+            if upload_error:
+                logger.error(
+                    "❌ Error reportado por Supabase Storage al subir %s: %s",
+                    file_path,
+                    upload_error,
+                )
+                return None
 
-        if upload_error:
-            logger.error(
-                "❌ Error reportado por Supabase Storage al subir %s: %s",
-                file_path,
-                upload_error,
+            raw_public_url = supabase.storage.from_(SUPABASE_PROVIDERS_BUCKET).get_public_url(
+                file_path
             )
-            return None
+            return raw_public_url
 
-        logger.debug(
-            "📨 Respuesta de upload Supabase (%s)",
-            type(result).__name__,
-        )
-
-        raw_public_url = supabase.storage.from_(SUPABASE_PROVIDERS_BUCKET).get_public_url(
-            file_path
-        )
+        raw_public_url = await run_supabase(_upload, label="storage.upload")
         public_url = _coerce_storage_string(raw_public_url) or file_path
-        logger.info(f"✅ Imagen subida exitosamente: {public_url}")
+        if public_url:
+            logger.info(f"✅ Imagen subida exitosamente: {public_url}")
         return public_url
 
     except Exception as e:
@@ -1172,11 +1282,12 @@ async def actualizar_imagenes_proveedor(
             )
             update_data["updated_at"] = datetime.now().isoformat()
 
-            result = (
-                supabase.table("providers")
+            result = await run_supabase(
+                lambda: supabase.table("providers")
                 .update(update_data)
                 .eq("id", provider_id)
-                .execute()
+                .execute(),
+                label="providers.update_images",
             )
 
             if result.data:
@@ -1246,12 +1357,13 @@ async def obtener_urls_imagenes_proveedor(provider_id: str) -> Dict[str, Optiona
         return {}
 
     try:
-        result = (
-            supabase.table("providers")
+        result = await run_supabase(
+            lambda: supabase.table("providers")
             .select("dni_front_photo_url, dni_back_photo_url, face_photo_url")
             .eq("id", provider_id)
             .limit(1)
-            .execute()
+            .execute(),
+            label="providers.images_by_id",
         )
 
         if result.data:
@@ -1389,7 +1501,9 @@ async def health_check() -> HealthResponse:
         supabase_status = "not_configured"
         if supabase:
             try:
-                supabase.table("providers").select("id").limit(1).execute()
+                await run_supabase(
+                    lambda: supabase.table("providers").select("id").limit(1).execute()
+                )
                 supabase_status = "connected"
             except Exception:
                 supabase_status = "error"
@@ -1580,45 +1694,56 @@ async def send_whatsapp_message(
 
 
 @app.post("/api/v1/providers/{provider_id}/notify-approval")
-async def notify_provider_approval(provider_id: str) -> Dict[str, Any]:
+async def notify_provider_approval(
+    provider_id: str, background_tasks: BackgroundTasks
+) -> Dict[str, Any]:
     """Notifica por WhatsApp que un proveedor fue aprobado."""
     if not supabase:
         raise HTTPException(status_code=503, detail="Supabase no configurado")
 
-    try:
-        resp = (
-            supabase.table("providers")
-            .select("id, phone, full_name, verified")
-            .eq("id", provider_id)
-            .limit(1)
-            .execute()
+    async def _notify():
+        try:
+            resp = await run_supabase(
+                lambda: supabase.table("providers")
+                .select("id, phone, full_name, verified")
+                .eq("id", provider_id)
+                .limit(1)
+                .execute(),
+                label="providers.by_id_notify",
+            )
+        except Exception as exc:
+            logger.error(f"No se pudo obtener proveedor {provider_id}: {exc}")
+            return
+
+        if not resp.data:
+            logger.warning("Proveedor %s no encontrado para notificar", provider_id)
+            return
+
+        provider = resp.data[0]
+        phone = provider.get("phone")
+        if not phone:
+            logger.warning("Proveedor %s sin teléfono, no se notifica", provider_id)
+            return
+
+        name = provider.get("full_name") or ""
+        message = provider_approved_notification(name)
+        await send_whatsapp_message(
+            WhatsAppMessageRequest(phone=phone, message=message)
         )
-    except Exception as exc:
-        logger.error(f"No se pudo obtener proveedor {provider_id}: {exc}")
-        raise HTTPException(status_code=500, detail="No se pudo obtener proveedor")
 
-    if not resp.data:
-        raise HTTPException(status_code=404, detail="Proveedor no encontrado")
+        try:
+            await run_supabase(
+                lambda: supabase.table("providers")
+                .update({"approved_notified_at": datetime.utcnow().isoformat()})
+                .eq("id", provider_id)
+                .execute(),
+                label="providers.mark_notified",
+            )
+        except Exception as exc:  # pragma: no cover - tolerante a esquema
+            logger.warning(f"No se pudo registrar approved_notified_at: {exc}")
 
-    provider = resp.data[0]
-    phone = provider.get("phone")
-    if not phone:
-        raise HTTPException(status_code=400, detail="Proveedor sin teléfono registrado")
-
-    name = provider.get("full_name") or ""
-    message = provider_approved_notification(name)
-    send_result = await send_whatsapp_message(
-        WhatsAppMessageRequest(phone=phone, message=message)
-    )
-
-    try:
-        supabase.table("providers").update(
-            {"approved_notified_at": datetime.utcnow().isoformat()}
-        ).eq("id", provider_id).execute()
-    except Exception as exc:  # pragma: no cover - tolerante a esquema
-        logger.warning(f"No se pudo registrar approved_notified_at: {exc}")
-
-    return {"success": True, "notified": send_result}
+    background_tasks.add_task(asyncio.create_task, _notify())
+    return {"success": True, "queued": True}
 
 
 @app.post("/handle-whatsapp-message")
@@ -1628,6 +1753,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
     """
     Recibir y procesar mensajes entrantes de WhatsApp
     """
+    start = perf_counter()
     try:
         phone = request.phone or request.from_number or "unknown"
         message_text = request.message or request.content or ""
@@ -1650,7 +1776,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
         flow = await obtener_flujo(phone)
         state = flow.get("state")
 
-        provider_profile = obtener_perfil_proveedor(phone)
+        provider_profile = await obtener_perfil_proveedor_cacheado(phone)
         provider_id = provider_profile.get("id") if provider_profile else None
         if provider_profile:
             if provider_profile.get("has_consent") and not flow.get("has_consent"):
@@ -1800,7 +1926,14 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                     "success": True,
                     "response": "*Envíame la nueva selfie con tu rostro visible.*",
                 }
-            if choice == "3" or "salir" in lowered or "volver" in lowered:
+            if choice == "3" or "red" in lowered or "social" in lowered or "instagram" in lowered:
+                flow["state"] = "awaiting_social_media_update"
+                await establecer_flujo(phone, flow)
+                return {
+                    "success": True,
+                    "response": "*Envíame tu enlace de Instagram/Facebook o escribe 'omitir' para quitarlo.*",
+                }
+            if choice == "4" or "salir" in lowered or "volver" in lowered:
                 flujo_base = {
                     "has_consent": True,
                     "esta_registrado": True,
@@ -1817,7 +1950,60 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
             return {
                 "success": True,
                 "messages": [
-                    {"response": "No reconoci esa opcion. Por favor elige 1, 2 o 3."},
+                    {"response": "No reconoci esa opcion. Por favor elige 1, 2, 3 o 4."},
+                    {"response": provider_post_registration_menu_message()},
+                ],
+            }
+
+        if state == "awaiting_social_media_update":
+            provider_id = flow.get("provider_id")
+            if not provider_id or not supabase:
+                flow["state"] = "awaiting_menu_option"
+                await establecer_flujo(phone, flow)
+                return {
+                    "success": True,
+                    "messages": [{"response": provider_post_registration_menu_message()}],
+                }
+
+            parsed = ProviderFlow.parse_social_media_input(message_text)
+            flow["social_media_url"] = parsed["url"]
+            flow["social_media_type"] = parsed["type"]
+
+            update_data = {
+                "social_media_url": parsed["url"],
+                "social_media_type": parsed["type"],
+                "updated_at": datetime.now().isoformat(),
+            }
+
+            try:
+                await run_supabase(
+                    lambda: supabase.table("providers")
+                    .update(update_data)
+                    .eq("id", provider_id)
+                    .execute()
+                )
+            except Exception as exc:
+                logger.error("No se pudo actualizar redes sociales para %s: %s", provider_id, exc)
+                flow["state"] = "awaiting_menu_option"
+                await establecer_flujo(phone, flow)
+                return {
+                    "success": False,
+                    "messages": [
+                        {"response": "No pude actualizar tus redes sociales en este momento."},
+                        {"response": provider_post_registration_menu_message()},
+                    ],
+                }
+
+            flow["state"] = "awaiting_menu_option"
+            await establecer_flujo(phone, flow)
+            return {
+                "success": True,
+                "messages": [
+                    {
+                        "response": "Redes sociales actualizadas."
+                        if parsed["url"]
+                        else "Redes sociales eliminadas."
+                    },
                     {"response": provider_post_registration_menu_message()},
                 ],
             }
@@ -2249,6 +2435,17 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
     except Exception as e:
         logger.error(f"❌ Error procesando mensaje WhatsApp: {e}")
         return {"success": False, "message": f"Error procesando mensaje: {str(e)}"}
+    finally:
+        if PERF_LOG_ENABLED:
+            elapsed_ms = (perf_counter() - start) * 1000
+            if elapsed_ms >= SLOW_QUERY_THRESHOLD_MS:
+                logger.info(
+                    "perf_handler_whatsapp",
+                    extra={
+                        "elapsed_ms": round(elapsed_ms, 2),
+                        "threshold_ms": SLOW_QUERY_THRESHOLD_MS,
+                    },
+                )
 
 
 @app.get("/providers")

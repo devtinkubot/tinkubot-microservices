@@ -2,8 +2,12 @@ const express = require('express');
 const { Client, MessageMedia, RemoteAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const cors = require('cors');
+const helmet = require('helmet');
+const compression = require('compression');
+const rateLimit = require('express-rate-limit');
 const axios = require('axios');
 const http = require('http');
+const https = require('https');
 const { Server } = require('socket.io');
 const SupabaseStore = require('./SupabaseStore');
 
@@ -30,6 +34,8 @@ const port = resolvePort(
 );
 const instanceId = process.env.CLIENTES_INSTANCE_ID || 'bot-clientes';
 const instanceName = process.env.CLIENTES_INSTANCE_NAME || 'TinkuBot Clientes';
+const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS || '8000', 10);
+const LOG_SAMPLING_RATE = parseInt(process.env.LOG_SAMPLING_RATE || '10', 10);
 
 // Configuración de servicios externos
 // ESPECIALIZADO: Siempre usa el AI Service Clientes
@@ -49,6 +55,13 @@ const AI_SERVICE_URL =
   process.env.CLIENTES_AI_SERVICE_URL ||
   fallbackAiHosts[0];
 console.warn(`[${instanceName}] IA Clientes URL: ${AI_SERVICE_URL}`);
+const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 20 });
+const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 20 });
+const axiosClient = axios.create({
+  httpAgent,
+  httpsAgent,
+  timeout: 5000
+});
 
 // Configuración de Supabase para almacenamiento de sesiones
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -72,7 +85,29 @@ console.warn(`📱 Puerto: ${port}`);
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
+app.use(compression());
+app.use(
+  rateLimit({
+    windowMs: 60 * 1000,
+    max: parseInt(process.env.RATE_LIMIT_MAX || '120', 10),
+    standardHeaders: true,
+    legacyHeaders: false
+  })
+);
+app.use(
+  express.json({
+    limit: process.env.BODY_SIZE_LIMIT || '200kb'
+  })
+);
+app.use((req, res, next) => {
+  res.setTimeout(REQUEST_TIMEOUT_MS, () => {
+    if (!res.headersSent) {
+      res.status(503).json({ error: 'Request timed out' });
+    }
+  });
+  next();
+});
 
 // Endpoint básico de health check para orquestadores
 app.get('/health', (req, res) => {
@@ -90,6 +125,12 @@ app.post('/send', async (req, res) => {
     const { to, message } = req.body || {};
     if (!to || !message) {
       return res.status(400).json({ error: 'to and message are required' });
+    }
+    if (typeof to !== 'string' || typeof message !== 'string') {
+      return res.status(400).json({ error: 'invalid parameters' });
+    }
+    if (message.length > 1000) {
+      return res.status(413).json({ error: 'message too long' });
     }
     await sendText(to, message);
     return res.json({ status: 'sent' });
@@ -167,7 +208,7 @@ async function postWithRetry(url, payload, { timeout = 15000, retries = 2, baseD
   let lastErr;
   while (attempt <= retries) {
     try {
-      return await axios.post(url, payload, { timeout });
+      return await axiosClient.post(url, payload, { timeout });
     } catch (err) {
       lastErr = err;
       const msg = err?.message || '';
@@ -236,7 +277,7 @@ async function processWithAI(message) {
     }
 
     const response = await postWithRetry(`${AI_SERVICE_URL}/handle-whatsapp-message`, payload, {
-      timeout: 70000, // espera suficiente para disponibilidad en vivo
+      timeout: 20000, // acortar para no bloquear el loop
       retries: 0, // evitar duplicar solicitudes en casos de espera larga
     });
     return response.data;

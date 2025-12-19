@@ -40,6 +40,7 @@ const mqttPassword = process.env.MQTT_PASSWORD;
 const mqttTemaSolicitud = process.env.MQTT_TEMA_SOLICITUD || 'av-proveedores/solicitud';
 const mqttTemaRespuesta = process.env.MQTT_TEMA_RESPUESTA || 'av-proveedores/respuesta';
 const mqttTemaAprobado = process.env.MQTT_TEMA_PROVEEDOR_APROBADO || 'providers/approved';
+const mqttTemaRechazado = process.env.MQTT_TEMA_PROVEEDOR_RECHAZADO || 'providers/rejected';
 const MAX_RESPUESTAS_DISPONIBILIDAD = 5;
 
 // Configuración de servicios externos
@@ -186,6 +187,13 @@ function conectarMqtt() {
           console.warn(`✅ Suscrito a ${mqttTemaAprobado}`);
         }
       });
+      mqttClient.subscribe(mqttTemaRechazado, err => {
+        if (err) {
+          console.error('❌ No se pudo suscribir a rechazos:', err.message || err);
+        } else {
+          console.warn(`✅ Suscrito a ${mqttTemaRechazado}`);
+        }
+      });
     });
 
     mqttClient.on('error', err => {
@@ -202,6 +210,12 @@ function conectarMqtt() {
         if (topic === mqttTemaAprobado) {
           const data = JSON.parse(message.toString());
           await manejarAprobacionProveedor(data);
+          return;
+        }
+        if (topic === mqttTemaRechazado) {
+          const data = JSON.parse(message.toString());
+          await manejarRechazoProveedor(data);
+          return;
         }
       } catch (err) {
         console.error('❌ Error procesando mensaje MQTT:', err.message || err);
@@ -351,8 +365,24 @@ async function marcarAprobacionNotificada(providerId) {
 }
 
 function construirMensajeAprobacion(nombre) {
-  const saludo = nombre ? `Hola ${nombre},` : 'Hola,';
-  return `${saludo} ✅ Perfil aprobado. Ya estás en TinkuBot; estate atento a las solicitudes.`;
+  const nombreCorto = (nombre || '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .join(' ');
+  const saludo = nombreCorto ? `Hola ${nombreCorto},` : 'Hola,';
+  return `${saludo} ✅ tu perfil está aprobado. Bienvenido/a a TinkuBot; permanece pendiente de las próximas solicitudes.`;
+}
+
+function construirMensajeRechazo(nombre, notas) {
+  const nombreCorto = (nombre || '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .join(' ');
+  const saludo = nombreCorto ? `Hola ${nombreCorto},` : 'Hola,';
+  const motivo = notas && String(notas).trim().length > 0 ? ` Motivo: ${notas}` : '';
+  return `${saludo} 🚫 tu registro fue revisado y requiere ajustes.${motivo} Puedes actualizar tus datos y volver a enviarlos cuando estés listo.`;
 }
 
 async function manejarAprobacionProveedor(data) {
@@ -377,6 +407,31 @@ async function manejarAprobacionProveedor(data) {
   } catch (err) {
     console.error(
       `❌ Error enviando notificación de aprobación a ${phone}:`,
+      err.message || err
+    );
+  }
+}
+
+async function manejarRechazoProveedor(data) {
+  const providerId = data?.provider_id || data?.id;
+  const phone = data?.phone;
+  const fullName = data?.full_name || '';
+  const notes = data?.notes;
+
+  if (!phone) {
+    console.warn('⚠️ Evento de rechazo sin teléfono, se ignora');
+    return;
+  }
+
+  try {
+    const mensaje = construirMensajeRechazo(fullName, notes);
+    await enviarTextoWhatsApp(phone, mensaje);
+    console.warn(
+      `✅ Notificación de rechazo enviada a ${phone} (provider_id=${providerId || 'n/a'})`
+    );
+  } catch (err) {
+    console.error(
+      `❌ Error enviando notificación de rechazo a ${phone}:`,
       err.message || err
     );
   }

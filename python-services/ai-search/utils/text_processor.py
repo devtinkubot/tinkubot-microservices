@@ -83,6 +83,20 @@ SERVICE_KEYWORDS = {
     "contadora",
     "ingeniero",
     "ingeniera",
+    "electronico",
+    "electrico",
+    "electrica",
+    "electronica",
+    "mecanico",
+    "mecanica",
+    "civil",
+    "industrial",
+    "comercial",
+    "telecomunicaciones",
+    "telecom",
+    "sistemas",
+    "mecatronico",
+    "mecatronica",
     "arquitecto",
     "arquitecta",
     "diseñador",
@@ -187,6 +201,56 @@ SERVICE_SYNONYMS = {
         "designer grafico",
         "graphic designer",
         "diseñador",
+    },
+    "ingeniero electronico": {
+        "electronico",
+        "electrónico",
+        "electrica",
+        "eléctrica",
+        "electrico",
+        "eléctrico",
+        "electronica",
+        "electrónica",
+        "electronicista",
+        "ing electronico",
+        "ing. electronico",
+    },
+    "ingeniero electrico": {
+        "electrico",
+        "eléctrico",
+        "electrica",
+        "eléctrica",
+        "ing electrico",
+        "ing. electrico",
+    },
+    "ingeniero mecanico": {
+        "mecanico",
+        "mecánico",
+        "mecanica",
+        "mecánica",
+        "ing mecanico",
+        "ing. mecanico",
+    },
+    "ingeniero civil": {
+        "civil",
+        "ing civil",
+        "ing. civil",
+    },
+    "ingeniero industrial": {
+        "industrial",
+        "ing industrial",
+        "ing. industrial",
+    },
+    "ingeniero sistemas": {
+        "sistemas",
+        "software",
+        "ing sistemas",
+        "ing. sistemas",
+        "sistemas computacionales",
+        "telecom",
+        "telecomunicaciones",
+        "infraestructura",
+        "redes",
     },
     "consultor": {
         "consultor",
@@ -409,6 +473,8 @@ class TextProcessor:
 
         # Primero buscar coincidencias directas
         for token in tokens:
+            if len(token) < 4 and token not in SERVICE_KEYWORDS:
+                continue
             if token in SERVICE_KEYWORDS:
                 service_tokens.append(token)
 

@@ -1,5 +1,6 @@
 const axios = require('axios');
 const mqtt = require('mqtt');
+const { v4: uuidv4 } = require('uuid');
 
 const toPositiveInt = value => {
   const parsed = Number(value);
@@ -112,6 +113,12 @@ const providerServiceClient =
       })
     : null;
 
+const withRequestId = (config, requestId) => {
+  if (!config.headers) config.headers = {};
+  config.headers['x-request-id'] = requestId;
+  return config;
+};
+
 if (supabaseClient) {
   console.warn(
     `📦 Provider data source: Supabase REST (${supabaseProvidersTable})`
@@ -173,6 +180,8 @@ const mqttUser = process.env.MQTT_USUARIO || process.env.MQTT_USER;
 const mqttPassword = process.env.MQTT_PASSWORD || process.env.MQTT_PASS;
 const mqttTopicProviderApproved =
   process.env.MQTT_TEMA_PROVEEDOR_APROBADO || 'providers/approved';
+const mqttTopicProviderRejected =
+  process.env.MQTT_TEMA_PROVEEDOR_RECHAZADO || 'providers/rejected';
 
 const mqttOptions = {};
 if (mqttUser && mqttPassword) {
@@ -216,6 +225,24 @@ const publishProviderApproved = payload => {
   }
 };
 
+const publishProviderRejected = payload => {
+  if (!mqttClient || !mqttClient.connected) return false;
+  try {
+    const body = JSON.stringify({
+      rejected_at: new Date().toISOString(),
+      ...payload
+    });
+    mqttClient.publish(mqttTopicProviderRejected, body);
+    return true;
+  } catch (err) {
+    console.error(
+      '❌ No se pudo publicar provider rejected via MQTT:',
+      err?.message || err
+    );
+    return false;
+  }
+};
+
 initMqttClient();
 
 const prepararUrlDocumento = (...valores) => {
@@ -229,11 +256,18 @@ const prepararUrlDocumento = (...valores) => {
 };
 
 const normalizarEstadoProveedor = registro => {
-  const estado = limpiarTexto(
-    registro?.verification_status || registro?.status
-  );
-  if (estado === 'approved' || estado === 'rejected' || estado === 'pending') {
-    return estado;
+  // Si la tabla ya no tiene verification_status, derivar desde verified/status
+  const estadoCrudo = limpiarTexto(registro?.status);
+  const estado = estadoCrudo ? estadoCrudo.toLowerCase() : '';
+
+  if (['approved', 'aprobado', 'ok'].includes(estado)) {
+    return 'approved';
+  }
+  if (['rejected', 'rechazado', 'denied'].includes(estado)) {
+    return 'rejected';
+  }
+  if (['pending', 'pendiente'].includes(estado)) {
+    return 'pending';
   }
   return registro?.verified ? 'approved' : 'pending';
 };
@@ -376,10 +410,8 @@ const construirRutaSupabasePendientes = (incluirEstado = true) => {
   ];
 
   if (incluirEstado) {
-    const condicion = encodeURIComponent(
-      '(verification_status.is.null,verification_status.eq.pending)'
-    );
-    parametrosBase.push(`or=${condicion}`);
+    // Tabla sin verification_status: usar verified=false como condición
+    parametrosBase.push('verified=eq.false');
   }
 
   parametrosBase.push('verified=eq.false');
@@ -399,9 +431,11 @@ const obtenerProveedoresPendientesSupabase = async () => {
         Accept: 'application/json'
       }
     });
-    return Array.isArray(response.data)
+    const lista = Array.isArray(response.data)
       ? response.data.map(normalizarProveedorSupabase)
       : normalizarListaProveedores(response.data).map(normalizarProveedorSupabase);
+    // Asegurar que rechazados no aparezcan aunque el filtro falle
+    return lista.filter(item => item?.status !== 'rejected');
   } catch (error) {
     if (error.response?.status === 400) {
       // Columna verification_status podría no existir; reintentar sin filtro.
@@ -411,11 +445,12 @@ const obtenerProveedoresPendientesSupabase = async () => {
           Accept: 'application/json'
         }
       });
-      return Array.isArray(response.data)
+      const lista = Array.isArray(response.data)
         ? response.data.map(normalizarProveedorSupabase)
         : normalizarListaProveedores(response.data).map(
             normalizarProveedorSupabase
           );
+      return lista.filter(item => item?.status !== 'rejected');
     }
     throw error;
   }
@@ -463,17 +498,23 @@ const intentarActualizacionSupabase = async (
   }
 };
 
-async function obtenerProveedoresPendientes() {
+async function obtenerProveedoresPendientes(requestId = null) {
   try {
     if (supabaseClient) {
       return await obtenerProveedoresPendientesSupabase();
     }
 
-    const response = await providerServiceClient.get('/providers', {
-      params: {
-        status: 'pending'
-      }
-    });
+    const response = await providerServiceClient.get(
+      '/providers',
+      withRequestId(
+        {
+          params: {
+            status: 'pending'
+          }
+        },
+        requestId || uuidv4()
+      )
+    );
 
     return normalizarListaProveedores(response.data);
   } catch (error) {
@@ -495,13 +536,12 @@ const construirRespuestaAccion = (providerId, estadoFinal, mensaje, registro) =>
   };
 };
 
-async function aprobarProveedor(providerId, payload = {}) {
+async function aprobarProveedor(providerId, payload = {}, requestId = null) {
   try {
     if (supabaseClient) {
       const timestamp = new Date().toISOString();
       const payloadPrincipal = {
         verified: true,
-        verification_status: 'approved',
         verification_reviewed_at: timestamp,
         updated_at: timestamp
       };
@@ -540,7 +580,8 @@ async function aprobarProveedor(providerId, payload = {}) {
 
     const response = await providerServiceClient.post(
       `/providers/${providerId}/approve`,
-      payload
+      payload,
+      withRequestId({}, requestId || uuidv4())
     );
     const respData =
       response.data ?? {
@@ -561,13 +602,12 @@ async function aprobarProveedor(providerId, payload = {}) {
   }
 }
 
-async function rechazarProveedor(providerId, payload = {}) {
+async function rechazarProveedor(providerId, payload = {}, requestId = null) {
   try {
     if (supabaseClient) {
       const timestamp = new Date().toISOString();
       const payloadPrincipal = {
         verified: false,
-        verification_status: 'rejected',
         verification_reviewed_at: timestamp,
         updated_at: timestamp
       };
@@ -594,20 +634,36 @@ async function rechazarProveedor(providerId, payload = {}) {
           ? 'Proveedor rechazado con observaciones.'
           : 'Proveedor rechazado correctamente.';
 
+      publishProviderRejected({
+        provider_id: providerId,
+        phone: registro?.phone,
+        full_name: registro?.full_name,
+        notes: payload.notes
+      });
+
       return construirRespuestaAccion(providerId, 'rejected', mensaje, registro);
     }
 
     const response = await providerServiceClient.post(
       `/providers/${providerId}/reject`,
-      payload
+      payload,
+      withRequestId({}, requestId || uuidv4())
     );
-    return (
+    const resp =
       response.data ?? {
         providerId,
         status: 'rejected',
         message: 'Proveedor rechazado correctamente.'
-      }
-    );
+      };
+
+    publishProviderRejected({
+      provider_id: providerId,
+      phone: resp.phone,
+      full_name: resp.full_name,
+      notes: payload.notes
+    });
+
+    return resp;
   } catch (error) {
     throw gestionarErrorAxios(error);
   }

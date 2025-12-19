@@ -4,6 +4,23 @@ import {
   type ProviderRecord
 } from '@tinkubot/api-client';
 
+type ErrorConMensaje = Error & { message: string };
+
+function extraerMensajeError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (
+    error &&
+    typeof error === 'object' &&
+    'message' in error &&
+    typeof (error as ErrorConMensaje).message === 'string'
+  ) {
+    return (error as ErrorConMensaje).message;
+  }
+  return 'Ocurrió un error al procesar la solicitud del proveedor.';
+}
+
 type TipoAviso = 'success' | 'error' | 'info';
 
 interface EstadoProveedores {
@@ -16,6 +33,7 @@ interface EstadoProveedores {
 interface AccionProveedorOpciones {
   notes?: string;
   reviewer?: string;
+  phone?: string;
 }
 
 type ModalInstance = {
@@ -40,6 +58,12 @@ const bootstrapGlobal = (window as typeof window & { bootstrap?: { Modal?: any }
 function obtenerElemento<T extends HTMLElement>(selector: string): T | null {
   return document.querySelector(selector) as T | null;
 }
+
+const limpiarTelefono = (valor: string | null | undefined): string | null => {
+  if (!valor) return null;
+  const limpio = valor.replace(/[^\d+]/g, '');
+  return limpio.length > 0 ? limpio : null;
+};
 
 function obtenerModalRevision(): ModalInstance | null {
   const modalElement = document.getElementById('provider-review-modal');
@@ -496,10 +520,7 @@ async function ejecutarAccionSobreProveedor(
     await cargarProveedoresPendientes();
   } catch (error) {
     console.error(`Error al ${accion === 'approve' ? 'aprobar' : 'rechazar'} proveedor:`, error);
-    const mensaje =
-      error instanceof Error
-        ? error.message
-        : 'Ocurrió un error al procesar la solicitud del proveedor.';
+    const mensaje = extraerMensajeError(error);
     mostrarErrorModal(mensaje);
     mostrarAviso(mensaje, 'error');
   } finally {
@@ -538,9 +559,11 @@ function manejarAccionModal(accion: 'approve' | 'reject') {
   const notasTextarea = obtenerElemento<HTMLTextAreaElement>('#provider-review-notes');
   const revisorInput = obtenerElemento<HTMLInputElement>('#provider-reviewer-name');
   const checklistDocs = obtenerElemento<HTMLInputElement>('#provider-review-check-docs');
+  const telefonoInput = obtenerElemento<HTMLInputElement>('#provider-phone');
 
   const notas = notasTextarea?.value.trim() ?? '';
   const reviewer = revisorInput?.value.trim() ?? undefined;
+  const telefono = limpiarTelefono(telefonoInput?.value || '');
 
   if (accion === 'reject' && notas.length === 0) {
     mostrarErrorModal('Ingresa un motivo de rechazo para continuar.');
@@ -556,7 +579,8 @@ function manejarAccionModal(accion: 'approve' | 'reject') {
 
   void ejecutarAccionSobreProveedor(proveedor.id, accion, {
     notes: notas.length > 0 ? notas : undefined,
-    reviewer
+    reviewer,
+    phone: telefono ?? undefined
   });
 }
 

@@ -27,7 +27,8 @@ async function obtenerPendientes(req, res) {
 async function aprobarProveedor(req, res) {
   try {
     const { providerId } = req.params;
-    const resultado = await proveedoresBff.aprobarProveedor(providerId, req.body ?? {});
+    const requestId = req.headers['x-request-id'] || req.headers['x-correlation-id'] || null;
+    const resultado = await proveedoresBff.aprobarProveedor(providerId, req.body ?? {}, requestId);
     res.json(resultado);
   } catch (error) {
     const status = error?.status ?? 500;
@@ -41,7 +42,8 @@ async function aprobarProveedor(req, res) {
 async function rechazarProveedor(req, res) {
   try {
     const { providerId } = req.params;
-    const resultado = await proveedoresBff.rechazarProveedor(providerId, req.body ?? {});
+    const requestId = req.headers['x-request-id'] || req.headers['x-correlation-id'] || null;
+    const resultado = await proveedoresBff.rechazarProveedor(providerId, req.body ?? {}, requestId);
     res.json(resultado);
   } catch (error) {
     const status = error?.status ?? 500;

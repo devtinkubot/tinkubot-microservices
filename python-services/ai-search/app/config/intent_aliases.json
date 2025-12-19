@@ -25,6 +25,43 @@
     "sistemas",
     "ingeniero"
   ],
+  "electronico": [
+    "ingeniero electronico",
+    "ing electronico",
+    "ing. electronico",
+    "electrico",
+    "electrica",
+    "electronica",
+    "electrónica"
+  ],
+  "electrico": [
+    "ingeniero electrico",
+    "ing electrico",
+    "ing. electrico",
+    "electrico",
+    "eléctrico",
+    "electrica",
+    "eléctrica"
+  ],
+  "mecanico": [
+    "ingeniero mecanico",
+    "ing mecanico",
+    "ing. mecanico",
+    "mecanico",
+    "mecánico",
+    "mecanica",
+    "mecánica"
+  ],
+  "civil": [
+    "ingeniero civil",
+    "ing civil",
+    "ing. civil"
+  ],
+  "industrial": [
+    "ingeniero industrial",
+    "ing industrial",
+    "ing. industrial"
+  ],
   "jardinero": [
     "jardineria",
     "jardinería",

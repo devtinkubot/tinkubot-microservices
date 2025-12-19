@@ -11,6 +11,7 @@ import re
 import uuid
 import unicodedata
 from datetime import datetime
+from time import perf_counter
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -65,6 +66,11 @@ except Exception:  # pragma: no cover - import guard
 # Configurar logging
 logging.basicConfig(level=getattr(logging, settings.log_level))
 logger = logging.getLogger(__name__)
+SUPABASE_TIMEOUT_SECONDS = float(os.getenv("SUPABASE_TIMEOUT_SECONDS", "5"))
+SLOW_QUERY_THRESHOLD_MS = int(os.getenv("SLOW_QUERY_THRESHOLD_MS", "2000"))
+MQTT_PUBLISH_TIMEOUT = float(os.getenv("MQTT_PUBLISH_TIMEOUT", "5"))
+MQTT_QOS = int(os.getenv("MQTT_QOS", "1"))
+LOG_SAMPLING_RATE = int(os.getenv("LOG_SAMPLING_RATE", "10"))
 
 # Inicializar FastAPI
 app = FastAPI(
@@ -86,6 +92,9 @@ app.add_middleware(
 openai_client = (
     AsyncOpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
 )
+OPENAI_TIMEOUT_SECONDS = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "5"))
+MAX_OPENAI_CONCURRENCY = int(os.getenv("MAX_OPENAI_CONCURRENCY", "5"))
+openai_semaphore = asyncio.Semaphore(MAX_OPENAI_CONCURRENCY) if openai_client else None
 
 # Config Proveedores service URL
 PROVEEDORES_AI_SERVICE_URL = os.getenv(
@@ -142,6 +151,25 @@ supabase = (
 )
 
 
+async def run_supabase(op, label: str = "supabase_op"):
+    """
+    Ejecuta operación Supabase en un executor para no bloquear el event loop, con timeout y log de lentos.
+    """
+    loop = asyncio.get_running_loop()
+    start = perf_counter()
+    try:
+        return await asyncio.wait_for(
+            loop.run_in_executor(None, op), timeout=SUPABASE_TIMEOUT_SECONDS
+        )
+    finally:
+        elapsed_ms = (perf_counter() - start) * 1000
+        if elapsed_ms >= SLOW_QUERY_THRESHOLD_MS:
+            logger.info(
+                "perf_supabase",
+                extra={"op": label, "elapsed_ms": round(elapsed_ms, 2)},
+            )
+
+
 # --- Coordinador de disponibilidad en vivo vía MQTT ---
 def _normalize_phone_for_match(value: Optional[str]) -> Optional[str]:
     if not value:
@@ -156,6 +184,10 @@ def _normalize_phone_for_match(value: Optional[str]) -> Optional[str]:
 class AvailabilityCoordinator:
     def __init__(self):
         self.listener_task: Optional[asyncio.Task] = None
+        self.publisher_task: Optional[asyncio.Task] = None
+        self.publish_queue: "asyncio.Queue[Dict[str, Any]]" = asyncio.Queue()
+        self._publisher_client: Optional[MQTTClient] = None
+        self._publisher_lock = asyncio.Lock()
 
     def _client_params(self) -> Dict[str, Any]:
         params: Dict[str, Any] = {"hostname": MQTT_HOST, "port": MQTT_PORT}
@@ -173,6 +205,13 @@ class AvailabilityCoordinator:
         if self.listener_task and not self.listener_task.done():
             return
         self.listener_task = asyncio.create_task(self._listener_loop())
+
+    async def start_publisher(self):
+        if not MQTTClient:
+            return
+        if self.publisher_task and not self.publisher_task.done():
+            return
+        self.publisher_task = asyncio.create_task(self._publisher_loop())
 
     async def _listener_loop(self):
         if not MQTTClient:
@@ -192,6 +231,44 @@ class AvailabilityCoordinator:
             except Exception as exc:  # pragma: no cover - loop resiliente
                 logger.warning(f"⚠️ Error en listener MQTT: {exc}")
                 await asyncio.sleep(3)
+
+    async def _ensure_publisher_client(self) -> MQTTClient:
+        if not MQTTClient:
+            raise RuntimeError("MQTT client no disponible")
+        if self._publisher_client and not self._publisher_client._client.is_connected():
+            self._publisher_client = None
+        if self._publisher_client is None:
+            async with self._publisher_lock:
+                if self._publisher_client is None:
+                    self._publisher_client = MQTTClient(**self._client_params())
+                    await self._publisher_client.connect()
+                    logger.info("✅ Cliente MQTT (publisher) conectado")
+        return self._publisher_client
+
+    async def _publisher_loop(self):
+        if not MQTTClient:
+            return
+        while True:
+            payload = await self.publish_queue.get()
+            try:
+                client = await self._ensure_publisher_client()
+                message_bytes = json.dumps(payload).encode("utf-8")
+                await asyncio.wait_for(
+                    client.publish(MQTT_TEMA_SOLICITUD, message_bytes, qos=MQTT_QOS),
+                    timeout=MQTT_PUBLISH_TIMEOUT,
+                )
+                if hash(payload.get("req_id", "")) % LOG_SAMPLING_RATE == 0:
+                    logger.info(
+                        "📤 Solicitud disponibilidad publicada",
+                        extra={"req_id": payload.get("req_id")},
+                    )
+            except Exception as exc:
+                logger.error(f"❌ Error publicando solicitud MQTT: {exc}")
+                # Reintento simple
+                await asyncio.sleep(0.5)
+                await self.publish_queue.put(payload)
+            finally:
+                self.publish_queue.task_done()
 
     async def _handle_response_message(self, message):
         try:
@@ -253,28 +330,26 @@ class AvailabilityCoordinator:
         await redis_client.set(
             state_key, state, expire=AVAILABILITY_STATE_TTL_SECONDS
         )
-        logger.info(
-            f"📥 Respuesta disponibilidad req={req_id} status={status} provider_id={provider_id}"
-        )
+        if hash(req_id) % LOG_SAMPLING_RATE == 0:
+            logger.info(
+                "📥 Respuesta disponibilidad",
+                extra={
+                    "req_id": req_id,
+                    "status": status,
+                    "provider_id": provider_id,
+                },
+            )
 
     async def publish_request(self, payload: Dict[str, Any]):
         if not MQTTClient:
             logger.warning("⚠️ MQTT no disponible, no se publica solicitud de disponibilidad.")
             return False
         try:
-            async with MQTTClient(**self._client_params()) as client:
-                await client.publish(
-                    MQTT_TEMA_SOLICITUD, json.dumps(payload).encode("utf-8")
-                )
-                logger.info(
-                    f"📤 Solicitud disponibilidad publicada en {MQTT_TEMA_SOLICITUD} req={payload.get('req_id')}"
-                )
-                return True
-        except MqttError as exc:  # pragma: no cover - red
-            logger.error(f"❌ No se pudo publicar en MQTT: {exc}")
-            return False
+            await self.publish_queue.put(payload)
+            await self.start_publisher()
+            return True
         except Exception as exc:  # pragma: no cover - red
-            logger.error(f"❌ Error publicando solicitud MQTT: {exc}")
+            logger.error(f"❌ Error encolando solicitud MQTT: {exc}")
             return False
 
     async def request_and_wait(
@@ -288,6 +363,7 @@ class AvailabilityCoordinator:
     ) -> Dict[str, Any]:
         """Publica solicitud de disponibilidad y espera respuestas."""
         await self.start_listener()
+        await self.start_publisher()
 
         if not MQTTClient:
             logger.warning("⚠️ MQTT no instalado; se omite disponibilidad en vivo.")
@@ -426,17 +502,20 @@ async def schedule_feedback_request(
             "message": message,
             "type": "request_feedback",
         }
-        supabase.table("task_queue").insert(
-            {
-                "task_type": "send_whatsapp",
-                "payload": payload,
-                "status": "pending",
-                "priority": 0,
-                "scheduled_at": scheduled_at_iso,
-                "retry_count": 0,
-                "max_retries": 3,
-            }
-        ).execute()
+        await run_supabase(
+            lambda: supabase.table("task_queue").insert(
+                {
+                    "task_type": "send_whatsapp",
+                    "payload": payload,
+                    "status": "pending",
+                    "priority": 0,
+                    "scheduled_at": scheduled_at_iso,
+                    "retry_count": 0,
+                    "max_retries": 3,
+                }
+            ).execute(),
+            label="task_queue.insert_feedback",
+        )
         logger.info(f"🕒 Feedback agendado en {delay}s para {phone}")
     except Exception as e:
         logger.warning(f"No se pudo agendar feedback: {e}")
@@ -463,14 +542,15 @@ async def process_due_tasks():
         return 0
     try:
         now_iso = datetime.utcnow().isoformat()
-        res = (
-            supabase.table("task_queue")
+        res = await run_supabase(
+            lambda: supabase.table("task_queue")
             .select("id, payload, retry_count, max_retries")
             .eq("status", "pending")
             .lte("scheduled_at", now_iso)
             .order("scheduled_at", desc=False)
             .limit(10)
-            .execute()
+            .execute(),
+            label="task_queue.fetch_pending",
         )
         tasks = res.data or []
         processed = 0
@@ -483,30 +563,39 @@ async def process_due_tasks():
             if phone and message:
                 ok = await send_whatsapp_text(phone, message)
             if ok:
-                supabase.table("task_queue").update(
-                    {
-                        "status": "completed",
-                        "completed_at": datetime.utcnow().isoformat(),
-                    }
-                ).eq("id", tid).execute()
+                await run_supabase(
+                    lambda: supabase.table("task_queue").update(
+                        {
+                            "status": "completed",
+                            "completed_at": datetime.utcnow().isoformat(),
+                        }
+                    ).eq("id", tid).execute(),
+                    label="task_queue.mark_completed",
+                )
             else:
                 retry = (t.get("retry_count") or 0) + 1
                 maxr = t.get("max_retries") or 3
                 if retry < maxr:
-                    supabase.table("task_queue").update(
-                        {
-                            "retry_count": retry,
-                            "scheduled_at": datetime.utcnow().isoformat(),
-                        }
-                    ).eq("id", tid).execute()
+                    await run_supabase(
+                        lambda: supabase.table("task_queue").update(
+                            {
+                                "retry_count": retry,
+                                "scheduled_at": datetime.utcnow().isoformat(),
+                            }
+                        ).eq("id", tid).execute(),
+                        label="task_queue.reschedule",
+                    )
                 else:
-                    supabase.table("task_queue").update(
-                        {
-                            "status": "failed",
-                            "completed_at": datetime.utcnow().isoformat(),
-                            "error_message": "send failed",
-                        }
-                    ).eq("id", tid).execute()
+                    await run_supabase(
+                        lambda: supabase.table("task_queue").update(
+                            {
+                                "status": "failed",
+                                "completed_at": datetime.utcnow().isoformat(),
+                                "error_message": "send failed",
+                            }
+                        ).eq("id", tid).execute(),
+                        label="task_queue.mark_failed",
+                    )
             processed += 1
         return processed
     except Exception as e:
@@ -821,12 +910,13 @@ async def save_service_relation(
 
     try:
         # Verificar si ya existe esta relación
-        existing = (
-            supabase.table("service_relations")
+        existing = await run_supabase(
+            lambda: supabase.table("service_relations")
             .select("id, usage_count")
             .eq("user_query", user_query.lower().strip())
             .eq("inferred_profession", inferred_profession.lower().strip())
-            .execute()
+            .execute(),
+            label="service_relations.fetch",
         )
 
         if existing.data:
@@ -834,23 +924,29 @@ async def save_service_relation(
             relation_id = existing.data[0]["id"]
             current_count = existing.data[0].get("usage_count", 1)
 
-            supabase.table("service_relations").update({
-                "usage_count": current_count + 1,
-                "updated_at": datetime.utcnow().isoformat()
-            }).eq("id", relation_id).execute()
+            await run_supabase(
+                lambda: supabase.table("service_relations").update({
+                    "usage_count": current_count + 1,
+                    "updated_at": datetime.utcnow().isoformat()
+                }).eq("id", relation_id).execute(),
+                label="service_relations.update_usage",
+            )
 
             logger.info(f"🔄 Relación actualizada: '{user_query}' → '{inferred_profession}' (usos: {current_count + 1})")
         else:
             # Crear nueva relación
-            supabase.table("service_relations").insert({
-                "user_query": user_query.lower().strip(),
-                "inferred_profession": inferred_profession.lower().strip(),
-                "confidence_score": confidence_score,
-                "search_terms": search_terms,
-                "created_at": datetime.utcnow().isoformat(),
-                "updated_at": datetime.utcnow().isoformat(),
-                "usage_count": 1
-            }).execute()
+            await run_supabase(
+                lambda: supabase.table("service_relations").insert({
+                    "user_query": user_query.lower().strip(),
+                    "inferred_profession": inferred_profession.lower().strip(),
+                    "confidence_score": confidence_score,
+                    "search_terms": search_terms,
+                    "created_at": datetime.utcnow().isoformat(),
+                    "updated_at": datetime.utcnow().isoformat(),
+                    "usage_count": 1
+                }).execute(),
+                label="service_relations.insert",
+            )
 
             logger.info(f"✅ Nueva relación guardada: '{user_query}' → '{inferred_profession}'")
 
@@ -921,15 +1017,19 @@ async def intelligent_need_extraction(
         return payload
 
     try:
-        response = await openai_client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.3,
-            max_tokens=300,
-        )
+        async with openai_semaphore:
+            response = await asyncio.wait_for(
+                openai_client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    temperature=0.3,
+                    max_tokens=300,
+                ),
+                timeout=OPENAI_TIMEOUT_SECONDS,
+            )
         if not response.choices:
             logger.warning(
                 "⚠️ OpenAI respondió sin choices en intelligent_need_extraction"
@@ -1259,9 +1359,13 @@ async def handle_consent_response(
 
         # Actualizar has_consent a TRUE
         try:
-            supabase.table("customers").update({"has_consent": True}).eq(
-                "id", customer_profile.get("id")
-            ).execute()
+            await run_supabase(
+                lambda: supabase.table("customers")
+                .update({"has_consent": True})
+                .eq("id", customer_profile.get("id"))
+                .execute(),
+                label="customers.update_consent",
+            )
 
             # Guardar registro legal en tabla consents con metadata completa
             consent_data = {
@@ -1281,7 +1385,10 @@ async def handle_consent_response(
                 "response": response,
                 "message_log": json.dumps(consent_data, ensure_ascii=False),
             }
-            supabase.table("consents").insert(consent_record).execute()
+            await run_supabase(
+                lambda: supabase.table("consents").insert(consent_record).execute(),
+                label="consents.insert_opt_in",
+            )
 
             logger.info(f"✅ Consentimiento aceptado por cliente {phone}")
 
@@ -1318,7 +1425,10 @@ Si cambias de opinión, simplemente escribe "hola" y podremos empezar de nuevo.
                 "response": response,
                 "message_log": json.dumps(consent_data, ensure_ascii=False),
             }
-            supabase.table("consents").insert(consent_record).execute()
+            await run_supabase(
+                lambda: supabase.table("consents").insert(consent_record).execute(),
+                label="consents.insert_decline",
+            )
 
             logger.info(f"❌ Consentimiento rechazado por cliente {phone}")
 
@@ -1530,7 +1640,7 @@ def build_public_media_url(raw_url: Optional[str]) -> Optional[str]:
     return storage_path
 
 
-def get_or_create_customer(
+async def get_or_create_customer(
     phone: str,
     *,
     full_name: Optional[str] = None,
@@ -1542,14 +1652,15 @@ def get_or_create_customer(
         return None
 
     try:
-        existing = (
-            supabase.table("customers")
+        existing = await run_supabase(
+            lambda: supabase.table("customers")
             .select(
                 "id, phone_number, full_name, city, city_confirmed_at, has_consent, notes, created_at, updated_at"
             )
             .eq("phone_number", phone)
             .limit(1)
-            .execute()
+            .execute(),
+            label="customers.by_phone",
         )
         if existing.data:
             return existing.data[0]
@@ -1563,7 +1674,10 @@ def get_or_create_customer(
             payload["city"] = city
             payload["city_confirmed_at"] = datetime.utcnow().isoformat()
 
-        created = supabase.table("customers").insert(payload).execute()
+        created = await run_supabase(
+            lambda: supabase.table("customers").insert(payload).execute(),
+            label="customers.insert",
+        )
         if created.data:
             return created.data[0]
     except Exception as exc:
@@ -1571,14 +1685,14 @@ def get_or_create_customer(
     return None
 
 
-def update_customer_city(
+async def update_customer_city(
     customer_id: Optional[str], city: str
 ) -> Optional[Dict[str, Any]]:
     if not supabase or not customer_id or not city:
         return None
     try:
-        update_resp = (
-            supabase.table("customers")
+        update_resp = await run_supabase(
+            lambda: supabase.table("customers")
             .update(
                 {
                     "city": city,
@@ -1586,16 +1700,18 @@ def update_customer_city(
                 }
             )
             .eq("id", customer_id)
-            .execute()
+            .execute(),
+            label="customers.update_city",
         )
         if update_resp.data:
             return update_resp.data[0]
-        select_resp = (
-            supabase.table("customers")
+        select_resp = await run_supabase(
+            lambda: supabase.table("customers")
             .select("id, phone_number, full_name, city, city_confirmed_at, updated_at")
             .eq("id", customer_id)
             .limit(1)
-            .execute()
+            .execute(),
+            label="customers.by_id",
         )
         if select_resp.data:
             return select_resp.data[0]
@@ -1608,9 +1724,15 @@ def clear_customer_city(customer_id: Optional[str]) -> None:
     if not supabase or not customer_id:
         return
     try:
-        supabase.table("customers").update(
-            {"city": None, "city_confirmed_at": None}
-        ).eq("id", customer_id).execute()
+        asyncio.create_task(
+            run_supabase(
+                lambda: supabase.table("customers")
+                .update({"city": None, "city_confirmed_at": None})
+                .eq("id", customer_id)
+                .execute(),
+                label="customers.clear_city",
+            )
+        )
         logger.info(f"🧼 Ciudad eliminada para customer {customer_id}")
     except Exception as exc:
         logger.warning(f"No se pudo limpiar city para customer {customer_id}: {exc}")
@@ -1620,9 +1742,15 @@ def clear_customer_consent(customer_id: Optional[str]) -> None:
     if not supabase or not customer_id:
         return
     try:
-        supabase.table("customers").update({"has_consent": False}).eq(
-            "id", customer_id
-        ).execute()
+        asyncio.create_task(
+            run_supabase(
+                lambda: supabase.table("customers")
+                .update({"has_consent": False})
+                .eq("id", customer_id)
+                .execute(),
+                label="customers.clear_consent",
+            )
+        )
         logger.info(f"📝 Consentimiento restablecido para customer {customer_id}")
     except Exception as exc:
         logger.warning(
@@ -1981,7 +2109,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
         if not phone:
             raise HTTPException(status_code=400, detail="from_number is required")
 
-        customer_profile = get_or_create_customer(phone=phone)
+        customer_profile = await get_or_create_customer(phone=phone)
 
         # Validación de consentimiento
         if not customer_profile:
@@ -2104,7 +2232,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
             normalized_city = detected_city
             current_city = (flow.get("city") or "").strip()
             if normalized_city.lower() != current_city.lower():
-                updated_profile = update_customer_city(
+                updated_profile = await update_customer_city(
                     flow.get("customer_id") or customer_id,
                     normalized_city,
                 )
@@ -2357,7 +2485,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                 normalized_input = (normalized_city_input or text).strip().title()
                 updated_flow["city"] = normalized_input
                 updated_flow["city_confirmed"] = True
-                update_result = update_customer_city(
+                update_result = await update_customer_city(
                     updated_flow.get("customer_id") or customer_id,
                     normalized_input,
                 )

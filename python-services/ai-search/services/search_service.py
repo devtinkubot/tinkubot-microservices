@@ -10,6 +10,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from time import perf_counter
 
 from openai import AsyncOpenAI
 from supabase import Client, create_client
@@ -23,11 +24,13 @@ from models.schemas import (
     SearchStrategy,
 )
 from services.cache_service import cache_service
-from utils.text_processor import TextProcessor, analyze_query
+from utils.text_processor import SERVICE_KEYWORDS, TextProcessor, analyze_query
 
 from shared_lib.config import settings
 
 logger = logging.getLogger(__name__)
+SUPABASE_TIMEOUT_SECONDS = float(getattr(settings, "search_timeout_ms", 5000) or 5000) / 1000.0
+SLOW_QUERY_THRESHOLD_MS = int(getattr(settings, "search_timeout_ms", 5000) or 5000)
 
 
 class SearchService:
@@ -38,7 +41,27 @@ class SearchService:
         self.openai_client: Optional[AsyncOpenAI] = None
         self.text_processor = TextProcessor()
         self.intent_aliases: Dict[str, set[str]] = self._load_intent_aliases()
+        self._openai_semaphore = asyncio.Semaphore(
+            int(getattr(settings, "max_openai_concurrency", 5) or 5)
+        )
 
+    async def _run_supabase(self, op, label: str):
+        """
+        Ejecuta operación Supabase en executor para no bloquear el loop, con timeout y log de lentos.
+        """
+        loop = asyncio.get_running_loop()
+        start = perf_counter()
+        try:
+            return await asyncio.wait_for(
+                loop.run_in_executor(None, op), timeout=SUPABASE_TIMEOUT_SECONDS
+            )
+        finally:
+            elapsed_ms = (perf_counter() - start) * 1000
+            if elapsed_ms >= SLOW_QUERY_THRESHOLD_MS:
+                logger.info(
+                    "perf_supabase",
+                    extra={"op": label, "elapsed_ms": round(elapsed_ms, 2)},
+                )
     async def initialize(self):
         """Inicializar conexión a Supabase y OpenAI"""
         try:
@@ -157,11 +180,22 @@ class SearchService:
     ) -> SearchStrategy:
         """Seleccionar estrategia AI-first"""
 
-        # Siempre priorizar IA cuando esté disponible
-        if request.use_ai_enhancement and settings.openai_api_key:
+        ai_available = bool(settings.openai_api_key)
+
+        # Respetar estrategia preferida explícita cuando sea posible
+        if request.preferred_strategy == SearchStrategy.AI_ENHANCED:
+            if request.use_ai_enhancement and ai_available:
+                return SearchStrategy.AI_ENHANCED
+            # Sin API key, caerá a tokens
+        elif request.preferred_strategy == SearchStrategy.HYBRID:
+            return SearchStrategy.HYBRID
+        elif request.preferred_strategy == SearchStrategy.FULL_TEXT:
+            return SearchStrategy.FULL_TEXT
+
+        # Default: priorizar IA si está habilitada y disponible, si no, tokens
+        if request.use_ai_enhancement and ai_available:
             return SearchStrategy.AI_ENHANCED
 
-        # Fallback a búsqueda simple si IA no está disponible
         return SearchStrategy.TOKEN_BASED
 
     async def _search_by_tokens(
@@ -169,8 +203,17 @@ class SearchService:
     ) -> List[ProviderInfo]:
         """Búsqueda por tokens (más rápida)"""
         try:
+            slow_start = perf_counter()
+            # Priorizar tokens de servicio; si no existen, usar tokens generales
+            tokens_raw = query_analysis.get("service_tokens") or query_analysis["tokens"]
             # Usar tokens únicos para evitar duplicados que sobrecargan la consulta SQL
-            tokens = list(set(query_analysis["tokens"]))
+            tokens = list(
+                {
+                    t
+                    for t in tokens_raw
+                    if (len(t) >= 4 or t in SERVICE_KEYWORDS)
+                }
+            )
             city = query_analysis.get("city")
 
             if not self.supabase:
@@ -202,14 +245,23 @@ class SearchService:
             # Aplicar paginación
             query = query.range(request.offset, request.offset + request.limit - 1)
 
-            # Ejecutar consulta
-            response = query.execute()
+            # Ejecutar consulta (no bloquear loop)
+            response = await self._run_supabase(
+                lambda: query.execute(), label="providers.search_tokens"
+            )
 
             # Convertir resultados
             providers = []
             if response.data:
                 for row in response.data:
                     providers.append(self._dict_to_provider_info_with_services(row))
+
+            elapsed_ms = (perf_counter() - slow_start) * 1000
+            if elapsed_ms >= SLOW_QUERY_THRESHOLD_MS:
+                logger.info(
+                    "perf_search_tokens",
+                    extra={"elapsed_ms": round(elapsed_ms, 2), "limit": request.limit},
+                )
 
             return providers
 
@@ -222,6 +274,7 @@ class SearchService:
     ) -> List[ProviderInfo]:
         """Búsqueda full-text (para consultas complejas)"""
         try:
+            slow_start = perf_counter()
             city = query_analysis.get("city")
             normalized_text = query_analysis["normalized_text"]
 
@@ -258,14 +311,23 @@ class SearchService:
             # Aplicar paginación
             query = query.range(request.offset, request.offset + request.limit - 1)
 
-            # Ejecutar consulta
-            response = query.execute()
+            # Ejecutar consulta (no bloquear loop)
+            response = await self._run_supabase(
+                lambda: query.execute(), label="providers.search_fulltext"
+            )
 
             # Convertir resultados
             providers = []
             if response.data:
                 for row in response.data:
                     providers.append(self._dict_to_provider_info_with_services(row))
+
+            elapsed_ms = (perf_counter() - slow_start) * 1000
+            if elapsed_ms >= SLOW_QUERY_THRESHOLD_MS:
+                logger.info(
+                    "perf_search_fulltext",
+                    extra={"elapsed_ms": round(elapsed_ms, 2), "limit": request.limit},
+                )
 
             return providers
 
@@ -348,7 +410,7 @@ class SearchService:
 
             system_prompt = """
             Eres un experto en servicios profesionales en Ecuador. Tu tarea es expandir
-    consultas de búsqueda para maximizar la relevancia con los proveedores disponibles.
+consultas de búsqueda para maximizar la relevancia con los proveedores disponibles.
 
             Reglas clave:
             1. Incluye sinónimos y términos relacionados comunes en Ecuador
@@ -365,18 +427,22 @@ class SearchService:
             Responde ÚNICAMENTE con los términos de búsqueda mejorados, sin explicaciones.
             """
 
-            response = await self.openai_client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {
-                        "role": "user",
-                        "content": f"Expande esta consulta para encontrar mejores proveedores: {original_query}",
-                    },
-                ],
-                max_tokens=80,
-                temperature=0.4,
-            )
+            async with self._openai_semaphore:
+                response = await asyncio.wait_for(
+                    self.openai_client.chat.completions.create(
+                        model="gpt-3.5-turbo",
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {
+                                "role": "user",
+                                "content": f"Expande esta consulta para encontrar mejores proveedores: {original_query}",
+                            },
+                        ],
+                        max_tokens=80,
+                        temperature=0.4,
+                    ),
+                    timeout=5,
+                )
 
             enhanced_query = response.choices[0].message.content.strip()
             logger.info(f"🤖 IA Expandió: '{original_query}' → '{enhanced_query}'")
@@ -426,11 +492,23 @@ class SearchService:
             aliases = self.intent_aliases.get(base, set())
             tokens.update({base, *aliases})
 
+        tokens_to_match = [
+            token
+            for token in tokens
+            if (len(token) >= 4 or token in SERVICE_KEYWORDS)
+        ]
+
+        if not tokens_to_match:
+            # Si no quedan tokens útiles, evitar sobre-filtrar
+            return providers
+
         filtered: List[ProviderInfo] = []
         for provider in providers:
             professions_text = " ".join(provider.professions or []).lower()
             services = " ".join(provider.services or []).lower()
-            if any(token in professions_text or token in services for token in tokens):
+            if any(
+                token in professions_text or token in services for token in tokens_to_match
+            ):
                 filtered.append(provider)
         return filtered
 
@@ -635,7 +713,7 @@ class SearchService:
             return []
 
     async def health_check(self) -> Dict[str, Any]:
-        """Verificar salud del servicio de búsqueda"""
+        """Verificar salud del servicio de búsqueda sin bloquear el loop"""
         health_info = {
             "database_connected": False,
             "redis_connected": await cache_service.health_check(),
@@ -643,13 +721,15 @@ class SearchService:
             "last_check": datetime.now().isoformat(),
         }
 
-        try:
-            if self.supabase:
-                # Probar conexión con una consulta simple
-                response = self.supabase.table("providers").select("id").limit(1).execute()
+        if self.supabase:
+            try:
+                await self._run_supabase(
+                    lambda: self.supabase.table("providers").select("id").limit(1).execute(),
+                    label="providers.health_check",
+                )
                 health_info["database_connected"] = True
-        except Exception as e:
-            logger.error(f"Error health check Supabase: {e}")
+            except Exception as e:
+                logger.warning(f"Health check Supabase degradado: {e}")
 
         health_info["search_service_ready"] = (
             health_info["database_connected"] and health_info["redis_connected"]

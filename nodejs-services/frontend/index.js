@@ -1,8 +1,13 @@
 const express = require('express');
+const compression = require('compression');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const axios = require('axios');
 const path = require('path');
 const QRCode = require('qrcode');
 const fs = require('fs');
+const http = require('http');
+const https = require('https');
 const adminProvidersRouter = require('./routes/adminProviders');
 const app = express();
 
@@ -40,11 +45,21 @@ const proveedoresPort = resolverPuerto(
 const serverDomain = process.env.SERVER_DOMAIN;
 const clientesHost = serverDomain || 'wa-clientes';
 const proveedoresHost = serverDomain || 'wa-proveedores';
+const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS || '8000', 10);
+const STATIC_MAX_AGE_SECONDS = parseInt(process.env.STATIC_MAX_AGE_SECONDS || '86400', 10);
 
 const WHATSAPP_CLIENTES_URL =
   process.env.WHATSAPP_CLIENTES_URL || `http://${clientesHost}:${clientesPort}`;
 const WHATSAPP_PROVEEDORES_URL =
   process.env.WHATSAPP_PROVEEDORES_URL || `http://${proveedoresHost}:${proveedoresPort}`;
+
+const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 20 });
+const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 20 });
+const axiosClient = axios.create({
+  httpAgent,
+  httpsAgent,
+  timeout: 5000
+});
 
 const CLIENTES_INSTANCE_ID = process.env.CLIENTES_INSTANCE_ID || 'bot-clientes';
 const CLIENTES_INSTANCE_NAME = process.env.CLIENTES_INSTANCE_NAME || 'TinkuBot Clientes';
@@ -115,11 +130,48 @@ const basicAuth = (req, res, next) => {
 };
 
 // Middleware
+app.use(compression());
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false
+}));
+app.use(
+  rateLimit({
+    windowMs: 60 * 1000,
+    max: parseInt(process.env.RATE_LIMIT_MAX || '120', 10),
+    standardHeaders: true,
+    legacyHeaders: false
+  })
+);
+app.use((req, res, next) => {
+  res.setTimeout(REQUEST_TIMEOUT_MS, () => {
+    if (!res.headersSent) {
+      res.status(503).json({ error: 'Request timed out' });
+    }
+  });
+  next();
+});
 app.use(basicAuth);
 if (fs.existsSync(dashboardDistPath)) {
-  app.use(express.static(dashboardDistPath));
+  app.use(
+    express.static(dashboardDistPath, {
+      maxAge: STATIC_MAX_AGE_SECONDS * 1000,
+      etag: true,
+      setHeaders: res => {
+        res.setHeader('Cache-Control', `public, max-age=${STATIC_MAX_AGE_SECONDS}`);
+      }
+    })
+  );
 }
-app.use(express.static(publicPath));
+app.use(
+  express.static(publicPath, {
+    maxAge: STATIC_MAX_AGE_SECONDS * 1000,
+    etag: true,
+    setHeaders: res => {
+      res.setHeader('Cache-Control', `public, max-age=${STATIC_MAX_AGE_SECONDS}`);
+    }
+  })
+);
 app.use(express.json());
 app.use('/admin/providers', adminProvidersRouter);
 
@@ -154,7 +206,7 @@ app.get('/api/whatsapp/:instanceId/status', async (req, res) => {
       return res.status(404).json({ error: 'Instancia no encontrada' });
     }
 
-    const response = await axios.get(`${instance.url}/status`, { timeout: 5000 });
+    const response = await axiosClient.get(`${instance.url}/status`);
     res.json({
       ...response.data,
       instanceId: instance.id,
@@ -176,7 +228,7 @@ app.get('/api/whatsapp/:instanceId/qr', async (req, res) => {
       return res.status(404).json({ error: 'Instancia no encontrada' });
     }
 
-    const response = await axios.get(`${instance.url}/qr`, { timeout: 5000 });
+    const response = await axiosClient.get(`${instance.url}/qr`);
     res.json({
       ...response.data,
       instanceId: instance.id,
@@ -193,13 +245,19 @@ app.post('/api/whatsapp/:instanceId/send', async (req, res) => {
   try {
     const { instanceId } = req.params;
     const { phone, message } = req.body;
+    if (!instanceId || typeof instanceId !== 'string') {
+      return res.status(400).json({ error: 'Instancia inválida' });
+    }
+    if (typeof phone !== 'string' || typeof message !== 'string') {
+      return res.status(400).json({ error: 'Parámetros inválidos' });
+    }
     const instance = WHATSAPP_INSTANCES.find(inst => inst.id === instanceId);
 
     if (!instance) {
       return res.status(404).json({ error: 'Instancia no encontrada' });
     }
 
-    const response = await axios.post(
+    const response = await axiosClient.post(
       `${instance.url}/send`,
       { phone, message },
       { timeout: 5000 }
@@ -218,13 +276,16 @@ app.post('/api/whatsapp/:instanceId/send', async (req, res) => {
 app.post('/api/whatsapp/:instanceId/refresh', async (req, res) => {
   try {
     const { instanceId } = req.params;
+    if (!instanceId || typeof instanceId !== 'string') {
+      return res.status(400).json({ error: 'Instancia inválida' });
+    }
     const instance = WHATSAPP_INSTANCES.find(inst => inst.id === instanceId);
 
     if (!instance) {
       return res.status(404).json({ error: 'Instancia no encontrada' });
     }
 
-    const response = await axios.post(`${instance.url}/refresh`, null, { timeout: 5000 });
+    const response = await axiosClient.post(`${instance.url}/refresh`, null, { timeout: 5000 });
     res.json({
       ...response.data,
       instanceId: instance.id,
@@ -243,74 +304,53 @@ app.get('/whatsapp-status', async (req, res) => {
   try {
     const statuses = {};
 
-    for (const instance of WHATSAPP_INSTANCES) {
-      try {
-        // Obtener estado del servicio
-        const statusResponse = await axios.get(`${instance.url}/status`, { timeout: 3000 });
-        const statusData = statusResponse.data;
-
-        // Si el estado es qr_ready, obtener el código QR y convertirlo a imagen
-        if (statusData.status === 'qr_ready') {
-          let qrText;
-          try {
-            const qrResponse = await axios.get(`${instance.url}/qr`, { timeout: 5000 });
-            qrText = qrResponse.data.qr;
-
-            // Convertir QR de texto a imagen base64
-            console.warn(`${instance.name}: Convirtiendo QR texto a imagen...`);
-            const qrImage = await QRCode.toDataURL(qrText, {
-              width: 300,
-              margin: 2,
-              color: {
-                dark: '#000000',
-                light: '#FFFFFF',
+    const results = await Promise.allSettled(
+      WHATSAPP_INSTANCES.map(async instance => {
+        try {
+          const statusResponse = await axiosClient.get(`${instance.url}/status`, { timeout: 3000 });
+          const statusData = statusResponse.data;
+          if (statusData.status === 'qr_ready') {
+            let qrText;
+            try {
+              const qrResponse = await axiosClient.get(`${instance.url}/qr`, { timeout: 5000 });
+              qrText = qrResponse.data.qr;
+              const qrImage = await QRCode.toDataURL(qrText, {
+                width: 300,
+                margin: 2,
+                color: {
+                  dark: '#000000',
+                  light: '#FFFFFF',
+                },
+              });
+              return { instance, data: { connected: false, qr: qrImage, phone: null, battery: null } };
+            } catch (qrError) {
+              console.error(`Error al procesar QR de ${instance.name}:`, qrError);
+              return { instance, data: { connected: false, qr: null, phone: null, battery: null } };
+            }
+          }
+          if (statusData.status === 'connected' || statusData.connected) {
+            return {
+              instance,
+              data: {
+                connected: true,
+                qr: null,
+                phone: statusData.phone || null,
+                battery: statusData.battery || null,
               },
-            });
-            console.warn(
-              `${instance.name}: QR convertido exitosamente, longitud: ${qrImage.length}`
-            );
-
-            statuses[instance.id] = {
-              connected: false,
-              qr: qrImage,
-              phone: null,
-              battery: null,
-            };
-          } catch (qrError) {
-            console.error(`Error al procesar QR de ${instance.name}:`, qrError);
-            console.error('Texto QR recibido:', qrText ? `${qrText.substring(0, 50)}...` : 'null');
-            statuses[instance.id] = {
-              connected: false,
-              qr: null,
-              phone: null,
-              battery: null,
             };
           }
-        } else if (statusData.status === 'connected' || statusData.connected) {
-          // Si está conectado, usar los datos reales
-          statuses[instance.id] = {
-            connected: true,
-            qr: null,
-            phone: statusData.phone || null,
-            battery: statusData.battery || null,
-          };
-        } else {
-          // Para cualquier otro estado, mostrar como desconectado
-          statuses[instance.id] = {
-            connected: false,
-            qr: null,
-            phone: null,
-            battery: null,
-          };
+          return { instance, data: { connected: false, qr: null, phone: null, battery: null } };
+        } catch (error) {
+          console.error(`Error al obtener estado de ${instance.name}:`, error);
+          return { instance, data: { connected: false, qr: null, phone: null, battery: null } };
         }
-      } catch (error) {
-        console.error(`Error al obtener estado de ${instance.name}:`, error);
-        statuses[instance.id] = {
-          connected: false,
-          qr: null,
-          phone: null,
-          battery: null,
-        };
+      })
+    );
+
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        const { instance, data } = result.value;
+        statuses[instance.id] = data;
       }
     }
 
@@ -331,34 +371,32 @@ app.get('/health', async (req, res) => {
     dependencies: {},
   };
 
-  for (const instance of WHATSAPP_INSTANCES) {
-    healthStatus.dependencies[instance.id] = {
-      name: instance.name,
-      status: 'unknown',
-    };
-
-    try {
-      const { data } = await axios.get(`${instance.url}/health`, { timeout: 4000 });
-      const dependencyStatus = data.status || data.health || 'unknown';
-
-      healthStatus.dependencies[instance.id] = {
-        name: instance.name,
-        status: dependencyStatus,
-        whatsapp_status: data.whatsapp_status || data.status || null,
-        ai_service: data.ai_service || null,
-        timestamp: data.timestamp || null,
-      };
-
-      if (dependencyStatus !== 'healthy') {
-        healthStatus.status = dependencyStatus === 'degraded' ? 'degraded' : 'unhealthy';
+  const healthResults = await Promise.allSettled(
+    WHATSAPP_INSTANCES.map(async instance => {
+      const dep = { name: instance.name, status: 'unknown' };
+      try {
+        const { data } = await axiosClient.get(`${instance.url}/health`, { timeout: 3000 });
+        const dependencyStatus = data.status || data.health || 'unknown';
+        dep.status = dependencyStatus;
+        dep.whatsapp_status = data.whatsapp_status || data.status || null;
+        dep.ai_service = data.ai_service || null;
+        dep.timestamp = data.timestamp || null;
+        return { instance, dep };
+      } catch (error) {
+        dep.status = 'unreachable';
+        dep.error = error.message;
+        return { instance, dep };
       }
-    } catch (error) {
-      healthStatus.dependencies[instance.id] = {
-        name: instance.name,
-        status: 'unreachable',
-        error: error.message,
-      };
-      healthStatus.status = 'unhealthy';
+    })
+  );
+
+  for (const result of healthResults) {
+    if (result.status === 'fulfilled') {
+      const { instance, dep } = result.value;
+      healthStatus.dependencies[instance.id] = dep;
+      if (dep.status !== 'healthy') {
+        healthStatus.status = dep.status === 'degraded' ? 'degraded' : 'unhealthy';
+      }
     }
   }
 

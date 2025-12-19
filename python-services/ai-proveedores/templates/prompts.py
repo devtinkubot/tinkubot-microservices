@@ -91,7 +91,8 @@ PROVIDER_POST_REGISTRATION_MENU = (
     "\n"
     "1) Gestionar servicios\n"
     "2) Actualizar selfie\n"
-    "3) Salir\n"
+    "3) Actualizar redes sociales (Instagram/Facebook)\n"
+    "4) Salir\n"
 )
 
 
@@ -113,8 +114,13 @@ def provider_verified_message() -> str:
 
 
 def provider_approved_notification(name: str = "") -> str:
-    saludo = f"Hola {name}," if name else "Hola,"
-    return f"{saludo} ✅ Perfil aprobado. Ya estás en TinkuBot; estate atento a las solicitudes."
+    parts = [part for part in str(name).split() if part] if name else []
+    short_name = " ".join(parts[:2])
+    saludo = f"Hola {short_name}," if short_name else "Hola,"
+    return (
+        f"{saludo} ✅ tu perfil está aprobado. Bienvenido/a a TinkuBot; "
+        "permanece pendiente de las próximas solicitudes."
+    )
 
 
 def provider_services_menu_message(servicios: List[str], max_servicios: int) -> str:

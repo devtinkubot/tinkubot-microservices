@@ -49,6 +49,7 @@ export interface ProviderRecord {
 export interface ProviderActionPayload {
   reviewer?: string;
   notes?: string;
+  phone?: string;
 }
 
 export interface ProviderActionResponse {

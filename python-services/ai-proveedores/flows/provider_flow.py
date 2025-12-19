@@ -242,22 +242,24 @@ class ProviderFlow:
         }
 
     @staticmethod
+    def parse_social_media_input(message_text: Optional[str]) -> Dict[str, Optional[str]]:
+        """Parsea la entrada de red social y devuelve url + tipo."""
+        social = normalize_text(message_text)
+        if social.lower() in {"omitir", "na", "n/a", "ninguno"}:
+            return {"url": None, "type": None}
+        if "facebook.com" in social or "fb.com" in social:
+            return {"url": social, "type": "facebook"}
+        if "instagram.com" in social or "instagr.am" in social:
+            return {"url": social, "type": "instagram"}
+        return {"url": f"https://instagram.com/{social}", "type": "instagram"}
+
+    @staticmethod
     def handle_awaiting_social_media(
         flow: Dict[str, Any], message_text: Optional[str]
     ) -> Dict[str, Any]:
-        social = normalize_text(message_text)
-        if social.lower() in {"omitir", "na", "n/a", "ninguno"}:
-            flow["social_media_url"] = None
-            flow["social_media_type"] = None
-        elif "facebook.com" in social or "fb.com" in social:
-            flow["social_media_url"] = social
-            flow["social_media_type"] = "facebook"
-        elif "instagram.com" in social or "instagr.am" in social:
-            flow["social_media_url"] = social
-            flow["social_media_type"] = "instagram"
-        else:
-            flow["social_media_url"] = f"https://instagram.com/{social}"
-            flow["social_media_type"] = "instagram"
+        parsed = ProviderFlow.parse_social_media_input(message_text)
+        flow["social_media_url"] = parsed["url"]
+        flow["social_media_type"] = parsed["type"]
 
         flow["state"] = "awaiting_dni_front_photo"
         return {

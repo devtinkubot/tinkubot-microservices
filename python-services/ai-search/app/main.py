@@ -2,6 +2,7 @@
 Aplicación principal de Search Service
 """
 
+import os
 import asyncio
 import logging
 from contextlib import asynccontextmanager
@@ -115,40 +116,49 @@ app.add_middleware(
 )
 
 
-# Middleware de logging
+LOG_SAMPLING_RATE = int(os.getenv("LOG_SAMPLING_RATE", "10"))
+
+
+# Middleware de logging con muestreo
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    """Middleware para loguear requests"""
+    """Middleware para loguear requests con muestreo y datos estructurados básicos"""
     import time
     import uuid
 
     start_time = time.time()
     request_id = str(uuid.uuid4())
 
-    # Log de entrada
-    logger.info(
-        f"Request started | "
-        f"Method: {request.method} | "
-        f"URL: {str(request.url)} | "
-        f"Request ID: {request_id} | "
-        f"Client IP: {request.client.host if request.client else None}"
-    )
+    # Muestreo simple
+    should_log = (hash(request_id) % LOG_SAMPLING_RATE) == 0
+
+    if should_log:
+        logger.info(
+            "request_started",
+            extra={
+                "method": request.method,
+                "url": str(request.url),
+                "request_id": request_id,
+                "client_ip": request.client.host if request.client else None,
+            },
+        )
 
     try:
         response = await call_next(request)
         process_time = int((time.time() - start_time) * 1000)
 
-        # Log de salida
-        logger.info(
-            f"Request completed | "
-            f"Method: {request.method} | "
-            f"URL: {str(request.url)} | "
-            f"Status Code: {response.status_code} | "
-            f"Process Time: {process_time}ms | "
-            f"Request ID: {request_id}"
-        )
+        if should_log:
+            logger.info(
+                "request_completed",
+                extra={
+                    "method": request.method,
+                    "url": str(request.url),
+                    "status_code": response.status_code,
+                    "process_time_ms": process_time,
+                    "request_id": request_id,
+                },
+            )
 
-        # Agregar headers
         response.headers["X-Request-ID"] = request_id
         response.headers["X-Process-Time"] = str(process_time)
 
@@ -157,12 +167,14 @@ async def log_requests(request: Request, call_next):
     except Exception as e:
         process_time = int((time.time() - start_time) * 1000)
         logger.error(
-            f"Request failed | "
-            f"Method: {request.method} | "
-            f"URL: {request.url} | "
-            f"Error: {str(e)} | "
-            f"Process time: {process_time}ms | "
-            f"Request ID: {request_id}"
+            "request_failed",
+            extra={
+                "method": request.method,
+                "url": str(request.url),
+                "error": str(e),
+                "process_time_ms": process_time,
+                "request_id": request_id,
+            },
         )
         raise
 
