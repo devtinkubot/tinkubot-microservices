@@ -374,6 +374,16 @@ function construirMensajeAprobacion(nombre) {
   return `${saludo} ✅ tu perfil está aprobado. Bienvenido/a a TinkuBot; permanece pendiente de las próximas solicitudes.`;
 }
 
+function construirMensajeRestriccionPais(nombre) {
+  const nombreCorto = (nombre || '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .join(' ');
+  const saludo = nombreCorto ? `Hola ${nombreCorto},` : 'Hola,';
+  return `${saludo} 🌎 Gracias por tu interés en TinkuBot. Por el momento, el registro de proveedores está disponible solo para números nacionales de Ecuador. Si tienes un número ecuatoriano, por favor regístrate con ese número para continuar.`;
+}
+
 function construirMensajeRechazo(nombre, notas) {
   const nombreCorto = (nombre || '')
     .split(/\s+/)
@@ -396,11 +406,28 @@ async function manejarAprobacionProveedor(data) {
   }
 
   try {
-    const mensaje = construirMensajeAprobacion(fullName);
-    await enviarTextoWhatsApp(phone, mensaje);
-    console.warn(
-      `✅ Notificación de aprobación enviada a ${phone} (provider_id=${providerId || 'n/a'})`
-    );
+    const soloDigitos = phone.replace(/[^\d]/g, '');
+
+    // 🔥 VALIDACIÓN DE PAÍS
+    if (!soloDigitos.startsWith('593')) {
+      // 📧 Enviar notificación de solo números nacionales
+      const mensajeNotificacion = construirMensajeRestriccionPais(fullName);
+      await enviarTextoWhatsApp(phone, mensajeNotificacion);
+
+      console.warn(`⚠️ Intento de aprobación con número no ecuatoriano ${phone} - notificación enviada (provider_id=${providerId || 'n/a'})`);
+
+      // Marcar como notificado para evitar reintentos
+      if (providerId) {
+        await marcarAprobacionNotificada(providerId);
+      }
+      return;
+    }
+
+    // ✅ Número ecuatoriano válido - enviar aprobación normal
+    const mensajeAprobacion = construirMensajeAprobacion(fullName);
+    await enviarTextoWhatsApp(phone, mensajeAprobacion);
+    console.warn(`✅ Notificación de aprobación enviada a ${phone} (provider_id=${providerId || 'n/a'})`);
+
     if (providerId) {
       await marcarAprobacionNotificada(providerId);
     }
