@@ -175,6 +175,8 @@ def _normalize_phone_for_match(value: Optional[str]) -> Optional[str]:
     if not value:
         return None
     raw = str(value).strip()
+    if raw.endswith("@lid"):
+        return raw
     if raw.endswith("@c.us"):
         raw = raw.replace("@c.us", "")
     raw = raw.replace("+", "").replace(" ", "")
@@ -1524,6 +1526,8 @@ def normalize_button(val: Optional[str]) -> Optional[str]:
 def formal_connection_message(provider: Dict[str, Any], service: str, city: str) -> Dict[str, Any]:
     def pretty_phone(val: Optional[str]) -> str:
         raw = (val or "").strip()
+        if raw.endswith("@lid"):
+            return f"LID: {raw.replace('@lid', '')}" or "LID"
         if raw.endswith("@c.us"):
             raw = raw.replace("@c.us", "")
         if raw and not raw.startswith("+"):
@@ -1532,6 +1536,8 @@ def formal_connection_message(provider: Dict[str, Any], service: str, city: str)
 
     def wa_click_to_chat(val: Optional[str]) -> str:
         raw = (val or "").strip()
+        if raw.endswith("@lid"):
+            return ""
         if raw.endswith("@c.us"):
             raw = raw.replace("@c.us", "")
         raw = raw.lstrip("+")
@@ -1552,10 +1558,11 @@ def formal_connection_message(provider: Dict[str, Any], service: str, city: str)
         if selfie_url
         else "📸 Selfie no disponible por el momento."
     )
+    link_line = f"🔗 Abrir chat: {link}" if link else "🔗 Chat disponible via WhatsApp."
     message = (
         f"Proveedor asignado: {name}.\n"
         f"{selfie_line}\n"
-        f"🔗 Abrir chat: {link}\n\n"
+        f"{link_line}\n\n"
         f"💬 Chat abierto para coordinar tu servicio."
     )
     payload: Dict[str, Any] = {"response": message}

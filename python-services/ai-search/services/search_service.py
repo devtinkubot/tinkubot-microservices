@@ -204,8 +204,13 @@ class SearchService:
         """Búsqueda por tokens (más rápida)"""
         try:
             slow_start = perf_counter()
-            # Priorizar tokens de servicio; si no existen, usar tokens generales
-            tokens_raw = query_analysis.get("service_tokens") or query_analysis["tokens"]
+            # Usar tokens de servicio y generales para no perder términos específicos
+            tokens_raw = list(
+                {
+                    *(query_analysis.get("service_tokens") or []),
+                    *(query_analysis.get("tokens") or []),
+                }
+            )
             # Usar tokens únicos para evitar duplicados que sobrecargan la consulta SQL
             tokens = list(
                 {
@@ -392,6 +397,22 @@ class SearchService:
 
             # Ejecutar búsqueda con consulta mejorada
             enhanced_analysis = analyze_query(enhanced_query)
+            merged_tokens = list(
+                {
+                    *(query_analysis.get("tokens") or []),
+                    *(enhanced_analysis.get("tokens") or []),
+                }
+            )
+            merged_service_tokens = list(
+                {
+                    *(query_analysis.get("service_tokens") or []),
+                    *(enhanced_analysis.get("service_tokens") or []),
+                }
+            )
+            enhanced_analysis["tokens"] = merged_tokens
+            enhanced_analysis["service_tokens"] = merged_service_tokens
+            if query_analysis.get("city") and not enhanced_analysis.get("city"):
+                enhanced_analysis["city"] = query_analysis["city"]
             return await self._search_by_tokens(request, enhanced_analysis)
 
         except Exception as e:

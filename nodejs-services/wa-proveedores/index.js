@@ -128,7 +128,7 @@ function shouldAutoReconnect(reason) {
 function normalizarNumeroWhatsApp(numero) {
   if (!numero) return null;
   const raw = String(numero).trim();
-  if (raw.endsWith('@c.us') || raw.endsWith('@g.us')) return raw;
+  if (raw.endsWith('@c.us') || raw.endsWith('@g.us') || raw.endsWith('@lid')) return raw;
 
   const soloDigitos = raw.replace(/[^\d]/g, '');
   if (!soloDigitos) return null;
@@ -149,6 +149,11 @@ function normalizarNumeroWhatsApp(numero) {
   }
 
   return `${normalizado}@c.us`;
+}
+
+function esLidWhatsApp(valor) {
+  if (!valor) return false;
+  return String(valor).trim().endsWith('@lid');
 }
 
 // --- MQTT helper para disponibilidad ---
@@ -409,7 +414,7 @@ async function manejarAprobacionProveedor(data) {
     const soloDigitos = phone.replace(/[^\d]/g, '');
 
     // 🔥 VALIDACIÓN DE PAÍS
-    if (!soloDigitos.startsWith('593')) {
+    if (!esLidWhatsApp(phone) && !soloDigitos.startsWith('593')) {
       // 📧 Enviar notificación de solo números nacionales
       const mensajeNotificacion = construirMensajeRestriccionPais(fullName);
       await enviarTextoWhatsApp(phone, mensajeNotificacion);
