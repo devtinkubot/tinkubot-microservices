@@ -923,10 +923,10 @@ def interpretar_respuesta_usuario(
 
     Args:
         text: Texto a interpretar
-        modo: "menu" para opciones 1-3, "consentimiento" para sí/no
+        modo: "menu" para opciones 1-4, "consentimiento" para sí/no
 
     Returns:
-        - modo="menu": "1", "2", "3" o None
+        - modo="menu": "1", "2", "3", "4" o None
         - modo="consentimiento": True, False o None
     """
     value = (text or "").strip().lower()
@@ -960,36 +960,50 @@ def interpretar_respuesta_usuario(
             return False
         return None
 
-    # Modo menú (opciones 1-3)
+    # Modo menú (opciones 1-4)
     if modo == "menu":
-        # Opción 1 - Registro
+        # Opción 1 - Gestionar servicios
         if (
             normalized_value.startswith("1")
             or normalized_value.startswith("uno")
-            or "registro" in normalized_value
-            or "crear" in normalized_value
+            or "servicio" in normalized_value
+            or "servicios" in normalized_value
+            or "gestionar" in normalized_value
         ):
             return "1"
 
-        # Opción 2 - Actualización
+        # Opción 2 - Selfie
         if (
             normalized_value.startswith("2")
             or normalized_value.startswith("dos")
-            or "actualizacion" in normalized_value
-            or "actualizar" in normalized_value
-            or "update" in normalized_value
+            or "selfie" in normalized_value
+            or "foto" in normalized_value
+            or "selfis" in normalized_value
+            or "photo" in normalized_value
         ):
             return "2"
 
-        # Opción 3 - Salir
+        # Opción 3 - Redes sociales
         if (
             normalized_value.startswith("3")
             or normalized_value.startswith("tres")
+            or "red" in normalized_value
+            or "social" in normalized_value
+            or "instagram" in normalized_value
+            or "facebook" in normalized_value
+        ):
+            return "3"
+
+        # Opción 4 - Salir
+        if (
+            normalized_value.startswith("4")
+            or normalized_value.startswith("cuatro")
             or "salir" in normalized_value
             or "terminar" in normalized_value
             or "menu" in normalized_value
+            or "volver" in normalized_value
         ):
-            return "3"
+            return "4"
 
         return None
 
