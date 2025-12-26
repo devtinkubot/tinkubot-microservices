@@ -12,7 +12,7 @@ mensaje_confirmando_disponibilidad = (
     "⏳ *Estoy confirmando disponibilidad con proveedores y te aviso en breve.*"
 )
 instruccion_seleccionar_proveedor = (
-    "**Responde con la letra (a-e) del proveedor para ver detalles.**"
+    "**Responde con el número (1-5) del proveedor para ver detalles.**"
 )
 
 # Consentimiento de protección de datos
@@ -55,14 +55,13 @@ def mensaje_intro_listado_proveedores(city: str) -> str:
 
 
 def bloque_listado_proveedores_compacto(providers: List[Dict[str, Any]]) -> str:
-    """Genera listado de proveedores con letras (a-e) y solo nombre."""
+    """Genera listado de proveedores con números (1-5) y solo nombre."""
     lines: List[str] = [""]
     for idx, provider in enumerate(providers[:5], start=1):
-        letter = chr(ord("a") + idx - 1)
         name = (
             provider.get("name") or provider.get("provider_name") or "Proveedor"
         ).strip()
-        lines.append(f"{letter}) {name}")
+        lines.append(f"{idx}) {name}")
     lines.append("")
     return "\n".join(lines)
 

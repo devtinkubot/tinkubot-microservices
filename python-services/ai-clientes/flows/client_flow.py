@@ -31,11 +31,9 @@ class ClientFlow:
         if not cleaned or cleaned.lower() in greetings:
             return flow, {"response": initial_prompt}
 
-        # Evitar que números u opciones sueltas (ej: "1", "2", "a") se tomen como servicio
-        if re.fullmatch(r"\d+([.,]\d+)?", cleaned) or cleaned.lower() in {
-            "1",
-            "2",
-            "3",
+        # Evitar que números u opciones sueltas (ej: "1", "2", "a") se toman como servicio
+        # NOTA: Permitimos "4" y "5" porque ahora se usan números 1-5 para proveedores
+        if re.fullmatch(r"[6-9]\d*", cleaned) or cleaned.lower() in {
             "a",
             "b",
             "c",
@@ -218,14 +216,14 @@ class ClientFlow:
             }
 
         provider = None
-        if choice_normalized in ("a", "b", "c", "d", "e"):
-            idx = ord(choice_normalized) - ord("a")
+        if choice_normalized in ("1", "2", "3", "4", "5"):
+            idx = int(choice_normalized) - 1
             if 0 <= idx < len(providers_list):
                 provider = providers_list[idx]
 
         if not provider:
             return {
-                "response": "Indica la letra (a-e) del proveedor que quieres ver."
+                "response": "Indica el número (1-5) del proveedor que quieres ver."
             }
 
         flow["state"] = "viewing_provider_detail"

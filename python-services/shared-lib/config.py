@@ -73,6 +73,34 @@ class Settings(BaseSettings):
     # Flow TTL (seconds) for conversational state in Redis
     flow_ttl_seconds: int = int(os.getenv("FLOW_TTL_SECONDS", "3600"))
 
+    # Session Timeout Configuration
+    session_timeout_enabled: bool = (
+        os.getenv("SESSION_TIMEOUT_ENABLED", "true").lower() == "true"
+    )
+    session_timeout_check_interval_seconds: int = int(
+        os.getenv("SESSION_TIMEOUT_CHECK_INTERVAL_SECONDS", "60")
+    )
+    session_timeout_warning_percent: float = float(
+        os.getenv("SESSION_TIMEOUT_WARNING_PERCENT", "0.5")
+    )
+
+    # Provider Session Timeouts (in minutes)
+    prov_timeout_default_minutes: int = int(os.getenv("PROV_TIMEOUT_DEFAULT_MINUTES", "30"))
+    prov_timeout_consent_minutes: int = int(os.getenv("PROV_TIMEOUT_CONSENT_MINUTES", "15"))
+    prov_timeout_data_minutes: int = int(os.getenv("PROV_TIMEOUT_DATA_MINUTES", "10"))
+    prov_timeout_profession_minutes: int = int(os.getenv("PROV_TIMEOUT_PROFESSION_MINUTES", "15"))
+    prov_timeout_photo_minutes: int = int(os.getenv("PROV_TIMEOUT_PHOTO_MINUTES", "30"))
+    prov_timeout_confirm_minutes: int = int(os.getenv("PROV_TIMEOUT_CONFIRM_MINUTES", "10"))
+    prov_timeout_verification_hours: int = int(os.getenv("PROV_TIMEOUT_VERIFICATION_HOURS", "72"))
+    prov_timeout_menu_minutes: int = int(os.getenv("PROV_TIMEOUT_MENU_MINUTES", "60"))
+
+    # Client Session Timeouts (in minutes)
+    client_timeout_default_minutes: int = int(os.getenv("CLIENT_TIMEOUT_DEFAULT_MINUTES", "20"))
+    client_timeout_service_minutes: int = int(os.getenv("CLIENT_TIMEOUT_SERVICE_MINUTES", "15"))
+    client_timeout_city_minutes: int = int(os.getenv("CLIENT_TIMEOUT_CITY_MINUTES", "10"))
+    client_timeout_results_minutes: int = int(os.getenv("CLIENT_TIMEOUT_RESULTS_MINUTES", "30"))
+    client_timeout_detail_minutes: int = int(os.getenv("CLIENT_TIMEOUT_DETAIL_MINUTES", "15"))
+
     # Search Service Configuration
     max_search_results: int = int(os.getenv("MAX_SEARCH_RESULTS", "20"))
     default_search_limit: int = int(os.getenv("DEFAULT_SEARCH_LIMIT", "10"))

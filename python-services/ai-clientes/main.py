@@ -1333,7 +1333,7 @@ def ui_buttons(text: str, labels: list[str]):
 def ui_provider_results(text: str, providers: list[Dict[str, Any]]):
     labeled = []
     for idx, provider in enumerate(providers[:5], start=1):
-        option_label = chr(ord("a") + idx - 1)
+        option_label = str(idx)
         labeled.append({**provider, "_option_label": option_label})
     return {
         "response": text,
