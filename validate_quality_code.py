@@ -1,21 +1,23 @@
 #!/usr/bin/env python3
 """
-Script de Validación de Calidad Local - TinkuBot Python Services
+Script de Validación de Calidad Local - TinkuBot (Python + Node.js)
 
-Ejecuta todas las validaciones de calidad antes de subir a GitHub.
-Uso: python validate_quality.py [--fix] [--service nombre_servicio]
+Ejecuta validaciones de calidad antes de subir a GitHub.
+Uso: python validate_quality_code.py [--fix] [--service nombre_servicio] [--stack python|node|all]
 
 Opciones:
 --fix : Aplica correcciones automáticas (formato con black)
---service : Valida solo un servicio específico (ai-clientes, ai-proveedores, search-token)
+--service : Valida un servicio específico (python o node)
+--stack : Ejecuta validaciones para python, node o ambos (default: all)
 """
 
+import argparse
+import json
+import os
 import subprocess
 import sys
-import os
-import argparse
 from pathlib import Path
-from typing import List, Tuple, Dict
+from typing import Dict, List, Tuple
 
 # Colores para salida
 class Colors:
@@ -35,17 +37,13 @@ def print_banner():
     print(f"""
 {Colors.CYAN}{Colors.BOLD}
 ╔══════════════════════════════════════════════════════════════╗
-║          🔍 VALIDADOR DE CALIDAD - TINKUBOT PYTHON          ║
+║          🔍 VALIDADOR DE CALIDAD - TINKUBOT (PY/JS)         ║
 ║                 Antes de subir a GitHub                    ║
 ╚══════════════════════════════════════════════════════════════╝{Colors.END}
 {Colors.WHITE}
 Este script ejecuta las siguientes validaciones:
-• Formato de código (Black)
-• Linting (Flake8)
-• Type Checking (MyPy)
-• Seguridad (Bandit)
-• Importaciones ordenadas (isort)
-• Complejidad (McCabe)
+• Python: Black, Flake8, MyPy, Bandit, isort, sintaxis
+• Node: Prettier, ESLint (según scripts definidos)
 {Colors.END}
 """)
 
@@ -118,6 +116,48 @@ def check_tool_availability(tool_name: str) -> bool:
     except:
         return False
 
+def load_package_scripts(service_path: Path) -> Dict[str, str]:
+    """Carga los scripts desde package.json."""
+    package_json = service_path / "package.json"
+    if not package_json.exists():
+        return {}
+    try:
+        return json.loads(package_json.read_text()).get("scripts", {})
+    except Exception:
+        return {}
+
+def ensure_node_modules(service_path: Path, install_deps: bool) -> bool:
+    """Asegura dependencias Node instaladas."""
+    node_modules = service_path / "node_modules"
+    if node_modules.exists():
+        return True
+    if not install_deps:
+        print_warning(
+            f"node_modules no existe en {service_path.name}. Ejecuta con --node-install para instalar."
+        )
+        return False
+    install_cmd = ["npm", "ci"] if (service_path / "package-lock.json").exists() else ["npm", "install"]
+    success, _ = run_command(install_cmd, f"Instalando dependencias Node - {service_path.name}", cwd=str(service_path))
+    return success
+
+def run_npm_script(service_path: Path, script_name: str, description: str) -> bool:
+    """Ejecuta un script npm si existe."""
+    scripts = load_package_scripts(service_path)
+    if script_name not in scripts:
+        print_warning(f"Script '{script_name}' no existe en {service_path.name}, omitiendo...")
+        return False
+    success, _ = run_command(["npm", "run", script_name], description, cwd=str(service_path))
+    return success
+
+def run_npm_audit(service_path: Path, description: str) -> bool:
+    """Ejecuta npm audit con un umbral conservador."""
+    success, _ = run_command(
+        ["npm", "audit", "--audit-level=high"],
+        description,
+        cwd=str(service_path)
+    )
+    return success
+
 def validate_formatting(services: List[str], fix: bool = False) -> bool:
     """Valida y opcionalmente corrige el formato con Black"""
     print(f"\n{Colors.BOLD}{Colors.BLUE}📝 VALIDACIÓN DE FORMATO (BLACK){Colors.END}")
@@ -141,7 +181,7 @@ def validate_formatting(services: List[str], fix: bool = False) -> bool:
         print_info("Modo de verificación (sin cambios)")
 
     for service in services:
-        service_path = Path(service)
+        service_path = Path("python-services") / service
         if not service_path.exists():
             print_warning(f"Servicio {service} no encontrado, omitiendo...")
             continue
@@ -174,7 +214,7 @@ def validate_imports(services: List[str], fix: bool = False) -> bool:
         print_info("Modo de verificación (sin cambios)")
 
     for service in services:
-        service_path = Path(service)
+        service_path = Path("python-services") / service
         if not service_path.exists():
             continue
 
@@ -221,7 +261,7 @@ max-complexity = 15
     all_success = True
 
     for service in services:
-        service_path = Path(service)
+        service_path = Path("python-services") / service
         if not service_path.exists():
             continue
 
@@ -250,7 +290,7 @@ def validate_types(services: List[str]) -> bool:
     all_success = True
 
     for service in services:
-        service_path = Path(service)
+        service_path = Path("python-services") / service
         if not service_path.exists():
             continue
 
@@ -291,7 +331,7 @@ def validate_security(services: List[str]) -> bool:
     all_success = True
 
     for service in services:
-        service_path = Path(service)
+        service_path = Path("python-services") / service
         if not service_path.exists():
             continue
 
@@ -317,7 +357,7 @@ def validate_syntax(services: List[str]) -> bool:
     all_success = True
 
     for service in services:
-        service_path = Path(service)
+        service_path = Path("python-services") / service
         if not service_path.exists():
             continue
 
@@ -335,16 +375,65 @@ def validate_syntax(services: List[str]) -> bool:
 
     return all_success
 
+def validate_node_quality(services: List[str], fix: bool = False, run_audit: bool = False,
+                          install_deps: bool = False) -> Dict[str, bool]:
+    """Valida calidad en servicios Node.js."""
+    results: Dict[str, bool] = {}
+
+    print(f"\n{Colors.BOLD}{Colors.BLUE}🟢 VALIDACIÓN NODE.JS{Colors.END}")
+
+    if not check_tool_availability("npm"):
+        print_error("npm no está instalado o no está en PATH")
+        results["node"] = False
+        return results
+
+    for service in services:
+        service_path = Path("nodejs-services") / service
+        if not service_path.exists():
+            print_warning(f"Servicio Node {service} no encontrado, omitiendo...")
+            continue
+
+        print(f"\n{Colors.CYAN}Validando Node en: {service}{Colors.END}")
+
+        if not ensure_node_modules(service_path, install_deps):
+            results[f"{service}-deps"] = False
+            continue
+
+        fmt_script = "format" if fix else "format:check"
+        results[f"{service}-format"] = run_npm_script(
+            service_path,
+            fmt_script,
+            f"Prettier - {service}"
+        )
+        results[f"{service}-lint"] = run_npm_script(
+            service_path,
+            "lint",
+            f"ESLint - {service}"
+        )
+
+        if run_audit:
+            results[f"{service}-audit"] = run_npm_audit(
+                service_path,
+                f"npm audit - {service}"
+            )
+
+    return results
+
 def main():
     """Función principal"""
+    python_services = ["ai-clientes", "ai-proveedores", "ai-search", "av-proveedores"]
+    node_services = ["frontend", "wa-clientes", "wa-proveedores"]
+
     parser = argparse.ArgumentParser(
-        description="Validador de calidad para TinkuBot Python Services",
+        description="Validador de calidad para TinkuBot (Python + Node.js)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Ejemplos:
-  python validate_quality.py                    # Validar todos los servicios
-  python validate_quality.py --service ai-clientes  # Validar solo ai-clientes
-  python validate_quality.py --fix                 # Corregir automáticamente
+  python validate_quality_code.py                    # Validar todos los servicios
+  python validate_quality_code.py --service ai-clientes  # Validar solo ai-clientes
+  python validate_quality_code.py --service wa-clientes  # Validar solo wa-clientes
+  python validate_quality_code.py --stack node           # Validar solo Node.js
+  python validate_quality_code.py --fix                 # Corregir automáticamente
         """
     )
 
@@ -356,8 +445,27 @@ Ejemplos:
 
     parser.add_argument(
         "--service",
-        choices=["ai-clientes", "ai-proveedores", "search-token"],
+        choices=python_services + node_services,
         help="Valida solo un servicio específico"
+    )
+
+    parser.add_argument(
+        "--stack",
+        choices=["python", "node", "all"],
+        default="all",
+        help="Selecciona qué stack validar (default: all)"
+    )
+
+    parser.add_argument(
+        "--node-audit",
+        action="store_true",
+        help="Ejecuta npm audit en servicios Node.js (puede requerir red)"
+    )
+
+    parser.add_argument(
+        "--node-install",
+        action="store_true",
+        help="Instala dependencias Node.js si faltan (npm ci/install)"
     )
 
     args = parser.parse_args()
@@ -366,11 +474,22 @@ Ejemplos:
 
     # Determinar servicios a validar
     if args.service:
-        services = [args.service]
+        if args.service in python_services:
+            python_services = [args.service]
+            node_services = []
+        else:
+            node_services = [args.service]
+            python_services = []
         print_info(f"Validando solo el servicio: {args.service}")
     else:
-        services = ["ai-clientes", "ai-proveedores", "ai-search", "av-proveedores", "search-token"]
-        print_info("Validando todos los servicios Python")
+        if args.stack == "python":
+            node_services = []
+            print_info("Validando solo servicios Python")
+        elif args.stack == "node":
+            python_services = []
+            print_info("Validando solo servicios Node.js")
+        else:
+            print_info("Validando servicios Python y Node.js")
 
     if args.fix:
         print_warning("Modo de corrección automática activado")
@@ -378,17 +497,27 @@ Ejemplos:
     # Ejecutar validaciones
     results = {}
 
-    # 1. Validar sintaxis primero
-    results["syntax"] = validate_syntax(services)
+    if python_services:
+        # 1. Validar sintaxis primero
+        results["py-syntax"] = validate_syntax(python_services)
 
-    # 2. Validar formato y orden
-    results["formatting"] = validate_formatting(services, fix=args.fix)
-    results["imports"] = validate_imports(services, fix=args.fix)
+        # 2. Validar formato y orden
+        results["py-formatting"] = validate_formatting(python_services, fix=args.fix)
+        results["py-imports"] = validate_imports(python_services, fix=args.fix)
 
-    # 3. Validaciones estáticas
-    results["linting"] = validate_linting(services)
-    results["types"] = validate_types(services)
-    results["security"] = validate_security(services)
+        # 3. Validaciones estáticas
+        results["py-linting"] = validate_linting(python_services)
+        results["py-types"] = validate_types(python_services)
+        results["py-security"] = validate_security(python_services)
+
+    if node_services:
+        node_results = validate_node_quality(
+            node_services,
+            fix=args.fix,
+            run_audit=args.node_audit,
+            install_deps=args.node_install
+        )
+        results.update(node_results)
 
     # Resumen final
     print(f"\n{Colors.BOLD}{Colors.CYAN}╔══════════════════════════════════════════════════════════════╗{Colors.END}")
@@ -401,7 +530,7 @@ Ejemplos:
         print(f"{color}{check_name.upper():<12}: {status}{Colors.END}")
 
     total_checks = len(results)
-    passed_checks = sum(results.values())
+    passed_checks = sum(1 for success in results.values() if success)
 
     print(f"\n{Colors.WHITE}Resultados: {passed_checks}/{total_checks} validaciones pasaron{Colors.END}")
 

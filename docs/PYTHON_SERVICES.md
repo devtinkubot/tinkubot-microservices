@@ -225,8 +225,7 @@ python main.py
 Antes de hacer commit, ejecuta la validación:
 
 ```bash
-cd python-services
-python validate_quality.py
+python validate_quality_code.py
 ```
 
 La validación incluye:
@@ -235,6 +234,48 @@ La validación incluye:
 - **Flake8**: Linting
 - **MyPy**: Verificación de tipos
 - **Bandit**: Análisis de seguridad
+- **Node.js**: Prettier/ESLint si se habilita en el script
+
+## Node.js Services
+
+Servicios Node.js para WhatsApp y frontend:
+
+| Servicio | Puerto | Descripción |
+|----------|--------|-------------|
+| **wa-clientes** | 5001 | Bot de WhatsApp para clientes |
+| **wa-proveedores** | 5002 | Bot de WhatsApp para proveedores |
+| **frontend** | 5000 | UI y panel administrativo |
+
+### Ejecución local (Docker)
+
+```bash
+docker compose up -d wa-clientes wa-proveedores frontend
+```
+
+### Validación de calidad Node.js
+
+```bash
+python validate_quality_code.py --stack node
+```
+
+Opcional:
+```bash
+python validate_quality_code.py --stack node --node-install
+python validate_quality_code.py --stack node --node-audit
+```
+
+## Docker Services
+
+Validación de Dockerfiles y docker-compose:
+
+```bash
+python validate_docker.py
+```
+
+Tips:
+- Mantener imagen base con version fija.
+- Definir healthcheck y limites de recursos.
+- Usar usuario no root en Dockerfiles.
 
 ## Estructura de Directorios
 
@@ -263,7 +304,6 @@ python-services/
 │   ├── config.py         # Configuración centralizada
 │   ├── redis_client.py   # Cliente Redis
 │   └── session_timeout.py # Gestión de sesiones
-└── validate_quality.py   # Script de validación
 ```
 
 ## Logs y Monitoreo
@@ -308,6 +348,6 @@ Los servicios usan `structlog` para logging estructurado:
 1. Fork del repositorio
 2. Crear rama: `git checkout -b feature/nueva-funcionalidad`
 3. Implementar cambios
-4. Ejecutar `python validate_quality.py`
+4. Ejecutar `python validate_quality_code.py`
 5. Commit y push
 6. Abrir Pull Request

@@ -48,6 +48,7 @@ class DockerfileValidator:
         self.content = self.path.read_text()
         self.lines = self.content.split("\n")
         self.results: list[ValidationResult] = []
+        self._base_images = self._extract_base_images()
 
     def validate(self) -> list[ValidationResult]:
         """Ejecuta todas las validaciones."""
@@ -62,6 +63,16 @@ class DockerfileValidator:
         self._check_caching_layers()
 
         return self.results
+
+    def _extract_base_images(self) -> list[str]:
+        """Extrae imágenes base desde instrucciones FROM."""
+        images: list[str] = []
+        from_pattern = re.compile(r"^FROM\s+([^\s]+)(?:\s+AS\s+\S+)?", re.IGNORECASE)
+        for line in self.lines:
+            match = from_pattern.match(line.strip())
+            if match:
+                images.append(match.group(1))
+        return images
 
     def _add_result(
         self,
@@ -101,33 +112,33 @@ class DockerfileValidator:
 
     def _check_base_image_version(self) -> None:
         """Verifica que la imagen base tenga versión específica."""
-        from_pattern = re.compile(r"^FROM\s+([^\s]+)")
+        from_pattern = re.compile(r"^FROM\s+([^\s]+)(?:\s+AS\s+\S+)?", re.IGNORECASE)
 
         for i, line in enumerate(self.lines, 1):
             match = from_pattern.match(line.strip())
-            if match:
-                image = match.group(1)
+            if not match:
+                continue
 
-                # Ignorar imágenes multi-stage (AS keyword)
-                if " AS " in line.upper():
-                    continue
+            image = match.group(1)
+            has_digest = "@" in image
+            has_tag = ":" in image.split("@", 1)[0]
+            is_latest = image.endswith(":latest")
 
-                # Verificar si tiene tag específico (no latest)
-                if ":" not in image or image.endswith(":latest"):
-                    self._add_result(
-                        check_name="Base Image Version",
-                        severity=Severity.MEDIUM,
-                        message=f"Imagen base sin versión específica: {image}",
-                        line=i,
-                    )
-                else:
-                    self._add_result(
-                        check_name="Base Image Version",
-                        severity=Severity.INFO,
-                        message=f"Versión específica: {image}",
-                        line=i,
-                        passed=True,
-                    )
+            if has_digest or (has_tag and not is_latest):
+                self._add_result(
+                    check_name="Base Image Version",
+                    severity=Severity.INFO,
+                    message=f"Versión específica: {image}",
+                    line=i,
+                    passed=True,
+                )
+            else:
+                self._add_result(
+                    check_name="Base Image Version",
+                    severity=Severity.MEDIUM,
+                    message=f"Imagen base sin versión específica: {image}",
+                    line=i,
+                )
 
     def _check_labels(self) -> None:
         """Verifica metadatos LABEL."""
@@ -199,7 +210,7 @@ class DockerfileValidator:
 
     def _check_python_unbuffered(self) -> None:
         """Verifica PYTHONUNBUFFERED para servicios Python."""
-        if "python" in self.content.lower():
+        if any("python" in img.lower() for img in self._base_images):
             if re.search(r"ENV\s+PYTHONUNBUFFERED=1", self.content):
                 self._add_result(
                     check_name="PYTHONUNBUFFERED",
@@ -216,7 +227,7 @@ class DockerfileValidator:
 
     def _check_node_env(self) -> None:
         """Verifica NODE_ENV=production para servicios Node.js."""
-        if "node" in self.content.lower():
+        if any(re.search(r"\bnode\b", img.lower()) for img in self._base_images):
             if re.search(r"ENV\s+NODE_ENV=production", self.content):
                 self._add_result(
                     check_name="NODE_ENV",
@@ -233,7 +244,7 @@ class DockerfileValidator:
 
     def _check_add_vs_copy(self) -> None:
         """Advierte sobre uso de ADD vs COPY."""
-        add_count = len(re.findall(r"^\s+ADD\s+", self.content, re.MULTILINE))
+        add_count = len(re.findall(r"^\s*ADD\s+", self.content, re.MULTILINE))
 
         if add_count > 0:
             self._add_result(
@@ -302,7 +313,8 @@ class DockerComposeValidator:
 
     def _check_healthcheck(self) -> None:
         """Verifica healthcheck en servicios."""
-        services = re.findall(r"^\s{2}(\w+):", self.content, re.MULTILINE)
+        services_block = self._extract_services_block()
+        services = re.findall(r"^\s{2}([\w-]+):", services_block, re.MULTILINE)
 
         services_with_healthcheck = []
         for service in services:
@@ -401,14 +413,16 @@ class DockerComposeValidator:
     def _check_image_versions(self) -> None:
         """Advierte sobre imágenes sin versión específica."""
         # Buscar imágenes externas (no build locales)
-        external_images = re.findall(r"image:\s+([\w/]+):?([\w.]*)", self.content)
+        image_lines = re.findall(r"^\s*image:\s*([^\s#]+)", self.content, re.MULTILINE)
 
-        for name, tag in external_images:
-            if not tag or tag == "latest":
+        for image in image_lines:
+            if "@" in image:
+                continue  # digest pinning is OK
+            if ":" not in image or image.endswith(":latest"):
                 self._add_result(
                     check_name="Image Versions",
                     severity=Severity.LOW,
-                    message=f"Imagen sin versión específica: {name}:{tag or 'latest'}",
+                    message=f"Imagen sin versión específica: {image if ':' in image else image + ':latest'}",
                 )
 
     def _extract_service_block(self, service_name: str) -> str:
@@ -426,6 +440,18 @@ class DockerComposeValidator:
 
         if next_service:
             return self.content[start : start + next_service.start()]
+        return self.content[start:]
+
+    def _extract_services_block(self) -> str:
+        """Extrae el bloque de servicios del docker-compose."""
+        match = re.search(r"^services:\s*$", self.content, re.MULTILINE)
+        if not match:
+            return ""
+        start = match.end()
+        # Termina cuando aparece otra clave top-level
+        next_top = re.search(r"^[a-zA-Z0-9_-]+:\s*$", self.content[start:], re.MULTILINE)
+        if next_top:
+            return self.content[start : start + next_top.start()]
         return self.content[start:]
 
 
