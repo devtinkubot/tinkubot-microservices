@@ -4,13 +4,10 @@ Servicio de caché Redis para Search Service
 
 import json
 import logging
-import pickle
-from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 import redis.asyncio as redis
 from models.schemas import CacheConfig, Metrics, SearchResult
-
 from shared_lib.config import settings
 
 logger = logging.getLogger(__name__)
@@ -95,15 +92,11 @@ class CacheService:
             key = self._make_key("search", query_hash)
             # Serializar a JSON para mejor compatibilidad
             result_dict = result.model_dump()
-            result_dict["metadata"][
-                "cache_hit"
-            ] = False  # Marcar como no-caché inicialmente
+            result_dict["metadata"]["cache_hit"] = False  # Marcar como no-caché inicialmente
 
             serialized_data = json.dumps(result_dict, default=str)
 
-            success = await self.redis_client.setex(
-                key, self.config.ttl_seconds, serialized_data
-            )
+            success = await self.redis_client.setex(key, self.config.ttl_seconds, serialized_data)
 
             return bool(success)
 
@@ -128,9 +121,7 @@ class CacheService:
 
         return None
 
-    async def cache_suggestions(
-        self, partial_query: str, suggestions: List[str]
-    ) -> bool:
+    async def cache_suggestions(self, partial_query: str, suggestions: List[str]) -> bool:
         """Guardar sugerencias en caché (con TTL más corto)"""
         if not self.is_connected:
             return False
@@ -142,9 +133,7 @@ class CacheService:
             # Las sugerencias tienen un TTL más corto
             suggestions_ttl = min(self.config.ttl_seconds // 2, 300)  # Máximo 5 minutos
 
-            success = await self.redis_client.setex(
-                key, suggestions_ttl, serialized_data
-            )
+            success = await self.redis_client.setex(key, suggestions_ttl, serialized_data)
 
             return bool(success)
 
@@ -178,9 +167,7 @@ class CacheService:
             key = self._make_key("metrics", "global")
             serialized_data = json.dumps(metrics.model_dump())
 
-            success = await self.redis_client.setex(
-                key, 3600, serialized_data  # 1 hora para métricas
-            )
+            success = await self.redis_client.setex(key, 3600, serialized_data)  # 1 hora para métricas
 
             return bool(success)
 
@@ -215,14 +202,9 @@ class CacheService:
         try:
             # Usar sorted set para consultas populares
             key = self._make_key("popular", "queries")
-            popular_queries = await self.redis_client.zrevrange(
-                key, 0, limit - 1, withscores=True
-            )
+            popular_queries = await self.redis_client.zrevrange(key, 0, limit - 1, withscores=True)
 
-            return [
-                {"query": query, "count": int(score)}
-                for query, score in popular_queries
-            ]
+            return [{"query": query, "count": int(score)} for query, score in popular_queries]
 
         except Exception as e:
             logger.warning(f"⚠️ Error obteniendo consultas populares: {e}")
@@ -279,9 +261,7 @@ class CacheService:
                 "total_commands_processed": info.get("total_commands_processed", 0),
                 "keyspace_hits": info.get("keyspace_hits", 0),
                 "keyspace_misses": info.get("keyspace_misses", 0),
-                "db_keys": sum(
-                    int(db.split("=")[1].split(",")[0]) for db in keyspace.values()
-                ),
+                "db_keys": sum(int(db.split("=")[1].split(",")[0]) for db in keyspace.values()),
                 "config_ttl_seconds": self.config.ttl_seconds,
                 "config_max_entries": self.config.max_entries,
             }

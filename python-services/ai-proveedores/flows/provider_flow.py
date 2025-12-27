@@ -6,10 +6,8 @@ import re
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from pydantic import ValidationError
-
 from shared_lib.models import ProviderCreate
 from templates.prompts import (
-    provider_post_registration_menu_message,
     provider_under_review_message,
 )
 
@@ -66,9 +64,7 @@ class ProviderFlow:
         return servicios[:5]
 
     @staticmethod
-    def handle_awaiting_city(
-        flow: Dict[str, Any], message_text: Optional[str]
-    ) -> Dict[str, Any]:
+    def handle_awaiting_city(flow: Dict[str, Any], message_text: Optional[str]) -> Dict[str, Any]:
         city = normalize_text(message_text)
         if len(city) < 2:
             return {
@@ -84,9 +80,7 @@ class ProviderFlow:
         }
 
     @staticmethod
-    def handle_awaiting_name(
-        flow: Dict[str, Any], message_text: Optional[str]
-    ) -> Dict[str, Any]:
+    def handle_awaiting_name(flow: Dict[str, Any], message_text: Optional[str]) -> Dict[str, Any]:
         name = normalize_text(message_text)
         if len(name) < 2:
             return {
@@ -99,22 +93,19 @@ class ProviderFlow:
         return {
             "success": True,
             "response": (
-                '*¿Cuál es tu profesión u oficio? Escribe el título, por ejemplo: '
+                "*¿Cuál es tu profesión u oficio? Escribe el título, por ejemplo: "
                 '"Carpintero", "Ingeniero Electrico", "Abogado".*'
             ),
         }
 
     @staticmethod
-    def handle_awaiting_profession(
-        flow: Dict[str, Any], message_text: Optional[str]
-    ) -> Dict[str, Any]:
+    def handle_awaiting_profession(flow: Dict[str, Any], message_text: Optional[str]) -> Dict[str, Any]:
         profession = normalize_text(message_text)
         if len(profession) < 2:
             return {
                 "success": True,
                 "response": (
-                    '*Indica tu profesión u oficio. Ejemplos: "Carpintero", '
-                    '"Ingeniero Electrico", "Abogado".*'
+                    '*Indica tu profesión u oficio. Ejemplos: "Carpintero", ' '"Ingeniero Electrico", "Abogado".*'
                 ),
             }
         if len(profession) > 150:
@@ -137,9 +128,7 @@ class ProviderFlow:
         }
 
     @staticmethod
-    def handle_awaiting_specialty(
-        flow: Dict[str, Any], message_text: Optional[str]
-    ) -> Dict[str, Any]:
+    def handle_awaiting_specialty(flow: Dict[str, Any], message_text: Optional[str]) -> Dict[str, Any]:
         specialty = normalize_text(message_text)
         lowered = specialty.lower()
         if lowered in {"omitir", "ninguna", "na", "n/a"}:
@@ -168,11 +157,7 @@ class ProviderFlow:
                 ),
             }
 
-        services_list = [
-            item.strip()
-            for item in re.split(r"[;,/\n]+", specialty)
-            if item and item.strip()
-        ]
+        services_list = [item.strip() for item in re.split(r"[;,/\n]+", specialty) if item and item.strip()]
 
         if len(services_list) > 10:
             return {
@@ -199,9 +184,7 @@ class ProviderFlow:
         }
 
     @staticmethod
-    def handle_awaiting_experience(
-        flow: Dict[str, Any], message_text: Optional[str]
-    ) -> Dict[str, Any]:
+    def handle_awaiting_experience(flow: Dict[str, Any], message_text: Optional[str]) -> Dict[str, Any]:
         years = parse_experience_years(message_text)
         if years is None:
             return {
@@ -213,22 +196,18 @@ class ProviderFlow:
         flow["state"] = "awaiting_email"
         return {
             "success": True,
-            "response": "*Escribe tu correo electrónico o escribe \"omitir\" si no deseas agregarlo.*",
+            "response": '*Escribe tu correo electrónico o escribe "omitir" si no deseas agregarlo.*',
         }
 
     @staticmethod
-    def handle_awaiting_email(
-        flow: Dict[str, Any], message_text: Optional[str]
-    ) -> Dict[str, Any]:
+    def handle_awaiting_email(flow: Dict[str, Any], message_text: Optional[str]) -> Dict[str, Any]:
         email = normalize_text(message_text)
         if email.lower() in {"omitir", "na", "n/a", "ninguno", "ninguna"}:
             email = None
         elif "@" not in email or "." not in email:
             return {
                 "success": True,
-                "response": (
-                    "*El correo no parece valido. Envialo nuevamente o escribe 'omitir'.*"
-                ),
+                "response": ("*El correo no parece valido. Envialo nuevamente o escribe 'omitir'.*"),
             }
 
         flow["email"] = email
@@ -242,7 +221,9 @@ class ProviderFlow:
         }
 
     @staticmethod
-    def parse_social_media_input(message_text: Optional[str]) -> Dict[str, Optional[str]]:
+    def parse_social_media_input(
+        message_text: Optional[str],
+    ) -> Dict[str, Optional[str]]:
         """Parsea la entrada de red social y devuelve url + tipo."""
         social = normalize_text(message_text)
         if social.lower() in {"omitir", "na", "n/a", "ninguno"}:
@@ -254,9 +235,7 @@ class ProviderFlow:
         return {"url": f"https://instagram.com/{social}", "type": "instagram"}
 
     @staticmethod
-    def handle_awaiting_social_media(
-        flow: Dict[str, Any], message_text: Optional[str]
-    ) -> Dict[str, Any]:
+    def handle_awaiting_social_media(flow: Dict[str, Any], message_text: Optional[str]) -> Dict[str, Any]:
         parsed = ProviderFlow.parse_social_media_input(message_text)
         flow["social_media_url"] = parsed["url"]
         flow["social_media_type"] = parsed["type"]
@@ -265,8 +244,7 @@ class ProviderFlow:
         return {
             "success": True,
             "response": (
-                "*Perfecto. Ahora necesito la foto de la Cédula (parte frontal). "
-                "Envia la imagen como adjunto.*"
+                "*Perfecto. Ahora necesito la foto de la Cédula (parte frontal). " "Envia la imagen como adjunto.*"
             ),
         }
 
@@ -283,11 +261,7 @@ class ProviderFlow:
         face = "Recibida" if flow.get("face_image") else "Pendiente"
 
         experience = flow.get("experience_years")
-        experience_text = (
-            f"{experience} años"
-            if isinstance(experience, int) and experience > 0
-            else "Sin especificar"
-        )
+        experience_text = f"{experience} años" if isinstance(experience, int) and experience > 0 else "Sin especificar"
         specialty = flow.get("specialty") or "No especificada"
         city = flow.get("city") or "No especificada"
         profession = flow.get("profession") or "No especificada"
@@ -321,9 +295,7 @@ class ProviderFlow:
         flow: Dict[str, Any],
         message_text: Optional[str],
         phone: str,
-        register_provider_fn: Callable[
-            [ProviderCreate], Awaitable[Optional[Dict[str, Any]]]
-        ],
+        register_provider_fn: Callable[[ProviderCreate], Awaitable[Optional[Dict[str, Any]]]],
         upload_media_fn: Callable[[str, Dict[str, Any]], Awaitable[None]],
         reset_flow_fn: Callable[[], Awaitable[None]],
         logger: Any,
@@ -342,19 +314,11 @@ class ProviderFlow:
                 "response": ("Reiniciemos. *En que ciudad trabajas principalmente?*"),
             }
 
-        if (
-            text.startswith("1")
-            or text.startswith("confirm")
-            or text in {"si", "ok", "listo", "confirmar"}
-        ):
+        if text.startswith("1") or text.startswith("confirm") or text in {"si", "ok", "listo", "confirmar"}:
             specialty = flow.get("specialty")
             services_list = []
             if isinstance(specialty, str):
-                services_list = [
-                    item.strip()
-                    for item in re.split(r"[;,/\n]+", specialty)
-                    if item and item.strip()
-                ]
+                services_list = [item.strip() for item in re.split(r"[;,/\n]+", specialty) if item and item.strip()]
                 if not services_list and specialty.strip():
                     services_list = [specialty.strip()]
 
@@ -373,8 +337,14 @@ class ProviderFlow:
                 )
             except ValidationError as exc:
                 logger.error("Datos de registro invalidos para %s: %s", phone, exc)
-                first_error = exc.errors()[0] if exc.errors() else {}
-                reason = first_error.get("msg") or "Datos inválidos"
+                first_error = (
+                    exc.errors()[0]
+                    if exc.errors()
+                    else {"type": "value_error", "loc": (), "msg": "Datos inválidos", "input": None}
+                )
+                reason = (
+                    first_error["msg"] if isinstance(first_error, dict) and "msg" in first_error else "Datos inválidos"
+                )
                 return {
                     "success": False,
                     "response": (
@@ -390,9 +360,7 @@ class ProviderFlow:
                     registered_provider.get("id"),
                 )
                 provider_id = registered_provider.get("id")
-                servicios_registrados = ProviderFlow.parse_services_string(
-                    registered_provider.get("services")
-                )
+                servicios_registrados = ProviderFlow.parse_services_string(registered_provider.get("services"))
                 flow["services"] = servicios_registrados
                 if provider_id:
                     await upload_media_fn(provider_id, flow)
@@ -414,14 +382,10 @@ class ProviderFlow:
             logger.error("No se pudo registrar el proveedor")
             return {
                 "success": False,
-                "response": (
-                    "*Hubo un error al guardar tu informacion. Por favor intenta de nuevo.*"
-                ),
+                "response": ("*Hubo un error al guardar tu informacion. Por favor intenta de nuevo.*"),
             }
 
         return {
             "success": True,
-            "response": (
-                "*Por favor selecciona 1 para confirmar o 2 para editar tu informacion.*"
-            ),
+            "response": ("*Por favor selecciona 1 para confirmar o 2 para editar tu informacion.*"),
         }

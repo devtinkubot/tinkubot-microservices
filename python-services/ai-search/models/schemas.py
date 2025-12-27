@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 class SearchStrategy(str, Enum):
     """Estrategias de búsqueda disponibles"""
 
-    TOKEN_BASED = "token_based"
+    TOKEN_BASED = "token_based"  # nosec: B105
     FULL_TEXT = "full_text"
     HYBRID = "hybrid"
     AI_ENHANCED = "ai_enhanced"

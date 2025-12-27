@@ -3,19 +3,16 @@ Servicio principal de búsqueda para Search Service
 """
 
 import asyncio
-import json
 import hashlib
+import json
 import logging
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
 from time import perf_counter
+from typing import Any, Dict, List, Optional
 
-from openai import AsyncOpenAI
-from supabase import Client, create_client
 from models.schemas import (
-    Metrics,
     ProviderInfo,
     SearchFilters,
     SearchMetadata,
@@ -23,10 +20,11 @@ from models.schemas import (
     SearchResult,
     SearchStrategy,
 )
+from openai import AsyncOpenAI
 from services.cache_service import cache_service
-from utils.text_processor import SERVICE_KEYWORDS, TextProcessor, analyze_query
-
 from shared_lib.config import settings
+from supabase import Client, create_client
+from utils.text_processor import SERVICE_KEYWORDS, TextProcessor, analyze_query
 
 logger = logging.getLogger(__name__)
 SUPABASE_TIMEOUT_SECONDS = float(getattr(settings, "search_timeout_ms", 5000) or 5000) / 1000.0
@@ -41,9 +39,7 @@ class SearchService:
         self.openai_client: Optional[AsyncOpenAI] = None
         self.text_processor = TextProcessor()
         self.intent_aliases: Dict[str, set[str]] = self._load_intent_aliases()
-        self._openai_semaphore = asyncio.Semaphore(
-            int(getattr(settings, "max_openai_concurrency", 5) or 5)
-        )
+        self._openai_semaphore = asyncio.Semaphore(int(getattr(settings, "max_openai_concurrency", 5) or 5))
 
     async def _run_supabase(self, op, label: str):
         """
@@ -52,9 +48,7 @@ class SearchService:
         loop = asyncio.get_running_loop()
         start = perf_counter()
         try:
-            return await asyncio.wait_for(
-                loop.run_in_executor(None, op), timeout=SUPABASE_TIMEOUT_SECONDS
-            )
+            return await asyncio.wait_for(loop.run_in_executor(None, op), timeout=SUPABASE_TIMEOUT_SECONDS)
         finally:
             elapsed_ms = (perf_counter() - start) * 1000
             if elapsed_ms >= SLOW_QUERY_THRESHOLD_MS:
@@ -62,12 +56,11 @@ class SearchService:
                     "perf_supabase",
                     extra={"op": label, "elapsed_ms": round(elapsed_ms, 2)},
                 )
+
     async def initialize(self):
         """Inicializar conexión a Supabase y OpenAI"""
         try:
-            self.supabase = create_client(
-                settings.supabase_url, settings.supabase_service_key
-            )
+            self.supabase = create_client(settings.supabase_url, settings.supabase_service_key)
             logger.info("✅ Cliente Supabase inicializado")
 
             # Inicializar cliente OpenAI
@@ -87,9 +80,7 @@ class SearchService:
             # Supabase client doesn't need explicit closing
             logger.info("🔌 Cliente Supabase cerrado")
 
-    def _generate_query_hash(
-        self, query: str, filters: Optional[SearchFilters] = None
-    ) -> str:
+    def _generate_query_hash(self, query: str, filters: Optional[SearchFilters] = None) -> str:
         """Generar hash único para consulta"""
         # Crear string canónico
         canonical = f"{query.lower().strip()}"
@@ -110,17 +101,13 @@ class SearchService:
         cached_result = await cache_service.get_search_result(query_hash)
         if cached_result:
             logger.info(f"🎯 Cache HIT para query: {request.query[:50]}...")
-            await self._update_metrics_async(
-                request, cached_result.metadata, cache_hit=True
-            )
+            await self._update_metrics_async(request, cached_result.metadata, cache_hit=True)
             return cached_result
 
         # 2. Analizar la consulta
         query_analysis = analyze_query(request.query)
         logger.info(f"🔍 Análisis: {query_analysis}")
-        base_intent_tokens = query_analysis.get("service_tokens") or query_analysis.get(
-            "tokens", []
-        )
+        base_intent_tokens = query_analysis.get("service_tokens") or query_analysis.get("tokens", [])
         base_city = query_analysis.get("city")
 
         # 3. Seleccionar estrategia de búsqueda
@@ -147,9 +134,7 @@ class SearchService:
         providers = self._filter_by_intent(providers, base_intent_tokens, base_city)
 
         # 6. Ordenar y limitar resultados
-        providers = self._sort_and_limit_results(
-            providers, request.limit, request.offset
-        )
+        providers = self._sort_and_limit_results(providers, request.limit, request.offset)
 
         # 7. Crear resultado
         search_time_ms = int((time.time() - start_time) * 1000)
@@ -175,9 +160,7 @@ class SearchService:
 
         return result
 
-    async def _select_search_strategy(
-        self, request: SearchRequest, query_analysis: Dict[str, Any]
-    ) -> SearchStrategy:
+    async def _select_search_strategy(self, request: SearchRequest, query_analysis: Dict[str, Any]) -> SearchStrategy:
         """Seleccionar estrategia AI-first"""
 
         ai_available = bool(settings.openai_api_key)
@@ -198,9 +181,7 @@ class SearchService:
 
         return SearchStrategy.TOKEN_BASED
 
-    async def _search_by_tokens(
-        self, request: SearchRequest, query_analysis: Dict[str, Any]
-    ) -> List[ProviderInfo]:
+    async def _search_by_tokens(self, request: SearchRequest, query_analysis: Dict[str, Any]) -> List[ProviderInfo]:
         """Búsqueda por tokens (más rápida)"""
         try:
             slow_start = perf_counter()
@@ -212,13 +193,7 @@ class SearchService:
                 }
             )
             # Usar tokens únicos para evitar duplicados que sobrecargan la consulta SQL
-            tokens = list(
-                {
-                    t
-                    for t in tokens_raw
-                    if (len(t) >= 4 or t in SERVICE_KEYWORDS)
-                }
-            )
+            tokens = list({t for t in tokens_raw if (len(t) >= 4 or t in SERVICE_KEYWORDS)})
             city = query_analysis.get("city")
 
             if not self.supabase:
@@ -251,9 +226,7 @@ class SearchService:
             query = query.range(request.offset, request.offset + request.limit - 1)
 
             # Ejecutar consulta (no bloquear loop)
-            response = await self._run_supabase(
-                lambda: query.execute(), label="providers.search_tokens"
-            )
+            response = await self._run_supabase(lambda: query.execute(), label="providers.search_tokens")
 
             # Convertir resultados
             providers = []
@@ -274,9 +247,7 @@ class SearchService:
             logger.error(f"Error en búsqueda por tokens: {e}")
             return []
 
-    async def _search_fulltext(
-        self, request: SearchRequest, query_analysis: Dict[str, Any]
-    ) -> List[ProviderInfo]:
+    async def _search_fulltext(self, request: SearchRequest, query_analysis: Dict[str, Any]) -> List[ProviderInfo]:
         """Búsqueda full-text (para consultas complejas)"""
         try:
             slow_start = perf_counter()
@@ -317,9 +288,7 @@ class SearchService:
             query = query.range(request.offset, request.offset + request.limit - 1)
 
             # Ejecutar consulta (no bloquear loop)
-            response = await self._run_supabase(
-                lambda: query.execute(), label="providers.search_fulltext"
-            )
+            response = await self._run_supabase(lambda: query.execute(), label="providers.search_fulltext")
 
             # Convertir resultados
             providers = []
@@ -340,18 +309,14 @@ class SearchService:
             logger.error(f"Error en búsqueda full-text: {e}")
             return []
 
-    async def _search_hybrid(
-        self, request: SearchRequest, query_analysis: Dict[str, Any]
-    ) -> List[ProviderInfo]:
+    async def _search_hybrid(self, request: SearchRequest, query_analysis: Dict[str, Any]) -> List[ProviderInfo]:
         """Búsqueda híbrida (combina múltiples estrategias)"""
         # Ejecutar búsquedas en paralelo
         token_task = self._search_by_tokens(request, query_analysis)
         fulltext_task = self._search_fulltext(request, query_analysis)
 
         try:
-            token_results, fulltext_results = await asyncio.gather(
-                token_task, fulltext_task, return_exceptions=True
-            )
+            token_results, fulltext_results = await asyncio.gather(token_task, fulltext_task, return_exceptions=True)
 
             # Combinar resultados eliminando duplicados
             all_providers = []
@@ -377,23 +342,15 @@ class SearchService:
             logger.error(f"Error en búsqueda híbrida: {e}")
             return []
 
-    async def _search_ai_enhanced(
-        self, request: SearchRequest, query_analysis: Dict[str, Any]
-    ) -> List[ProviderInfo]:
+    async def _search_ai_enhanced(self, request: SearchRequest, query_analysis: Dict[str, Any]) -> List[ProviderInfo]:
         """Búsqueda mejorada con IA"""
         try:
-            import openai
-
             if not settings.openai_api_key:
-                logger.warning(
-                    "⚠️ OpenAI API key no configurada, fallback a búsqueda por tokens"
-                )
+                logger.warning("⚠️ OpenAI API key no configurada, fallback a búsqueda por tokens")
                 return await self._search_by_tokens(request, query_analysis)
 
             # Mejorar consulta con IA
-            enhanced_query = await self._enhance_query_with_ai(
-                request.query, query_analysis
-            )
+            enhanced_query = await self._enhance_query_with_ai(request.query, query_analysis)
 
             # Ejecutar búsqueda con consulta mejorada
             enhanced_analysis = analyze_query(enhanced_query)
@@ -420,9 +377,7 @@ class SearchService:
             # Fallback a búsqueda por tokens
             return await self._search_by_tokens(request, query_analysis)
 
-    async def _enhance_query_with_ai(
-        self, original_query: str, analysis: Dict[str, Any]
-    ) -> str:
+    async def _enhance_query_with_ai(self, original_query: str, analysis: Dict[str, Any]) -> str:
         """Mejorar consulta usando IA para máxima relevancia"""
         try:
             if not self.openai_client:
@@ -475,9 +430,7 @@ consultas de búsqueda para maximizar la relevancia con los proveedores disponib
 
     def _load_intent_aliases(self) -> Dict[str, set[str]]:
         """Carga alias de intención desde archivo JSON (configurable)."""
-        config_path = (
-            Path(__file__).resolve().parents[1] / "app" / "config" / "intent_aliases.json"
-        )
+        config_path = Path(__file__).resolve().parents[1] / "app" / "config" / "intent_aliases.json"
         if not config_path.exists():
             return {}
 
@@ -513,11 +466,7 @@ consultas de búsqueda para maximizar la relevancia con los proveedores disponib
             aliases = self.intent_aliases.get(base, set())
             tokens.update({base, *aliases})
 
-        tokens_to_match = [
-            token
-            for token in tokens
-            if (len(token) >= 4 or token in SERVICE_KEYWORDS)
-        ]
+        tokens_to_match = [token for token in tokens if (len(token) >= 4 or token in SERVICE_KEYWORDS)]
 
         if not tokens_to_match:
             # Si no quedan tokens útiles, evitar sobre-filtrar
@@ -527,15 +476,11 @@ consultas de búsqueda para maximizar la relevancia con los proveedores disponib
         for provider in providers:
             professions_text = " ".join(provider.professions or []).lower()
             services = " ".join(provider.services or []).lower()
-            if any(
-                token in professions_text or token in services for token in tokens_to_match
-            ):
+            if any(token in professions_text or token in services for token in tokens_to_match):
                 filtered.append(provider)
         return filtered
 
-    async def _apply_filters(
-        self, providers: List[ProviderInfo], filters: SearchFilters
-    ) -> List[ProviderInfo]:
+    async def _apply_filters(self, providers: List[ProviderInfo], filters: SearchFilters) -> List[ProviderInfo]:
         """Aplicar filtros adicionales a los resultados"""
         filtered_providers = []
 
@@ -562,23 +507,17 @@ consultas de búsqueda para maximizar la relevancia con los proveedores disponib
 
         return filtered_providers
 
-    def _sort_and_limit_results(
-        self, providers: List[ProviderInfo], limit: int, offset: int
-    ) -> List[ProviderInfo]:
+    def _sort_and_limit_results(self, providers: List[ProviderInfo], limit: int, offset: int) -> List[ProviderInfo]:
         """Ordenar y paginar resultados"""
         # Ordenar por rating (descendente) y fecha (más recientes primero)
-        sorted_providers = sorted(
-            providers, key=lambda p: (p.rating, p.created_at), reverse=True
-        )
+        sorted_providers = sorted(providers, key=lambda p: (p.rating, p.created_at), reverse=True)
 
         # Aplicar paginación
         start_idx = offset
         end_idx = start_idx + limit
         return sorted_providers[start_idx:end_idx]
 
-    def _calculate_overall_confidence(
-        self, providers: List[ProviderInfo], query_analysis: Dict[str, Any]
-    ) -> float:
+    def _calculate_overall_confidence(self, providers: List[ProviderInfo], query_analysis: Dict[str, Any]) -> float:
         """Calcular confianza general de los resultados"""
         if not providers:
             return 0.0
@@ -611,9 +550,7 @@ consultas de búsqueda para maximizar la relevancia con los proveedores disponib
             full_name=provider_data.get("full_name", ""),
             city=provider_data.get("city"),
             rating=float(provider_data.get("rating", 0.0)),
-            available=self._normalize_available(
-                provider_data.get("available"), provider_data.get("verified")
-            ),
+            available=self._normalize_available(provider_data.get("available"), provider_data.get("verified")),
             verified=provider_data.get("verified", False),
             professions=provider_data.get("professions", []),
             services=provider_data.get("services", []),
@@ -631,7 +568,8 @@ consultas de búsqueda para maximizar la relevancia con los proveedores disponib
         if isinstance(services_text, str):
             # Separar por | , ; u otros delimitadores comunes
             import re
-            services = [s.strip() for s in re.split(r'[,|;]', services_text) if s.strip()]
+
+            services = [s.strip() for s in re.split(r"[,|;]", services_text) if s.strip()]
         else:
             services = services_text or []
 
@@ -641,9 +579,7 @@ consultas de búsqueda para maximizar la relevancia con los proveedores disponib
             full_name=row.get("full_name", ""),
             city=row.get("city"),
             rating=float(row.get("rating", 0.0)),
-            available=self._normalize_available(
-                row.get("available"), row.get("verified")
-            ),
+            available=self._normalize_available(row.get("available"), row.get("verified")),
             verified=row.get("verified", False),
             professions=[row.get("profession", "")] if row.get("profession") else [],
             services=services,
@@ -661,7 +597,8 @@ consultas de búsqueda para maximizar la relevancia con los proveedores disponib
         if isinstance(services_text, str):
             # Separar por | , ; u otros delimitadores comunes
             import re
-            services = [s.strip() for s in re.split(r'[,|;]', services_text) if s.strip()]
+
+            services = [s.strip() for s in re.split(r"[,|;]", services_text) if s.strip()]
         else:
             services = services_text or []
 
@@ -671,9 +608,7 @@ consultas de búsqueda para maximizar la relevancia con los proveedores disponib
             full_name=row.get("full_name", ""),
             city=row.get("city"),
             rating=float(row.get("rating", 0.0)),
-            available=self._normalize_available(
-                row.get("available"), row.get("verified")
-            ),
+            available=self._normalize_available(row.get("available"), row.get("verified")),
             verified=row.get("verified", False),
             professions=[row.get("profession", "")] if row.get("profession") else [],
             services=services,
@@ -684,9 +619,7 @@ consultas de búsqueda para maximizar la relevancia con los proveedores disponib
             face_photo_url=row.get("face_photo_url"),
         )
 
-    async def _update_metrics_async(
-        self, request: SearchRequest, metadata: SearchMetadata, cache_hit: bool
-    ):
+    async def _update_metrics_async(self, request: SearchRequest, metadata: SearchMetadata, cache_hit: bool):
         """Actualizar métricas de forma asíncrona (no bloquear)"""
         try:
             # Incrementar contadores básicos
@@ -752,9 +685,7 @@ consultas de búsqueda para maximizar la relevancia con los proveedores disponib
             except Exception as e:
                 logger.warning(f"Health check Supabase degradado: {e}")
 
-        health_info["search_service_ready"] = (
-            health_info["database_connected"] and health_info["redis_connected"]
-        )
+        health_info["search_service_ready"] = health_info["database_connected"] and health_info["redis_connected"]
 
         return health_info
 

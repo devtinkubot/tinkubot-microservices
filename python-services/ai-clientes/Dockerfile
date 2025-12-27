@@ -1,5 +1,14 @@
-# Dockerfile para AI Service Clientes - Versión Optimizada con Alpine
+# TinkuBot - AI Clientes Service
 FROM python:3.11-slim
+
+# Metadata labels
+LABEL maintainer="TinkuBot Team"
+LABEL description="AI service para procesamiento de mensajes de clientes con OpenAI"
+LABEL version="1.0.0"
+
+# Variables de entorno
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
 
 # Directorio de trabajo
 WORKDIR /app

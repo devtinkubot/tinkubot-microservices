@@ -98,8 +98,12 @@ package-lock.json
 .claude/
 CLAUDE.md
 
+# Scripts personales y locales
+claude_code_*.sh
+*.local.sh
+
 # Documentación local
-docs/
+# docs/ - Comentar para incluir documentación en el repo
 
 # Tokens de autenticación
 .token

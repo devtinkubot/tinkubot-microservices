@@ -337,10 +337,18 @@ class SessionTimeoutScheduler:
         if not self.timeout_manager.redis_client:
             return
 
+        # Verificar que el cliente Redis interno esté conectado
+        if not self.timeout_manager.redis_client._connected:
+            return
+
+        redis_cli = self.timeout_manager.redis_client.redis_client
+        if not redis_cli:
+            return
+
         stats = {"checked": 0, "warnings_sent": 0, "expired": 0}
 
         try:
-            async for key in self.timeout_manager.redis_client.redis_client.scan_iter(
+            async for key in redis_cli.scan_iter(
                 match=self.timeout_manager.flow_key_prefix.replace("{}", "*"),
                 count=50,
             ):

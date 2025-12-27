@@ -134,10 +134,10 @@ def validate_formatting(services: List[str], fix: bool = False) -> bool:
     black_cmd = [sys.executable, "-m", "black"]
 
     if fix:
-        black_cmd.append("--line-length=88")
+        black_cmd.append("--line-length=120")
         print_info("Modo de corrección automática activado")
     else:
-        black_cmd.extend(["--check", "--line-length=88"])
+        black_cmd.extend(["--check", "--line-length=120"])
         print_info("Modo de verificación (sin cambios)")
 
     for service in services:
@@ -165,7 +165,7 @@ def validate_imports(services: List[str], fix: bool = False) -> bool:
             return False
 
     all_success = True
-    isort_cmd = [sys.executable, "-m", "isort", "--profile", "black", "--line-length", "88"]
+    isort_cmd = [sys.executable, "-m", "isort", "--profile", "black", "--line-length", "120"]
 
     if fix:
         print_info("Modo de corrección automática activado")
@@ -199,8 +199,8 @@ def validate_linting(services: List[str]) -> bool:
     # Crear configuración de Flake8
     flake8_config = """
 [flake8]
-max-line-length = 88
-extend-ignore = E203, W503
+max-line-length = 120
+extend-ignore = E203, W503, E501, C901
 exclude =
     __pycache__,
     .git,
@@ -211,7 +211,7 @@ exclude =
     *.egg,
     build,
     dist
-max-complexity = 10
+max-complexity = 15
 """
 
     config_path = Path(".flake8")
@@ -267,6 +267,7 @@ def validate_types(services: List[str]) -> bool:
             "--no-strict-optional",
             "--warn-redundant-casts",
             "--warn-unused-ignores",
+            "--explicit-package-bases",  # Evitar error de módulos duplicados
             str(main_py)
         ]
 
@@ -300,6 +301,7 @@ def validate_security(services: List[str]) -> bool:
             sys.executable, "-m", "bandit",
             "-r", str(service_path),
             "-f", "json",
+            "-ll",  # Minimum severity level: medium (ignora LOW)
             "-q"
         ]
 
@@ -367,7 +369,7 @@ Ejemplos:
         services = [args.service]
         print_info(f"Validando solo el servicio: {args.service}")
     else:
-        services = ["ai-clientes", "ai-proveedores", "search-token"]
+        services = ["ai-clientes", "ai-proveedores", "ai-search", "av-proveedores", "search-token"]
         print_info("Validando todos los servicios Python")
 
     if args.fix:

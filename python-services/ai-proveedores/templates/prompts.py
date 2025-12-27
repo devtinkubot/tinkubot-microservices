@@ -25,9 +25,7 @@ CONSENT_OPTIONS = [
 
 CONSENT_FOOTER = "*Responde con el número de tu opción:*"
 
-REGISTRATION_START_PROMPT = (
-    "Perfecto. Empecemos. En que ciudad trabajas principalmente?"
-)
+REGISTRATION_START_PROMPT = "Perfecto. Empecemos. En que ciudad trabajas principalmente?"
 
 CONSENT_DECLINED_MESSAGE = (
     "Entendido. Sin tu consentimiento no puedo registrar tu perfil ni compartir tus datos.\n\n"
@@ -40,14 +38,7 @@ GUIDANCE_MESSAGE = (
     "Selecciona una opción del menú para continuar o escribe 'registro' para iniciar de inmediato."
 )
 
-PROVIDER_MAIN_MENU = (
-    "**Menú de Proveedores**\n"
-    "\n"
-    f"{CONSENT_FOOTER}\n"
-    "\n"
-    "1) Registro\n"
-    "2) Salir\n"
-)
+PROVIDER_MAIN_MENU = "**Menú de Proveedores**\n" "\n" f"{CONSENT_FOOTER}\n" "\n" "1) Registro\n" "2) Salir\n"
 
 
 def consent_options_block() -> str:
@@ -67,9 +58,7 @@ def consent_prompt_messages() -> List[str]:
 
 
 def consent_acknowledged_message() -> str:
-    return (
-        "Gracias. Registre tu consentimiento. Continuemos con la creacion de tu perfil."
-    )
+    return "Gracias. Registre tu consentimiento. Continuemos con la creacion de tu perfil."
 
 
 def consent_declined_message() -> str:
@@ -101,9 +90,7 @@ def provider_post_registration_menu_message() -> str:
 
 
 def provider_under_review_message() -> str:
-    return (
-        "**Listo. Estamos revisando tu perfil; si falta algo, te escribimos.**"
-    )
+    return "**Listo. Estamos revisando tu perfil; si falta algo, te escribimos.**"
 
 
 def provider_verified_message() -> str:
@@ -128,17 +115,11 @@ def provider_services_menu_message(servicios: List[str], max_servicios: int) -> 
 
     if servicios:
         listado = ["_Servicios registrados:_"]
-        listado.extend(
-            [f"{idx + 1}. {servicio}" for idx, servicio in enumerate(servicios)]
-        )
+        listado.extend([f"{idx + 1}. {servicio}" for idx, servicio in enumerate(servicios)])
     else:
         listado = ["_Todavía no registras servicios._"]
 
-    limite_texto = (
-        f"(Puedes tener hasta {max_servicios} servicios activos)."
-        if max_servicios
-        else ""
-    )
+    limite_texto = f"(Puedes tener hasta {max_servicios} servicios activos)." if max_servicios else ""
 
     opciones = [
         f"{CONSENT_FOOTER} {limite_texto}".strip(),

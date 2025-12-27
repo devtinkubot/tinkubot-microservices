@@ -2,9 +2,8 @@
 Aplicación principal de Search Service
 """
 
-import os
-import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 
 import structlog
@@ -14,7 +13,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from services.cache_service import cache_service
 from services.search_service import search_service
-
 from shared_lib.config import settings
 
 # Configurar logging
@@ -35,11 +33,7 @@ structlog.configure(
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,
         structlog.processors.UnicodeDecoder(),
-        (
-            structlog.processors.JSONRenderer()
-            if False
-            else structlog.dev.ConsoleRenderer()
-        ),
+        (structlog.processors.JSONRenderer() if False else structlog.dev.ConsoleRenderer()),
     ],
     context_class=dict,
     logger_factory=structlog.stdlib.LoggerFactory(),
@@ -63,12 +57,8 @@ async def lifespan(app: FastAPI):
         await search_service.initialize()
         logger.info("✅ Servicio de búsqueda inicializado")
 
-        logger.info(
-            f"🎯 AI Search Service listo en http://{settings.search_api_host}:{settings.ai_search_port}"
-        )
-        logger.info(
-            f"📚 API docs en http://{settings.search_api_host}:{settings.ai_search_port}/docs"
-        )
+        logger.info(f"🎯 AI Search Service listo en http://{settings.search_api_host}:{settings.ai_search_port}")
+        logger.info(f"📚 API docs en http://{settings.search_api_host}:{settings.ai_search_port}/docs")
 
         yield
 

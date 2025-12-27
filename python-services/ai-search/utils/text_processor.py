@@ -6,7 +6,7 @@ para búsquedas eficientes en Search Service
 import logging
 import re
 import unicodedata
-from typing import List, Optional, Set, Tuple
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -505,9 +505,7 @@ class TextProcessor:
         return None
 
     @staticmethod
-    def calculate_relevance_score(
-        query_tokens: List[str], provider_tokens: List[str]
-    ) -> float:
+    def calculate_relevance_score(query_tokens: List[str], provider_tokens: List[str]) -> float:
         """
         Calcula puntaje de relevancia entre consulta y proveedor
         """
@@ -635,9 +633,7 @@ def extract_city_token(tokens: List[str]) -> Optional[str]:
     return TextProcessor.extract_city_token(tokens)
 
 
-def calculate_relevance_score(
-    query_tokens: List[str], provider_tokens: List[str]
-) -> float:
+def calculate_relevance_score(query_tokens: List[str], provider_tokens: List[str]) -> float:
     return TextProcessor.calculate_relevance_score(query_tokens, provider_tokens)
 
 

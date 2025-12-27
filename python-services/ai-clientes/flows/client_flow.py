@@ -5,8 +5,6 @@ from datetime import datetime
 from typing import Any, Awaitable, Callable, Dict, Optional, Tuple, Union
 
 from templates.prompts import (
-    opciones_consentimiento_textos,
-    mensaje_consentimiento_datos,
     mensaje_listado_sin_resultados,
 )
 
@@ -80,9 +78,7 @@ class ClientFlow:
     async def handle_searching(
         flow: Dict[str, Any],
         phone: str,
-        respond_fn: Callable[
-            [Dict[str, Any], Dict[str, Any]], Awaitable[Dict[str, Any]]
-        ],
+        respond_fn: Callable[[Dict[str, Any], Dict[str, Any]], Awaitable[Dict[str, Any]]],
         search_providers_fn: Callable[[str, str], Awaitable[Dict[str, Any]]],
         send_provider_prompt_fn: Callable[[str], Awaitable[Dict[str, Any]]],
         set_flow_fn: Callable[[Dict[str, Any]], Awaitable[None]],
@@ -133,9 +129,7 @@ class ClientFlow:
             await set_flow_fn(flow)
             block = mensaje_listado_sin_resultados(city)
             await save_bot_message_fn(block)
-            confirm_msgs = mensajes_confirmacion_busqueda_fn(
-                confirm_prompt_title_default, include_city_option=True
-            )
+            confirm_msgs = mensajes_confirmacion_busqueda_fn(confirm_prompt_title_default, include_city_option=True)
             for cmsg in confirm_msgs:
                 response_text = cmsg.get("response")
                 if response_text:
@@ -167,13 +161,9 @@ class ClientFlow:
 
         try:
             names = ", ".join([p.get("name") or "Proveedor" for p in flow["providers"]])
-            logger.info(
-                f"📣 Devolviendo provider_results a WhatsApp: count={len(flow['providers'])} names=[{names}]"
-            )
+            logger.info(f"📣 Devolviendo provider_results a WhatsApp: count={len(flow['providers'])} names=[{names}]")
         except Exception:  # pragma: no cover - logging auxiliar
-            logger.info(
-                f"📣 Devolviendo provider_results a WhatsApp: count={len(flow['providers'])}"
-            )
+            logger.info(f"📣 Devolviendo provider_results a WhatsApp: count={len(flow['providers'])}")
 
         return await send_provider_prompt_fn(city)
 
@@ -185,13 +175,9 @@ class ClientFlow:
         phone: str,
         set_flow_fn: Callable[[Dict[str, Any]], Awaitable[None]],
         save_bot_message_fn: Callable[[Optional[str]], Awaitable[None]],
-        formal_connection_message_fn: Callable[
-            [Dict[str, Any], str, str], Union[Dict[str, Any], str]
-        ],
+        formal_connection_message_fn: Callable[[Dict[str, Any], str, str], Union[Dict[str, Any], str]],
         mensajes_confirmacion_busqueda_fn: Callable[..., list[Dict[str, Any]]],
-        schedule_feedback_fn: Optional[
-            Callable[[str, Dict[str, Any], str, str], Awaitable[None]]
-        ],
+        schedule_feedback_fn: Optional[Callable[[str, Dict[str, Any], str, str], Awaitable[None]]],
         logger: Any,
         confirm_title_default: str,
         bloque_detalle_proveedor_fn: Callable[[Dict[str, Any]], str],
@@ -222,9 +208,7 @@ class ClientFlow:
                 provider = providers_list[idx]
 
         if not provider:
-            return {
-                "response": "Indica el número (1-5) del proveedor que quieres ver."
-            }
+            return {"response": "Indica el número (1-5) del proveedor que quieres ver."}
 
         flow["state"] = "viewing_provider_detail"
         flow["provider_detail_idx"] = providers_list.index(provider)
@@ -248,13 +232,9 @@ class ClientFlow:
         phone: str,
         set_flow_fn: Callable[[Dict[str, Any]], Awaitable[None]],
         save_bot_message_fn: Callable[[Optional[str]], Awaitable[None]],
-        formal_connection_message_fn: Callable[
-            [Dict[str, Any], str, str], Union[Dict[str, Any], str]
-        ],
+        formal_connection_message_fn: Callable[[Dict[str, Any], str, str], Union[Dict[str, Any], str]],
         mensajes_confirmacion_busqueda_fn: Callable[..., list[Dict[str, Any]]],
-        schedule_feedback_fn: Optional[
-            Callable[[str, Dict[str, Any], str, str], Awaitable[None]]
-        ],
+        schedule_feedback_fn: Optional[Callable[[str, Dict[str, Any], str, str], Awaitable[None]]],
         logger: Any,
         confirm_title_default: str,
         send_provider_prompt_fn: Callable[[], Awaitable[Dict[str, Any]]],
@@ -328,13 +308,9 @@ class ClientFlow:
         phone: str,
         set_flow_fn: Callable[[Dict[str, Any]], Awaitable[None]],
         save_bot_message_fn: Callable[[Optional[str]], Awaitable[None]],
-        formal_connection_message_fn: Callable[
-            [Dict[str, Any], str, str], Union[Dict[str, Any], str]
-        ],
+        formal_connection_message_fn: Callable[[Dict[str, Any], str, str], Union[Dict[str, Any], str]],
         mensajes_confirmacion_busqueda_fn: Callable[..., list[Dict[str, Any]]],
-        schedule_feedback_fn: Optional[
-            Callable[[str, Dict[str, Any], str, str], Awaitable[None]]
-        ],
+        schedule_feedback_fn: Optional[Callable[[str, Dict[str, Any], str, str], Awaitable[None]]],
         logger: Any,
         confirm_title_default: str,
     ) -> Dict[str, Any]:
@@ -347,9 +323,7 @@ class ClientFlow:
         flow["confirm_title"] = confirm_title_default
         flow["confirm_include_city_option"] = False
 
-        message = formal_connection_message_fn(
-            provider or {}, flow.get("service", ""), flow.get("city", "")
-        )
+        message = formal_connection_message_fn(provider or {}, flow.get("service", ""), flow.get("city", ""))
         message_obj = message if isinstance(message, dict) else {"response": message}
 
         await set_flow_fn(flow)
@@ -364,9 +338,7 @@ class ClientFlow:
 
         if schedule_feedback_fn:
             try:
-                await schedule_feedback_fn(
-                    phone, provider or {}, flow.get("service", ""), flow.get("city", "")
-                )
+                await schedule_feedback_fn(phone, provider or {}, flow.get("service", ""), flow.get("city", ""))
             except Exception as exc:  # pragma: no cover - logging auxiliar
                 logger.warning(f"No se pudo agendar feedback: {exc}")
 
@@ -378,13 +350,9 @@ class ClientFlow:
         text: Optional[str],
         selected: Optional[str],
         reset_flow_fn: Callable[[], Awaitable[None]],
-        respond_fn: Callable[
-            [Dict[str, Any], Dict[str, Any]], Awaitable[Dict[str, Any]]
-        ],
+        respond_fn: Callable[[Dict[str, Any], Dict[str, Any]], Awaitable[Dict[str, Any]]],
         resend_providers_fn: Callable[[], Awaitable[Dict[str, Any]]],
-        send_confirm_prompt_fn: Callable[
-            [Dict[str, Any], str], Awaitable[Dict[str, Any]]
-        ],
+        send_confirm_prompt_fn: Callable[[Dict[str, Any], str], Awaitable[Dict[str, Any]]],
         save_bot_message_fn: Callable[[Optional[str]], Awaitable[None]],
         initial_prompt: str,
         farewell_message: str,

@@ -4,7 +4,7 @@ import logging
 import os
 from typing import Any, Dict, Optional
 
-from asyncio_mqtt import Client, MqttError
+from asyncio_mqtt import Client
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel
 
@@ -81,7 +81,10 @@ async def _publisher_loop():
                 timeout=MQTT_PUBLISH_TIMEOUT,
             )
             if hash(cuerpo.get("req_id", "")) % LOG_SAMPLING_RATE == 0:
-                logger.info("📤 MQTT publicado", extra={"tema": tema, "req_id": cuerpo.get("req_id")})
+                logger.info(
+                    "📤 MQTT publicado",
+                    extra={"tema": tema, "req_id": cuerpo.get("req_id")},
+                )
         except Exception as exc:
             logger.error("❌ Error publicando en MQTT: %s", exc)
             # Devolver al final de la cola para reintentar de forma simple

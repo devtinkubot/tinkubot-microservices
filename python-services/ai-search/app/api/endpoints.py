@@ -3,31 +3,25 @@ Endpoints API para Search Service
 """
 
 import logging
-import time
 import uuid
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from models.schemas import (
     BulkIndexRequest,
     BulkIndexResponse,
-    ErrorResponse,
     HealthCheck,
     Metrics,
-    ProviderInfo,
     SearchMetadata,
     SearchRequest,
     SearchResult,
-    SuggestionRequest,
     SuggestionResponse,
 )
 from services.cache_service import cache_service
 from services.search_service import search_service
-from utils.text_processor import analyze_query
-
 from shared_lib.config import settings
+from utils.text_processor import analyze_query
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -69,9 +63,7 @@ async def search_providers(
         )
 
         # Tarea en background para actualizar estadísticas
-        background_tasks.add_task(
-            update_search_statistics, request_id, request.query, result.metadata
-        )
+        background_tasks.add_task(update_search_statistics, request_id, request.query, result.metadata)
 
         return result
 
@@ -79,9 +71,7 @@ async def search_providers(
         raise
     except Exception as e:
         logger.error(f"❌ Error en búsqueda [{request_id}]: {e}")
-        raise HTTPException(
-            status_code=500, detail="Error interno en el servicio de búsqueda"
-        )
+        raise HTTPException(status_code=500, detail="Error interno en el servicio de búsqueda")
 
 
 @router.get("/suggestions", response_model=SuggestionResponse)
@@ -97,9 +87,7 @@ async def get_suggestions(
     """
     try:
         if not q.strip():
-            raise HTTPException(
-                status_code=400, detail="La consulta no puede estar vacía"
-            )
+            raise HTTPException(status_code=400, detail="La consulta no puede estar vacía")
 
         suggestions = await search_service.get_suggestions(q.strip(), limit)
 
@@ -122,9 +110,7 @@ async def get_suggestions(
 
 
 @router.get("/analyze", response_model=dict)
-async def analyze_query_endpoint(
-    q: str = Query(..., min_length=1, max_length=500, description="Consulta a analizar")
-):
+async def analyze_query_endpoint(q: str = Query(..., min_length=1, max_length=500, description="Consulta a analizar")):
     """
     Analizar una consulta para depuración
 
@@ -209,24 +195,18 @@ async def get_cache_info():
 
     except Exception as e:
         logger.error(f"Error obteniendo información de caché: {e}")
-        raise HTTPException(
-            status_code=500, detail="Error obteniendo información de caché"
-        )
+        raise HTTPException(status_code=500, detail="Error obteniendo información de caché")
 
 
 @router.delete("/cache/clear")
-async def clear_cache(
-    pattern: Optional[str] = Query(None, description="Patrón de claves a limpiar")
-):
+async def clear_cache(pattern: Optional[str] = Query(None, description="Patrón de claves a limpiar")):
     """
     Limpiar caché
     """
     try:
         if pattern:
             deleted_count = await cache_service.clear_pattern(pattern)
-            return {
-                "message": f"Se eliminaron {deleted_count} claves con patrón '{pattern}'"
-            }
+            return {"message": f"Se eliminaron {deleted_count} claves con patrón '{pattern}'"}
         else:
             # Limpiar todo el caché de búsqueda
             deleted_count = await cache_service.clear_pattern("search")
@@ -239,9 +219,7 @@ async def clear_cache(
 
 
 @router.post("/index/rebuild", response_model=BulkIndexResponse)
-async def rebuild_search_index(
-    request: BulkIndexRequest, background_tasks: BackgroundTasks
-):
+async def rebuild_search_index(request: BulkIndexRequest, background_tasks: BackgroundTasks):
     """
     Reconstruir índice de búsqueda
 
@@ -250,13 +228,9 @@ async def rebuild_search_index(
     """
     try:
         # TODO: Implementar lógica de reindexación
-        background_tasks.add_task(
-            rebuild_index_task, request.provider_ids, request.force_reindex
-        )
+        background_tasks.add_task(rebuild_index_task, request.provider_ids, request.force_reindex)
 
-        return BulkIndexResponse(
-            total_processed=0, successful=0, failed=0, errors=[], processing_time_ms=0
-        )
+        return BulkIndexResponse(total_processed=0, successful=0, failed=0, errors=[], processing_time_ms=0)
 
     except Exception as e:
         logger.error(f"Error en reindexación: {e}")
@@ -289,9 +263,7 @@ async def get_search_stats():
 
 
 # Funciones auxiliares
-async def update_search_statistics(
-    request_id: str, query: str, metadata: SearchMetadata
-):
+async def update_search_statistics(request_id: str, query: str, metadata: SearchMetadata):
     """Actualizar estadísticas de búsqueda en background"""
     try:
         # Esta función se ejecuta en background después de responder
@@ -304,9 +276,7 @@ async def update_search_statistics(
 async def rebuild_index_task(provider_ids: List[str], force_reindex: bool):
     """Tarea en background para reconstruir índice"""
     try:
-        logger.info(
-            f"🔄 Iniciando reindexación de {len(provider_ids) if provider_ids else 'todos'} proveedores"
-        )
+        logger.info(f"🔄 Iniciando reindexación de {len(provider_ids) if provider_ids else 'todos'} proveedores")
         # TODO: Implementar lógica completa de reindexación
         logger.info("✅ Reindexación completada")
     except Exception as e:

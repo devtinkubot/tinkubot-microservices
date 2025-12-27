@@ -3,11 +3,9 @@ Cliente HTTP para comunicarse con Search Service
 """
 
 import logging
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import httpx
-
 from shared_lib.config import settings
 
 logger = logging.getLogger(__name__)
@@ -47,16 +45,14 @@ class SearchClient:
             }
 
             # Agregar filtros si se proporcionan
-            filters = {"verified_only": True}
+            filters: dict[str, str | bool] = {"verified_only": True}
             if city:
                 filters["city"] = city.lower()  # Normalizar a minúsculas para case-insensitive
 
             payload["filters"] = filters
 
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.post(
-                    f"{self.base_url}/api/v1/search", json=payload
-                )
+                response = await client.post(f"{self.base_url}/api/v1/search", json=payload)
                 response.raise_for_status()
 
                 result = response.json()
@@ -68,9 +64,7 @@ class SearchClient:
                 return self._convert_search_result_to_legacy_format(result)
 
         except httpx.HTTPStatusError as e:
-            logger.error(
-                f"❌ Error HTTP en Search Service: {e.response.status_code} - {e.response.text}"
-            )
+            logger.error(f"❌ Error HTTP en Search Service: {e.response.status_code} - {e.response.text}")
             return self._create_error_response(f"Error HTTP {e.response.status_code}")
 
         except httpx.TimeoutException:
@@ -119,9 +113,7 @@ class SearchClient:
         """
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(
-                    f"{self.base_url}/api/v1/analyze", params={"q": query}
-                )
+                response = await client.get(f"{self.base_url}/api/v1/analyze", params={"q": query})
                 response.raise_for_status()
 
                 return response.json()
@@ -149,9 +141,7 @@ class SearchClient:
             logger.warning(f"⚠️ Search Service no está disponible: {e}")
             return False
 
-    def _convert_search_result_to_legacy_format(
-        self, search_result: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def _convert_search_result_to_legacy_format(self, search_result: Dict[str, Any]) -> Dict[str, Any]:
         """
         Convertir formato del Search Service al formato legado que espera ai-service-clientes
         """

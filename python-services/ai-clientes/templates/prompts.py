@@ -8,12 +8,8 @@ from typing import Any, Dict, List
 
 mensaje_inicial_solicitud_servicio = "*Cuéntame, ¿qué servicio necesitas hoy?*"
 texto_opcion_buscar_otro_servicio = "Buscar otro servicio"
-mensaje_confirmando_disponibilidad = (
-    "⏳ *Estoy confirmando disponibilidad con proveedores y te aviso en breve.*"
-)
-instruccion_seleccionar_proveedor = (
-    "**Responde con el número (1-5) del proveedor para ver detalles.**"
-)
+mensaje_confirmando_disponibilidad = "⏳ *Estoy confirmando disponibilidad con proveedores y te aviso en breve.*"
+instruccion_seleccionar_proveedor = "**Responde con el número del proveedor para ver detalles.**"
 
 # Consentimiento de protección de datos
 mensaje_consentimiento_datos = """¡Hola! Soy TinkuBot, tu asistente virtual para encontrar servicios confiables de forma rápida y segura.
@@ -58,9 +54,7 @@ def bloque_listado_proveedores_compacto(providers: List[Dict[str, Any]]) -> str:
     """Genera listado de proveedores con números (1-5) y solo nombre."""
     lines: List[str] = [""]
     for idx, provider in enumerate(providers[:5], start=1):
-        name = (
-            provider.get("name") or provider.get("provider_name") or "Proveedor"
-        ).strip()
+        name = (provider.get("name") or provider.get("provider_name") or "Proveedor").strip()
         lines.append(f"{idx}) {name}")
     lines.append("")
     return "\n".join(lines)
@@ -77,9 +71,7 @@ def bloque_detalle_proveedor(provider: Dict[str, Any]) -> str:
         text = str(raw).strip()
         if not text:
             return []
-        parts = [
-            part.strip() for part in re.split(r"[;,/|\n]+", text) if part.strip()
-        ]
+        parts = [part.strip() for part in re.split(r"[;,/|\n]+", text) if part.strip()]
         return parts
 
     def prettify(text: Any) -> str:
@@ -103,33 +95,16 @@ def bloque_detalle_proveedor(provider: Dict[str, Any]) -> str:
         text = str(value).strip()
         return f"{label}: {text}" if text else ""
 
-    name = (
-        provider.get("name")
-        or provider.get("provider_name")
-        or provider.get("full_name")
-        or "Proveedor"
-    )
+    name = provider.get("name") or provider.get("provider_name") or provider.get("full_name") or "Proveedor"
     profession = provider.get("profession") or provider.get("service_title") or ""
     if not profession and isinstance(provider.get("professions"), list):
-        profession = ", ".join(
-            [
-                str(item).strip()
-                for item in provider.get("professions")
-                if str(item).strip()
-            ]
-        )
+        profession = ", ".join([str(item).strip() for item in provider.get("professions") if str(item).strip()])
     profession = prettify(profession)
     city = prettify(provider.get("city") or provider.get("location_city") or "")
     province = prettify(provider.get("province") or provider.get("state") or "")
-    price = format_price(
-        provider.get("price_formatted")
-        or provider.get("price_display")
-        or provider.get("price")
-    )
+    price = format_price(provider.get("price_formatted") or provider.get("price_display") or provider.get("price"))
     experience = (
-        provider.get("experience_years")
-        or provider.get("experienceYears")
-        or provider.get("years_of_experience")
+        provider.get("experience_years") or provider.get("experienceYears") or provider.get("years_of_experience")
     )
     rating = provider.get("rating")
     social_url = provider.get("social_media_url") or provider.get("socialMediaUrl")
@@ -149,7 +124,7 @@ def bloque_detalle_proveedor(provider: Dict[str, Any]) -> str:
         format_line("Ubicación", location),
         format_line(
             "Experiencia",
-            f"{int(experience)} año(s)" if isinstance(experience, (int, float)) else experience,
+            (f"{int(experience)} año(s)" if isinstance(experience, (int, float)) else experience),
         ),
     ]:
         if entry:
@@ -169,9 +144,7 @@ def bloque_detalle_proveedor(provider: Dict[str, Any]) -> str:
     if social_line:
         lines.append(social_line)
 
-    rating_line = format_line(
-        "Calificación", f"{rating:.1f}" if isinstance(rating, (int, float)) else rating
-    )
+    rating_line = format_line("Calificación", f"{rating:.1f}" if isinstance(rating, (int, float)) else rating)
     if rating_line:
         lines.append(rating_line)
 

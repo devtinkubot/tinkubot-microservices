@@ -1,5 +1,10 @@
-# Usar una imagen base de Node.js
+# TinkuBot - WhatsApp Clientes Service
 FROM node:20-slim
+
+# Metadata labels
+LABEL maintainer="TinkuBot Team"
+LABEL description="WhatsApp Bot para clientes con Puppeteer"
+LABEL version="1.0.0"
 
 # Instalar dependencias necesarias para Puppeteer (Chrome)
 RUN apt-get update && apt-get install -y \
@@ -44,8 +49,9 @@ RUN apt-get update && apt-get install -y \
   && rm -rf /var/lib/apt/lists/*
 
 # Usar Chromium del sistema y evitar su descarga durante npm install
-ENV PUPPETEER_SKIP_DOWNLOAD=true \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+ENV NODE_ENV=production
 
 # Configurar directorio de trabajo
 WORKDIR /usr/src/app
@@ -58,8 +64,17 @@ RUN npm install --omit=dev --production
 # Copiar el resto del código de la aplicación
 COPY . .
 
+# Crear usuario no root para seguridad
+RUN addgroup --system appgroup && adduser --system --group appuser
+RUN chown -R appuser:appgroup /usr/src/app
+USER appuser
+
 # Exponer el puerto (dinámico mediante variable de entorno)
 EXPOSE 5001
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD node -e "require('http').get('http://localhost:5001/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"
 
 # Comando para iniciar el servicio
 CMD [ "npm", "start" ]

@@ -36,6 +36,7 @@ const instanceId = process.env.CLIENTES_INSTANCE_ID || 'bot-clientes';
 const instanceName = process.env.CLIENTES_INSTANCE_NAME || 'TinkuBot Clientes';
 const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS || '8000', 10);
 const LOG_SAMPLING_RATE = parseInt(process.env.LOG_SAMPLING_RATE || '10', 10);
+const WWEBJS_DATA_PATH = process.env.WWEBJS_DATA_PATH || '/usr/src/app/.wwebjs_auth';
 
 // Configuración de servicios externos
 // ESPECIALIZADO: Siempre usa el AI Service Clientes
@@ -384,7 +385,7 @@ const client = new Client({
   authStrategy: new RemoteAuth({
     clientId: instanceId, // Identificador único por instancia
     store: supabaseStore, // Store de Supabase para sesiones remotas
-    dataPath: '/app/.wwebjs_auth', // Ruta temporal para sesiones
+    dataPath: WWEBJS_DATA_PATH, // Ruta temporal para sesiones
     backupSyncIntervalMs: 300000, // 5 minutos entre backups
     rmMaxRetries: 4, // Máximo de reintentos para eliminar archivos
   }), // Guardar sesión en Supabase Storage
@@ -403,7 +404,9 @@ const client = new Client({
       '--disable-backgrounding-occluded-windows',
       '--disable-renderer-backgrounding',
       '--disable-features=TranslateUI',
+      '--disable-features=Crashpad',
       '--disable-ipc-flooding-protection',
+      '--disable-crash-reporter',
       '--enable-unsafe-swiftshader',
       '--max-old-space-size=256',
     ],

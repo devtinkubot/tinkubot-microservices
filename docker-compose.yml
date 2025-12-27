@@ -1,11 +1,17 @@
- 
+# TinkuBot Microservices - Docker Compose
+# Versión: 2.0 (2025) con mejores prácticas
 
 services:
-  # Frontend Service - Interfaz web para el usuario
+  # ===========================================
+  # FRONTEND SERVICE
+  # ===========================================
   frontend:
     build:
       context: ./nodejs-services/frontend
       dockerfile: Dockerfile
+      cache_from:
+        - tinkubot-microservices_frontend:latest
+    image: tinkubot-microservices_frontend:latest
     container_name: tinkubot-frontend
     ports:
       - "${FRONTEND_SERVICE_PORT:-5000}:${FRONTEND_SERVICE_PORT:-5000}"
@@ -23,50 +29,137 @@ services:
       - NODE_ENV=production
     networks:
       - tinkubot-network
-    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:5000/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
+  # ===========================================
+  # MOSQUITTO MQTT BROKER
+  # ===========================================
   mosquitto:
-    image: eclipse-mosquitto:2
+    image: eclipse-mosquitto:2.0.20
     container_name: tinkubot-mosquitto
     ports:
       - "1883:1883"
     volumes:
-      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
     networks:
       - tinkubot-network
-    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 5 nc -z localhost 1883 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          cpus: '0.05'
+          memory: 64M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
+  # ===========================================
+  # AV PROVEEDORES - Verificación Disponibilidad
+  # ===========================================
   av-proveedores:
     build:
       context: ./python-services/av-proveedores
       dockerfile: Dockerfile
+      cache_from:
+        - tinkubot-microservices_av-proveedores:latest
+    image: tinkubot-microservices_av-proveedores:latest
     container_name: tinkubot-av-proveedores
     depends_on:
-      - mosquitto
+      mosquitto:
+        condition: service_healthy
     environment:
       - MQTT_HOST=mosquitto
       - MQTT_PORT=1883
       - MQTT_TEMA_PETICION=av-proveedores/solicitud
       - MQTT_TEMA_RESPUESTA=av-proveedores/respuesta
       - AV_PROVEEDORES_PUERTO=${AV_PROVEEDORES_PUERTO:-8005}
-      - MQTT_USUARIO
-      - MQTT_PASSWORD
+      - MQTT_USUARIO=${MQTT_USUARIO:-}
+      - MQTT_PASSWORD=${MQTT_PASSWORD:-}
+      - PYTHONUNBUFFERED=1
     ports:
       - "${AV_PROVEEDORES_PUERTO:-8005}:${AV_PROVEEDORES_PUERTO:-8005}"
     networks:
       - tinkubot-network
-    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8005/salud"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
-  # WhatsApp Service - Bot Clientes (+593 99 882 3053)
+  # ===========================================
+  # WHATSAPP SERVICE - CLIENTES
+  # ===========================================
   wa-clientes:
     build:
       context: ./nodejs-services/wa-clientes
       dockerfile: Dockerfile
+      cache_from:
+        - tinkubot-microservices_wa-clientes:latest
+    image: tinkubot-microservices_wa-clientes:latest
     container_name: tinkubot-wa-clientes
+    depends_on:
+      ai-clientes:
+        condition: service_healthy
     ports:
       - "${CLIENTES_WHATSAPP_PORT:-5001}:${CLIENTES_WHATSAPP_PORT:-5001}"
     environment:
-      # ACTUALIZADO: Usa el AI Service Clientes específico para esta instancia
       - AI_SERVICE_CLIENTES_URL=${AI_SERVICE_CLIENTES_URL}
       - CLIENTES_AI_SERVICE_URL=${CLIENTES_AI_SERVICE_URL}
       - SUPABASE_URL=${SUPABASE_URL}
@@ -76,21 +169,53 @@ services:
       - WHATSAPP_CLIENTES_PORT=${WHATSAPP_CLIENTES_PORT}
       - CLIENTES_INSTANCE_ID=${CLIENTES_INSTANCE_ID}
       - CLIENTES_INSTANCE_NAME=${CLIENTES_INSTANCE_NAME}
+      - WWEBJS_DATA_PATH=/usr/src/app/.wwebjs_auth
+      - HOME=/tmp
       - NODE_ENV=production
     networks:
       - tinkubot-network
-    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:5001/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 3
+        window: 120s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
 
-  # WhatsApp Service - Bot Proveedores (segundo número)
+  # ===========================================
+  # WHATSAPP SERVICE - PROVEEDORES
+  # ===========================================
   wa-proveedores:
     build:
       context: ./nodejs-services/wa-proveedores
       dockerfile: Dockerfile
+      cache_from:
+        - tinkubot-microservices_wa-proveedores:latest
+    image: tinkubot-microservices_wa-proveedores:latest
     container_name: tinkubot-wa-proveedores
+    depends_on:
+      ai-proveedores:
+        condition: service_healthy
     ports:
       - "${PROVEEDORES_WHATSAPP_PORT:-5002}:${PROVEEDORES_WHATSAPP_PORT:-5002}"
     environment:
-      # ACTUALIZADO: Usa el AI Service Proveedores específico para esta instancia
       - PROVEEDORES_AI_SERVICE_URL=${PROVEEDORES_AI_SERVICE_URL}
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_BACKEND_API_KEY=${SUPABASE_BACKEND_API_KEY}
@@ -99,19 +224,47 @@ services:
       - WHATSAPP_PROVEEDORES_PORT=${WHATSAPP_PROVEEDORES_PORT}
       - PROVEEDORES_INSTANCE_ID=${PROVEEDORES_INSTANCE_ID}
       - PROVEEDORES_INSTANCE_NAME=${PROVEEDORES_INSTANCE_NAME}
+      - WWEBJS_DATA_PATH=/usr/src/app/.wwebjs_auth
+      - HOME=/tmp
       - NODE_ENV=production
     networks:
       - tinkubot-network
-    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:5002/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 3
+        window: 120s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
 
-  # AI Service Clientes - Procesamiento con sesiones integradas
+  # ===========================================
+  # AI SERVICE - CLIENTES
+  # ===========================================
   ai-clientes:
     build:
       context: ./python-services
       dockerfile: ai-clientes/Dockerfile
+      cache_from:
+        - tinkubot-microservices_ai-clientes:latest
+    image: tinkubot-microservices_ai-clientes:latest
     container_name: tinkubot-ai-clientes
-    ports:
-      - "${CLIENTES_SERVER_PORT:-8001}:${CLIENTES_SERVER_PORT:-8001}"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - REDIS_URL=${REDIS_URL}
@@ -124,18 +277,47 @@ services:
       - AI_SERVICE_CLIENTES_PORT=${AI_SERVICE_CLIENTES_PORT}
       - SERVER_HOST=${SERVER_HOST}
       - NODE_ENV=production
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "${CLIENTES_SERVER_PORT:-8001}:${CLIENTES_SERVER_PORT:-8001}"
     networks:
       - tinkubot-network
-    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
 
-  # AI Service Proveedores - Procesamiento con sesiones integradas
+  # ===========================================
+  # AI SERVICE - PROVEEDORES
+  # ===========================================
   ai-proveedores:
     build:
       context: ./python-services
       dockerfile: ai-proveedores/Dockerfile
+      cache_from:
+        - tinkubot-microservices_ai-proveedores:latest
+    image: tinkubot-microservices_ai-proveedores:latest
     container_name: tinkubot-ai-proveedores
-    ports:
-      - "${PROVEEDORES_SERVER_PORT:-8002}:${PROVEEDORES_SERVER_PORT:-8002}"
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
@@ -148,18 +330,47 @@ services:
       - AI_SERVICE_PROVEEDORES_PORT=${AI_SERVICE_PROVEEDORES_PORT}
       - SERVER_HOST=${SERVER_HOST}
       - NODE_ENV=production
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "${PROVEEDORES_SERVER_PORT:-8002}:${PROVEEDORES_SERVER_PORT:-8002}"
     networks:
       - tinkubot-network
-    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
 
-  # AI Search Service - Servicio de búsqueda optimizado con IA
+  # ===========================================
+  # AI SEARCH SERVICE
+  # ===========================================
   ai-search:
     build:
       context: ./python-services
       dockerfile: ai-search/Dockerfile
+      cache_from:
+        - tinkubot-microservices_ai-search:latest
+    image: tinkubot-microservices_ai-search:latest
     container_name: tinkubot-ai-search
-    ports:
-      - "${AI_SEARCH_PORT:-8000}:${AI_SEARCH_PORT:-8000}"
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
@@ -168,12 +379,43 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - AI_SEARCH_PORT=${AI_SEARCH_PORT}
       - NODE_ENV=production
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "${AI_SEARCH_PORT:-8000}:${AI_SEARCH_PORT:-8000}"
     networks:
       - tinkubot-network
-    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
 
-  
-
+# ===========================================
+# NETWORKS
+# ===========================================
 networks:
   tinkubot-network:
     driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: tinkubot-br
+      com.docker.network.bridge.enable_icc: "true"
+      com.docker.network.bridge.enable_ip_masquerade: "true"

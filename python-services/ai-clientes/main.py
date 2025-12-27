@@ -8,8 +8,8 @@ import json
 import logging
 import os
 import re
-import uuid
 import unicodedata
+import uuid
 from datetime import datetime
 from time import perf_counter
 from typing import Any, Dict, List, Optional
@@ -21,28 +21,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from flows.client_flow import ClientFlow
 from openai import AsyncOpenAI
 from search_client import search_client
-from supabase import create_client
-from templates.prompts import (
-    bloque_detalle_proveedor,
-    bloque_listado_proveedores_compacto,
-    menu_opciones_detalle_proveedor,
-    menu_opciones_consentimiento,
-    menu_opciones_confirmacion,
-    mensaje_confirmando_disponibilidad,
-    mensaje_consentimiento_datos,
-    mensaje_listado_sin_resultados,
-    mensaje_intro_listado_proveedores,
-    mensaje_inicial_solicitud_servicio,
-    mensajes_flujo_consentimiento,
-    mensaje_sin_disponibilidad,
-    opciones_consentimiento_textos,
-    opciones_confirmar_nueva_busqueda_textos,
-    pie_instrucciones_respuesta_numerica,
-    texto_opcion_buscar_otro_servicio,
-    titulo_confirmacion_repetir_busqueda,
-    instruccion_seleccionar_proveedor,
-)
-
 from shared_lib.config import settings
 from shared_lib.models import (
     AIProcessingRequest,
@@ -57,8 +35,28 @@ from shared_lib.service_catalog import (
     normalize_profession_for_search,
 )
 from shared_lib.session_manager import session_manager
+from supabase import create_client
+from templates.prompts import (
+    bloque_detalle_proveedor,
+    bloque_listado_proveedores_compacto,
+    instruccion_seleccionar_proveedor,
+    mensaje_confirmando_disponibilidad,
+    mensaje_inicial_solicitud_servicio,
+    mensaje_intro_listado_proveedores,
+    mensaje_listado_sin_resultados,
+    mensaje_sin_disponibilidad,
+    mensajes_flujo_consentimiento,
+    menu_opciones_confirmacion,
+    menu_opciones_detalle_proveedor,
+    opciones_confirmar_nueva_busqueda_textos,
+    opciones_consentimiento_textos,
+    pie_instrucciones_respuesta_numerica,
+    titulo_confirmacion_repetir_busqueda,
+)
+
 try:
-    from asyncio_mqtt import Client as MQTTClient, MqttError
+    from asyncio_mqtt import Client as MQTTClient
+    from asyncio_mqtt import MqttError
 except Exception:  # pragma: no cover - import guard
     MQTTClient = None
     MqttError = Exception
@@ -89,9 +87,7 @@ app.add_middleware(
 )
 
 # Inicializar OpenAI
-openai_client = (
-    AsyncOpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
-)
+openai_client = AsyncOpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
 OPENAI_TIMEOUT_SECONDS = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "5"))
 MAX_OPENAI_CONCURRENCY = int(os.getenv("MAX_OPENAI_CONCURRENCY", "5"))
 openai_semaphore = asyncio.Semaphore(MAX_OPENAI_CONCURRENCY) if openai_client else None
@@ -101,21 +97,15 @@ PROVEEDORES_AI_SERVICE_URL = os.getenv(
     "PROVEEDORES_AI_SERVICE_URL",
     f"http://ai-proveedores:{settings.proveedores_service_port}",
 )
-SUPABASE_PROVIDERS_BUCKET = os.getenv(
-    "SUPABASE_PROVIDERS_BUCKET", "tinkubot-providers"
-)
+SUPABASE_PROVIDERS_BUCKET = os.getenv("SUPABASE_PROVIDERS_BUCKET", "tinkubot-providers")
 
 # WhatsApp Clientes URL para envíos salientes (scheduler)
 _clientes_whatsapp_port = (
-    os.getenv("WHATSAPP_CLIENTES_PORT")
-    or os.getenv("CLIENTES_WHATSAPP_PORT")
-    or str(settings.whatsapp_clientes_port)
+    os.getenv("WHATSAPP_CLIENTES_PORT") or os.getenv("CLIENTES_WHATSAPP_PORT") or str(settings.whatsapp_clientes_port)
 )
 _server_domain = os.getenv("SERVER_DOMAIN")
 if _server_domain:
-    _default_whatsapp_clientes_url = (
-        f"http://{_server_domain}:{_clientes_whatsapp_port}"
-    )
+    _default_whatsapp_clientes_url = f"http://{_server_domain}:{_clientes_whatsapp_port}"
 else:
     _default_whatsapp_clientes_url = f"http://wa-clientes:{_clientes_whatsapp_port}"
 WHATSAPP_CLIENTES_URL = os.getenv(
@@ -132,23 +122,15 @@ MQTT_TEMA_SOLICITUD = os.getenv("MQTT_TEMA_SOLICITUD", "av-proveedores/solicitud
 MQTT_TEMA_RESPUESTA = os.getenv("MQTT_TEMA_RESPUESTA", "av-proveedores/respuesta")
 AVAILABILITY_TIMEOUT_SECONDS = int(os.getenv("AVAILABILITY_TIMEOUT_SECONDS", "45"))
 AVAILABILITY_TIMEOUT_SECONDS = max(10, AVAILABILITY_TIMEOUT_SECONDS)
-AVAILABILITY_ACCEPT_GRACE_SECONDS = float(
-    os.getenv("AVAILABILITY_ACCEPT_GRACE_SECONDS", "5")
-)
+AVAILABILITY_ACCEPT_GRACE_SECONDS = float(os.getenv("AVAILABILITY_ACCEPT_GRACE_SECONDS", "5"))
 AVAILABILITY_STATE_TTL_SECONDS = int(os.getenv("AVAILABILITY_STATE_TTL_SECONDS", "300"))
-AVAILABILITY_POLL_INTERVAL_SECONDS = float(
-    os.getenv("AVAILABILITY_POLL_INTERVAL_SECONDS", "1.5")
-)
+AVAILABILITY_POLL_INTERVAL_SECONDS = float(os.getenv("AVAILABILITY_POLL_INTERVAL_SECONDS", "1.5"))
 
 # Supabase client (opcional) para persistencia
 SUPABASE_URL = settings.supabase_url
 # settings expone la clave JWT de servicio para Supabase
 SUPABASE_KEY = settings.supabase_service_key
-supabase = (
-    create_client(SUPABASE_URL, SUPABASE_KEY)
-    if (SUPABASE_URL and SUPABASE_KEY)
-    else None
-)
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if (SUPABASE_URL and SUPABASE_KEY) else None
 
 
 async def run_supabase(op, label: str = "supabase_op"):
@@ -158,9 +140,7 @@ async def run_supabase(op, label: str = "supabase_op"):
     loop = asyncio.get_running_loop()
     start = perf_counter()
     try:
-        return await asyncio.wait_for(
-            loop.run_in_executor(None, op), timeout=SUPABASE_TIMEOUT_SECONDS
-        )
+        return await asyncio.wait_for(loop.run_in_executor(None, op), timeout=SUPABASE_TIMEOUT_SECONDS)
     finally:
         elapsed_ms = (perf_counter() - start) * 1000
         if elapsed_ms >= SLOW_QUERY_THRESHOLD_MS:
@@ -223,9 +203,7 @@ class AvailabilityCoordinator:
                 async with MQTTClient(**self._client_params()) as client:
                     async with client.unfiltered_messages() as messages:
                         await client.subscribe(MQTT_TEMA_RESPUESTA)
-                        logger.info(
-                            f"📡 Suscrito a MQTT para respuestas de disponibilidad: {MQTT_TEMA_RESPUESTA}"
-                        )
+                        logger.info(f"📡 Suscrito a MQTT para respuestas de disponibilidad: {MQTT_TEMA_RESPUESTA}")
                         async for message in messages:
                             await self._handle_response_message(message)
             except asyncio.CancelledError:
@@ -283,16 +261,8 @@ class AvailabilityCoordinator:
         if not req_id:
             return
 
-        provider_id = (
-            payload.get("provider_id")
-            or payload.get("id")
-            or payload.get("proveedor_id")
-        )
-        provider_phone = (
-            payload.get("provider_phone")
-            or payload.get("phone")
-            or payload.get("provider_number")
-        )
+        provider_id = payload.get("provider_id") or payload.get("id") or payload.get("proveedor_id")
+        provider_phone = payload.get("provider_phone") or payload.get("phone") or payload.get("provider_number")
         status_raw = payload.get("estado") or payload.get("status") or ""
         status = str(status_raw).strip().lower()
 
@@ -313,10 +283,7 @@ class AvailabilityCoordinator:
 
         def _append_unique(target: List[Dict[str, Any]]):
             for item in target:
-                if (
-                    item.get("provider_id") == provider_id
-                    and item.get("provider_phone") == provider_phone
-                ):
+                if item.get("provider_id") == provider_id and item.get("provider_phone") == provider_phone:
                     return
             target.append(record)
 
@@ -329,9 +296,7 @@ class AvailabilityCoordinator:
             return
 
         state.update({"accepted": accepted, "declined": declined})
-        await redis_client.set(
-            state_key, state, expire=AVAILABILITY_STATE_TTL_SECONDS
-        )
+        await redis_client.set(state_key, state, expire=AVAILABILITY_STATE_TTL_SECONDS)
         if hash(req_id) % LOG_SAMPLING_RATE == 0:
             logger.info(
                 "📥 Respuesta disponibilidad",
@@ -377,9 +342,7 @@ class AvailabilityCoordinator:
         seen_phones = set()
         for p in providers:
             pid = p.get("id") or p.get("provider_id")
-            phone_norm = _normalize_phone_for_match(
-                p.get("phone") or p.get("phone_number")
-            )
+            phone_norm = _normalize_phone_for_match(p.get("phone") or p.get("phone_number"))
             if pid and pid in seen_ids:
                 continue
             if phone_norm and phone_norm in seen_phones:
@@ -434,8 +397,7 @@ class AvailabilityCoordinator:
                 if early_deadline == deadline:
                     early_deadline = min(
                         deadline,
-                        asyncio.get_event_loop().time()
-                        + AVAILABILITY_ACCEPT_GRACE_SECONDS,
+                        asyncio.get_event_loop().time() + AVAILABILITY_ACCEPT_GRACE_SECONDS,
                     )
                 if asyncio.get_event_loop().time() >= early_deadline:
                     break
@@ -444,9 +406,7 @@ class AvailabilityCoordinator:
         # Leer estado final
         state_final = await redis_client.get(state_key) or {}
         accepted_providers = state_final.get("accepted") or []
-        filtered = self._filter_providers_by_response(
-            providers, accepted_providers
-        )
+        filtered = self._filter_providers_by_response(providers, accepted_providers)
         return {"accepted": filtered, "req_id": req_id, "state": state_final}
 
     def _filter_providers_by_response(
@@ -468,9 +428,7 @@ class AvailabilityCoordinator:
         filtered: List[Dict[str, Any]] = []
         for p in providers:
             pid = str(p.get("id") or p.get("provider_id") or "")
-            phone_norm = _normalize_phone_for_match(
-                p.get("phone") or p.get("phone_number")
-            )
+            phone_norm = _normalize_phone_for_match(p.get("phone") or p.get("phone_number"))
             if pid and pid in accepted_ids:
                 filtered.append(p)
                 continue
@@ -483,9 +441,7 @@ availability_coordinator = AvailabilityCoordinator()
 
 
 # --- Scheduler de feedback diferido ---
-async def schedule_feedback_request(
-    phone: str, provider: Dict[str, Any], service: str, city: str
-):
+async def schedule_feedback_request(phone: str, provider: Dict[str, Any], service: str, city: str):
     if not supabase:
         return
     try:
@@ -505,7 +461,8 @@ async def schedule_feedback_request(
             "type": "request_feedback",
         }
         await run_supabase(
-            lambda: supabase.table("task_queue").insert(
+            lambda: supabase.table("task_queue")
+            .insert(
                 {
                     "task_type": "send_whatsapp",
                     "payload": payload,
@@ -515,7 +472,8 @@ async def schedule_feedback_request(
                     "retry_count": 0,
                     "max_retries": 3,
                 }
-            ).execute(),
+            )
+            .execute(),
             label="task_queue.insert_feedback",
         )
         logger.info(f"🕒 Feedback agendado en {delay}s para {phone}")
@@ -530,9 +488,7 @@ async def send_whatsapp_text(phone: str, text: str) -> bool:
             resp = await client.post(url, json={"to": phone, "message": text})
         if resp.status_code == 200:
             return True
-        logger.warning(
-            f"WhatsApp send fallo status={resp.status_code} body={resp.text[:200]}"
-        )
+        logger.warning(f"WhatsApp send fallo status={resp.status_code} body={resp.text[:200]}")
         return False
     except Exception as e:
         logger.error(f"Error enviando WhatsApp (scheduler): {e}")
@@ -566,12 +522,15 @@ async def process_due_tasks():
                 ok = await send_whatsapp_text(phone, message)
             if ok:
                 await run_supabase(
-                    lambda: supabase.table("task_queue").update(
+                    lambda: supabase.table("task_queue")
+                    .update(
                         {
                             "status": "completed",
                             "completed_at": datetime.utcnow().isoformat(),
                         }
-                    ).eq("id", tid).execute(),
+                    )
+                    .eq("id", tid)
+                    .execute(),
                     label="task_queue.mark_completed",
                 )
             else:
@@ -579,23 +538,29 @@ async def process_due_tasks():
                 maxr = t.get("max_retries") or 3
                 if retry < maxr:
                     await run_supabase(
-                        lambda: supabase.table("task_queue").update(
+                        lambda: supabase.table("task_queue")
+                        .update(
                             {
                                 "retry_count": retry,
                                 "scheduled_at": datetime.utcnow().isoformat(),
                             }
-                        ).eq("id", tid).execute(),
+                        )
+                        .eq("id", tid)
+                        .execute(),
                         label="task_queue.reschedule",
                     )
                 else:
                     await run_supabase(
-                        lambda: supabase.table("task_queue").update(
+                        lambda: supabase.table("task_queue")
+                        .update(
                             {
                                 "status": "failed",
                                 "completed_at": datetime.utcnow().isoformat(),
                                 "error_message": "send failed",
                             }
-                        ).eq("id", tid).execute(),
+                        )
+                        .eq("id", tid)
+                        .execute(),
                         label="task_queue.mark_failed",
                     )
             processed += 1
@@ -666,17 +631,13 @@ async def background_search_and_notify(phone: str, flow: Dict[str, Any]):
             flow["confirm_title"] = titulo_confirmacion_repetir_busqueda
             flow["confirm_include_city_option"] = True
             await set_flow(phone, flow)
-            confirm_msgs = mensajes_confirmacion_busqueda(
-                flow["confirm_title"], include_city_option=True
-            )
+            confirm_msgs = mensajes_confirmacion_busqueda(flow["confirm_title"], include_city_option=True)
             # Añadir respuestas de texto (el mensaje de botones se envía aparte)
             messages_to_send.extend([msg.get("response") or "" for msg in confirm_msgs])
             for cmsg in confirm_msgs:
                 if cmsg.get("response"):
                     try:
-                        await session_manager.save_session(
-                            phone, cmsg["response"], is_bot=True
-                        )
+                        await session_manager.save_session(phone, cmsg["response"], is_bot=True)
                     except Exception:
                         pass
 
@@ -750,9 +711,7 @@ RESET_KEYWORDS = {
 
 MAX_CONFIRM_ATTEMPTS = 2
 
-FAREWELL_MESSAGE = (
-    "*¡Gracias por utilizar nuestros servicios!* Si necesitas otro apoyo, solo escríbeme."
-)
+FAREWELL_MESSAGE = "*¡Gracias por utilizar nuestros servicios!* Si necesitas otro apoyo, solo escríbeme."
 
 AFFIRMATIVE_WORDS = {
     "si",
@@ -784,9 +743,7 @@ NEGATIVE_WORDS = {
 def _normalize_token(text: str) -> str:
     stripped = (text or "").strip().lower()
     normalized = unicodedata.normalize("NFD", stripped)
-    without_accents = "".join(
-        ch for ch in normalized if unicodedata.category(ch) != "Mn"
-    )
+    without_accents = "".join(ch for ch in normalized if unicodedata.category(ch) != "Mn")
     clean = without_accents.replace("!", "").replace("?", "").replace(",", "")
     return clean
 
@@ -794,9 +751,7 @@ def _normalize_token(text: str) -> str:
 def _normalize_text_for_matching(text: str) -> str:
     base = (text or "").lower()
     normalized = unicodedata.normalize("NFD", base)
-    without_accents = "".join(
-        ch for ch in normalized if unicodedata.category(ch) != "Mn"
-    )
+    without_accents = "".join(ch for ch in normalized if unicodedata.category(ch) != "Mn")
     cleaned = re.sub(r"[^a-z0-9\s]", " ", without_accents)
     return re.sub(r"\s+", " ", cleaned).strip()
 
@@ -841,9 +796,7 @@ def interpret_yes_no(text: Optional[str]) -> Optional[bool]:
     return None
 
 
-def extract_profession_and_location(
-    history_text: str, last_message: str
-) -> tuple[Optional[str], Optional[str]]:
+def extract_profession_and_location(history_text: str, last_message: str) -> tuple[Optional[str], Optional[str]]:
     combined_text = f"{history_text}\n{last_message}"
     normalized_text = _normalize_text_for_matching(combined_text)
     if not normalized_text:
@@ -904,7 +857,7 @@ async def save_service_relation(
     user_query: str,
     inferred_profession: str,
     search_terms: List[str],
-    confidence_score: float = 0.8
+    confidence_score: float = 0.8,
 ):
     """Guarda relación de servicio inferida por la IA para aprendizaje continuo"""
     if not supabase:
@@ -927,26 +880,37 @@ async def save_service_relation(
             current_count = existing.data[0].get("usage_count", 1)
 
             await run_supabase(
-                lambda: supabase.table("service_relations").update({
-                    "usage_count": current_count + 1,
-                    "updated_at": datetime.utcnow().isoformat()
-                }).eq("id", relation_id).execute(),
+                lambda: supabase.table("service_relations")
+                .update(
+                    {
+                        "usage_count": current_count + 1,
+                        "updated_at": datetime.utcnow().isoformat(),
+                    }
+                )
+                .eq("id", relation_id)
+                .execute(),
                 label="service_relations.update_usage",
             )
 
-            logger.info(f"🔄 Relación actualizada: '{user_query}' → '{inferred_profession}' (usos: {current_count + 1})")
+            logger.info(
+                f"🔄 Relación actualizada: '{user_query}' → '{inferred_profession}' (usos: {current_count + 1})"
+            )
         else:
             # Crear nueva relación
             await run_supabase(
-                lambda: supabase.table("service_relations").insert({
-                    "user_query": user_query.lower().strip(),
-                    "inferred_profession": inferred_profession.lower().strip(),
-                    "confidence_score": confidence_score,
-                    "search_terms": search_terms,
-                    "created_at": datetime.utcnow().isoformat(),
-                    "updated_at": datetime.utcnow().isoformat(),
-                    "usage_count": 1
-                }).execute(),
+                lambda: supabase.table("service_relations")
+                .insert(
+                    {
+                        "user_query": user_query.lower().strip(),
+                        "inferred_profession": inferred_profession.lower().strip(),
+                        "confidence_score": confidence_score,
+                        "search_terms": search_terms,
+                        "created_at": datetime.utcnow().isoformat(),
+                        "updated_at": datetime.utcnow().isoformat(),
+                        "usage_count": 1,
+                    }
+                )
+                .execute(),
                 label="service_relations.insert",
             )
 
@@ -958,13 +922,9 @@ async def save_service_relation(
         return False
 
 
-async def intelligent_need_extraction(
-    message: str, context: str
-) -> Optional[Dict[str, Any]]:
+async def intelligent_need_extraction(message: str, context: str) -> Optional[Dict[str, Any]]:
     if not openai_client:
-        logger.warning(
-            "⚠️ intelligent_need_extraction sin cliente OpenAI (API key no configurada)"
-        )
+        logger.warning("⚠️ intelligent_need_extraction sin cliente OpenAI (API key no configurada)")
         return {"_error": "openai_client_not_configured"}
 
     logger.info(
@@ -992,7 +952,7 @@ async def intelligent_need_extraction(
         'MENSAJE_ACTUAL: "{message}"\n'
         'CONTEXTO_RECIENTE: "{context}"\n\n'
         "Responde con JSON usando los campos:\n"
-        "{\n"
+        "{{\n"
         '  "necesidad_real": string,  // descripción clara de lo que necesita\n'
         '  "profesion_principal": string,  // profesión inferida (ej: "esteticista", "cosmetologa")\n'
         '  "profesiones_secundarias": [string],  // otras profesiones relacionadas\n'
@@ -1001,7 +961,7 @@ async def intelligent_need_extraction(
         '  "sinonimos_posibles": [string],  // términos alternativos de búsqueda\n'
         '  "terminos_de_busqueda": [string],  // palabras clave para buscar en services\n'
         '  "ubicacion": string | null\n'
-        "}\n"
+        "}}\n"
         "Usa null cuando no se identifique un dato. "
         "PIENSA COMO UN EXPERTO: si dice 'cuidado de piel', infiere 'esteticista' aunque no lo mencione explícitamente."
     ).format(message=message, context=trimmed_context)
@@ -1033,9 +993,7 @@ async def intelligent_need_extraction(
                 timeout=OPENAI_TIMEOUT_SECONDS,
             )
         if not response.choices:
-            logger.warning(
-                "⚠️ OpenAI respondió sin choices en intelligent_need_extraction"
-            )
+            logger.warning("⚠️ OpenAI respondió sin choices en intelligent_need_extraction")
             return _failure_result("empty_choices")
 
         choice_message = response.choices[0].message
@@ -1047,16 +1005,12 @@ async def intelligent_need_extraction(
         logger.debug("🧠 Respuesta OpenAI (recorte 400c): %s", content[:400])
         logger.info("🧠 Respuesta OpenAI completa: %s", content)
         if not content:
-            logger.warning(
-                "⚠️ OpenAI devolvió contenido vacío en intelligent_need_extraction"
-            )
+            logger.warning("⚠️ OpenAI devolvió contenido vacío en intelligent_need_extraction")
             return _failure_result("empty_content")
 
         parsed = _safe_json_loads(content)
         if not parsed:
-            logger.warning(
-                "No se pudo parsear respuesta de necesidad inteligente: %s", content
-            )
+            logger.warning("No se pudo parsear respuesta de necesidad inteligente: %s", content)
             return _failure_result("json_parse_failed", raw_content=content)
         if not isinstance(parsed, dict):
             logger.warning(
@@ -1142,9 +1096,7 @@ async def _fallback_search_providers_remote(payload: Dict[str, Any]) -> Dict[str
         if resp.status_code == 200:
             data = resp.json()
             providers = data.get("providers") or []
-            providers = [
-                provider for provider in providers if provider.get("verified", False)
-            ]
+            providers = [provider for provider in providers if provider.get("verified", False)]
             total = len(providers)
             logger.info("📦 Fallback inteligente filtró %s proveedores verificados", total)
             return {"ok": True, "providers": providers, "total": total}
@@ -1159,16 +1111,12 @@ async def _fallback_search_providers_remote(payload: Dict[str, Any]) -> Dict[str
         return {"ok": False, "providers": [], "total": 0}
 
 
-async def search_providers(
-    profession: str, location: str, radius_km: float = 10.0
-) -> Dict[str, Any]:
+async def search_providers(profession: str, location: str, radius_km: float = 10.0) -> Dict[str, Any]:
     """
     Búsqueda de proveedores usando el nuevo Search Service
     """
     query = f"{profession} en {location}"
-    logger.info(
-        f"🔍 Búsqueda simple con Search Service: profession='{profession}', location='{location}'"
-    )
+    logger.info(f"🔍 Búsqueda simple con Search Service: profession='{profession}', location='{location}'")
 
     try:
         # Primera búsqueda: en la ciudad del usuario
@@ -1214,32 +1162,30 @@ async def search_providers(
                     if state_total > 0:
                         # Agregar información de ubicación a cada proveedor
                         for provider in state_providers:
-                            provider['is_statewide'] = True
-                            provider['search_scope'] = 'statewide'
-                            provider['user_city'] = location
+                            provider["is_statewide"] = True
+                            provider["search_scope"] = "statewide"
+                            provider["user_city"] = location
 
                         return {
                             "ok": True,
                             "providers": state_providers,
                             "total": state_total,
                             "search_scope": "statewide",
-                            "note": f"No hay proveedores en {location}, pero encontramos {state_total} proveedores disponibles en otras ciudades."
+                            "note": f"No hay proveedores en {location}, pero encontramos {state_total} proveedores disponibles en otras ciudades.",
                         }
 
             return {
                 "ok": True,
                 "providers": providers,
                 "total": total,
-                "search_scope": "local"
+                "search_scope": "local",
             }
         else:
             error = result.get("error", "Error desconocido")
             logger.warning(f"⚠️ Search Service simple falló: {error}")
 
             # Fallback al método antiguo
-            return await _fallback_search_providers_simple(
-                profession, location, radius_km
-            )
+            return await _fallback_search_providers_simple(profession, location, radius_km)
 
     except Exception as exc:
         logger.error(f"❌ Error en búsqueda simple Search Service: {exc}")
@@ -1248,9 +1194,7 @@ async def search_providers(
         return await _fallback_search_providers_simple(profession, location, radius_km)
 
 
-async def _fallback_search_providers_simple(
-    profession: str, location: str, radius_km: float = 10.0
-) -> Dict[str, Any]:
+async def _fallback_search_providers_simple(profession: str, location: str, radius_km: float = 10.0) -> Dict[str, Any]:
     """
     Fallback simple al método antiguo
     """
@@ -1268,9 +1212,7 @@ async def _fallback_search_providers_simple(
             data = resp.json()
             # Adapt to both possible response shapes
             providers = data.get("providers") or []
-            providers = [
-                provider for provider in providers if provider.get("verified", False)
-            ]
+            providers = [provider for provider in providers if provider.get("verified", False)]
             total = len(providers)
             logger.info(f"📦 Proveedores verificados tras fallback: total={total}")
             return {"ok": True, "providers": providers, "total": total}
@@ -1280,9 +1222,7 @@ async def _fallback_search_providers_simple(
                 body_preview = resp.text[:300]
             except Exception:
                 body_preview = "<no-body>"
-            logger.warning(
-                f"⚠️ AI Proveedores respondió {resp.status_code}: {body_preview}"
-            )
+            logger.warning(f"⚠️ AI Proveedores respondió {resp.status_code}: {body_preview}")
             return {"ok": False, "providers": [], "total": 0}
     except Exception as e:
         logger.error(f"❌ Error llamando a AI Proveedores: {e}")
@@ -1308,9 +1248,7 @@ async def get_flow(phone: str) -> Dict[str, Any]:
 async def set_flow(phone: str, data: Dict[str, Any]):
     try:
         logger.info(f"💾 Set flow para {phone}: {data}")
-        await redis_client.set(
-            FLOW_KEY.format(phone), data, expire=settings.flow_ttl_seconds
-        )
+        await redis_client.set(FLOW_KEY.format(phone), data, expire=settings.flow_ttl_seconds)
     except Exception as e:
         logger.error(f"❌ Error guardando flow para {phone}: {e}")
         logger.warning(f"⚠️ Flujo no guardado para {phone}: {data}")
@@ -1435,9 +1373,7 @@ Si cambias de opinión, simplemente escribe "hola" y podremos empezar de nuevo.
             logger.info(f"❌ Consentimiento rechazado por cliente {phone}")
 
         except Exception as exc:
-            logger.error(
-                f"❌ Error guardando rechazo de consentimiento para {phone}: {exc}"
-            )
+            logger.error(f"❌ Error guardando rechazo de consentimiento para {phone}: {exc}")
 
         return {"response": message}
 
@@ -1477,10 +1413,11 @@ def _bold(text: str) -> str:
 def mensajes_confirmacion_busqueda(title: str, include_city_option: bool = False):
     title_bold = _bold(title)
     return [
-        {
-            "response": f"{title_bold}\n\n{menu_opciones_confirmacion(include_city_option)}"
-        },
-        ui_buttons(pie_instrucciones_respuesta_numerica, opciones_confirmar_nueva_busqueda_textos),
+        {"response": f"{title_bold}\n\n{menu_opciones_confirmacion(include_city_option)}"},
+        ui_buttons(
+            pie_instrucciones_respuesta_numerica,
+            opciones_confirmar_nueva_busqueda_textos,
+        ),
     ]
 
 
@@ -1545,19 +1482,10 @@ def formal_connection_message(provider: Dict[str, Any], service: str, city: str)
 
     name = provider.get("name") or provider.get("full_name") or "Proveedor"
     phone_raw = provider.get("phone") or provider.get("phone_number")
-    phone_display = pretty_phone(phone_raw)
     link = wa_click_to_chat(phone_raw)
-    selfie_url_raw = (
-        provider.get("face_photo_url")
-        or provider.get("selfie_url")
-        or provider.get("photo_url")
-    )
+    selfie_url_raw = provider.get("face_photo_url") or provider.get("selfie_url") or provider.get("photo_url")
     selfie_url = build_public_media_url(selfie_url_raw)
-    selfie_line = (
-        "📸 Selfie adjunta."
-        if selfie_url
-        else "📸 Selfie no disponible por el momento."
-    )
+    selfie_line = "📸 Selfie adjunta." if selfie_url else "📸 Selfie no disponible por el momento."
     link_line = f"🔗 Abrir chat: {link}" if link else "🔗 Chat disponible via WhatsApp."
     message = (
         f"Proveedor asignado: {name}.\n"
@@ -1623,16 +1551,10 @@ def build_public_media_url(raw_url: Optional[str]) -> Optional[str]:
             if isinstance(signed, dict):
                 signed_url = signed.get("signedURL") or signed.get("signed_url")
             else:
-                signed_url = getattr(signed, "signedURL", None) or getattr(
-                    signed, "signed_url", None
-                )
+                signed_url = getattr(signed, "signedURL", None) or getattr(signed, "signed_url", None)
             if signed_url:
                 return signed_url
-            public_url = (
-                supabase.storage.from_(SUPABASE_PROVIDERS_BUCKET).get_public_url(
-                    storage_path
-                )
-            )
+            public_url = supabase.storage.from_(SUPABASE_PROVIDERS_BUCKET).get_public_url(storage_path)
             if public_url:
                 return public_url
     except Exception:
@@ -1661,9 +1583,7 @@ async def get_or_create_customer(
     try:
         existing = await run_supabase(
             lambda: supabase.table("customers")
-            .select(
-                "id, phone_number, full_name, city, city_confirmed_at, has_consent, notes, created_at, updated_at"
-            )
+            .select("id, phone_number, full_name, city, city_confirmed_at, has_consent, notes, created_at, updated_at")
             .eq("phone_number", phone)
             .limit(1)
             .execute(),
@@ -1692,9 +1612,7 @@ async def get_or_create_customer(
     return None
 
 
-async def update_customer_city(
-    customer_id: Optional[str], city: str
-) -> Optional[Dict[str, Any]]:
+async def update_customer_city(customer_id: Optional[str], city: str) -> Optional[Dict[str, Any]]:
     if not supabase or not customer_id or not city:
         return None
     try:
@@ -1751,18 +1669,13 @@ def clear_customer_consent(customer_id: Optional[str]) -> None:
     try:
         asyncio.create_task(
             run_supabase(
-                lambda: supabase.table("customers")
-                .update({"has_consent": False})
-                .eq("id", customer_id)
-                .execute(),
+                lambda: supabase.table("customers").update({"has_consent": False}).eq("id", customer_id).execute(),
                 label="customers.clear_consent",
             )
         )
         logger.info(f"📝 Consentimiento restablecido para customer {customer_id}")
     except Exception as exc:
-        logger.warning(
-            f"No se pudo limpiar consentimiento para customer {customer_id}: {exc}"
-        )
+        logger.warning(f"No se pudo limpiar consentimiento para customer {customer_id}: {exc}")
 
 
 @app.on_event("startup")
@@ -1815,9 +1728,7 @@ async def process_client_message(request: AIProcessingRequest):
     """
     try:
         phone = request.context.get("phone", "unknown")
-        logger.info(
-            f"📨 Procesando mensaje de cliente: {phone} - {request.message[:100]}..."
-        )
+        logger.info(f"📨 Procesando mensaje de cliente: {phone} - {request.message[:100]}...")
 
         # Guardar mensaje del usuario en sesión
         await session_manager.save_session(phone, request.message, is_bot=False)
@@ -1825,9 +1736,7 @@ async def process_client_message(request: AIProcessingRequest):
         # Obtener contexto de conversación para OpenAI y extracción
         conversation_context = await session_manager.get_session_context(phone)
 
-        need_insights = await intelligent_need_extraction(
-            request.message, conversation_context
-        )
+        need_insights = await intelligent_need_extraction(request.message, conversation_context)
 
         insights_error = None
         raw_response_preview = None
@@ -1842,13 +1751,9 @@ async def process_client_message(request: AIProcessingRequest):
                 insights_payload = need_insights
 
         if insights_error:
-            logger.warning(
-                "⚠️ intelligent_need_extraction falló con código '%s'", insights_error
-            )
+            logger.warning("⚠️ intelligent_need_extraction falló con código '%s'", insights_error)
             if raw_response_preview:
-                logger.debug(
-                    "🧠 Contenido sin parsear de extracción: %s", raw_response_preview
-                )
+                logger.debug("🧠 Contenido sin parsear de extracción: %s", raw_response_preview)
 
         def _normalize_optional_text(value: Any) -> Optional[str]:
             if isinstance(value, str):
@@ -1861,39 +1766,25 @@ async def process_client_message(request: AIProcessingRequest):
             if isinstance(data, list):
                 return [str(item).strip() for item in data if str(item).strip()]
             if isinstance(data, str):
-                maybe = [
-                    fragment.strip()
-                    for fragment in re.split(r"[,\n]", data)
-                    if fragment.strip()
-                ]
+                maybe = [fragment.strip() for fragment in re.split(r"[,\n]", data) if fragment.strip()]
                 return maybe
             return []
 
-        need_profession = _normalize_optional_text(
-            insights_payload.get("profesion_principal")
-        )
-        need_secondary_professions = _ensure_list(
-            insights_payload.get("profesiones_secundarias") or []
-        )
+        need_profession = _normalize_optional_text(insights_payload.get("profesion_principal"))
+        need_secondary_professions = _ensure_list(insights_payload.get("profesiones_secundarias") or [])
         need_location = _normalize_optional_text(insights_payload.get("ubicacion"))
         need_summary = _normalize_optional_text(insights_payload.get("necesidad_real"))
         need_urgency = _normalize_optional_text(insights_payload.get("urgencia"))
-        need_specialties = _ensure_list(
-            insights_payload.get("especialidades_requeridas") or []
-        )
+        need_specialties = _ensure_list(insights_payload.get("especialidades_requeridas") or [])
         need_synonyms = _ensure_list(insights_payload.get("sinonimos_posibles") or [])
         need_search_terms = _ensure_list(insights_payload.get("terminos_de_busqueda") or [])
 
         # Guardar relaciones inferidas por la IA para aprendizaje continuo
-        if need_profession and message:
+        if need_profession and request.message:
             confidence = 0.9 if not insights_error else 0.7
-            asyncio.create_task(
-                save_service_relation(message, need_profession, need_search_terms, confidence)
-            )
+            asyncio.create_task(save_service_relation(request.message, need_profession, need_search_terms, confidence))
 
-        detected_profession, detected_location = extract_profession_and_location(
-            conversation_context, request.message
-        )
+        detected_profession, detected_location = extract_profession_and_location(conversation_context, request.message)
         profession = need_profession or detected_profession
         location = need_location or detected_location
 
@@ -1961,11 +1852,7 @@ async def process_client_message(request: AIProcessingRequest):
                     specialty_tags = p.get("matched_terms") or p.get("specialties")
                     if specialty_tags:
                         if isinstance(specialty_tags, list):
-                            display = ", ".join(
-                                str(item)
-                                for item in specialty_tags[:3]
-                                if str(item).strip()
-                            )
+                            display = ", ".join(str(item) for item in specialty_tags[:3] if str(item).strip())
                         else:
                             display = str(specialty_tags)
                         if display:
@@ -1992,9 +1879,7 @@ async def process_client_message(request: AIProcessingRequest):
                             }
                         ).execute()
                 except Exception as e:
-                    logger.warning(
-                        f"⚠️ No se pudo registrar service_request en Supabase: {e}"
-                    )
+                    logger.warning(f"⚠️ No se pudo registrar service_request en Supabase: {e}")
 
                 return AIProcessingResponse(
                     response=ai_response_text,
@@ -2101,9 +1986,7 @@ async def process_client_message(request: AIProcessingRequest):
 
     except Exception as e:
         logger.error(f"❌ Error procesando mensaje: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Error processing message: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error processing message: {str(e)}")
 
 
 @app.post("/handle-whatsapp-message")
@@ -2133,38 +2016,26 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
 
             # Priorizar opciones seleccionadas mediante botones o quick replies
             if selected in {"1", "2"}:
-                return await handle_consent_response(
-                    phone, customer_profile, selected, payload
-                )
+                return await handle_consent_response(phone, customer_profile, selected, payload)
             if selected_lower in {
                 opciones_consentimiento_textos[0].lower(),
                 opciones_consentimiento_textos[1].lower(),
             }:
-                option_to_process = (
-                    "1" if selected_lower == opciones_consentimiento_textos[0].lower() else "2"
-                )
-                return await handle_consent_response(
-                    phone, customer_profile, option_to_process, payload
-                )
+                option_to_process = "1" if selected_lower == opciones_consentimiento_textos[0].lower() else "2"
+                return await handle_consent_response(phone, customer_profile, option_to_process, payload)
 
             # Interpretar texto libre numérico (ej. usuario responde "1" o "2")
             if text_numeric_option in {"1", "2"}:
-                return await handle_consent_response(
-                    phone, customer_profile, text_numeric_option, payload
-                )
+                return await handle_consent_response(phone, customer_profile, text_numeric_option, payload)
 
             # Interpretar textos afirmativos/negativos libres
-            is_consent_text = interpret_yes_no(text_content_raw) == True
-            is_declined_text = interpret_yes_no(text_content_raw) == False
+            is_consent_text = interpret_yes_no(text_content_raw) is True
+            is_declined_text = interpret_yes_no(text_content_raw) is False
 
             if is_consent_text:
-                return await handle_consent_response(
-                    phone, customer_profile, "1", payload
-                )
+                return await handle_consent_response(phone, customer_profile, "1", payload)
             if is_declined_text:
-                return await handle_consent_response(
-                    phone, customer_profile, "2", payload
-                )
+                return await handle_consent_response(phone, customer_profile, "2", payload)
 
             return await request_consent(phone)
 
@@ -2177,9 +2048,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
         # Inactividad: si pasaron >3 minutos desde el último mensaje, reiniciar flujo
         last_seen_raw = flow.get("last_seen_at_prev")
         try:
-            last_seen_dt = (
-                datetime.fromisoformat(last_seen_raw) if last_seen_raw else None
-            )
+            last_seen_dt = datetime.fromisoformat(last_seen_raw) if last_seen_raw else None
         except Exception:
             last_seen_dt = None
 
@@ -2195,15 +2064,15 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
             )
             return {
                 "messages": [
-                {
-                    "response": (
-                        "**No tuve respuesta y reinicié la conversación para ayudarte mejor. "
-                        "Gracias por usar TinkuBot; escríbeme cuando quieras.**"
-                    )
-                },
-                {"response": mensaje_inicial_solicitud_servicio},
-            ]
-        }
+                    {
+                        "response": (
+                            "**No tuve respuesta y reinicié la conversación para ayudarte mejor. "
+                            "Gracias por usar TinkuBot; escríbeme cuando quieras.**"
+                        )
+                    },
+                    {"response": mensaje_inicial_solicitud_servicio},
+                ]
+            }
 
         # Guardar referencia anterior para futuras comparaciones
         flow["last_seen_at_prev"] = now_iso
@@ -2256,9 +2125,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
             else:
                 flow["city_confirmed"] = True
 
-        logger.info(
-            f"📱 WhatsApp [{phone}] tipo={msg_type} selected={selected} text='{text[:60]}'"
-        )
+        logger.info(f"📱 WhatsApp [{phone}] tipo={msg_type} selected={selected} text='{text[:60]}'")
 
         # Comandos de reinicio de flujo (útil en pruebas)
         if text and text.strip().lower() in RESET_KEYWORDS:
@@ -2276,9 +2143,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
 
         # Persist simple transcript in Redis session history
         if text:
-            await session_manager.save_session(
-                phone, text, is_bot=False, metadata={"message_id": payload.get("id")}
-            )
+            await session_manager.save_session(phone, text, is_bot=False, metadata={"message_id": payload.get("id")})
 
         state = flow.get("state")
 
@@ -2287,9 +2152,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
         logger.info(f"📋 Estado actual: {state}")
         logger.info(f"📍 Ubicación recibida: {location is not None}")
         logger.info(f"📝 Texto recibido: '{text[:50]}...' if text else '[sin texto]'")
-        logger.info(
-            f"🎯 Opción seleccionada: '{selected}' if selected else '[sin selección]'"
-        )
+        logger.info(f"🎯 Opción seleccionada: '{selected}' if selected else '[sin selección]'")
         logger.info(f"🏷️ Tipo de mensaje: {msg_type}")
         logger.info(f"🔧 Flujo completo: {flow}")
 
@@ -2298,23 +2161,17 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
             await set_flow(phone, data)
             # Also store bot reply in session
             if reply_obj.get("response"):
-                await session_manager.save_session(
-                    phone, reply_obj["response"], is_bot=True
-                )
+                await session_manager.save_session(phone, reply_obj["response"], is_bot=True)
             return reply_obj
 
         async def save_bot_message(message: Optional[Any]):
             if not message:
                 return
-            text_to_store = (
-                message.get("response") if isinstance(message, dict) else message
-            )
+            text_to_store = message.get("response") if isinstance(message, dict) else message
             if not text_to_store:
                 return
             try:
-                await session_manager.save_session(
-                    phone, text_to_store, is_bot=True
-                )
+                await session_manager.save_session(phone, text_to_store, is_bot=True)
             except Exception:
                 pass
 
@@ -2345,15 +2202,11 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                 # Sin aceptados: ofrecer volver a buscar o cambiar ciudad
                 flow["state"] = "confirm_new_search"
                 flow["confirm_attempts"] = 0
-                flow["confirm_title"] = mensaje_sin_disponibilidad(
-                    service_text, city
-                )
+                flow["confirm_title"] = mensaje_sin_disponibilidad(service_text, city)
                 flow["confirm_include_city_option"] = True
                 await set_flow(phone, flow)
                 confirm_title = flow.get("confirm_title") or titulo_confirmacion_repetir_busqueda
-                confirm_msgs = mensajes_confirmacion_busqueda(
-                    confirm_title, include_city_option=True
-                )
+                confirm_msgs = mensajes_confirmacion_busqueda(confirm_title, include_city_option=True)
                 for cmsg in confirm_msgs:
                     await save_bot_message(cmsg.get("response"))
                 return {"messages": confirm_msgs}
@@ -2390,9 +2243,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
 
                 flow["state"] = "awaiting_city"
                 flow["city_confirmed"] = False
-                return await respond(
-                    flow, {"response": "*¿En qué ciudad lo necesitas?*"}
-                )
+                return await respond(flow, {"response": "*¿En qué ciudad lo necesitas?*"})
 
             flow.update({"state": "awaiting_service"})
             return await respond(flow, {"response": mensaje_inicial_solicitud_servicio})
@@ -2400,9 +2251,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
         # Close conversation kindly
         if selected == "No, por ahora está bien":
             await reset_flow(phone)
-            return {
-                "response": "Perfecto ✅. Cuando necesites algo más, solo escríbeme y estaré aquí para ayudarte."
-            }
+            return {"response": "Perfecto ✅. Cuando necesites algo más, solo escríbeme y estaré aquí para ayudarte."}
 
         # State machine
         if state == "awaiting_service":
@@ -2434,15 +2283,9 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
         if state == "awaiting_city":
             # Si no hay servicio previo y el usuario escribe un servicio aquí, reencaminarlo.
             if text and not flow.get("service"):
-                detected_profession, detected_city = extract_profession_and_location(
-                    "", text
-                )
-                current_service_norm = _normalize_text_for_matching(
-                    flow.get("service") or ""
-                )
-                new_service_norm = _normalize_text_for_matching(
-                    detected_profession or text or ""
-                )
+                detected_profession, detected_city = extract_profession_and_location("", text)
+                current_service_norm = _normalize_text_for_matching(flow.get("service") or "")
+                new_service_norm = _normalize_text_for_matching(detected_profession or text or "")
                 if detected_profession and new_service_norm != current_service_norm:
                     for key in [
                         "providers",
@@ -2497,9 +2340,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                     normalized_input,
                 )
                 if update_result:
-                    updated_flow["city_confirmed_at"] = update_result.get(
-                        "city_confirmed_at"
-                    )
+                    updated_flow["city_confirmed_at"] = update_result.get("city_confirmed_at")
 
             if reply.get("response"):
                 return await respond(updated_flow, reply)
@@ -2594,9 +2435,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
 
     except Exception as e:
         logger.error(f"❌ Error manejando mensaje WhatsApp: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Error handling WhatsApp message: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error handling WhatsApp message: {str(e)}")
 
 
 # Endpoints de compatibilidad con el Session Service anterior
@@ -2612,9 +2451,7 @@ async def create_session(session_request: SessionCreateRequest):
         timestamp = session_request.timestamp or datetime.now()
 
         if not phone or not message:
-            raise HTTPException(
-                status_code=400, detail="phone and message are required"
-            )
+            raise HTTPException(status_code=400, detail="phone and message are required")
 
         # Guardar en sesión
         success = await session_manager.save_session(
@@ -2680,9 +2517,7 @@ async def delete_sessions(phone: str):
 
     except Exception as e:
         logger.error(f"❌ Error eliminando sesiones para {phone}: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Error deleting sessions: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error deleting sessions: {str(e)}")
 
 
 @app.get("/sessions/stats", response_model=SessionStats)
@@ -2696,9 +2531,7 @@ async def get_session_stats():
 
     except Exception as e:
         logger.error(f"❌ Error obteniendo estadísticas de sesiones: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Error getting session stats: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error getting session stats: {str(e)}")
 
 
 if __name__ == "__main__":
@@ -2706,11 +2539,9 @@ if __name__ == "__main__":
     async def startup_wrapper():
         # Lanzar scheduler en background
         asyncio.create_task(feedback_scheduler_loop())
-        server_host = os.getenv("SERVER_HOST", "0.0.0.0")
+        server_host = os.getenv("SERVER_HOST", "0.0.0.0")  # nosec: B104
         server_port = int(
-            os.getenv("CLIENTES_SERVER_PORT")
-            or os.getenv("AI_SERVICE_CLIENTES_PORT")
-            or settings.clientes_service_port
+            os.getenv("CLIENTES_SERVER_PORT") or os.getenv("AI_SERVICE_CLIENTES_PORT") or settings.clientes_service_port
         )
         config = {
             "app": "main:app",

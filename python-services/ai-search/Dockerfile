@@ -1,4 +1,10 @@
+# TinkuBot - AI Search Service
 FROM python:3.11-slim
+
+# Metadata labels
+LABEL maintainer="TinkuBot Team"
+LABEL description="Servicio de búsqueda avanzada con tokenización y cache"
+LABEL version="1.0.0"
 
 # Configurar variables de entorno
 ENV PYTHONUNBUFFERED=1 \
