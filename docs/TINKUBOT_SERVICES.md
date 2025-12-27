@@ -72,6 +72,57 @@ python validate_quality_code.py --node-install
 python validate_quality_code.py --node-audit
 ```
 
+## Variables de Entorno Clave
+
+Python (comunes):
+- `OPENAI_API_KEY`
+- `SUPABASE_URL`
+- `SUPABASE_BACKEND_API_KEY`
+- `SUPABASE_SERVICE_KEY`
+- `REDIS_URL`
+
+Node.js (WhatsApp):
+- `SUPABASE_URL`
+- `SUPABASE_BACKEND_API_KEY`
+- `SUPABASE_BUCKET_NAME`
+- `CLIENTES_INSTANCE_ID` / `PROVEEDORES_INSTANCE_ID`
+- `CLIENTES_WHATSAPP_PORT` / `PROVEEDORES_WHATSAPP_PORT`
+
+Infraestructura:
+- `MQTT_BROKER_URL` (si aplica)
+- `MOSQUITTO_PORT` (si aplica)
+
+## Dependencias Entre Servicios
+
+- `wa-clientes` -> `ai-clientes` (HTTP)
+- `wa-proveedores` -> `ai-proveedores` (HTTP)
+- `ai-search` <-> `ai-clientes` (HTTP interno)
+- `av-proveedores` <-> `mosquitto` (MQTT)
+- Servicios Python -> `Redis` y `Supabase`
+
+## Despliegue y Rollback (Docker Compose)
+
+Despliegue:
+
+```bash
+docker compose pull
+docker compose up -d --build
+docker compose ps
+```
+
+Rollback (ultimo estado estable):
+
+```bash
+docker compose up -d --build --force-recreate
+```
+
+## Troubleshooting Rapido
+
+- **WA no responde**: revisar `docker logs tinkubot-wa-clientes` y validar QR/sesion.
+- **Errores de salud**: verificar healthcheck del servicio y puertos.
+- **AI no responde**: revisar `docker logs` y variables de entorno.
+- **MQTT sin mensajes**: validar `mosquitto` en `docker compose ps`.
+
 ## Puertos Clave
 
 - **MQTT**: 1883 (mosquitto)
