@@ -110,6 +110,19 @@ npm install
 npm run dev
 ```
 
+## ✅ Validaciones y Documentacion
+
+Validadores principales:
+
+```bash
+python validate_quality_code.py
+python validate_docker.py
+```
+
+Documentacion unificada:
+
+- `docs/TINKUBOT_SERVICES.md`
+
 ## 📝 Registros (Logs) y Monitoreo
 
 Para visualizar los registros de un servicio específico:
