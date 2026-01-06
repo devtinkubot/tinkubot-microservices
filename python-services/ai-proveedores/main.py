@@ -159,7 +159,7 @@ app = FastAPI(
 async def startup_event():
     # Timeout simple: habilitado, ver línea ~1525 en manejar_mensaje_whatsapp
     if settings.session_timeout_enabled:
-        logger.info("✅ Session Timeout simple habilitado (30 minutos de inactividad)")
+        logger.info("✅ Session Timeout simple habilitado (5 minutos de inactividad)")
 
 
 @app.on_event("shutdown")
@@ -1471,8 +1471,8 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
         if last_seen_raw:
             try:
                 last_seen_dt = datetime.fromisoformat(last_seen_raw)
-                # 30 minutos = 1800 segundos (más tiempo que clientes que tienen 3 min)
-                if (now_utc - last_seen_dt).total_seconds() > 1800:
+                # 5 minutos = 300 segundos (suficiente para cualquier paso del proceso)
+                if (now_utc - last_seen_dt).total_seconds() > 300:
                     await reiniciar_flujo(phone)
                     new_flow = {
                         "state": "awaiting_menu_option",
