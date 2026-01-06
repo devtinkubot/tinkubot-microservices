@@ -40,11 +40,6 @@ from shared_lib.models import (
     ProviderResponse,
 )
 from shared_lib.redis_client import redis_client
-from shared_lib.session_timeout import (
-    ProviderTimeoutConfig,
-    SessionTimeoutManager,
-    SessionTimeoutScheduler,
-)
 
 # Importar modelos Pydantic locales
 from models.schemas import (
@@ -124,21 +119,9 @@ if OPENAI_API_KEY:
 else:
     logger.warning("⚠️ No se configuró OpenAI")
 
-# Session Timeout Manager para control de expiracion por estado
-FLOW_KEY = "prov_flow:{}"
-timeout_config = ProviderTimeoutConfig(
-    default_timeout_minutes=settings.prov_timeout_default_minutes,
-    warning_percent=settings.session_timeout_warning_percent,
-)
-timeout_manager = SessionTimeoutManager(
-    config=timeout_config,
-    flow_key_prefix=FLOW_KEY,
-    redis_client=redis_client,
-)
-timeout_scheduler = None
 
-if settings.session_timeout_enabled:
-    logger.info("Session Timeout Manager enabled")
+# Flow key para conversaciones de proveedores
+FLOW_KEY = "prov_flow:{}"
 
 
 async def run_supabase(op, timeout: float = SUPABASE_TIMEOUT_SECONDS, label: str = "supabase_op"):
@@ -169,105 +152,20 @@ app = FastAPI(
     version="2.0.0",
 )
 
-# Contexto global para el scheduler
-scheduler_context: Dict[str, Optional[asyncio.Task]] = {"scheduler": None}
-
-
-# === FUNCIÓN AUXILIAR PARA WHATSAPP ===
-
-
-async def _send_whatsapp_message_internal(phone: str, message: str) -> bool:
-    """
-    Función auxiliar interna para enviar mensajes de WhatsApp.
-    Utiliza el mismo endpoint que wa-proveedores.
-    """
-    try:
-        if not ENABLE_DIRECT_WHATSAPP_SEND:
-            logger.info(f"📨 Mensaje simulado a {phone}: {message[:80]}...")
-            return True
-
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.post(
-                WA_PROVEEDORES_URL,
-                json={"phone": phone, "message": message},
-            )
-            resp.raise_for_status()
-        logger.info(f"✅ Mensaje enviado a {phone} via wa-proveedores")
-        return True
-    except Exception as e:
-        logger.error(f"❌ Error enviando WhatsApp a {phone}: {e}")
-        return False
-
-
-# === CALLBACKS PARA TIMEOUT SCHEDULER ===
-
-
-async def send_timeout_warning(phone: str, flow):
-    try:
-        remaining = timeout_manager.get_remaining_minutes(flow)
-        state = flow.get("state", "unknown")
-        message = (
-            f"Tu sesion esta por expirar.\n\n"
-            f"Tienes {remaining} minutos para completar el paso actual. "
-            f"Si no respondes a tiempo, tendras que empezar de nuevo."
-        )
-        await _send_whatsapp_message_internal(phone, message)
-        logger.info(f"Warning enviado a {phone}, estado: {state}")
-    except Exception as e:
-        logger.error(f"Error enviando warning a {phone}: {e}")
-
-
-async def handle_session_expired(phone: str, flow):
-    try:
-        state = flow.get("state", "unknown")
-        message = (
-            "Tu sesion ha expirado.\n\n"
-            "Tardaste mucho tiempo en responder y tu sesion ha cerrado por seguridad. "
-            "Para continuar, necesitas empezar desde el principio.\n\n"
-            "Envia hola o inicio para comenzar nuevamente."
-        )
-        await _send_whatsapp_message_internal(phone, message)
-        logger.info(f"Expiracion manejada para {phone}, estado: {state}")
-    except Exception as e:
-        logger.error(f"Error manejando expiracion para {phone}: {e}")
-
-
 # === FASTAPI LIFECYCLE EVENTS ===
 
 
 @app.on_event("startup")
 async def startup_event():
-    # Session Timeout Scheduler: DESHABILITADO
-    # Ahora se usa timeout simple verificando inactividad en cada mensaje (como ai-clientes)
-    # El código del scheduler se conserva para referencia futura si se necesita funcionalidad avanzada
-    # global timeout_scheduler
-    # if settings.session_timeout_enabled:
-    #     logger.info("Iniciando Session Timeout Scheduler...")
-    #     timeout_scheduler = SessionTimeoutScheduler(
-    #         timeout_manager=timeout_manager,
-    #         check_interval_seconds=settings.session_timeout_check_interval_seconds,
-    #         warning_callback=send_timeout_warning,
-    #         expire_callback=handle_session_expired,
-    #     )
-    #     scheduler_context["scheduler"] = asyncio.create_task(timeout_scheduler.start())
-    #     logger.info("Session Timeout Scheduler iniciado")
-
-    # Timeout simple: habilitado, ver línea ~1579 en manejar_mensaje_whatsapp
+    # Timeout simple: habilitado, ver línea ~1525 en manejar_mensaje_whatsapp
     if settings.session_timeout_enabled:
         logger.info("✅ Session Timeout simple habilitado (30 minutos de inactividad)")
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    # Scheduler: DESHABILITADO (ver comentario en startup_event)
-    # scheduler_task = scheduler_context.get("scheduler")
-    # if scheduler_task:
-    #     logger.info("Deteniendo Session Timeout Scheduler...")
-    #     if timeout_scheduler:
-    #         await timeout_scheduler.stop()
-    #     scheduler_task.cancel()
-    #     logger.info("Session Timeout Scheduler detenido")
     pass
+
 
 # Configurar CORS
 app.add_middleware(
@@ -337,38 +235,17 @@ RESET_KEYWORDS = {
 
 async def obtener_flujo(phone: str) -> Dict[str, Any]:
     data = await redis_client.get(FLOW_KEY.format(phone))
-    flow = data or {}
-    if settings.session_timeout_enabled and flow:
-        if timeout_manager.is_expired(flow):
-            logger.info(f"Sesion expirada para {phone}, estado: {flow.get('state')}")
-            flow = {}
-    return flow
+    return data or {}
 
 
 async def establecer_flujo(phone: str, data: Dict[str, Any]) -> None:
-    if not settings.session_timeout_enabled or not data.get("state"):
-        await redis_client.set(
-            FLOW_KEY.format(phone), data, expire=settings.flow_ttl_seconds
-        )
-        return
-    
-    flow_anterior = await redis_client.get(FLOW_KEY.format(phone))
-    estado_anterior = flow_anterior.get("state") if flow_anterior else None
-    estado_nuevo = data.get("state")
-    
-    if estado_anterior != estado_nuevo:
-        timeout_manager.set_state_metadata(data, estado_nuevo)
-    else:
-        timeout_manager.update_activity(data)
-    
     await redis_client.set(
         FLOW_KEY.format(phone), data, expire=settings.flow_ttl_seconds
     )
 
 
 async def establecer_flujo_con_estado(phone: str, data: Dict[str, Any], estado: str) -> None:
-    if settings.session_timeout_enabled:
-        timeout_manager.set_state_metadata(data, estado)
+    data["state"] = estado
     await redis_client.set(
         FLOW_KEY.format(phone), data, expire=settings.flow_ttl_seconds
     )
