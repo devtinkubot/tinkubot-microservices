@@ -46,6 +46,32 @@ from shared_lib.session_timeout import (
     SessionTimeoutScheduler,
 )
 
+# Importar modelos Pydantic locales
+from models.schemas import (
+    ProviderSearchRequest,
+    ProviderSearchResponse,
+    IntelligentSearchRequest,
+    ProviderRegisterRequest,
+    WhatsAppMessageRequest,
+    WhatsAppMessageReceive,
+    HealthResponse,
+)
+
+# Importar utilidades de servicios
+from utils.services_utils import (
+    SERVICIOS_MAXIMOS,
+    normalizar_texto_para_busqueda,
+    normalizar_profesion_para_storage,
+    limpiar_servicio_texto,
+    sanitizar_servicios,
+    formatear_servicios,
+    dividir_cadena_servicios,
+    procesar_keywords_servicios,
+    extraer_servicios_guardados,
+    construir_mensaje_servicios,
+    construir_listado_servicios,
+)
+
 # Configuración desde variables de entorno
 SUPABASE_URL = settings.supabase_url or os.getenv("SUPABASE_URL", "")
 # settings expone la clave JWT de servicio para Supabase
@@ -127,74 +153,6 @@ async def run_supabase(op, timeout: float = SUPABASE_TIMEOUT_SECONDS, label: str
                         "threshold_ms": SLOW_QUERY_THRESHOLD_MS,
                     },
                 )
-
-
-# Modelos Pydantic locales para compatibilidad
-class ProviderSearchRequest(BaseModel):
-    profession: str
-    location: str
-    radius: float = 10.0
-
-
-class ProviderSearchResponse(BaseModel):
-    providers: List[Dict[str, Any]]
-    count: int
-    location: str
-    profession: str
-
-
-class IntelligentSearchRequest(BaseModel):
-    necesidad_real: Optional[str] = None
-    profesion_principal: str
-    especialidades: Optional[List[str]] = None
-    especialidades_requeridas: Optional[List[str]] = None
-    sinonimos: Optional[List[str]] = None
-    sinonimos_posibles: Optional[List[str]] = None
-    ubicacion: str
-    urgencia: Optional[str] = None
-
-
-class ProviderRegisterRequest(BaseModel):
-    name: str
-    profession: str
-    phone: str
-    email: Optional[str] = None
-    city: str
-    specialty: Optional[str] = None
-    experience_years: Optional[int] = None
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
-    has_consent: bool = False
-
-
-class WhatsAppMessageRequest(BaseModel):
-    phone: str
-    message: str
-
-
-class WhatsAppMessageReceive(BaseModel):
-    # Modelo flexible para soportar payload de los servicios Node
-    id: Optional[str] = None
-    from_number: Optional[str] = None
-    content: Optional[str] = None
-    timestamp: Optional[str] = None
-    status: Optional[str] = None
-    # Compatibilidad previa
-    phone: Optional[str] = None
-    message: Optional[str] = None
-    media_base64: Optional[str] = None
-    media_mimetype: Optional[str] = None
-    media_filename: Optional[str] = None
-    image_base64: Optional[str] = None
-    attachments: Optional[List[Dict[str, Any]]] = None
-
-
-class HealthResponse(BaseModel):
-    status: str
-    service: str
-    timestamp: str
-    supabase: str = "disconnected"
-
 
 # Crear aplicación FastAPI
 app = FastAPI(
@@ -499,163 +457,6 @@ def is_registration_trigger(text: str) -> bool:
 
 # === FUNCIONES SIMPLIFICADAS PARA ESQUEMA UNIFICADO ===
 
-
-def normalizar_texto_para_busqueda(texto: str) -> str:
-    """
-    Normaliza texto para búsqueda: minúsculas, sin acentos, caracteres especiales.
-    """
-    if not texto:
-        return ""
-
-    import re
-    import unicodedata
-
-    # Convertir a minúsculas y eliminar acentos
-    texto = texto.lower().strip()
-    texto = unicodedata.normalize("NFD", texto)
-    texto = "".join(char for char in texto if unicodedata.category(char) != "Mn")
-
-    # Eliminar caracteres especiales except espacios y guiones
-    texto = re.sub(r"[^a-z0-9\s\-]", " ", texto)
-
-    # Unificar espacios múltiples
-    texto = re.sub(r"\s+", " ", texto).strip()
-
-    return texto
-
-
-def normalizar_profesion_para_storage(profesion: str) -> str:
-    """
-    Normaliza la profesión para guardarla consistente en la BD.
-    - Minúsculas, sin acentos
-    - Expande abreviaturas tipo "ing." a "ingeniero"
-    """
-    base = normalizar_texto_para_busqueda(profesion)
-    if not base:
-        return ""
-
-    tokens = base.split()
-    if not tokens:
-        return ""
-
-    primer = tokens[0]
-    if primer in {"ing", "ing.", "ingeniero", "ingeniera"}:
-        tokens[0] = "ingeniero"
-
-    return " ".join(tokens)
-
-
-SERVICIOS_MAXIMOS = 5
-
-
-STOPWORDS_SERVICIOS: Set[str] = {
-    "de",
-    "del",
-    "la",
-    "las",
-    "el",
-    "los",
-    "a",
-    "al",
-    "en",
-    "y",
-    "o",
-    "u",
-    "para",
-    "por",
-    "con",
-    "sin",
-    "sobre",
-    "un",
-    "una",
-    "uno",
-    "unos",
-    "unas",
-    "the",
-    "and",
-    "of",
-}
-
-
-def limpiar_servicio_texto(servicio: str) -> str:
-    """Normaliza y elimina stopwords de una descripción de servicio."""
-    normalizado = normalizar_texto_para_busqueda(servicio)
-    if not normalizado:
-        return ""
-    palabras = [
-        palabra
-        for palabra in normalizado.split()
-        if palabra and palabra not in STOPWORDS_SERVICIOS
-    ]
-    return " ".join(palabras)
-
-
-def sanitizar_servicios(lista_servicios: Optional[List[str]]) -> List[str]:
-    """Genera lista única de servicios limpios, limitada a SERVICIOS_MAXIMOS."""
-    servicios_limpios: List[str] = []
-    if not lista_servicios:
-        return servicios_limpios
-
-    for servicio in lista_servicios:
-        texto = limpiar_servicio_texto(servicio)
-        if not texto or texto in servicios_limpios:
-            continue
-        servicios_limpios.append(texto)
-        if len(servicios_limpios) >= SERVICIOS_MAXIMOS:
-            break
-
-    return servicios_limpios
-
-
-def formatear_servicios(servicios: List[str]) -> str:
-    """Convierte lista de servicios en cadena persistible."""
-    return " | ".join(servicios)
-
-
-def dividir_cadena_servicios(texto: str) -> List[str]:
-    """Separa un texto en posibles servicios usando separadores conocidos."""
-    cleaned = texto.strip()
-    if not cleaned:
-        return []
-
-    if re.search(r"[|;,/\n]", cleaned):
-        candidatos = re.split(r"[|;,/\n]+", cleaned)
-    else:
-        candidatos = [cleaned]
-
-    return [item.strip() for item in candidatos if item and item.strip()]
-
-
-def procesar_keywords_servicios(lista_servicios: List[str]) -> str:
-    """
-    Convertir lista de servicios a cadena normalizada para almacenamiento.
-    """
-    servicios_limpios = sanitizar_servicios(lista_servicios)
-    return formatear_servicios(servicios_limpios)
-
-
-def extraer_servicios_guardados(valor: Optional[str]) -> List[str]:
-    """Convierte la cadena almacenada en lista de servicios."""
-    if not valor:
-        return []
-
-    import re
-
-    cleaned = valor.strip()
-    if not cleaned:
-        return []
-
-    servicios = dividir_cadena_servicios(cleaned)
-    # Mantener máximo permitido y eliminar duplicados preservando orden
-    resultado: List[str] = []
-    for servicio in servicios:
-        if servicio not in resultado:
-            resultado.append(servicio)
-        if len(resultado) >= SERVICIOS_MAXIMOS:
-            break
-    return resultado
-
-
 async def actualizar_servicios_proveedor(
     provider_id: str, servicios: List[str]
 ) -> List[str]:
@@ -684,21 +485,6 @@ async def actualizar_servicios_proveedor(
         raise
 
     return servicios_limpios
-
-
-def construir_mensaje_servicios(servicios: List[str]) -> str:
-    """Genera mensaje para mostrar servicios y opciones."""
-    return provider_services_menu_message(servicios, SERVICIOS_MAXIMOS)
-
-
-def construir_listado_servicios(servicios: List[str]) -> str:
-    """Genera listado numerado de servicios actuales."""
-    if not servicios:
-        return "_No tienes servicios registrados._"
-
-    lines = ["Servicios registrados:"]
-    lines.extend(f"{idx + 1}. {servicio}" for idx, servicio in enumerate(servicios))
-    return "\n".join(lines)
 
 
 def normalizar_datos_proveedor(datos_crudos: ProviderCreate) -> Dict[str, Any]:
