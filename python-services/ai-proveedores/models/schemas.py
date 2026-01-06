@@ -7,6 +7,7 @@ class ProviderSearchRequest(BaseModel):
     profession: str
     location: str
     radius: float = 10.0
+    limit: Optional[int] = 10
 
 
 class ProviderSearchResponse(BaseModel):

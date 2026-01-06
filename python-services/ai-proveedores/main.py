@@ -170,7 +170,33 @@ app = FastAPI(
 )
 
 # Contexto global para el scheduler
-scheduler_context = {"scheduler": None}
+scheduler_context: Dict[str, Optional[asyncio.Task]] = {"scheduler": None}
+
+
+# === FUNCIÓN AUXILIAR PARA WHATSAPP ===
+
+
+async def _send_whatsapp_message_internal(phone: str, message: str) -> bool:
+    """
+    Función auxiliar interna para enviar mensajes de WhatsApp.
+    Utiliza el mismo endpoint que wa-proveedores.
+    """
+    try:
+        if not ENABLE_DIRECT_WHATSAPP_SEND:
+            logger.info(f"📨 Mensaje simulado a {phone}: {message[:80]}...")
+            return True
+
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                WA_PROVEEDORES_URL,
+                json={"phone": phone, "message": message},
+            )
+            resp.raise_for_status()
+        logger.info(f"✅ Mensaje enviado a {phone} via wa-proveedores")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Error enviando WhatsApp a {phone}: {e}")
+        return False
 
 
 # === CALLBACKS PARA TIMEOUT SCHEDULER ===
@@ -185,7 +211,7 @@ async def send_timeout_warning(phone: str, flow):
             f"Tienes {remaining} minutos para completar el paso actual. "
             f"Si no respondes a tiempo, tendras que empezar de nuevo."
         )
-        await send_whatsapp_message(phone, message)
+        await _send_whatsapp_message_internal(phone, message)
         logger.info(f"Warning enviado a {phone}, estado: {state}")
     except Exception as e:
         logger.error(f"Error enviando warning a {phone}: {e}")
@@ -200,7 +226,7 @@ async def handle_session_expired(phone: str, flow):
             "Para continuar, necesitas empezar desde el principio.\n\n"
             "Envia hola o inicio para comenzar nuevamente."
         )
-        await send_whatsapp_message(phone, message)
+        await _send_whatsapp_message_internal(phone, message)
         logger.info(f"Expiracion manejada para {phone}, estado: {state}")
     except Exception as e:
         logger.error(f"Error manejando expiracion para {phone}: {e}")
@@ -211,28 +237,37 @@ async def handle_session_expired(phone: str, flow):
 
 @app.on_event("startup")
 async def startup_event():
-    global timeout_scheduler
+    # Session Timeout Scheduler: DESHABILITADO
+    # Ahora se usa timeout simple verificando inactividad en cada mensaje (como ai-clientes)
+    # El código del scheduler se conserva para referencia futura si se necesita funcionalidad avanzada
+    # global timeout_scheduler
+    # if settings.session_timeout_enabled:
+    #     logger.info("Iniciando Session Timeout Scheduler...")
+    #     timeout_scheduler = SessionTimeoutScheduler(
+    #         timeout_manager=timeout_manager,
+    #         check_interval_seconds=settings.session_timeout_check_interval_seconds,
+    #         warning_callback=send_timeout_warning,
+    #         expire_callback=handle_session_expired,
+    #     )
+    #     scheduler_context["scheduler"] = asyncio.create_task(timeout_scheduler.start())
+    #     logger.info("Session Timeout Scheduler iniciado")
+
+    # Timeout simple: habilitado, ver línea ~1579 en manejar_mensaje_whatsapp
     if settings.session_timeout_enabled:
-        logger.info("Iniciando Session Timeout Scheduler...")
-        timeout_scheduler = SessionTimeoutScheduler(
-            timeout_manager=timeout_manager,
-            check_interval_seconds=settings.session_timeout_check_interval_seconds,
-            warning_callback=send_timeout_warning,
-            expire_callback=handle_session_expired,
-        )
-        scheduler_context["scheduler"] = asyncio.create_task(timeout_scheduler.start())
-        logger.info("Session Timeout Scheduler iniciado")
+        logger.info("✅ Session Timeout simple habilitado (30 minutos de inactividad)")
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    scheduler_task = scheduler_context.get("scheduler")
-    if scheduler_task:
-        logger.info("Deteniendo Session Timeout Scheduler...")
-        if timeout_scheduler:
-            await timeout_scheduler.stop()
-        scheduler_task.cancel()
-        logger.info("Session Timeout Scheduler detenido")
+    # Scheduler: DESHABILITADO (ver comentario en startup_event)
+    # scheduler_task = scheduler_context.get("scheduler")
+    # if scheduler_task:
+    #     logger.info("Deteniendo Session Timeout Scheduler...")
+    #     if timeout_scheduler:
+    #         await timeout_scheduler.stop()
+    #     scheduler_task.cancel()
+    #     logger.info("Session Timeout Scheduler detenido")
+    pass
 
 # Configurar CORS
 app.add_middleware(
@@ -537,7 +572,7 @@ async def registrar_proveedor(
 
 
 async def buscar_proveedores(
-    profesion: str, ubicacion: str = None, limite: int = 10
+    profesion: str, ubicacion: Optional[str] = None, limite: int = 10
 ) -> List[Dict[str, Any]]:
     """
     Búsqueda directa sin joins complejos usando el esquema unificado.
@@ -1549,6 +1584,43 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
 
         flow = await obtener_flujo(phone)
         state = flow.get("state")
+
+        # === TIMEOUT SIMPLE COMO AI-CLIENTES ===
+        now_utc = datetime.utcnow()
+        now_iso = now_utc.isoformat()
+
+        # Verificar timeout de inactividad (30 minutos para proveedores)
+        last_seen_raw = flow.get("last_seen_at_prev")
+        if last_seen_raw:
+            try:
+                last_seen_dt = datetime.fromisoformat(last_seen_raw)
+                # 30 minutos = 1800 segundos (más tiempo que clientes que tienen 3 min)
+                if (now_utc - last_seen_dt).total_seconds() > 1800:
+                    await reiniciar_flujo(phone)
+                    new_flow = {
+                        "state": "awaiting_menu_option",
+                        "last_seen_at": now_iso,
+                        "last_seen_at_prev": now_iso,
+                    }
+                    await establecer_flujo(phone, new_flow)
+                    return {
+                        "success": True,
+                        "messages": [
+                            {
+                                "response": (
+                                    "**No tuve respuesta y reinicié la conversación para ayudarte mejor. "
+                                    "Gracias por usar TinkuBot Proveedores; escríbeme cuando quieras.**"
+                                )
+                            },
+                            {"response": provider_post_registration_menu_message()},
+                        ]
+                    }
+            except Exception:
+                pass  # Si hay error con timestamp, continuar sin timeout
+
+        # Actualizar timestamp actual
+        flow["last_seen_at"] = now_iso
+        flow["last_seen_at_prev"] = flow.get("last_seen_at", now_iso)
 
         provider_profile = await obtener_perfil_proveedor_cacheado(phone)
         provider_id = provider_profile.get("id") if provider_profile else None
