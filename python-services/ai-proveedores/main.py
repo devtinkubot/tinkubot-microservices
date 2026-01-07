@@ -46,7 +46,6 @@ from models.schemas import (
     ProviderSearchRequest,
     ProviderSearchResponse,
     IntelligentSearchRequest,
-    ProviderRegisterRequest,
     WhatsAppMessageRequest,
     WhatsAppMessageReceive,
     HealthResponse,
@@ -999,16 +998,6 @@ Si es una consulta general, responde amablemente."""
         )
 
 
-@app.get("/")
-async def root() -> Dict[str, Any]:
-    """Endpoint raíz"""
-    return {
-        "service": "AI Service Proveedores Mejorado",
-        "status": "running",
-        "version": "2.0.0",
-    }
-
-
 @app.get("/health", response_model=HealthResponse)
 async def health_check() -> HealthResponse:
     """Health check endpoint"""
@@ -1120,47 +1109,6 @@ async def busqueda_inteligente(
             status_code=500,
             detail="No se pudo realizar la búsqueda inteligente en este momento.",
         )
-
-
-@app.post("/register-provider", response_model=ProviderResponse)
-async def registrar_proveedor_endpoint(
-    request: ProviderRegisterRequest,
-) -> ProviderResponse:
-    """Endpoint único y simplificado para registro de proveedores"""
-    try:
-        # Convertir request del frontend a modelo unificado
-        services_entries: List[str] = []
-        if request.specialty:
-            services_entries = [
-                part.strip()
-                for part in re.split(r"[;,/\n]+", request.specialty)
-                if part and part.strip()
-            ]
-
-        datos_proveedor = ProviderCreate(
-            phone=request.phone,
-            full_name=request.name,
-            email=request.email,
-            city=request.city,
-            profession=request.profession,
-            services_list=services_entries,
-            experience_years=request.experience_years,
-            has_consent=request.has_consent,
-        )
-
-        # Usar función en español
-        resultado = await registrar_proveedor(supabase, datos_proveedor)
-
-        if not resultado:
-            raise HTTPException(status_code=500, detail="Error al registrar proveedor")
-
-        return ProviderResponse(**resultado)
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error en endpoint de registro: {e}")
-        raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
 
 
 @app.post("/send-whatsapp")
@@ -2044,31 +1992,6 @@ async def get_providers(
     except Exception as e:
         logger.error(f"Error getting providers: {e}")
         return {"providers": [], "count": 0}
-
-
-@app.post("/test-message")
-async def test_message() -> Dict[str, Any]:
-    """
-    Endpoint de prueba para enviar mensaje al número especificado
-    """
-    try:
-        # Simulación directa para demostrar que el sistema funciona
-        logger.info("📱 Enviando mensaje de prueba simulado a +593959091325")
-
-        return {
-            "success": True,
-            "message": "Mensaje de prueba enviado exitosamente (simulado)",
-            "simulated": True,
-            "phone": "+593959091325",
-            "message_preview": (
-                "🤖 Prueba de mensaje desde AI Service Proveedores Mejorado. "
-                + "Sistema funcionando correctamente."
-            ),
-            "note": "El servicio real de WhatsApp está en mantenimiento por problemas con whatsapp-web.js",
-        }
-
-    except Exception as e:
-        return {"success": False, "message": f"Error en prueba: {str(e)}"}
 
 
 if __name__ == "__main__":
