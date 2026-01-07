@@ -958,65 +958,124 @@ async def save_service_relation(
         return False
 
 
-async def intelligent_need_extraction(
-    message: str, context: str
-) -> Optional[Dict[str, Any]]:
+# ============================================================================
+# SISTEMA DE BANEO Y TRACKING DE ADVERTENCIAS
+# ============================================================================
+
+async def check_if_banned(phone: str) -> bool:
+    """Verifica si el usuario está baneado.
+
+    Lee de Redis la clave ban:{phone} y retorna True si existe.
+    """
+    try:
+        ban_data = await redis_client.get(f"ban:{phone}")
+        return bool(ban_data)
+    except Exception as e:
+        logger.warning(f"⚠️ Error verificando ban para {phone}: {e}")
+        return False
+
+
+async def record_warning(phone: str, offense: str) -> None:
+    """Registra una advertencia en Redis (TTL 15 min).
+
+    Guarda en warnings:{phone} el contador de advertencias y la última ofensa.
+    """
+    try:
+        key = f"warnings:{phone}"
+        existing = await redis_client.get(key) or {}
+        existing = existing if isinstance(existing, dict) else {}
+
+        existing["count"] = existing.get("count", 0) + 1
+        existing["last_warning_at"] = datetime.utcnow().isoformat()
+        existing["last_offense"] = offense
+
+        await redis_client.set(key, existing, expire=900)  # 15 minutos
+        logger.info(f"⚠️ Advertencia registrada para {phone}: {offense} (total: {existing['count']})")
+    except Exception as e:
+        logger.warning(f"⚠️ Error registrando warning para {phone}: {e}")
+
+
+async def record_ban(phone: str, reason: str) -> None:
+    """Registra un ban de 15 minutos en Redis (TTL 15 min).
+
+    Guarda en ban:{phone} los detalles del ban con expiración automática.
+    """
+    from datetime import timedelta
+
+    try:
+        ban_data = {
+            "banned_at": datetime.utcnow().isoformat(),
+            "reason": reason,
+            "offense_count": 2,
+            "expires_at": (datetime.utcnow() + timedelta(minutes=15)).isoformat()
+        }
+        await redis_client.set(f"ban:{phone}", ban_data, expire=900)  # 15 minutos
+        logger.info(f"🚫 Ban registrado para {phone}: {reason}")
+    except Exception as e:
+        logger.warning(f"⚠️ Error registrando ban para {phone}: {e}")
+
+
+async def get_warning_count(phone: str) -> int:
+    """Obtiene el número de advertencias activas para un teléfono.
+
+    Lee de Redis warnings:{phone} y retorna el contador.
+    """
+    try:
+        data = await redis_client.get(f"warnings:{phone}")
+        if data and isinstance(data, dict):
+            return data.get("count", 0)
+        return 0
+    except Exception as e:
+        logger.warning(f"⚠️ Error obteniendo warning count para {phone}: {e}")
+        return 0
+
+
+# ============================================================================
+# VALIDACIÓN DE CONTENIDO CON IA
+# ============================================================================
+
+async def validate_content_with_ai(
+    text: str, phone: str
+) -> tuple[bool, Optional[str], Optional[str]]:
+    """
+    Valida el contenido usando IA para detectar contenido ilegal/inapropiado o sin sentido.
+
+    Retorna: (should_proceed, warning_message, ban_message)
+
+    - should_proceed: True si el contenido es válido, False si debe rechazarse
+    - warning_message: Mensaje de advertencia (1era ofensa), None si no aplica
+    - ban_message: Mensaje de ban (2da ofensa), None si no aplica
+    """
     if not openai_client:
-        logger.warning(
-            "⚠️ intelligent_need_extraction sin cliente OpenAI (API key no configurada)"
-        )
-        return {"_error": "openai_client_not_configured"}
+        logger.warning("⚠️ validate_content_with_ai sin cliente OpenAI")
+        return True, None, None  # Si no hay OpenAI, permitir por defecto
 
-    logger.info(
-        "🧠 Extrayendo necesidad inteligente (len msg=%s, len ctx=%s)",
-        len(message or ""),
-        len(context or ""),
-    )
-    trimmed_context = context[-2000:] if context else ""
-    system_prompt = (
-        "Eres un experto en servicios profesionales en Ecuador con conocimiento profundo de estética, belleza, cuidado personal y salud. "
-        "Tu tarea es inferir inteligentemente la profesión real detrás de las necesidades del cliente.\n\n"
-        "EJEMPLOS DE INFERENCIA INTELIGENTE:\n"
-        "- 'cuidado de piel' → esteticista, cosmetóloga, facial, belleza\n"
-        "- 'limpieza facial' → esteticista, cosmetóloga, tratamientos faciales\n"
-        "- 'maquillaje' → maquilladora, makeup artist, esteticista\n"
-        "- 'cejas' → esteticista, micropigmentación, cejista\n"
-        "- 'tratamientos faciales' → esteticista, cosmetóloga, facial\n"
-        "- 'cuidado corporal' → masajista, esteticista, terapeuta\n"
-        "- 'spa' → esteticista, masajista, terapeuta de bienestar\n\n"
-        "Devuelve un JSON válido sin texto adicional."
-    )
-    user_prompt = (
-        "Analiza el mensaje y el contexto para identificar las necesidades reales del cliente. "
-        "INFIERE la profesión profesional más allá de las palabras literales.\n\n"
-        'MENSAJE_ACTUAL: "{message}"\n'
-        'CONTEXTO_RECIENTE: "{context}"\n\n'
-        "Responde con JSON usando los campos:\n"
-        "{\n"
-        '  "necesidad_real": string,  // descripción clara de lo que necesita\n'
-        '  "profesion_principal": string,  // profesión inferida (ej: "esteticista", "cosmetologa")\n'
-        '  "profesiones_secundarias": [string],  // otras profesiones relacionadas\n'
-        '  "especialidades_requeridas": [string],  // servicios específicos\n'
-        '  "urgencia": "baja" | "media" | "alta",\n'
-        '  "sinonimos_posibles": [string],  // términos alternativos de búsqueda\n'
-        '  "terminos_de_busqueda": [string],  // palabras clave para buscar en services\n'
-        '  "ubicacion": string | null\n'
-        "}\n"
-        "Usa null cuando no se identifique un dato. "
-        "PIENSA COMO UN EXPERTO: si dice 'cuidado de piel', infiere 'esteticista' aunque no lo mencione explícitamente."
-    ).format(message=message, context=trimmed_context)
+    logger.info(f"🔍 Validando contenido con IA: '{text[:50]}...' (phone: {phone})")
 
-    def _failure_result(
-        reason: str,
-        raw_content: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
-        payload: Dict[str, Any] = {"_error": reason}
-        if raw_content:
-            payload["_raw_response"] = raw_content
-        if metadata:
-            payload.update(metadata)
-        return payload
+    system_prompt = """
+Eres un moderador de contenido experto. Detecta si el texto contiene:
+
+1. CONTENIDO ILEGAL O INAPROPIADO:
+   - Armas, violencia, delitos
+   - Drogas, sustancias ilegales
+   - Servicios sexuales, prostitución, contenido pornográfico
+   - Odio, discriminación, acoso
+
+2. INPUT SIN SENTIDO O FALSO:
+   - "necesito dinero" (cuando NO busca préstamos, es engañoso)
+   - "dinero abeja" (sin sentido, alucinación)
+   - Textos que no expresan una necesidad real de servicio
+
+Responde SOLO con JSON:
+{
+  "is_valid": true/false,
+  "category": "valid" | "illegal" | "inappropriate" | "nonsense" | "false",
+  "reason": "explicación breve",
+  "should_ban": true/false
+}
+"""
+
+    user_prompt = f'Analiza este mensaje de usuario: "{text}"'
 
     try:
         async with openai_semaphore:
@@ -1028,51 +1087,73 @@ async def intelligent_need_extraction(
                         {"role": "user", "content": user_prompt},
                     ],
                     temperature=0.3,
-                    max_tokens=300,
+                    max_tokens=150,
                 ),
                 timeout=OPENAI_TIMEOUT_SECONDS,
             )
-        if not response.choices:
-            logger.warning(
-                "⚠️ OpenAI respondió sin choices en intelligent_need_extraction"
-            )
-            return _failure_result("empty_choices")
 
-        choice_message = response.choices[0].message
-        content = (choice_message.content or "").strip()
+        if not response.choices:
+            logger.warning("⚠️ OpenAI respondió sin choices en validate_content_with_ai")
+            return True, None, None  # Permitir por defecto si falla
+
+        content = (response.choices[0].message.content or "").strip()
         if content.startswith("```"):
             content = re.sub(r"^```(?:json)?", "", content, flags=re.IGNORECASE).strip()
             content = re.sub(r"```$", "", content).strip()
 
-        logger.debug("🧠 Respuesta OpenAI (recorte 400c): %s", content[:400])
-        logger.info("🧠 Respuesta OpenAI completa: %s", content)
-        if not content:
-            logger.warning(
-                "⚠️ OpenAI devolvió contenido vacío en intelligent_need_extraction"
-            )
-            return _failure_result("empty_content")
+        logger.debug(f"🔍 Respuesta validación IA: {content}")
 
         parsed = _safe_json_loads(content)
-        if not parsed:
-            logger.warning(
-                "No se pudo parsear respuesta de necesidad inteligente: %s", content
-            )
-            return _failure_result("json_parse_failed", raw_content=content)
-        if not isinstance(parsed, dict):
-            logger.warning(
-                "⚠️ Respuesta de OpenAI no es un objeto JSON: tipo=%s contenido=%s",
-                type(parsed),
-                content,
-            )
-            return _failure_result(
-                "unexpected_payload_type",
-                raw_content=content,
-                metadata={"payload_type": str(type(parsed))},
-            )
-        return parsed
+        if not parsed or not isinstance(parsed, dict):
+            logger.warning(f"⚠️ No se pudo parsear respuesta de validación: {content}")
+            return True, None, None  # Permitir por defecto si falla
+
+        is_valid = parsed.get("is_valid", True)
+        category = parsed.get("category", "valid")
+        reason = parsed.get("reason", "")
+        should_ban = parsed.get("should_ban", False)
+
+        # Caso 1: Contenido válido
+        if is_valid and category == "valid":
+            logger.info(f"✅ Contenido válido: '{text[:30]}...'")
+            return True, None, None
+
+        # Caso 2: Input sin sentido o falso (NO banea, solo rechaza)
+        if category in ("nonsense", "false"):
+            from templates.prompts import mensaje_error_input_sin_sentido
+            logger.info(f"❌ Input sin sentido detectado: '{text[:30]}...' - {reason}")
+            return False, mensaje_error_input_sin_sentido, None
+
+        # Caso 3: Contenido ilegal/inapropiado (puede banear)
+        from templates.prompts import mensaje_advertencia_contenido_ilegal, mensaje_ban_usuario
+        from datetime import timedelta
+
+        # Verificar advertencias previas
+        warning_count = await get_warning_count(phone)
+
+        if warning_count == 0:
+            # Primera ofensa: advertir
+            logger.warning(f"⚠️ Primera ofensa ilegal/inapropiado para {phone}: {reason}")
+            await record_warning(phone, f"{category}: {reason}")
+            return False, mensaje_advertencia_contenido_ilegal, None
+        else:
+            # Segunda ofensa: banear
+            logger.warning(f"🚫 Segunda ofensa ilegal/inapropiado para {phone}: BANEANDO")
+            await record_ban(phone, f"{category}: {reason} (2da ofensa)")
+
+            # Calcular hora de reinicio
+            restart_time = datetime.utcnow() + timedelta(minutes=15)
+            restart_str = restart_time.strftime("%H:%M")
+
+            ban_msg = mensaje_ban_usuario.format(hora_reinicio=restart_str)
+            return False, None, ban_msg
+
+    except asyncio.TimeoutError:
+        logger.warning("⚠️ Timeout en validate_content_with_ai")
+        return True, None, None  # Permitir por defecto si timeout
     except Exception as exc:
-        logger.exception("Fallo en intelligent_need_extraction: %s", exc)
-        return _failure_result("exception", metadata={"exception": str(exc)})
+        logger.exception("Fallo en validate_content_with_ai: %s", exc)
+        return True, None, None  # Permitir por defecto si error
 
 
 async def intelligent_search_providers_remote(
@@ -1822,89 +1903,18 @@ async def process_client_message(request: AIProcessingRequest):
         # Guardar mensaje del usuario en sesión
         await session_manager.save_session(phone, request.message, is_bot=False)
 
-        # Obtener contexto de conversación para OpenAI y extracción
+        # Obtener contexto de conversación para extracción
         conversation_context = await session_manager.get_session_context(phone)
 
-        need_insights = await intelligent_need_extraction(
-            request.message, conversation_context
-        )
-
-        insights_error = None
-        raw_response_preview = None
-        insights_payload: Dict[str, Any] = {}
-        if isinstance(need_insights, dict):
-            insights_error = need_insights.get("_error")
-            if insights_error:
-                raw_response_preview = need_insights.get("_raw_response")
-                if raw_response_preview:
-                    raw_response_preview = str(raw_response_preview)[:400]
-            else:
-                insights_payload = need_insights
-
-        if insights_error:
-            logger.warning(
-                "⚠️ intelligent_need_extraction falló con código '%s'", insights_error
-            )
-            if raw_response_preview:
-                logger.debug(
-                    "🧠 Contenido sin parsear de extracción: %s", raw_response_preview
-                )
-
-        def _normalize_optional_text(value: Any) -> Optional[str]:
-            if isinstance(value, str):
-                stripped = value.strip()
-                if stripped and stripped.lower() not in {"null", "ninguna"}:
-                    return stripped
-            return None
-
-        def _ensure_list(data: Any) -> List[str]:
-            if isinstance(data, list):
-                return [str(item).strip() for item in data if str(item).strip()]
-            if isinstance(data, str):
-                maybe = [
-                    fragment.strip()
-                    for fragment in re.split(r"[,\n]", data)
-                    if fragment.strip()
-                ]
-                return maybe
-            return []
-
-        need_profession = _normalize_optional_text(
-            insights_payload.get("profesion_principal")
-        )
-        need_secondary_professions = _ensure_list(
-            insights_payload.get("profesiones_secundarias") or []
-        )
-        need_location = _normalize_optional_text(insights_payload.get("ubicacion"))
-        need_summary = _normalize_optional_text(insights_payload.get("necesidad_real"))
-        need_urgency = _normalize_optional_text(insights_payload.get("urgencia"))
-        need_specialties = _ensure_list(
-            insights_payload.get("especialidades_requeridas") or []
-        )
-        need_synonyms = _ensure_list(insights_payload.get("sinonimos_posibles") or [])
-        need_search_terms = _ensure_list(insights_payload.get("terminos_de_busqueda") or [])
-
-        # Guardar relaciones inferidas por la IA para aprendizaje continuo
-        if need_profession and message:
-            confidence = 0.9 if not insights_error else 0.7
-            asyncio.create_task(
-                save_service_relation(message, need_profession, need_search_terms, confidence)
-            )
-
+        # Extraer profesión y ubicación usando el método simple
         detected_profession, detected_location = extract_profession_and_location(
             conversation_context, request.message
         )
-        profession = need_profession or detected_profession
-        location = need_location or detected_location
+        profession = detected_profession
+        location = detected_location
 
         if location:
             location = location.strip()
-
-        if not profession and need_synonyms:
-            profession = next(
-                (syn for syn in need_synonyms if len(syn.split()) <= 3),
-                need_synonyms[0],
-            )
 
         normalized_profession_token = None
         if profession:
@@ -1917,16 +1927,8 @@ async def process_client_message(request: AIProcessingRequest):
 
         if profession and location:
             search_payload = {
-                "necesidad_real": need_summary or profession,
                 "profesion_principal": profession,
-                "profesiones_secundarias": need_secondary_professions,
-                "especialidades": need_specialties,
-                "especialidades_requeridas": need_specialties,
-                "sinonimos": need_synonyms,
-                "sinonimos_posibles": need_synonyms,
-                "terminos_de_busqueda": need_search_terms,
                 "ubicacion": location,
-                "urgencia": need_urgency,
             }
             providers_result = await intelligent_search_providers_remote(search_payload)
 
@@ -1936,9 +1938,6 @@ async def process_client_message(request: AIProcessingRequest):
             if providers_result["ok"] and providers_result["providers"]:
                 providers = providers_result["providers"][:3]
                 lines = []
-                if need_summary:
-                    lines.append(f"Necesidad detectada: {need_summary}.")
-                    lines.append("")
                 lines.append(
                     f"¡Excelente! He encontrado {len(providers)} {profession}s "
                     f"en {location.title() if isinstance(location, str) else location}:"
@@ -1971,8 +1970,6 @@ async def process_client_message(request: AIProcessingRequest):
                         if display:
                             lines.append(f"   - Coincidencias: {display}")
                     lines.append("")
-                if need_urgency:
-                    lines.append(f"Urgencia estimada: {need_urgency}.")
                 lines.append("¿Quieres que te comparta el contacto de alguno?")
                 ai_response_text = "\n".join(lines)
 
@@ -2003,18 +2000,11 @@ async def process_client_message(request: AIProcessingRequest):
                         "profession": profession,
                         "location": location,
                         "providers": providers,
-                        "need_summary": need_summary,
-                        "urgency": need_urgency,
-                        "need_specialties": need_specialties,
-                        "need_synonyms": need_synonyms,
-                        "need_search_terms": need_search_terms,
-                        "need_secondary_professions": need_secondary_professions,
-                        "extraction_error": insights_error,
                     },
                     confidence=0.9,
                 )
 
-        if insights_error and not profession:
+        if not profession:
             guidance_text = (
                 "Estoy teniendo problemas para entender exactamente el servicio que "
                 "necesitas. ¿Podrías decirlo en una palabra? Por ejemplo: marketing, "
@@ -2027,13 +2017,6 @@ async def process_client_message(request: AIProcessingRequest):
                 entities={
                     "profession": None,
                     "location": location,
-                    "urgency": need_urgency,
-                    "need_summary": need_summary,
-                    "need_specialties": need_specialties,
-                    "need_synonyms": need_synonyms,
-                    "need_search_terms": need_search_terms,
-                    "need_secondary_professions": need_secondary_professions,
-                    "extraction_error": insights_error,
                 },
                 confidence=0.5,
             )
@@ -2075,7 +2058,6 @@ async def process_client_message(request: AIProcessingRequest):
             "location": None,
             "urgency": None,
             "budget": None,
-            "extraction_error": insights_error,
         }
 
         # Detectar intenciones comunes
@@ -2197,8 +2179,8 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                 "messages": [
                 {
                     "response": (
-                        "**No tuve respuesta y reinicié la conversación para ayudarte mejor. "
-                        "Gracias por usar TinkuBot; escríbeme cuando quieras.**"
+                        "*No tuve respuesta y reinicié la conversación para ayudarte mejor*, "
+                        "Tinkubot."
                     )
                 },
                 {"response": mensaje_inicial_solicitud_servicio},
@@ -2406,6 +2388,37 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
 
         # State machine
         if state == "awaiting_service":
+            from flows.client_flow import (
+                validate_service_input,
+                check_city_and_proceed,
+            )
+
+            # 0. Verificar si está baneado
+            if await check_if_banned(phone):
+                return await respond(
+                    flow, {"response": "🚫 Tu cuenta está temporalmente suspendida."}
+                )
+
+            # 1. Validación estructurada básica
+            is_valid, error_msg, extracted_service = validate_service_input(
+                text or "", GREETINGS, COMMON_SERVICE_SYNONYMS
+            )
+
+            if not is_valid:
+                return await respond(flow, {"response": error_msg})
+
+            # 2. Validación IA de contenido
+            should_proceed, warning_msg, ban_msg = await validate_content_with_ai(
+                text or "", phone
+            )
+
+            if ban_msg:
+                return await respond(flow, {"response": ban_msg})
+
+            if warning_msg:
+                return await respond(flow, {"response": warning_msg})
+
+            # 3. FLUJO ORIGINAL - Usar extract_profession_and_location()
             updated_flow, reply = ClientFlow.handle_awaiting_service(
                 flow,
                 text,
@@ -2414,22 +2427,21 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                 extract_profession_and_location,
             )
             flow = updated_flow
-            if flow.get("service") and flow.get("city"):
-                waiting_msg = {"response": mensaje_confirmando_disponibilidad}
-                await save_bot_message(waiting_msg.get("response"))
-                flow["state"] = "searching"
+
+            # 4. Verificar ciudad existente (optimización)
+            city_response = await check_city_and_proceed(flow, customer_profile)
+
+            # 5. Si tiene ciudad, disparar búsqueda
+            if flow.get("state") == "searching":
                 flow["searching_dispatched"] = True
                 await set_flow(phone, flow)
-                asyncio.create_task(background_search_and_notify(phone, flow.copy()))
-                return {"messages": [waiting_msg]}
+                asyncio.create_task(
+                    background_search_and_notify(phone, flow.copy())
+                )
+                return {"messages": [{"response": city_response.get("response")}]}
 
-            # Si tenemos servicio pero falta ciudad, solo pedimos ciudad
-            if flow.get("service"):
-                flow["state"] = "awaiting_city"
-                await set_flow(phone, flow)
-                return {"response": "*¿En qué ciudad lo necesitas?*"}
-
-            return await respond(flow, reply)
+            # 6. Si no tiene ciudad, pedir normalmente
+            return await respond(flow, city_response)
 
         if state == "awaiting_city":
             # Si no hay servicio previo y el usuario escribe un servicio aquí, reencaminarlo.
