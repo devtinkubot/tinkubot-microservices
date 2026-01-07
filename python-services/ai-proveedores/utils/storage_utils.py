@@ -104,23 +104,6 @@ def _safe_json_loads(payload: str) -> Optional[Any]:
                 return None
 
 
-def _normalize_terms(values: Optional[List[Any]]) -> List[str]:
-    normalized: List[str] = []
-    if not values:
-        return normalized
-    seen: Set[str] = set()
-    for raw in values:
-        text = str(raw).strip()
-        if not text:
-            continue
-        key = text.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        normalized.append(text)
-    return normalized
-
-
 def extract_first_image_base64(payload: Dict[str, Any]) -> Optional[str]:
     candidates = [
         payload.get("image_base64"),

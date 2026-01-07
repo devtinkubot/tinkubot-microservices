@@ -354,7 +354,7 @@ Ejemplos:
 
     parser.add_argument(
         "--service",
-        choices=["ai-clientes", "ai-proveedores", "search-token"],
+        choices=["ai-clientes", "ai-proveedores", "av-proveedores", "search-token"],
         help="Valida solo un servicio específico"
     )
 
@@ -367,7 +367,7 @@ Ejemplos:
         services = [args.service]
         print_info(f"Validando solo el servicio: {args.service}")
     else:
-        services = ["ai-clientes", "ai-proveedores", "search-token"]
+        services = ["ai-clientes", "ai-proveedores", "av-proveedores", "search-token"]
         print_info("Validando todos los servicios Python")
 
     if args.fix:

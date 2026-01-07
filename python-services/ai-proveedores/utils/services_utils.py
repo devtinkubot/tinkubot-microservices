@@ -129,14 +129,6 @@ def dividir_cadena_servicios(texto: str) -> List[str]:
     return [item.strip() for item in candidatos if item and item.strip()]
 
 
-def procesar_keywords_servicios(lista_servicios: List[str]) -> str:
-    """
-    Convertir lista de servicios a cadena normalizada para almacenamiento.
-    """
-    servicios_limpios = sanitizar_servicios(lista_servicios)
-    return formatear_servicios(servicios_limpios)
-
-
 def extraer_servicios_guardados(valor: Optional[str]) -> List[str]:
     """Convierte la cadena almacenada en lista de servicios."""
     if not valor:
