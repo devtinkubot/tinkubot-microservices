@@ -72,6 +72,10 @@ MQTT_PUBLISH_TIMEOUT = float(os.getenv("MQTT_PUBLISH_TIMEOUT", "5"))
 MQTT_QOS = int(os.getenv("MQTT_QOS", "1"))
 LOG_SAMPLING_RATE = int(os.getenv("LOG_SAMPLING_RATE", "10"))
 
+# Feature flag para expansión IA de sinónimos
+USE_AI_EXPANSION = os.getenv("USE_AI_EXPANSION", "true").lower() == "true"
+logger.info(f"🔧 Expansión IA habilitada: {USE_AI_EXPANSION}")
+
 # Inicializar FastAPI
 app = FastAPI(
     title="AI Service Clientes",
@@ -624,12 +628,34 @@ async def background_search_and_notify(phone: str, flow: Dict[str, Any]):
         service = (flow.get("service") or "").strip()
         city = (flow.get("city") or "").strip()
         service_full = flow.get("service_full") or service
+
+        logger.info(
+            f"🚀 background_search_and_notify INICIADO: phone={phone}, service='{service}', city='{city}'"
+        )
+
         if not service or not city:
+            logger.warning(
+                f"⚠️ background_search_and_notify CANCELADO: falta service o city"
+            )
             return
 
+        # Extraer expanded_terms del flow
+        expanded_terms = flow.get("expanded_terms")
+
+        logger.info(
+            f"🔍 background_search_and_notify: llamando a search_providers"
+            f"('{service}', '{city}', expanded_terms={len(expanded_terms) if expanded_terms else 0} términos)"
+        )
+
         # Búsqueda inicial
-        results = await search_providers(service, city)
+        results = await search_providers(
+            service, city, radius_km=10.0, expanded_terms=expanded_terms
+        )
         providers = results.get("providers") or []
+
+        logger.info(
+            f"📦 background_search_and_notify: search_providers devolvió {len(providers)} proveedores"
+        )
 
         providers_final: List[Dict[str, Any]] = []
 
@@ -640,6 +666,9 @@ async def background_search_and_notify(phone: str, flow: Dict[str, Any]):
             )
         else:
             # Filtrar por disponibilidad en vivo
+            logger.info(
+                f"🔔 background_search_and_notify: consultando disponibilidad de {len(providers)} proveedores"
+            )
             availability = await availability_coordinator.request_and_wait(
                 phone=phone,
                 service=service,
@@ -648,6 +677,9 @@ async def background_search_and_notify(phone: str, flow: Dict[str, Any]):
                 providers=providers,
             )
             accepted = availability.get("accepted") or []
+            logger.info(
+                f"✅ background_search_and_notify: disponibilidad devolvió {len(accepted)} proveedores aceptados"
+            )
             providers_final = (accepted if accepted else [])[:5]
 
         # Construir texto para enviar
@@ -883,6 +915,297 @@ def extract_profession_and_location(
             break
 
     return profession, location
+
+
+async def expand_need_with_ai(
+    user_need: str, max_synonyms: int = 5
+) -> list[str]:
+    """
+    Expande una necesidad del usuario usando IA para generar sinónimos relevantes.
+
+    Esta función llama a GPT-3.5-turbo para generar términos de búsqueda equivalentes
+    en español e inglés, mejorando la capacidad de encontrar proveedores que usen
+    terminología diferente.
+
+    Args:
+        user_need: La necesidad del usuario (ej: "marketing", "community manager")
+        max_synonyms: Número máximo de sinónimos a generar (default: 5)
+
+    Returns:
+        Lista de términos expandidos incluyendo el término original.
+        Si hay error, retorna [user_need] como fallback.
+    """
+    if not openai_client:
+        logger.warning("⚠️ expand_need_with_ai: sin cliente OpenAI")
+        return [user_need]
+
+    if not user_need or not user_need.strip():
+        return []
+
+    logger.info(f"🔄 Expandiendo necesidad con IA: '{user_need}'")
+
+    # Truncar si es muy largo (limitar input tokens)
+    need_truncated = user_need[:200].strip()
+
+    system_prompt = f"""Eres un experto en servicios profesionales. Genera {max_synonyms} términos de búsqueda que capturen:
+1. La profesión/servicio principal
+2. Sinónimos comunes en español
+3. Términos equivalentes en inglés si aplica
+4. Variedades relacionadas que usarían proveedores
+
+Ejemplos:
+- "marketing" → ["marketing", "publicidad", "mercadotecnia", "marketing digital", "promoción"]
+- "gestor de redes sociales" → ["gestor de redes sociales", "community manager", "social media manager", "redes sociales"]
+
+Responde SOLO con un JSON array de strings. Sin explicaciones."""
+
+    user_prompt = f'Genera {max_synonyms} sinónimos o términos equivalentes para: "{need_truncated}"'
+
+    try:
+        async with openai_semaphore:
+            response = await asyncio.wait_for(
+                openai_client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    temperature=0.5,
+                    max_tokens=150,
+                ),
+                timeout=OPENAI_TIMEOUT_SECONDS,
+            )
+
+        if not response.choices:
+            logger.warning("⚠️ OpenAI respondió sin choices en expand_need_with_ai")
+            return [user_need]
+
+        content = (response.choices[0].message.content or "").strip()
+        logger.debug(f"🤖 Respuesta cruda expansión IA: {content[:200]}")
+
+        # Limpiar markdown code blocks si existen
+        if content.startswith("```"):
+            content = re.sub(r"^```(?:json)?", "", content, flags=re.IGNORECASE).strip()
+            content = re.sub(r"```$", "", content).strip()
+
+        # Parsear JSON
+        try:
+            synonyms_list = json.loads(content)
+        except json.JSONDecodeError:
+            logger.warning(f"⚠️ No se pudo parsear JSON de expansión: {content[:100]}")
+            return [user_need]
+
+        # Validar que sea una lista
+        if not isinstance(synonyms_list, list):
+            logger.warning(f"⚠️ Respuesta no es lista: {type(synonyms_list)}")
+            return [user_need]
+
+        # Validar y limpiar elementos
+        valid_synonyms = []
+        for item in synonyms_list:
+            if isinstance(item, str) and item.strip():
+                valid_synonyms.append(item.strip())
+
+        if not valid_synonyms:
+            logger.warning("⚠️ Lista de sinónimos vacía después de validación")
+            return [user_need]
+
+        # Asegurar que el término original esté incluido
+        if user_need not in valid_synonyms:
+            valid_synonyms.insert(0, user_need)
+
+        # Limitar a max_synonyms
+        final_terms = valid_synonyms[:max_synonyms]
+
+        logger.info(
+            f"✅ Expansión IA completada: '{user_need}' → {final_terms}"
+        )
+        return final_terms
+
+    except asyncio.TimeoutError:
+        logger.warning("⚠️ Timeout en expand_need_with_ai, usando fallback")
+        return [user_need]
+    except Exception as exc:
+        logger.warning(f"⚠️ Error en expand_need_with_ai: {exc}")
+        return [user_need]
+
+
+async def extract_profession_and_location_with_expansion(
+    history_text: str, last_message: str
+) -> tuple[Optional[str], Optional[str], Optional[list[str]]]:
+    """
+    Wrapper que combina extracción original + extracción IA + expansión IA.
+
+    Estrategia:
+    1. Intentar extracción estática (rápida, sin IA)
+    2. Si falla, usar IA para extraer profesión del texto
+    3. Siempre expandir con IA para generar sinónimos
+
+    Args:
+        history_text: Historial de conversación
+        last_message: Último mensaje del usuario
+
+    Returns:
+        Tupla de 3 valores:
+        - profession: Profesión extraída (canónica) o None
+        - location: Ciudad extraída (canónica) o None
+        - expanded_terms: Lista de términos expandidos por IA o None
+    """
+    # Paso 1: Intentar extracción estática primero (rápida)
+    profession, location = extract_profession_and_location(
+        history_text, last_message
+    )
+
+    # Paso 2: Si no hay profesión, usar IA para extraer del texto
+    if not profession and openai_client:
+        logger.info(f"🤖 Extracción estática falló, usando IA para: '{last_message[:100]}...'")
+        profession = await _extract_profession_with_ai(last_message)
+
+        # Intentar extraer ubicación también con IA
+        if not location:
+            location = await _extract_location_with_ai(last_message)
+
+    # Paso 3: Si aún no hay profesión, retornar None
+    if not profession:
+        return None, None, None
+
+    # Paso 4: Expandir usando IA (siempre que tengamos profesión)
+    try:
+        expanded_terms = await expand_need_with_ai(profession, max_synonyms=5)
+        return profession, location, expanded_terms
+    except Exception as exc:
+        logger.warning(f"⚠️ Error en wrapper con expansión: {exc}")
+        # Fallback: retornar solo el término original
+        return profession, location, [profession]
+
+
+async def _extract_profession_with_ai(text: str) -> Optional[str]:
+    """
+    Extrae la profesión/servicio del texto usando IA cuando la búsqueda estática falla.
+
+    Esto permite detectar servicios que NO están en COMMON_SERVICE_SYNONYMS,
+    como "gestor de redes sociales", "community manager", etc.
+    """
+    if not text or not text.strip():
+        return None
+
+    system_prompt = """Eres un experto en identificar servicios profesionales. Tu tarea es extraer EL SERVICIO PRINCIPAL que el usuario necesita.
+
+Reglas:
+1. Responde SOLO con el nombre del servicio/profesión en español
+2. Si mencionan múltiples servicios, extrae el PRINCIPAL
+3. Usa términos estándar (ej: "community manager" en lugar de "gestor de redes")
+4. Si no está claro qué servicio necesitan, responde con el texto más relevante
+
+Ejemplos:
+- "necesito un gestor de redes sociales" → "community manager"
+- "quiero marketing" → "marketing"
+- "busco abogado" → "abogado"
+- "necesito alguien que me diseñe un logo" → "diseñador gráfico"
+
+Responde SOLO con el nombre del servicio, sin explicaciones."""
+
+    user_prompt = f'¿Cuál es el servicio principal que necesita este usuario: "{text[:200]}"'
+
+    try:
+        async with openai_semaphore:
+            response = await asyncio.wait_for(
+                openai_client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    temperature=0.3,
+                    max_tokens=50,
+                ),
+                timeout=OPENAI_TIMEOUT_SECONDS,
+            )
+
+        if not response.choices:
+            return None
+
+        profession = (response.choices[0].message.content or "").strip()
+        # Limpiar comillas y otros caracteres
+        profession = profession.strip('"').strip("'").strip()
+
+        logger.info(f"✅ IA extrajo profesión: '{profession}' del texto: '{text[:50]}...'")
+        return profession if profession else None
+
+    except asyncio.TimeoutError:
+        logger.warning("⚠️ Timeout extrayendo profesión con IA")
+        return None
+    except Exception as exc:
+        logger.warning(f"⚠️ Error extrayendo profesión con IA: {exc}")
+        return None
+
+
+async def _extract_location_with_ai(text: str) -> Optional[str]:
+    """
+    Extrae la ciudad del texto usando IA cuando la búsqueda estática falla.
+    """
+    cities = ["Quito", "Guayaquil", "Cuenca", "Santo Domingo", "Manta", "Portoviejo",
+              "Machala", "Durán", "Loja", "Ambato", "Riobamba", "Esmeraldas"]
+
+    cities_str = ", ".join(cities)
+
+    system_prompt = f"""Eres un experto en identificar ciudades de Ecuador. Tu tarea es extraer LA CIUDAD mencionada en el texto.
+
+Ciudades válidas: {cities_str}
+
+Reglas:
+1. Responde SOLO con el nombre de la ciudad si está en la lista
+2. Si no se menciona ninguna ciudad válida, responde "null"
+3. Normaliza el nombre (ej: "quito" → "Quito")
+
+Ejemplos:
+- "en Quito" → "Quito"
+- "lo necesito en cuenca" → "Cuenca"
+- "para guayaquil" → "Guayaquil"
+- "en mi ciudad" → "null"
+
+Responde SOLO con el nombre de la ciudad o "null", sin explicaciones."""
+
+    user_prompt = f'¿Qué ciudad de Ecuador se menciona en: "{text[:200]}"'
+
+    try:
+        async with openai_semaphore:
+            response = await asyncio.wait_for(
+                openai_client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    temperature=0.3,
+                    max_tokens=30,
+                ),
+                timeout=OPENAI_TIMEOUT_SECONDS,
+            )
+
+        if not response.choices:
+            return None
+
+        location = (response.choices[0].message.content or "").strip()
+        location = location.strip('"').strip("'").strip()
+
+        if location.lower() == "null" or not location:
+            return None
+
+        # Verificar que sea una ciudad válida
+        for city in cities:
+            if city.lower() == location.lower():
+                logger.info(f"✅ IA extrajo ciudad: '{city}' del texto: '{text[:50]}...'")
+                return city
+
+        return None
+
+    except asyncio.TimeoutError:
+        logger.warning("⚠️ Timeout extrayendo ciudad con IA")
+        return None
+    except Exception as exc:
+        logger.warning(f"⚠️ Error extrayendo ciudad con IA: {exc}")
+        return None
 
 
 def _safe_json_loads(payload: str) -> Optional[Dict[str, Any]]:
@@ -1241,133 +1564,249 @@ async def _fallback_search_providers_remote(payload: Dict[str, Any]) -> Dict[str
 
 
 async def search_providers(
-    profession: str, location: str, radius_km: float = 10.0
+    profession: str,
+    location: str,
+    radius_km: float = 10.0,
+    expanded_terms: Optional[list[str]] = None,
 ) -> Dict[str, Any]:
     """
-    Búsqueda de proveedores usando el nuevo Search Service
+    Búsqueda de proveedores usando Search Service + validación IA.
+
+    Flujo:
+    1. Búsqueda token-based rápida (sin AI-Enhanced)
+    2. Validación con IA para filtrar proveedores que REALMENTE pueden ayudar
+    3. Retornar solo proveedores validados
     """
-    query = f"{profession} en {location}"
-    logger.info(
-        f"🔍 Búsqueda simple con Search Service: profession='{profession}', location='{location}'"
-    )
+    # Usar términos expandidos por IA si están disponibles
+    if expanded_terms and len(expanded_terms) > 1:
+        # Usar términos expandidos por IA
+        terms_joined = " ".join(expanded_terms)
+        query = f"{terms_joined} en {location}"
+        logger.info(
+            f"🔍 Búsqueda con términos expandidos ({len(expanded_terms)} términos): "
+            f"profession='{profession}', location='{location}'"
+        )
+    else:
+        # Comportamiento original (backward compatible)
+        query = f"{profession} en {location}"
+        logger.info(
+            f"🔍 Búsqueda con validación IA: profession='{profession}', location='{location}'"
+        )
 
     try:
-        # Primera búsqueda: en la ciudad del usuario
+        # Búsqueda token-based (rápida, sin IA-Enhanced)
         result = await search_client.search_providers(
             query=query,
             city=location,
             limit=10,
-            use_ai_enhancement=True,  # Búsqueda AI-first optimizada
+            use_ai_enhancement=False,  # ✅ Solo token-based (sin IA)
         )
 
-        if result.get("ok"):
-            providers = result.get("providers", [])
-            total = result.get("total", len(providers))
-
-            # Log de metadatos
-            metadata = result.get("search_metadata", {})
-            logger.info(
-                f"✅ Búsqueda local en {location}: {total} proveedores "
-                f"(estrategia: {metadata.get('strategy')}, "
-                f"tiempo: {metadata.get('search_time_ms')}ms)"
-            )
-
-            # Si no hay resultados locales, buscar statewide
-            if total == 0:
-                logger.info(f"🔄 Sin resultados en {location}, buscando statewide...")
-                state_result = await search_client.search_providers(
-                    query=profession,  # Query sin restricción de ciudad
-                    limit=10,
-                    use_ai_enhancement=True,
-                )
-
-                if state_result.get("ok"):
-                    state_providers = state_result.get("providers", [])
-                    state_total = state_result.get("total", len(state_providers))
-
-                    state_metadata = state_result.get("search_metadata", {})
-                    logger.info(
-                        f"✅ Búsqueda statewide: {state_total} proveedores "
-                        f"(estrategia: {state_metadata.get('strategy')}, "
-                        f"tiempo: {state_metadata.get('search_time_ms')}ms)"
-                    )
-
-                    if state_total > 0:
-                        # Agregar información de ubicación a cada proveedor
-                        for provider in state_providers:
-                            provider['is_statewide'] = True
-                            provider['search_scope'] = 'statewide'
-                            provider['user_city'] = location
-
-                        return {
-                            "ok": True,
-                            "providers": state_providers,
-                            "total": state_total,
-                            "search_scope": "statewide",
-                            "note": f"No hay proveedores en {location}, pero encontramos {state_total} proveedores disponibles en otras ciudades."
-                        }
-
-            return {
-                "ok": True,
-                "providers": providers,
-                "total": total,
-                "search_scope": "local"
-            }
-        else:
+        if not result.get("ok"):
             error = result.get("error", "Error desconocido")
-            logger.warning(f"⚠️ Search Service simple falló: {error}")
+            logger.warning(f"⚠️ Search Service falló: {error}")
+            return {"ok": False, "providers": [], "total": 0}
 
-            # Fallback al método antiguo
-            return await _fallback_search_providers_simple(
-                profession, location, radius_km
-            )
+        providers = result.get("providers", [])
+        total = result.get("total", len(providers))
+
+        metadata = result.get("search_metadata", {})
+        logger.info(
+            f"✅ Búsqueda local en {location}: {total} proveedores "
+            f"(estrategia: {metadata.get('strategy')}, "
+            f"tiempo: {metadata.get('search_time_ms')}ms)"
+        )
+
+        # Si no hay proveedores, retornar vacío
+        if not providers:
+            return {"ok": True, "providers": [], "total": 0}
+
+        # NUEVO: Validar con IA antes de devolver
+        validated_providers = await ai_validate_providers(
+            user_need=profession,
+            providers=providers,
+        )
+
+        logger.info(
+            f"🎯 Validación final: {len(validated_providers)}/{total} "
+            f"proveedores pasaron validación IA"
+        )
+
+        return {
+            "ok": True,
+            "providers": validated_providers,
+            "total": len(validated_providers),
+            "search_scope": "local",
+        }
 
     except Exception as exc:
-        logger.error(f"❌ Error en búsqueda simple Search Service: {exc}")
-
-        # Fallback al método antiguo
-        return await _fallback_search_providers_simple(profession, location, radius_km)
-
-
-async def _fallback_search_providers_simple(
-    profession: str, location: str, radius_km: float = 10.0
-) -> Dict[str, Any]:
-    """
-    Fallback simple al método antiguo
-    """
-    url = f"{PROVEEDORES_AI_SERVICE_URL}/search-providers"
-    payload = {"profession": profession, "location": location, "radius": radius_km}
-    logger.info(
-        f"🔄 Fallback simple a AI Proveedores: profession='{profession}', "
-        f"location='{location}', radius={radius_km} -> {url}"
-    )
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(url, json=payload)
-        logger.info(f"⬅️ Respuesta de AI Proveedores status={resp.status_code}")
-        if resp.status_code == 200:
-            data = resp.json()
-            # Adapt to both possible response shapes
-            providers = data.get("providers") or []
-            providers = [
-                provider for provider in providers if provider.get("verified", False)
-            ]
-            total = len(providers)
-            logger.info(f"📦 Proveedores verificados tras fallback: total={total}")
-            return {"ok": True, "providers": providers, "total": total}
-        else:
-            body_preview = None
-            try:
-                body_preview = resp.text[:300]
-            except Exception:
-                body_preview = "<no-body>"
-            logger.warning(
-                f"⚠️ AI Proveedores respondió {resp.status_code}: {body_preview}"
-            )
-            return {"ok": False, "providers": [], "total": 0}
-    except Exception as e:
-        logger.error(f"❌ Error llamando a AI Proveedores: {e}")
+        logger.error(f"❌ Error en búsqueda: {exc}")
         return {"ok": False, "providers": [], "total": 0}
+
+
+async def ai_validate_providers(
+    user_need: str,
+    providers: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    Usa IA para validar que los proveedores encontrados REALMENTE puedan ayudar
+    con la necesidad del usuario.
+
+    Analiza tanto la profesión como los servicios de cada proveedor para determinar
+    si tiene la capacidad y experiencia apropiada.
+
+    Retorna solo los proveedores validados por la IA.
+    """
+    if not providers:
+        return []
+
+    if not openai_client:
+        logger.warning("⚠️ ai_validate_providers sin cliente OpenAI")
+        return providers
+
+    logger.info(
+        f"🤖 Validando {len(providers)} proveedores con IA para '{user_need}'"
+    )
+
+    # Construir prompt con información completa de proveedores
+    providers_info = []
+    for i, p in enumerate(providers):
+        # Extraer información relevante del proveedor
+        # Manejar tanto "profession" (singular) como "professions" (plural lista)
+        profession_raw = p.get("profession") or p.get("professions")
+        if isinstance(profession_raw, list):
+            profession = ", ".join(str(prof) for prof in profession_raw[:3])
+        else:
+            profession = str(profession_raw) if profession_raw else "N/A"
+
+        services = p.get("services", "N/A")
+        services_list = p.get("services_list", [])
+        experience = p.get("experience_years") or p.get("years_of_experience", "N/A")
+        rating = p.get("rating", "N/A")
+
+        # Si services_list está disponible, usarlo, si no, usar services
+        if services_list and isinstance(services_list, list):
+            services_text = ", ".join(str(s) for s in services_list[:5])
+        else:
+            services_text = str(services)
+
+        provider_text = f"""Proveedor {i+1}:
+- Profesión: {profession}
+- Servicios: {services_text}
+- Experiencia: {experience} años
+- Rating: {rating}"""
+        providers_info.append(provider_text)
+
+    providers_block = "\n".join(providers_info)
+
+    system_prompt = f"""Eres un experto en servicios profesionales. Tu tarea es analizar si cada proveedor PUEDE ayudar con esta necesidad del usuario.
+
+IMPORTANTE: Los servicios pueden estar en español o inglés. Términos como "community manager", "social media manager", "community management" son EQUIVALENTES a "gestor de redes sociales", "manejo de redes sociales", "gestión de redes sociales".
+
+NECESIDAD DEL USUARIO: "{user_need}"
+
+{providers_block}
+
+Para CADA proveedor, responde si PUEDE ayudar o NO ayudar.
+
+Criterios importantes:
+1. La profesión del proveedor debe ser APROPIADA para la necesidad
+   - Ejemplo: Para "contratación pública", un ABOGADO es apropiado, un MÉDICO NO lo es
+   - Ejemplo: Para "marketing", un PUBLICISTA es apropiado, un PLOMERO NO lo es
+   - Ejemplo: Para "gestor de redes sociales", "community manager" o "social media" son APROPIADOS
+
+2. Los servicios que ofrece deben ser RELEVANTES y APLICABLES
+   - No basta con mencionar palabras clave
+   - Los servicios deben demostrar capacidad real de atender la necesidad
+   - Acepta términos en inglés o español que sean equivalentes
+   - "community manager" = "gestor de redes sociales" ✓
+   - "social media" = "redes sociales" ✓
+   - "marketing" = "mercadeo" ✓
+
+3. La experiencia debe ser APLICABLE a la necesidad
+   - No solo mencionar el término, sino tener experiencia real en ese servicio
+
+Responde SOLO con JSON (array de booleanos, en el mismo orden):
+[
+  true,   // Proveedor 1: SÍ puede ayudar
+  false,  // Proveedor 2: NO puede ayudar
+  true,   // Proveedor 3: SÍ puede ayudar
+  ...
+]
+
+NO incluyas explicaciones. Solo el array de booleanos."""
+
+    logger.info(f"📋 Prompt enviado a IA de validación:\n{system_prompt[:1000]}...")
+
+    try:
+        async with openai_semaphore:
+            response = await asyncio.wait_for(
+                openai_client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "Eres un experto analista de servicios profesionales. Analizas si un proveedor tiene la capacidad real de ayudar con una necesidad específica basándote en su profesión y servicios.",
+                        },
+                        {"role": "user", "content": system_prompt},
+                    ],
+                    temperature=0.3,
+                    max_tokens=150,
+                ),
+                timeout=OPENAI_TIMEOUT_SECONDS,
+            )
+
+        if not response.choices:
+            logger.warning("⚠️ OpenAI respondió sin choices en ai_validate_providers")
+            return providers
+
+        content = (response.choices[0].message.content or "").strip()
+        if content.startswith("```"):
+            content = re.sub(
+                r"^```(?:json)?", "", content, flags=re.IGNORECASE
+            ).strip()
+            content = re.sub(r"```$", "", content).strip()
+
+        logger.debug(f"🤖 Respuesta validación IA: {content[:200]}")
+
+        validation_list = json.loads(content)
+
+        if not isinstance(validation_list, list):
+            logger.warning(
+                f"⚠️ Respuesta de validación no es array: {type(validation_list)}"
+            )
+            return providers
+
+        if len(validation_list) != len(providers):
+            logger.warning(
+                f"⚠️ Respuesta IA tiene {len(validation_list)} valores, "
+                f"pero esperaba {len(providers)}"
+            )
+            # Ajustar longitud si es necesario
+            validation_list = validation_list[: len(providers)]
+
+        # Filtrar proveedores validados
+        validated_providers = []
+        for provider, is_valid in zip(providers, validation_list):
+            if is_valid and isinstance(is_valid, bool) and is_valid:
+                validated_providers.append(provider)
+
+        logger.info(
+            f"✅ Validación IA: {len(validated_providers)}/{len(providers)} "
+            f"proveedores validados para '{user_need}'"
+        )
+
+        return validated_providers
+
+    except asyncio.TimeoutError:
+        logger.warning("⚠️ Timeout en ai_validate_providers, retornando todos")
+        return providers
+    except json.JSONDecodeError as exc:
+        logger.warning(f"⚠️ Error parseando JSON validación: {exc}")
+        return providers
+    except Exception as exc:
+        logger.warning(f"⚠️ Error en validación IA, retornando todos: {exc}")
+        return providers
 
 
 # --- Conversational flow helpers ---
@@ -2307,6 +2746,12 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                 service_text = flow.get("service", "")
                 service_full = flow.get("service_full") or service_text
 
+                logger.info(
+                    f"🔔 Consultando disponibilidad a av-proveedores: "
+                    f"{len(providers_for_check)} proveedores, "
+                    f"servicio='{service_text}', ciudad='{city}'"
+                )
+
                 availability_result = await availability_coordinator.request_and_wait(
                     phone=phone,
                     service=service_text,
@@ -2360,7 +2805,17 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
         if not state or selected == opciones_confirmar_nueva_busqueda_textos[0]:
             cleaned = text.strip().lower() if text else ""
             if text and cleaned not in GREETINGS:
-                service_value = (detected_profession or text).strip()
+                # Usar wrapper con IA si está habilitado
+                if USE_AI_EXPANSION:
+                    logger.info(f"🤖 Conversación nueva, usando wrapper con IA para: '{cleaned[:50]}...'")
+                    profession, location, expanded_terms = await extract_profession_and_location_with_expansion("", cleaned)
+                    service_value = profession or cleaned
+                    if expanded_terms:
+                        flow["expanded_terms"] = expanded_terms
+                        logger.info(f"📝 expanded_terms guardados en nueva conversación: {len(expanded_terms)} términos")
+                else:
+                    service_value = (detected_profession or text).strip()
+
                 flow.update({"service": service_value, "service_full": text})
 
                 if flow.get("service") and flow.get("city"):
@@ -2418,13 +2873,18 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
             if warning_msg:
                 return await respond(flow, {"response": warning_msg})
 
-            # 3. FLUJO ORIGINAL - Usar extract_profession_and_location()
-            updated_flow, reply = ClientFlow.handle_awaiting_service(
+            # 3. Seleccionar función de extracción según feature flag
+            if USE_AI_EXPANSION:
+                extraction_fn = extract_profession_and_location_with_expansion
+            else:
+                extraction_fn = extract_profession_and_location
+
+            updated_flow, reply = await ClientFlow.handle_awaiting_service(
                 flow,
                 text,
                 GREETINGS,
                 mensaje_inicial_solicitud_servicio,
-                extract_profession_and_location,
+                extraction_fn,
             )
             flow = updated_flow
 

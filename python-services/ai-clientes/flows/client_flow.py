@@ -1,26 +1,87 @@
 """Lógica modularizada del flujo conversacional de clientes."""
 
+import inspect
+import logging
 import re
 from datetime import datetime
 from typing import Any, Awaitable, Callable, Dict, Optional, Tuple, Union
+
+logger = logging.getLogger(__name__)
 
 from templates.prompts import (
     opciones_consentimiento_textos,
     mensaje_consentimiento_datos,
     mensaje_listado_sin_resultados,
+    mensaje_error_input_invalido,
 )
+
+
+def validate_service_input(
+    text: str,
+    greetings: set[str],
+    service_catalog: dict[str, set[str]]
+) -> tuple[bool, str, Optional[str]]:
+    """
+    Valida que el input sea estructurado y significativo.
+
+    Retorna: (is_valid, error_message, extracted_service)
+
+    Casos de rechazo:
+    - Vacío o saludo
+    - Solo números
+    - Letra suelta
+    - Demasiado corto
+
+    Casos de aceptación:
+    - Servicio reconocido del catálogo
+    - >= 2 palabras (pasa a extracción)
+    """
+    cleaned = (text or "").strip()
+
+    # Caso 1: Vacío o saludo
+    if not cleaned or cleaned.lower() in greetings:
+        return False, "Por favor describe el servicio.", None
+
+    # Caso 2: Solo números
+    if cleaned.isdigit():
+        return False, mensaje_error_input_invalido, None
+
+    # Caso 3: Letra suelta
+    if re.fullmatch(r"[a-zA-Z]", cleaned):
+        return False, mensaje_error_input_invalido, None
+
+    # Caso 4: Demasiado corto
+    words = cleaned.split()
+    if len(words) < 2 and len(cleaned) < 4:
+        return False, mensaje_error_input_invalido, None
+
+    # Caso 5: Es servicio reconocido
+    normalized = cleaned.lower()
+    for service, synonyms in service_catalog.items():
+        if normalized in {s.lower() for s in synonyms}:
+            return True, "", service
+
+    # Caso 6: Tiene >= 2 palabras (válido, pasará a extracción)
+    if len(words) >= 2:
+        return True, "", None
+
+    # Caso 7: Inválido por defecto
+    return False, mensaje_error_input_invalido, None
 
 
 class ClientFlow:
     """Encapsula handlers por estado de la conversación."""
 
     @staticmethod
-    def handle_awaiting_service(
+    async def handle_awaiting_service(
         flow: Dict[str, Any],
         text: Optional[str],
         greetings: set[str],
         initial_prompt: str,
-        extract_fn: Callable[[str, str], Tuple[Optional[str], Optional[str]]],
+        extract_fn: Union[
+            Callable[[str, str], Tuple[Optional[str], Optional[str]]],
+            Callable[[str, str], Awaitable[Tuple[Optional[str], Optional[str], Optional[list[str]]]]],
+        ],
     ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """Procesa el estado `awaiting_service`.
 
@@ -48,8 +109,29 @@ class ClientFlow:
             }
 
         try:
-            profession, _ = extract_fn("", cleaned)
-        except Exception:
+            # Detectar si la función es async (wrapper con expansión IA)
+            is_async = inspect.iscoroutinefunction(extract_fn)
+            logger.info(f"🔍 extract_fn es async: {is_async}, nombre: {getattr(extract_fn, '__name__', 'unknown')}")
+
+            if is_async:
+                # Nueva versión con expansión IA (async)
+                logger.info(f"🤖 Usando wrapper con expansión IA para: '{cleaned[:50]}...'")
+                result = await extract_fn("", cleaned)
+                if result and len(result) >= 3:
+                    profession, _, expanded_terms = result[0], result[1], result[2]
+                    flow["expanded_terms"] = expanded_terms
+                    logger.info(f"📝 expanded_terms guardados: {len(expanded_terms) if expanded_terms else 0} términos")
+                else:
+                    profession = result[0] if result and len(result) >= 1 else None
+                    flow["expanded_terms"] = None
+            else:
+                # Versión original (backward compatible, síncrona)
+                logger.info(f"📋 Usando extracción estática para: '{cleaned[:50]}...'")
+                profession, _ = extract_fn("", cleaned)
+                flow["expanded_terms"] = None
+        except Exception as exc:
+            logger.warning(f"⚠️ Error en extract_fn: {exc}")
+            flow["expanded_terms"] = None
             profession = None
 
         service_val = profession or text
@@ -148,6 +230,9 @@ class ClientFlow:
         flow["confirm_include_city_option"] = False
         flow[""] = len(flow["providers"]) > 1
         flow.pop("provider_detail_idx", None)
+
+        # Guardar flow ANTES de consultar disponibilidad
+        await set_flow_fn(flow)
 
         if supabase_client:
             try:
@@ -532,3 +617,40 @@ class ClientFlow:
             flow,
             flow.get("confirm_title") or confirm_prompt_title_default,
         )
+
+
+async def check_city_and_proceed(
+    flow: Dict[str, Any],
+    customer_profile: Optional[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """
+    Verifica si el usuario YA tiene ciudad confirmada y procede accordingly.
+
+    Si el usuario YA tiene ciudad confirmada, ir directo a búsqueda.
+    Si NO tiene ciudad, pedir ciudad normalmente.
+
+    Retorna: Dict con "response" (mensaje para el usuario)
+    """
+    if not customer_profile:
+        return {"response": "*Perfecto, ¿en qué ciudad lo necesitas?*"}
+
+    existing_city = customer_profile.get("city")
+    city_confirmed_at = customer_profile.get("city_confirmed_at")
+
+    if existing_city and city_confirmed_at:
+        # Tiene ciudad confirmada: usarla automáticamente
+        flow["city"] = existing_city
+        flow["city_confirmed"] = True
+        flow["state"] = "searching"
+        flow["searching_dispatched"] = True
+
+        return {
+            "response": (
+                f"Perfecto, buscaré {flow.get('service')} en {existing_city}.\n\n"
+                f"⏳ *Estoy confirmando disponibilidad con proveedores y te aviso en breve.*"
+            ),
+            "ui": {"type": "silent"}
+        }
+
+    # No tiene ciudad: pedir normalmente
+    return {"response": "*Perfecto, ¿en qué ciudad lo necesitas?*"}
