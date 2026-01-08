@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 # Configuración desde variables de entorno
 SUPABASE_TIMEOUT_SECONDS = float(os.getenv("SUPABASE_TIMEOUT_SECONDS", "5"))
-PERF_LOG_ENABLED = os.getenv("PERF_LOG_ENABLED", "true").lower() == "true"
+PERFORMANCE_LOGGING_ENABLED = os.getenv("PERFORMANCE_LOGGING_ENABLED", "true").lower() == "true"
 # NOTA: Mantenemos 2000ms (valor actual de ai-clientes) en lugar de 800ms (ai-proveedores)
 SLOW_QUERY_THRESHOLD_MS = int(os.getenv("SLOW_QUERY_THRESHOLD_MS", "2000"))
 
@@ -33,12 +33,12 @@ async def run_supabase(
         Resultado de la operación de Supabase
     """
     loop = asyncio.get_running_loop()
-    start = perf_counter()
+    start_time = perf_counter()
     try:
         return await asyncio.wait_for(loop.run_in_executor(None, op), timeout=SUPABASE_TIMEOUT_SECONDS)
     finally:
-        if PERF_LOG_ENABLED:
-            elapsed_ms = (perf_counter() - start) * 1000
+        if PERFORMANCE_LOGGING_ENABLED:
+            elapsed_ms = (perf_counter() - start_time) * 1000
             if elapsed_ms >= SLOW_QUERY_THRESHOLD_MS:
                 logger.info(
                     "perf_supabase",
