@@ -10,6 +10,103 @@ from templates.prompts import (
     mensaje_listado_sin_resultados,
 )
 
+# Mensaje de error para input inválido
+MENSAJE_ERROR_INPUT_INVALIDO = (
+    "❌ *Input no válido*\n\n"
+    "Por favor describe el servicio que buscas "
+    "(ej: plomero, electricista, manicure, doctor)."
+)
+
+
+def validate_service_input(
+    text: str,
+    greetings: set[str],
+    service_catalog: dict[str, set[str]]
+) -> tuple[bool, str, Optional[str]]:
+    """
+    Valida que el input sea estructurado y significativo.
+
+    Retorna: (is_valid, error_message, extracted_service)
+
+    Casos de rechazo:
+    - Vacío o saludo
+    - Solo números
+    - Letra suelta
+    - Demasiado corto
+
+    Casos de aceptación:
+    - Servicio reconocido del catálogo
+    - >= 2 palabras (pasa a extracción)
+    """
+    cleaned = (text or "").strip()
+
+    # Caso 1: Vacío o saludo
+    if not cleaned or cleaned.lower() in greetings:
+        return False, "Por favor describe el servicio.", None
+
+    # Caso 2: Solo números
+    if cleaned.isdigit():
+        return False, MENSAJE_ERROR_INPUT_INVALIDO, None
+
+    # Caso 3: Letra suelta
+    if re.fullmatch(r"[a-zA-Z]", cleaned):
+        return False, MENSAJE_ERROR_INPUT_INVALIDO, None
+
+    # Caso 4: Demasiado corto
+    words = cleaned.split()
+    if len(words) < 2 and len(cleaned) < 4:
+        return False, MENSAJE_ERROR_INPUT_INVALIDO, None
+
+    # Caso 5: Es servicio reconocido
+    normalized = cleaned.lower()
+    for service, synonyms in service_catalog.items():
+        if normalized in {s.lower() for s in synonyms}:
+            return True, "", service
+
+    # Caso 6: Tiene >= 2 palabras (válido, pasará a extracción)
+    if len(words) >= 2:
+        return True, "", None
+
+    # Caso 7: Inválido por defecto
+    return False, MENSAJE_ERROR_INPUT_INVALIDO, None
+
+
+async def check_city_and_proceed(
+    flow: Dict[str, Any],
+    customer_profile: Optional[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """
+    Verifica si el usuario YA tiene ciudad confirmada y procede accordingly.
+
+    Si el usuario YA tiene ciudad confirmada, ir directo a búsqueda.
+    Si NO tiene ciudad, pedir ciudad normalmente.
+
+    Retorna: Dict con "response" (mensaje para el usuario)
+    """
+    if not customer_profile:
+        return {"response": "*Perfecto, ¿en qué ciudad lo necesitas?*"}
+
+    existing_city = customer_profile.get("city")
+    city_confirmed_at = customer_profile.get("city_confirmed_at")
+
+    if existing_city and city_confirmed_at:
+        # Tiene ciudad confirmada: usarla automáticamente
+        flow["city"] = existing_city
+        flow["city_confirmed"] = True
+        flow["state"] = "searching"
+        flow["searching_dispatched"] = True
+
+        return {
+            "response": (
+                f"Perfecto, buscaré {flow.get('service')} en {existing_city}.\n\n"
+                f"⏳ *Estoy confirmando disponibilidad con proveedores y te aviso en breve.*"
+            ),
+            "ui": {"type": "silent"}
+        }
+
+    # No tiene ciudad: pedir normalmente
+    return {"response": "*Perfecto, ¿en qué ciudad lo necesitas?*"}
+
 
 class ClientFlow:
     """Encapsula handlers por estado de la conversación."""
