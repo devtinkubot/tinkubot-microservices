@@ -11,7 +11,6 @@ import re
 import uuid
 import unicodedata
 from datetime import datetime
-from time import perf_counter
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -52,6 +51,8 @@ from models.schemas import (
     SessionCreateRequest,
     SessionStats,
 )
+# Importar utilidades de DB
+from utils.db_utils import run_supabase
 from shared_lib.redis_client import redis_client
 from shared_lib.service_catalog import (
     COMMON_SERVICE_SYNONYMS,
@@ -68,8 +69,6 @@ except Exception:  # pragma: no cover - import guard
 # Configurar logging
 logging.basicConfig(level=getattr(logging, settings.log_level))
 logger = logging.getLogger(__name__)
-SUPABASE_TIMEOUT_SECONDS = float(os.getenv("SUPABASE_TIMEOUT_SECONDS", "5"))
-SLOW_QUERY_THRESHOLD_MS = int(os.getenv("SLOW_QUERY_THRESHOLD_MS", "2000"))
 MQTT_PUBLISH_TIMEOUT = float(os.getenv("MQTT_PUBLISH_TIMEOUT", "5"))
 MQTT_QOS = int(os.getenv("MQTT_QOS", "1"))
 LOG_SAMPLING_RATE = int(os.getenv("LOG_SAMPLING_RATE", "10"))
@@ -151,25 +150,6 @@ supabase = (
     if (SUPABASE_URL and SUPABASE_KEY)
     else None
 )
-
-
-async def run_supabase(op, label: str = "supabase_op"):
-    """
-    Ejecuta operación Supabase en un executor para no bloquear el event loop, con timeout y log de lentos.
-    """
-    loop = asyncio.get_running_loop()
-    start = perf_counter()
-    try:
-        return await asyncio.wait_for(
-            loop.run_in_executor(None, op), timeout=SUPABASE_TIMEOUT_SECONDS
-        )
-    finally:
-        elapsed_ms = (perf_counter() - start) * 1000
-        if elapsed_ms >= SLOW_QUERY_THRESHOLD_MS:
-            logger.info(
-                "perf_supabase",
-                extra={"op": label, "elapsed_ms": round(elapsed_ms, 2)},
-            )
 
 
 # --- Coordinador de disponibilidad en vivo vía MQTT ---
