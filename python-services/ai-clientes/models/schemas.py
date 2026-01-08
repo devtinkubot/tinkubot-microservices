@@ -18,18 +18,18 @@ from pydantic import BaseModel, Field
 
 class UserTypeEnum(str, Enum):
     """Tipo de usuario para procesamiento de mensajes."""
-    CLIENTE = "cliente"
-    PROVEEDOR = "proveedor"
+    CUSTOMER = "customer"
+    PROVIDER = "provider"
 
 
-class AIProcessingRequest(BaseModel):
+class MessageProcessingRequest(BaseModel):
     """Request para procesamiento de mensajes con IA."""
     message: str
     user_type: UserTypeEnum
     context: Optional[Dict[str, Any]] = None
 
 
-class AIProcessingResponse(BaseModel):
+class MessageProcessingResponse(BaseModel):
     """Response de procesamiento de mensajes con IA."""
     response: str
     intent: Optional[str] = None
@@ -62,9 +62,9 @@ class WhatsAppMessageRequest(BaseModel):
     message: str
 
 
-class WhatsAppMessageReceive(BaseModel):
+class IncomingWhatsAppMessage(BaseModel):
     """
-    Modelo flexible para soportar payload de los servicios Node de WhatsApp.
+    Modelo flexible para mensajes entrantes de WhatsApp.
 
     Compatible con el formato de mensajes entrantes desde wa-clientes.
     """
@@ -100,7 +100,7 @@ class CustomerProfileRequest(BaseModel):
     city: Optional[str] = None
 
 
-class ConsentResponse(BaseModel):
+class CustomerConsentResponse(BaseModel):
     """Respuesta de consentimiento de cliente."""
     user_id: str
     user_type: str = "customer"
@@ -121,8 +121,8 @@ class HealthResponse(BaseModel):
 # Modelos para validación interna (no expuestos en API)
 # ============================================================================
 
-class FlowState(BaseModel):
-    """Estado del flujo conversacional."""
+class ConversationFlowState(BaseModel):
+    """Estado del flujo conversacional del cliente."""
     state: str
     phone: Optional[str] = None
     service: Optional[str] = None
@@ -150,14 +150,14 @@ class ProviderSearchRequest(BaseModel):
 
 class IntelligentSearchRequest(BaseModel):
     """Request para búsqueda inteligente con IA."""
-    necesidad_real: Optional[str] = None
-    profesion_principal: str
-    especialidades: Optional[List[str]] = None
-    especialidades_requeridas: Optional[List[str]] = None
-    sinonimos: Optional[List[str]] = None
-    sinonimos_posibles: Optional[List[str]] = None
-    ubicacion: str
-    urgencia: Optional[str] = None
+    actual_need: Optional[str] = None
+    main_profession: str
+    specialties: Optional[List[str]] = None
+    required_specialties: Optional[List[str]] = None
+    synonyms: Optional[List[str]] = None
+    possible_synonyms: Optional[List[str]] = None
+    location: str
+    urgency: Optional[str] = None
 
 
 # ============================================================================
@@ -166,17 +166,17 @@ class IntelligentSearchRequest(BaseModel):
 __all__ = [
     # Modelos MOVIDOS desde shared_lib (solo ai-clientes los usa)
     "UserTypeEnum",
-    "AIProcessingRequest",
-    "AIProcessingResponse",
+    "MessageProcessingRequest",
+    "MessageProcessingResponse",
     "SessionCreateRequest",
     "SessionStats",
     # Modelos específicos de ai-clientes
     "WhatsAppMessageRequest",
-    "WhatsAppMessageReceive",
+    "IncomingWhatsAppMessage",
     "CustomerProfileRequest",
-    "ConsentResponse",
+    "CustomerConsentResponse",
     "HealthResponse",
-    "FlowState",
+    "ConversationFlowState",
     "ProviderSearchRequest",
     "IntelligentSearchRequest",
 ]

@@ -46,8 +46,8 @@ from shared_lib.config import settings
 # Importar modelos Pydantic locales (MOVIDOS desde shared_lib)
 from models.schemas import (
     UserTypeEnum,
-    AIProcessingRequest,
-    AIProcessingResponse,
+    MessageProcessingRequest,
+    MessageProcessingResponse,
     SessionCreateRequest,
     SessionStats,
 )
@@ -1144,9 +1144,9 @@ async def intelligent_search_providers_remote(
     """
     Búsqueda inteligente de proveedores usando el nuevo Search Service
     """
-    profession = payload.get("profesion_principal", "")
-    location = payload.get("ubicacion", "")
-    need_summary = payload.get("necesidad_real", "")
+    profession = payload.get("main_profession", "")
+    location = payload.get("location", "")
+    need_summary = payload.get("actual_need", "")
 
     # Construir query para Search Service
     if need_summary and need_summary != profession:
@@ -1871,8 +1871,8 @@ async def health_check():
         raise HTTPException(status_code=503, detail=f"Service unhealthy: {str(e)}")
 
 
-@app.post("/process-message", response_model=AIProcessingResponse)
-async def process_client_message(request: AIProcessingRequest):
+@app.post("/process-message", response_model=MessageProcessingResponse)
+async def process_client_message(request: MessageProcessingRequest):
     """
     Procesar mensaje de cliente usando OpenAI con contexto de sesión
     """
@@ -1909,8 +1909,8 @@ async def process_client_message(request: AIProcessingRequest):
 
         if profession and location:
             search_payload = {
-                "profesion_principal": profession,
-                "ubicacion": location,
+                "main_profession": profession,
+                "location": location,
             }
             providers_result = await intelligent_search_providers_remote(search_payload)
 
@@ -1975,7 +1975,7 @@ async def process_client_message(request: AIProcessingRequest):
                         f"⚠️ No se pudo registrar service_request en Supabase: {e}"
                     )
 
-                return AIProcessingResponse(
+                return MessageProcessingResponse(
                     response=ai_response_text,
                     intent="service_request",
                     entities={
@@ -1993,7 +1993,7 @@ async def process_client_message(request: AIProcessingRequest):
                 "publicidad, diseño, plomería."
             )
             await session_manager.save_session(phone, guidance_text, is_bot=True)
-            return AIProcessingResponse(
+            return MessageProcessingResponse(
                 response=guidance_text,
                 intent="service_request",
                 entities={
@@ -2056,7 +2056,7 @@ async def process_client_message(request: AIProcessingRequest):
 
         logger.info(f"✅ Mensaje procesado. Intent: {intent}")
 
-        return AIProcessingResponse(
+        return MessageProcessingResponse(
             response=ai_response,
             intent=intent,
             entities=entities,

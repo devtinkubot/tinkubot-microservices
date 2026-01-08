@@ -3,33 +3,33 @@
 from models.schemas import (
     # Modelos MOVIDOS desde shared_lib (solo ai-clientes los usa)
     UserTypeEnum,
-    AIProcessingRequest,
-    AIProcessingResponse,
+    MessageProcessingRequest,
+    MessageProcessingResponse,
     SessionCreateRequest,
     SessionStats,
     # Modelos específicos de ai-clientes
     WhatsAppMessageRequest,
-    WhatsAppMessageReceive,
+    IncomingWhatsAppMessage,
     CustomerProfileRequest,
-    ConsentResponse,
+    CustomerConsentResponse,
     HealthResponse,
-    FlowState,
+    ConversationFlowState,
     ProviderSearchRequest,
     IntelligentSearchRequest,
 )
 
 __all__ = [
     "UserTypeEnum",
-    "AIProcessingRequest",
-    "AIProcessingResponse",
+    "MessageProcessingRequest",
+    "MessageProcessingResponse",
     "SessionCreateRequest",
     "SessionStats",
     "WhatsAppMessageRequest",
-    "WhatsAppMessageReceive",
+    "IncomingWhatsAppMessage",
     "CustomerProfileRequest",
-    "ConsentResponse",
+    "CustomerConsentResponse",
     "HealthResponse",
-    "FlowState",
+    "ConversationFlowState",
     "ProviderSearchRequest",
     "IntelligentSearchRequest",
 ]
