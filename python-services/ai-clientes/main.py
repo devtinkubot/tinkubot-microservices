@@ -44,7 +44,9 @@ from templates.prompts import (
 )
 
 from shared_lib.config import settings
-from shared_lib.models import (
+# Importar modelos Pydantic locales (MOVIDOS desde shared_lib)
+from models.schemas import (
+    UserTypeEnum,
     AIProcessingRequest,
     AIProcessingResponse,
     SessionCreateRequest,
