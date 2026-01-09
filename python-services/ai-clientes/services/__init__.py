@@ -9,6 +9,8 @@ from .search_service import (
     intelligent_search_providers_remote,
     search_providers,
 )
+from .messaging_service import MessagingService
+from .customer_service import CustomerService
 
 __all__ = [
     "AvailabilityCoordinator",
@@ -16,4 +18,6 @@ __all__ = [
     "extract_profession_and_location",
     "intelligent_search_providers_remote",
     "search_providers",
+    "MessagingService",
+    "CustomerService",
 ]

@@ -85,6 +85,9 @@ from services.validation_service import (
     get_warning_count,
     validate_content_with_ai,
 )
+# Importar servicios de mensajería y cliente (Sprint 1.10)
+from services.messaging_service import MessagingService
+from services.customer_service import CustomerService
 from shared_lib.redis_client import redis_client
 from shared_lib.service_catalog import (
     COMMON_SERVICE_SYNONYMS,
@@ -183,142 +186,14 @@ supabase = (
     else None
 )
 
+# Inicializar servicios de mensajería y cliente (Sprint 1.10)
+messaging_service = MessagingService(
+    supabase_client=supabase
+) if supabase else None
 
-# --- Scheduler de feedback diferido ---
-async def schedule_feedback_request(
-    phone: str, provider: Dict[str, Any], service: str, city: str
-):
-    if not supabase:
-        return
-    try:
-        delay = settings.feedback_delay_seconds
-        when = datetime.utcnow().timestamp() + delay
-        scheduled_at_iso = datetime.utcfromtimestamp(when).isoformat()
-        # Mensaje a enviar más tarde
-        name = provider.get("name") or "Proveedor"
-        message = (
-            f"✨ ¿Cómo te fue con {name}?\n"
-            f"Tu opinión ayuda a mejorar nuestra comunidad.\n"
-            f"Responde con un número del 1 al 5 (1=mal, 5=excelente)."
-        )
-        payload = {
-            "phone": phone,
-            "message": message,
-            "type": "request_feedback",
-        }
-        await run_supabase(
-            lambda: supabase.table("task_queue").insert(
-                {
-                    "task_type": "send_whatsapp",
-                    "payload": payload,
-                    "status": "pending",
-                    "priority": 0,
-                    "scheduled_at": scheduled_at_iso,
-                    "retry_count": 0,
-                    "max_retries": 3,
-                }
-            ).execute(),
-            label="task_queue.insert_feedback",
-        )
-        logger.info(f"🕒 Feedback agendado en {delay}s para {phone}")
-    except Exception as e:
-        logger.warning(f"No se pudo agendar feedback: {e}")
-
-
-async def send_whatsapp_text(phone: str, text: str) -> bool:
-    try:
-        url = f"{WHATSAPP_CLIENTES_URL}/send"
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(url, json={"to": phone, "message": text})
-        if resp.status_code == 200:
-            return True
-        logger.warning(
-            f"WhatsApp send fallo status={resp.status_code} body={resp.text[:200]}"
-        )
-        return False
-    except Exception as e:
-        logger.error(f"Error enviando WhatsApp (scheduler): {e}")
-        return False
-
-
-async def process_due_tasks():
-    if not supabase:
-        return 0
-    try:
-        now_iso = datetime.utcnow().isoformat()
-        res = await run_supabase(
-            lambda: supabase.table("task_queue")
-            .select("id, payload, retry_count, max_retries")
-            .eq("status", "pending")
-            .lte("scheduled_at", now_iso)
-            .order("scheduled_at", desc=False)
-            .limit(10)
-            .execute(),
-            label="task_queue.fetch_pending",
-        )
-        tasks = res.data or []
-        processed = 0
-        for t in tasks:
-            tid = t["id"]
-            payload = t.get("payload") or {}
-            phone = payload.get("phone")
-            message = payload.get("message")
-            ok = False
-            if phone and message:
-                ok = await send_whatsapp_text(phone, message)
-            if ok:
-                await run_supabase(
-                    lambda: supabase.table("task_queue").update(
-                        {
-                            "status": "completed",
-                            "completed_at": datetime.utcnow().isoformat(),
-                        }
-                    ).eq("id", tid).execute(),
-                    label="task_queue.mark_completed",
-                )
-            else:
-                retry = (t.get("retry_count") or 0) + 1
-                maxr = t.get("max_retries") or 3
-                if retry < maxr:
-                    await run_supabase(
-                        lambda: supabase.table("task_queue").update(
-                            {
-                                "retry_count": retry,
-                                "scheduled_at": datetime.utcnow().isoformat(),
-                            }
-                        ).eq("id", tid).execute(),
-                        label="task_queue.reschedule",
-                    )
-                else:
-                    await run_supabase(
-                        lambda: supabase.table("task_queue").update(
-                            {
-                                "status": "failed",
-                                "completed_at": datetime.utcnow().isoformat(),
-                                "error_message": "send failed",
-                            }
-                        ).eq("id", tid).execute(),
-                        label="task_queue.mark_failed",
-                    )
-            processed += 1
-        return processed
-    except Exception as e:
-        logger.error(f"Error procesando tareas: {e}")
-        return 0
-
-
-async def feedback_scheduler_loop():
-    try:
-        while True:
-            n = await process_due_tasks()
-            if n:
-                logger.info(f"📬 Tareas procesadas: {n}")
-            await asyncio.sleep(settings.task_poll_interval_seconds)
-    except asyncio.CancelledError:
-        pass
-    except Exception as e:
-        logger.error(f"Scheduler loop error: {e}")
-
+customer_service = CustomerService(
+    supabase_client=supabase
+) if supabase else None
 
 async def background_search_and_notify(phone: str, flow: Dict[str, Any]):
     """Ejecuta búsqueda + disponibilidad y envía resultado vía WhatsApp en segundo plano."""
@@ -391,7 +266,7 @@ async def background_search_and_notify(phone: str, flow: Dict[str, Any]):
 
         for msg in messages_to_send:
             if msg:
-                await send_whatsapp_text(phone, msg)
+                await messaging_service.send_whatsapp_text(phone, msg)
                 try:
                     await session_manager.save_session(phone, msg, is_bot=True)
                 except Exception:
@@ -824,123 +699,6 @@ def build_public_media_url(raw_url: Optional[str]) -> Optional[str]:
     return storage_path
 
 
-async def get_or_create_customer(
-    phone: str,
-    *,
-    full_name: Optional[str] = None,
-    city: Optional[str] = None,
-) -> Optional[Dict[str, Any]]:
-    """Obtiene o crea un registro en `customers` asociado al teléfono."""
-
-    if not supabase or not phone:
-        return None
-
-    try:
-        existing = await run_supabase(
-            lambda: supabase.table("customers")
-            .select(
-                "id, phone_number, full_name, city, city_confirmed_at, has_consent, notes, created_at, updated_at"
-            )
-            .eq("phone_number", phone)
-            .limit(1)
-            .execute(),
-            label="customers.by_phone",
-        )
-        if existing.data:
-            return existing.data[0]
-
-        payload: Dict[str, Any] = {
-            "phone_number": phone,
-            "full_name": full_name or "Cliente TinkuBot",
-        }
-
-        if city:
-            payload["city"] = city
-            payload["city_confirmed_at"] = datetime.utcnow().isoformat()
-
-        created = await run_supabase(
-            lambda: supabase.table("customers").insert(payload).execute(),
-            label="customers.insert",
-        )
-        if created.data:
-            return created.data[0]
-    except Exception as exc:
-        logger.warning(f"No se pudo crear/buscar customer {phone}: {exc}")
-    return None
-
-
-async def update_customer_city(
-    customer_id: Optional[str], city: str
-) -> Optional[Dict[str, Any]]:
-    if not supabase or not customer_id or not city:
-        return None
-    try:
-        update_resp = await run_supabase(
-            lambda: supabase.table("customers")
-            .update(
-                {
-                    "city": city,
-                    "city_confirmed_at": datetime.utcnow().isoformat(),
-                }
-            )
-            .eq("id", customer_id)
-            .execute(),
-            label="customers.update_city",
-        )
-        if update_resp.data:
-            return update_resp.data[0]
-        select_resp = await run_supabase(
-            lambda: supabase.table("customers")
-            .select("id, phone_number, full_name, city, city_confirmed_at, updated_at")
-            .eq("id", customer_id)
-            .limit(1)
-            .execute(),
-            label="customers.by_id",
-        )
-        if select_resp.data:
-            return select_resp.data[0]
-    except Exception as exc:
-        logger.warning(f"No se pudo actualizar city para customer {customer_id}: {exc}")
-    return None
-
-
-def clear_customer_city(customer_id: Optional[str]) -> None:
-    if not supabase or not customer_id:
-        return
-    try:
-        asyncio.create_task(
-            run_supabase(
-                lambda: supabase.table("customers")
-                .update({"city": None, "city_confirmed_at": None})
-                .eq("id", customer_id)
-                .execute(),
-                label="customers.clear_city",
-            )
-        )
-        logger.info(f"🧼 Ciudad eliminada para customer {customer_id}")
-    except Exception as exc:
-        logger.warning(f"No se pudo limpiar city para customer {customer_id}: {exc}")
-
-
-def clear_customer_consent(customer_id: Optional[str]) -> None:
-    if not supabase or not customer_id:
-        return
-    try:
-        asyncio.create_task(
-            run_supabase(
-                lambda: supabase.table("customers")
-                .update({"has_consent": False})
-                .eq("id", customer_id)
-                .execute(),
-                label="customers.clear_consent",
-            )
-        )
-        logger.info(f"📝 Consentimiento restablecido para customer {customer_id}")
-    except Exception as exc:
-        logger.warning(
-            f"No se pudo limpiar consentimiento para customer {customer_id}: {exc}"
-        )
-
 
 @app.on_event("startup")
 async def startup_event():
@@ -1194,7 +952,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
         if not phone:
             raise HTTPException(status_code=400, detail="from_number is required")
 
-        customer_profile = await get_or_create_customer(phone=phone)
+        customer_profile = await customer_service.get_or_create_customer(phone=phone)
 
         # Validación de consentimiento
         if not customer_profile:
@@ -1317,7 +1075,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
             normalized_city = detected_city
             current_city = (flow.get("city") or "").strip()
             if normalized_city.lower() != current_city.lower():
-                updated_profile = await update_customer_city(
+                updated_profile = await customer_service.update_customer_city(
                     flow.get("customer_id") or customer_id,
                     normalized_city,
                 )
@@ -1344,8 +1102,8 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
             # Limpiar ciudad registrada para simular primer uso
             try:
                 customer_id_for_reset = flow.get("customer_id") or customer_id
-                clear_customer_city(customer_id_for_reset)
-                clear_customer_consent(customer_id_for_reset)
+                customer_service.clear_customer_city(customer_id_for_reset)
+                customer_service.clear_customer_consent(customer_id_for_reset)
             except Exception:
                 pass
             # Prepara nuevo flujo pero no condiciona al usuario con ejemplos
@@ -1607,7 +1365,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                 normalized_input = (normalized_city_input or text).strip().title()
                 updated_flow["city"] = normalized_input
                 updated_flow["city_confirmed"] = True
-                update_result = await update_customer_city(
+                update_result = await customer_service.update_customer_city(
                     updated_flow.get("customer_id") or customer_id,
                     normalized_input,
                 )
@@ -1651,7 +1409,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                 save_bot_message,
                 formal_connection_message,
                 mensajes_confirmacion_busqueda,
-                schedule_feedback_request,
+                messaging_service.schedule_feedback_request,
                 logger,
                 "¿Te ayudo con otro servicio?",
                 bloque_detalle_proveedor,
@@ -1670,7 +1428,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                 save_bot_message,
                 formal_connection_message,
                 mensajes_confirmacion_busqueda,
-                schedule_feedback_request,
+                messaging_service.schedule_feedback_request,
                 logger,
                 "¿Te ayudo con otro servicio?",
                 lambda: send_provider_prompt(phone, flow, flow.get("city", "")),
@@ -1820,7 +1578,8 @@ if __name__ == "__main__":
     # Iniciar servicio
     async def startup_wrapper():
         # Lanzar scheduler en background
-        asyncio.create_task(feedback_scheduler_loop())
+        if messaging_service:
+            await messaging_service.start_scheduler()
         server_host = os.getenv("SERVER_HOST", "0.0.0.0")
         server_port = int(
             os.getenv("CLIENTES_SERVER_PORT")
