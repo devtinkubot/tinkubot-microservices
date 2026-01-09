@@ -13,7 +13,6 @@ from .messaging_service import MessagingService
 from .customer_service import CustomerService
 from .consent_service import ConsentService
 from .media_service import MediaService
-from .task_scheduler_service import TaskSchedulerService
 
 __all__ = [
     "AvailabilityCoordinator",
@@ -25,5 +24,4 @@ __all__ = [
     "CustomerService",
     "ConsentService",
     "MediaService",
-    "TaskSchedulerService",
 ]

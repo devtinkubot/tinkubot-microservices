@@ -91,8 +91,6 @@ from services.customer_service import CustomerService
 from services.consent_service import ConsentService
 # Importar servicio de medios (Sprint 1.12)
 from services.media_service import MediaService
-# Importar servicio de task scheduler (Sprint 1.13)
-from services.task_scheduler_service import TaskSchedulerService
 from shared_lib.redis_client import redis_client
 from shared_lib.service_catalog import (
     COMMON_SERVICE_SYNONYMS,
@@ -209,12 +207,6 @@ media_service = MediaService(
     supabase_client=supabase,
     settings=settings,
     bucket_name=SUPABASE_PROVIDERS_BUCKET,
-) if supabase else None
-
-# Inicializar servicio de task scheduler (Sprint 1.13)
-task_scheduler_service = TaskSchedulerService(
-    supabase_client=supabase,
-    messaging_service=messaging_service,
 ) if supabase else None
 
 async def background_search_and_notify(phone: str, flow: Dict[str, Any]):
@@ -476,9 +468,6 @@ async def startup_event():
     logger.info("🚀 Iniciando AI Service Clientes...")
     await redis_client.connect()
     await availability_coordinator.start_listener()
-    # Iniciar task scheduler (Sprint 1.13)
-    if task_scheduler_service:
-        await task_scheduler_service.start_scheduler()
     logger.info("✅ AI Service Clientes listo")
 
 
@@ -486,9 +475,6 @@ async def startup_event():
 async def shutdown_event():
     """Limpiar conexiones al detener el servicio"""
     logger.info("🔴 Deteniendo AI Service Clientes...")
-    # Detener task scheduler (Sprint 1.13)
-    if task_scheduler_service:
-        await task_scheduler_service.stop_scheduler()
     await redis_client.disconnect()
     logger.info("✅ Conexiones cerradas")
 
@@ -1142,7 +1128,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                 save_bot_message,
                 media_service.formal_connection_message,
                 mensajes_confirmacion_busqueda,
-                task_scheduler_service.schedule_feedback_request,
+                None,  # ← Eliminar funcionalidad de feedback
                 logger,
                 "¿Te ayudo con otro servicio?",
                 bloque_detalle_proveedor,
@@ -1161,7 +1147,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                 save_bot_message,
                 media_service.formal_connection_message,
                 mensajes_confirmacion_busqueda,
-                task_scheduler_service.schedule_feedback_request,
+                None,  # ← Eliminar funcionalidad de feedback
                 logger,
                 "¿Te ayudo con otro servicio?",
                 lambda: send_provider_prompt(phone, flow, flow.get("city", "")),
