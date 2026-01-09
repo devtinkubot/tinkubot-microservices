@@ -13,17 +13,19 @@ from templates.prompts import (
     provider_under_review_message,
 )
 
-from services.validation_service import (
+from services.parser_service import (
     normalize_text,
     parse_experience_years,
+    parse_services_string,
+    parse_social_media,
+)
+from services.validation_service import (
     validate_city,
+    validate_email,
     validate_name,
     validate_profession,
-    validate_specialty,
-    validate_email,
-    parse_social_media,
     validate_provider_payload,
-    parse_services_string,
+    validate_specialty,
 )
 
 

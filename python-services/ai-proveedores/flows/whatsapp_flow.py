@@ -8,9 +8,12 @@ from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
 
 from services.flow_service import establecer_flujo, reiniciar_flujo
+from services.parser_service import parse_social_media
 from services.profile_service import actualizar_servicios_proveedor
 from services.image_service import subir_medios_identidad
-from services.validation_service import parse_social_media
+from services.provider_update_service import (
+    actualizar_redes_sociales,
+)
 from templates.prompts import (
     provider_post_registration_menu_message,
     provider_main_menu_message,
@@ -25,7 +28,6 @@ from utils.services_utils import (
     construir_listado_servicios,
 )
 from utils.storage_utils import extract_first_image_base64
-from utils.db_utils import run_supabase
 
 logger = logging.getLogger(__name__)
 
@@ -225,21 +227,15 @@ class WhatsAppFlow:
         flow["social_media_url"] = parsed["url"]
         flow["social_media_type"] = parsed["type"]
 
-        update_data = {
-            "social_media_url": parsed["url"],
-            "social_media_type": parsed["type"],
-            "updated_at": datetime.now().isoformat(),
-        }
+        # Usar servicio de actualización
+        resultado = await actualizar_redes_sociales(
+            supabase,
+            provider_id,
+            parsed["url"],
+            parsed["type"],
+        )
 
-        try:
-            await run_supabase(
-                lambda: supabase.table("providers")
-                .update(update_data)
-                .eq("id", provider_id)
-                .execute()
-            )
-        except Exception as exc:
-            logger.error("No se pudo actualizar redes sociales para %s: %s", provider_id, exc)
+        if not resultado["success"]:
             flow["state"] = "awaiting_menu_option"
             await establecer_flujo(phone, flow)
             return {
@@ -574,6 +570,32 @@ class WhatsAppFlow:
                 {"response": "Selfie actualizada correctamente."},
                 {"response": provider_post_registration_menu_message()},
             ],
+        }
+
+    @staticmethod
+    async def handle_reset_conversation(phone: str) -> Dict[str, Any]:
+        """
+        Maneja keywords de reset para reiniciar la conversación.
+
+        Reinicia el flujo del usuario y solicita nuevamente el consentimiento,
+        permitiendo que el usuario comience desde el inicio.
+
+        Args:
+            phone: Número de teléfono del usuario
+
+        Returns:
+            Dict[str, Any]: Respuesta con mensaje de reinicio y prompt de consentimiento
+        """
+        from services.consent_service import solicitar_consentimiento_proveedor
+
+        await reiniciar_flujo(phone)
+        new_flow = {"state": "awaiting_consent", "has_consent": False}
+        await establecer_flujo(phone, new_flow)
+        consent_prompt = await solicitar_consentimiento_proveedor(phone)
+        return {
+            "success": True,
+            "messages": [{"response": "Reiniciemos desde el inicio."}]
+            + consent_prompt.get("messages", []),
         }
 
     @staticmethod

@@ -440,7 +440,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
 
         # 2. Manejar reset keywords
         if (message_text or "").strip().lower() in RESET_KEYWORDS:
-            return await _handle_reset_conversation(phone)
+            return await WhatsAppFlow.handle_reset_conversation(phone)
 
         # 3. Obtener flujo actual
         flow = await obtener_flujo(phone)
@@ -562,19 +562,6 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                         "threshold_ms": local_settings.slow_query_threshold_ms,
                     },
                 )
-
-
-async def _handle_reset_conversation(phone: str) -> Dict[str, Any]:
-    """Maneja keywords de reset."""
-    await reiniciar_flujo(phone)
-    new_flow = {"state": "awaiting_consent", "has_consent": False}
-    await establecer_flujo(phone, new_flow)
-    consent_prompt = await solicitar_consentimiento_proveedor(phone)
-    return {
-        "success": True,
-        "messages": [{"response": "Reiniciemos desde el inicio."}]
-        + consent_prompt.get("messages", []),
-    }
 
 
 async def _delegate_to_provider_flow(
