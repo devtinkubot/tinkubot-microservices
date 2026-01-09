@@ -124,6 +124,21 @@ from services.image_service import (
 # Importar servicio de búsqueda de proveedores
 from services.search_service import buscar_proveedores
 
+# Importar servicios de sesión
+from services.session_service import (
+    verificar_timeout_sesion,
+    actualizar_timestamp_sesion,
+    reiniciar_por_timeout,
+)
+
+# Importar flujo de WhatsApp
+from flows.whatsapp_flow import WhatsAppFlow
+
+# Importar servicio de WhatsApp
+from services.whatsapp_service import (
+    inicializar_flow_con_perfil,
+)
+
 # Configurar logging
 logging.basicConfig(level=getattr(logging, local_settings.log_level))
 logger = logging.getLogger(__name__)
@@ -464,10 +479,17 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
     request: WhatsAppMessageReceive,
 ) -> Dict[str, Any]:
     """
-    Recibir y procesar mensajes entrantes de WhatsApp
+    Recibir y procesar mensajes entrantes de WhatsApp.
+
+    Orquestador principal que delega en:
+    - session_service: timeout y sesión
+    - whatsapp_service: inicialización y perfil
+    - whatsapp_flow: handlers de estado
+    - provider_flow: registro de proveedores
     """
     start = perf_counter()
     try:
+        # 1. Extraer datos del mensaje
         phone = request.phone or request.from_number or "unknown"
         message_text = request.message or request.content or ""
         payload = request.model_dump()
@@ -475,716 +497,119 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
 
         logger.info(f"📨 Mensaje WhatsApp recibido de {phone}: {message_text[:50]}...")
 
+        # 2. Manejar reset keywords
         if (message_text or "").strip().lower() in RESET_KEYWORDS:
-            await reiniciar_flujo(phone)
-            new_flow = {"state": "awaiting_consent", "has_consent": False}
-            await establecer_flujo(phone, new_flow)
-            consent_prompt = await solicitar_consentimiento_proveedor(phone)
-            return {
-                "success": True,
-                "messages": [{"response": "Reiniciemos desde el inicio."}]
-                + consent_prompt.get("messages", []),
-            }
+            return await _handle_reset_conversation(phone)
 
+        # 3. Obtener flujo actual
         flow = await obtener_flujo(phone)
         state = flow.get("state")
 
-        # === TIMEOUT SIMPLE COMO AI-CLIENTES ===
-        now_utc = datetime.utcnow()
-        now_iso = now_utc.isoformat()
+        # 4. Verificar timeout de sesión
+        should_reset, timeout_response = await verificar_timeout_sesion(phone, flow)
+        if should_reset:
+            return timeout_response
 
-        # Verificar timeout de inactividad (30 minutos para proveedores)
-        last_seen_raw = flow.get("last_seen_at_prev")
-        if last_seen_raw:
-            try:
-                last_seen_dt = datetime.fromisoformat(last_seen_raw)
-                # 5 minutos = 300 segundos (suficiente para cualquier paso del proceso)
-                if (now_utc - last_seen_dt).total_seconds() > 300:
-                    await reiniciar_flujo(phone)
-                    new_flow = {
-                        "state": "awaiting_menu_option",
-                        "last_seen_at": now_iso,
-                        "last_seen_at_prev": now_iso,
-                    }
-                    await establecer_flujo(phone, new_flow)
-                    return {
-                        "success": True,
-                        "messages": [
-                            {
-                                "response": (
-                                    "**No tuve respuesta y reinicié la conversación para ayudarte mejor. "
-                                    "Gracias por usar TinkuBot Proveedores; escríbeme cuando quieras.**"
-                                )
-                            },
-                            {"response": provider_post_registration_menu_message()},
-                        ]
-                    }
-            except Exception:
-                pass  # Si hay error con timestamp, continuar sin timeout
+        # 5. Actualizar timestamp
+        flow = await actualizar_timestamp_sesion(flow)
 
-        # Actualizar timestamp actual
-        flow["last_seen_at"] = now_iso
-        flow["last_seen_at_prev"] = flow.get("last_seen_at", now_iso)
-
+        # 6. Inicializar flow con perfil del proveedor
         provider_profile = await obtener_perfil_proveedor_cacheado(supabase, phone)
-        provider_id = provider_profile.get("id") if provider_profile else None
-        if provider_profile:
-            if provider_profile.get("has_consent") and not flow.get("has_consent"):
-                flow["has_consent"] = True
-            if provider_id:
-                flow["provider_id"] = provider_id
-            servicios_guardados = provider_profile.get("services_list") or []
-            flow["services"] = servicios_guardados
-        else:
-            flow.setdefault("services", [])
+        flow = await inicializar_flow_con_perfil(phone, flow, provider_profile, supabase)
 
+        # 7. Extraer estado del proveedor
         has_consent = bool(flow.get("has_consent"))
-        esta_registrado = determinar_estado_registro_proveedor(provider_profile)
-        flow["esta_registrado"] = esta_registrado
-        is_verified = bool(provider_profile and provider_profile.get("verified"))
-        is_pending_review = bool(esta_registrado and not is_verified)
-        await establecer_flujo(phone, flow)
+        esta_registrado = flow.get("esta_registrado", False)
+        is_verified = bool(flow.get("is_verified", False))
+        is_pending_review = flow.get("is_pending_review", False)
 
-        # Si el perfil está pendiente de revisión, limitar la interacción a la notificación
+        # 8. Manejar estados especiales
         if is_pending_review:
-            flow.update(
-                {
-                    "state": "pending_verification",
-                    "has_consent": True,
-                    "provider_id": provider_id,
-                }
-            )
-            await establecer_flujo(phone, flow)
-            return {
-                "success": True,
-                "messages": [{"response": provider_under_review_message()}],
-            }
+            return await WhatsAppFlow.handle_pending_verification(flow, phone)
 
-        # Si el perfil acaba de ser aprobado, notificar y habilitar menú
-        if flow.get("state") == "pending_verification" and is_verified:
-            flow.update(
-                {
-                    "state": "awaiting_menu_option",
-                    "has_consent": True,
-                    "esta_registrado": True,
-                    "verification_notified": True,
-                }
-            )
-            await establecer_flujo(phone, flow)
-            return {
-                "success": True,
-                "messages": [
-                    {"response": provider_verified_message()},
-                    {"response": provider_post_registration_menu_message()},
-                ],
-            }
+        if flow.get("was_pending_review") and is_verified:
+            return await WhatsAppFlow.handle_verified_provider(flow, phone)
 
+        # 9. Manejar estado inicial
         if not state:
-            if not has_consent:
-                nuevo_flujo = {"state": "awaiting_consent", "has_consent": False}
-                await establecer_flujo(phone, nuevo_flujo)
-                return await solicitar_consentimiento_proveedor(phone)
-
-            flow = {
-                **flow,
-                "state": "awaiting_menu_option",
-                "has_consent": True,
-            }
-            if is_verified and not flow.get("verification_notified"):
-                flow["verification_notified"] = True
-                await establecer_flujo(phone, flow)
-                return {
-                    "success": True,
-                    "messages": [
-                        {"response": provider_verified_message()},
-                        {"response": provider_post_registration_menu_message()},
-                    ],
-                }
-            menu_message = (
-                provider_main_menu_message()
-                if not esta_registrado
-                else provider_post_registration_menu_message()
+            return await WhatsAppFlow.handle_initial_state(
+                flow, phone, has_consent, esta_registrado, is_verified
             )
-            await establecer_flujo(phone, flow)
-            mensajes = []
-            if not esta_registrado:
-                mensajes.append({"response": provider_guidance_message()})
-            mensajes.append({"response": menu_message})
-            return {"success": True, "messages": mensajes}
 
+        # 10. Manejar consentimiento
         if state == "awaiting_consent":
             if has_consent:
                 flow["state"] = "awaiting_menu_option"
                 await establecer_flujo(phone, flow)
-                menu_message = (
+                menu_msg = (
                     provider_main_menu_message()
                     if not esta_registrado
                     else provider_post_registration_menu_message()
                 )
-                return {
-                    "success": True,
-                    "messages": [{"response": menu_message}],
-                }
-            consent_reply = await manejar_respuesta_consentimiento(
+                return {"success": True, "messages": [{"response": menu_msg}]}
+            return await manejar_respuesta_consentimiento(
                 phone, flow, payload, provider_profile, supabase
             )
-            return consent_reply
 
+        # 11. Router principal de estados
         if state == "awaiting_menu_option":
-            choice = menu_choice
-            lowered = (message_text or "").strip().lower()
-
-            if not esta_registrado:
-                if choice == "1" or "registro" in lowered:
-                    flow["mode"] = "registration"
-                    flow["state"] = "awaiting_city"
-                    await establecer_flujo(phone, flow)
-                    return {
-                        "success": True,
-                        "response": "*Perfecto. Empecemos. ¿En qué ciudad trabajas principalmente?*",
-                    }
-                if choice == "2" or "salir" in lowered:
-                    await reiniciar_flujo(phone)
-                    await establecer_flujo(phone, {"has_consent": True})
-                    return {
-                    "success": True,
-                    "response": "*Perfecto. Si necesitas algo más, solo escríbeme.*",
-                    }
-
-                await establecer_flujo(phone, flow)
-                return {
-                    "success": True,
-                    "messages": [
-                        {"response": "No reconoci esa opcion. Por favor elige 1 o 2."},
-                        {"response": provider_main_menu_message()},
-                    ],
-                }
-
-            # Menú para proveedores registrados
-            servicios_actuales = flow.get("services") or []
-            if choice == "1" or "servicio" in lowered:
-                flow["state"] = "awaiting_service_action"
-                await establecer_flujo(phone, flow)
-                return {
-                    "success": True,
-                    "messages": [{"response": construir_mensaje_servicios(servicios_actuales)}],
-                }
-            if choice == "2" or "selfie" in lowered or "foto" in lowered:
-                flow["state"] = "awaiting_face_photo_update"
-                await establecer_flujo(phone, flow)
-                return {
-                    "success": True,
-                    "response": "*Envíame la nueva selfie con tu rostro visible.*",
-                }
-            if choice == "3" or "red" in lowered or "social" in lowered or "instagram" in lowered:
-                flow["state"] = "awaiting_social_media_update"
-                await establecer_flujo(phone, flow)
-                return {
-                    "success": True,
-                    "response": "*Envíame tu enlace de Instagram/Facebook o escribe 'omitir' para quitarlo.*",
-                }
-            if choice == "4" or "salir" in lowered or "volver" in lowered:
-                flujo_base = {
-                    "has_consent": True,
-                    "esta_registrado": True,
-                    "provider_id": flow.get("provider_id"),
-                    "services": servicios_actuales,
-                }
-                await establecer_flujo(phone, flujo_base)
-                return {
-                "success": True,
-                "response": "*Perfecto. Si necesitas algo más, solo escríbeme.*",
-                }
-
+            response = await WhatsAppFlow.handle_awaiting_menu_option(
+                flow, phone, message_text, menu_choice, esta_registrado
+            )
             await establecer_flujo(phone, flow)
-            return {
-                "success": True,
-                "messages": [
-                    {"response": "No reconoci esa opcion. Por favor elige 1, 2, 3 o 4."},
-                    {"response": provider_post_registration_menu_message()},
-                ],
-            }
+            return response
 
         if state == "awaiting_social_media_update":
-            provider_id = flow.get("provider_id")
-            if not provider_id or not supabase:
-                flow["state"] = "awaiting_menu_option"
-                await establecer_flujo(phone, flow)
-                return {
-                    "success": True,
-                    "messages": [{"response": provider_post_registration_menu_message()}],
-                }
-
-            parsed = ProviderFlow.parse_social_media_input(message_text)
-            flow["social_media_url"] = parsed["url"]
-            flow["social_media_type"] = parsed["type"]
-
-            update_data = {
-                "social_media_url": parsed["url"],
-                "social_media_type": parsed["type"],
-                "updated_at": datetime.now().isoformat(),
-            }
-
-            try:
-                await run_supabase(
-                    lambda: supabase.table("providers")
-                    .update(update_data)
-                    .eq("id", provider_id)
-                    .execute()
-                )
-            except Exception as exc:
-                logger.error("No se pudo actualizar redes sociales para %s: %s", provider_id, exc)
-                flow["state"] = "awaiting_menu_option"
-                await establecer_flujo(phone, flow)
-                return {
-                    "success": False,
-                    "messages": [
-                        {"response": "No pude actualizar tus redes sociales en este momento."},
-                        {"response": provider_post_registration_menu_message()},
-                    ],
-                }
-
-            flow["state"] = "awaiting_menu_option"
+            response = await WhatsAppFlow.handle_awaiting_social_media_update(
+                flow, phone, message_text, supabase
+            )
             await establecer_flujo(phone, flow)
-            return {
-                "success": True,
-                "messages": [
-                    {
-                        "response": "Redes sociales actualizadas."
-                        if parsed["url"]
-                        else "Redes sociales eliminadas."
-                    },
-                    {"response": provider_post_registration_menu_message()},
-                ],
-            }
+            return response
 
         if state == "awaiting_service_action":
-            choice = menu_choice
-            lowered = (message_text or "").strip().lower()
-            servicios_actuales = flow.get("services") or []
-
-            if choice == "1" or "agregar" in lowered:
-                if len(servicios_actuales) >= SERVICIOS_MAXIMOS:
-                    return {
-                        "success": True,
-                        "messages": [
-                            {
-                                "response": (
-                                    f"Ya tienes {SERVICIOS_MAXIMOS} servicios registrados. "
-                                    "Elimina uno antes de agregar otro."
-                                )
-                            },
-                            {"response": construir_mensaje_servicios(servicios_actuales)},
-                        ],
-                    }
-                flow["state"] = "awaiting_service_add"
-                await establecer_flujo(phone, flow)
-                return {
-                    "success": True,
-                    "response": (
-                        "Escribe el nuevo servicio que deseas agregar. "
-                        "Si son varios, sepáralos con comas (ej: 'gasfitería de emergencia, mantenimiento')."
-                    ),
-                }
-
-            if choice == "2" or "eliminar" in lowered:
-                if not servicios_actuales:
-                    flow["state"] = "awaiting_service_action"
-                    await establecer_flujo(phone, flow)
-                    return {
-                        "success": True,
-                        "messages": [
-                            {"response": "Aún no tienes servicios para eliminar."},
-                            {"response": construir_mensaje_servicios(servicios_actuales)},
-                        ],
-                    }
-                flow["state"] = "awaiting_service_remove"
-                await establecer_flujo(phone, flow)
-                listado = construir_listado_servicios(servicios_actuales)
-                return {
-                    "success": True,
-                    "messages": [
-                        {"response": listado},
-                        {"response": "Responde con el número del servicio que deseas eliminar."},
-                    ],
-                }
-
-            if choice == "3" or "volver" in lowered or "salir" in lowered:
-                flow["state"] = "awaiting_menu_option"
-                await establecer_flujo(phone, flow)
-                return {
-                    "success": True,
-                    "messages": [{"response": provider_post_registration_menu_message()}],
-                }
-
+            response = await WhatsAppFlow.handle_awaiting_service_action(
+                flow, phone, message_text, menu_choice
+            )
             await establecer_flujo(phone, flow)
-            return {
-                "success": True,
-                "messages": [
-                    {"response": "No reconoci esa opcion. Elige 1, 2 o 3."},
-                    {"response": construir_mensaje_servicios(servicios_actuales)},
-                ],
-            }
+            return response
 
         if state == "awaiting_service_add":
-            provider_id = flow.get("provider_id")
-            if not provider_id:
-                flow["state"] = "awaiting_menu_option"
-                await establecer_flujo(phone, flow)
-                return {
-                    "success": True,
-                    "messages": [{"response": provider_post_registration_menu_message()}],
-                }
-
-            servicios_actuales = flow.get("services") or []
-            espacio_restante = SERVICIOS_MAXIMOS - len(servicios_actuales)
-            if espacio_restante <= 0:
-                return {
-                    "success": True,
-                    "messages": [
-                        {
-                            "response": (
-                                f"Ya tienes {SERVICIOS_MAXIMOS} servicios registrados. "
-                                "Elimina uno antes de agregar otro."
-                            )
-                        },
-                        {"response": construir_mensaje_servicios(servicios_actuales)},
-                    ],
-                }
-
-            candidatos = dividir_cadena_servicios(message_text or "")
-            if not candidatos:
-                return {
-                    "success": True,
-                    "messages": [
-                        {
-                            "response": (
-                                "No pude interpretar ese servicio. Usa una descripción corta y separa con comas si son varios (ej: 'gasfitería, mantenimiento')."
-                            )
-                        },
-                        {"response": construir_mensaje_servicios(servicios_actuales)},
-                    ],
-                }
-
-            nuevos_sanitizados: List[str] = []
-            for candidato in candidatos:
-                texto = limpiar_servicio_texto(candidato)
-                if (
-                    not texto
-                    or texto in servicios_actuales
-                    or texto in nuevos_sanitizados
-                ):
-                    continue
-                nuevos_sanitizados.append(texto)
-
-            if not nuevos_sanitizados:
-                return {
-                    "success": True,
-                    "messages": [
-                        {
-                            "response": (
-                                "Todos esos servicios ya estaban registrados o no los pude interpretar. "
-                                "Recuerda separarlos con comas y usar descripciones cortas."
-                            )
-                        },
-                        {"response": construir_mensaje_servicios(servicios_actuales)},
-                    ],
-                }
-
-            nuevos_recortados = nuevos_sanitizados[:espacio_restante]
-            if len(nuevos_recortados) < len(nuevos_sanitizados):
-                aviso_limite = True
-            else:
-                aviso_limite = False
-
-            servicios_actualizados = servicios_actuales + nuevos_recortados
-            try:
-                servicios_finales = await actualizar_servicios_proveedor(
-                    supabase, provider_id, servicios_actualizados
-                )
-            except Exception:
-                flow["state"] = "awaiting_service_action"
-                await establecer_flujo(phone, flow)
-                return {
-                    "success": False,
-                    "response": (
-                        "No pude guardar el servicio en este momento. Intenta nuevamente más tarde."
-                    ),
-                }
-
-            flow["services"] = servicios_finales
-            flow["state"] = "awaiting_service_action"
+            response = await WhatsAppFlow.handle_awaiting_service_add(
+                flow, phone, message_text, supabase
+            )
             await establecer_flujo(phone, flow)
-
-            if len(nuevos_recortados) == 1:
-                agregado_msg = f"Servicio agregado: *{nuevos_recortados[0]}*."
-            else:
-                listado = ", ".join(f"*{servicio}*" for servicio in nuevos_recortados)
-                agregado_msg = f"Servicios agregados: {listado}."
-
-            response_messages = [
-                {"response": agregado_msg},
-                {"response": construir_mensaje_servicios(servicios_finales)},
-            ]
-            if aviso_limite:
-                response_messages.insert(
-                    1,
-                    {
-                        "response": (
-                            f"Solo se agregaron {len(nuevos_recortados)} servicio(s) por alcanzar el máximo de {SERVICIOS_MAXIMOS}."
-                        )
-                    },
-                )
-
-            return {
-                "success": True,
-                "messages": response_messages,
-            }
+            return response
 
         if state == "awaiting_service_remove":
-            provider_id = flow.get("provider_id")
-            servicios_actuales = flow.get("services") or []
-            if not provider_id or not servicios_actuales:
-                flow["state"] = "awaiting_menu_option"
-                await establecer_flujo(phone, flow)
-                return {
-                    "success": True,
-                    "messages": [{"response": provider_post_registration_menu_message()}],
-                }
-
-            texto = (message_text or "").strip()
-            indice = None
-            if texto.isdigit():
-                indice = int(texto) - 1
-            else:
-                try:
-                    indice = int(re.findall(r"\d+", texto)[0]) - 1
-                except Exception:
-                    indice = None
-
-            if indice is None or indice < 0 or indice >= len(servicios_actuales):
-                await establecer_flujo(phone, flow)
-                listado = construir_listado_servicios(servicios_actuales)
-                return {
-                    "success": True,
-                    "messages": [
-                        {"response": "No pude identificar esa opción. Indica el número del servicio que deseas eliminar."},
-                        {"response": listado},
-                    ],
-                }
-
-            servicio_eliminado = servicios_actuales.pop(indice)
-            try:
-                servicios_finales = await actualizar_servicios_proveedor(
-                    supabase, provider_id, servicios_actuales
-                )
-            except Exception:
-                # Restaurar lista local si falla
-                servicios_actuales.insert(indice, servicio_eliminado)
-                flow["state"] = "awaiting_service_action"
-                await establecer_flujo(phone, flow)
-                return {
-                    "success": False,
-                    "response": (
-                        "No pude eliminar el servicio en este momento. Intenta nuevamente."
-                    ),
-                }
-
-            flow["services"] = servicios_finales
-            flow["state"] = "awaiting_service_action"
+            response = await WhatsAppFlow.handle_awaiting_service_remove(
+                flow, phone, message_text, supabase
+            )
             await establecer_flujo(phone, flow)
-            return {
-                "success": True,
-                "messages": [
-                    {"response": f"Servicio eliminado: *{servicio_eliminado}*."},
-                    {"response": construir_mensaje_servicios(servicios_finales)},
-                ],
-            }
+            return response
 
         if state == "awaiting_face_photo_update":
-            provider_id = flow.get("provider_id")
-            if not provider_id:
-                flow["state"] = "awaiting_menu_option"
-                await establecer_flujo(phone, flow)
-                return {
-                    "success": True,
-                    "messages": [{"response": provider_post_registration_menu_message()}],
-                }
-
-            image_b64 = extract_first_image_base64(payload)
-            if not image_b64:
-                return {
-                    "success": True,
-                    "response": "Necesito la selfie como imagen adjunta para poder actualizarla.",
-                }
-
-            try:
-                await subir_medios_identidad(
-                    provider_id,
-                    {
-                        "face_image": image_b64,
-                    },
-                )
-            except Exception:
-                flow["state"] = "awaiting_menu_option"
-                await establecer_flujo(phone, flow)
-                return {
-                    "success": False,
-                    "response": (
-                        "No pude actualizar la selfie en este momento. Intenta nuevamente más tarde."
-                    ),
-                }
-
-            flow["state"] = "awaiting_menu_option"
-            await establecer_flujo(phone, flow)
-            return {
-                "success": True,
-                "messages": [
-                    {"response": "Selfie actualizada correctamente."},
-                    {"response": provider_post_registration_menu_message()},
-                ],
-            }
-
-        if not has_consent:
-            flow = {"state": "awaiting_consent", "has_consent": False}
-            await establecer_flujo(phone, flow)
-            return await solicitar_consentimiento_proveedor(phone)
-
-        if state == "awaiting_dni":
-            flow["state"] = "awaiting_city"
-            await establecer_flujo(phone, flow)
-            return {
-                "success": True,
-                "response": (
-                    "*Actualicemos tu registro. ¿En qué ciudad trabajas principalmente?*"
-                ),
-            }
-
-        if state == "awaiting_city":
-            reply = ProviderFlow.handle_awaiting_city(flow, message_text)
-            await establecer_flujo(phone, flow)
-            return reply
-
-        if state == "awaiting_name":
-            reply = ProviderFlow.handle_awaiting_name(flow, message_text)
-            await establecer_flujo(phone, flow)
-            return reply
-
-        if state == "awaiting_profession":
-            reply = ProviderFlow.handle_awaiting_profession(flow, message_text)
-            await establecer_flujo(phone, flow)
-            return reply
-
-        if state == "awaiting_specialty":
-            reply = ProviderFlow.handle_awaiting_specialty(flow, message_text)
-            await establecer_flujo(phone, flow)
-            return reply
-
-        if state == "awaiting_experience":
-            reply = ProviderFlow.handle_awaiting_experience(flow, message_text)
-            await establecer_flujo(phone, flow)
-            return reply
-
-        if state == "awaiting_email":
-            reply = ProviderFlow.handle_awaiting_email(flow, message_text)
-            await establecer_flujo(phone, flow)
-            return reply
-
-        if state == "awaiting_social_media":
-            reply = ProviderFlow.handle_awaiting_social_media(flow, message_text)
-            await establecer_flujo(phone, flow)
-            return reply
-
-        if state == "awaiting_dni_front_photo":
-            image_b64 = extract_first_image_base64(payload)
-            if not image_b64:
-                return {
-                    "success": True,
-                    "response": "*Necesito la foto frontal de la Cédula. Envia la imagen como adjunto.*",
-                }
-            flow["dni_front_image"] = image_b64
-            flow["state"] = "awaiting_dni_back_photo"
-            await establecer_flujo(phone, flow)
-            return {
-                "success": True,
-                "response": "*Excelente. Ahora envia la foto de la parte posterior de la Cédula (parte de atrás)."
-                + " Envía la imagen como adjunto.*",
-            }
-
-        if state == "awaiting_dni_back_photo":
-            image_b64 = extract_first_image_base64(payload)
-            if not image_b64:
-                return {
-                    "success": True,
-                    "response": "*Necesito la foto de la parte posterior de la Cédula (parte de atrás)."
-                    + " Envía la imagen como adjunto.*",
-                }
-            flow["dni_back_image"] = image_b64
-            flow["state"] = "awaiting_face_photo"
-            await establecer_flujo(phone, flow)
-            return {
-                "success": True,
-                "response": "*Gracias. Finalmente envia una selfie (rostro visible).*",
-            }
-
-        if state == "awaiting_face_photo":
-            image_b64 = extract_first_image_base64(payload)
-            if not image_b64:
-                return {
-                    "success": True,
-                    "response": (
-                        "Necesito una selfie clara para finalizar. Envía la foto como adjunto."
-                    ),
-                }
-            flow["face_image"] = image_b64
-            summary = ProviderFlow.build_confirmation_summary(flow)
-            flow["state"] = "confirm"
-            await establecer_flujo(phone, flow)
-            return {
-                "success": True,
-                "messages": [
-                    {
-                        "response": "Informacion recibida. Voy a procesar tu informacion, espera un momento."
-                    },
-                    {"response": summary},
-                ],
-            }
-
-        if state == "awaiting_address":
-            flow["state"] = "awaiting_email"
-            await establecer_flujo(phone, flow)
-            return {
-                "success": True,
-                "response": "Opcional: tu correo electronico (o escribe 'omitir').",
-            }
-
-        if state == "confirm":
-            reply = await ProviderFlow.handle_confirm(
-                flow,
-                message_text,
-                phone,
-                lambda datos: registrar_proveedor(supabase, datos),
-                subir_medios_identidad,
-                lambda: reiniciar_flujo(phone),
-                logger,
+            response = await WhatsAppFlow.handle_awaiting_face_photo_update(
+                flow, phone, payload
             )
-            new_flow = reply.pop("new_flow", None)
-            should_reset = reply.pop("reiniciar_flujo", False)
-            if new_flow:
-                await establecer_flujo(phone, new_flow)
-            elif not should_reset:
-                await establecer_flujo(phone, flow)
-            return reply
+            await establecer_flujo(phone, flow)
+            return response
 
+        # 12. Fallback para estados de registro (ProviderFlow)
+        if state in ProviderFlow.get_supported_states():
+            return await _delegate_to_provider_flow(
+                flow, phone, state, message_text, payload
+            )
+
+        # 13. Default: reiniciar
         await reiniciar_flujo(phone)
         return {
             "success": True,
-            "response": "Empecemos de nuevo. Escribe 'registro' para crear tu perfil de proveedor.",
+            "response": "Empecemos de nuevo. Escribe 'registro' para crear tu perfil.",
         }
 
     except Exception as e:
         logger.error(f"❌ Error procesando mensaje WhatsApp: {e}")
-        return {"success": False, "message": f"Error procesando mensaje: {str(e)}"}
+        return {"success": False, "message": f"Error: {str(e)}"}
     finally:
         if local_settings.perf_log_enabled:
             elapsed_ms = (perf_counter() - start) * 1000
@@ -1196,6 +621,116 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                         "threshold_ms": local_settings.slow_query_threshold_ms,
                     },
                 )
+
+
+async def _handle_reset_conversation(phone: str) -> Dict[str, Any]:
+    """Maneja keywords de reset."""
+    await reiniciar_flujo(phone)
+    new_flow = {"state": "awaiting_consent", "has_consent": False}
+    await establecer_flujo(phone, new_flow)
+    consent_prompt = await solicitar_consentimiento_proveedor(phone)
+    return {
+        "success": True,
+        "messages": [{"response": "Reiniciemos desde el inicio."}]
+        + consent_prompt.get("messages", []),
+    }
+
+
+async def _delegate_to_provider_flow(
+    flow: Dict[str, Any],
+    phone: str,
+    state: str,
+    message_text: str,
+    payload: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Delega estados de registro a ProviderFlow."""
+    # Manejar fotos de DNI y selfie
+    image_b64 = extract_first_image_base64(payload)
+
+    if state == "awaiting_dni_front_photo":
+        if not image_b64:
+            return {
+                "success": True,
+                "response": "*Necesito la foto frontal de la Cédula. Envía la imagen como adjunto.*",
+            }
+        flow["dni_front_image"] = image_b64
+        flow["state"] = "awaiting_dni_back_photo"
+        await establecer_flujo(phone, flow)
+        return {
+            "success": True,
+            "response": "*Excelente. Ahora envía la foto de la parte posterior de la Cédula. Envía la imagen como adjunto.*",
+        }
+
+    if state == "awaiting_dni_back_photo":
+        if not image_b64:
+            return {
+                "success": True,
+                "response": "*Necesito la foto de la parte posterior de la Cédula. Envía la imagen como adjunto.*",
+            }
+        flow["dni_back_image"] = image_b64
+        flow["state"] = "awaiting_face_photo"
+        await establecer_flujo(phone, flow)
+        return {
+            "success": True,
+            "response": "*Gracias. Finalmente envía una selfie (rostro visible).*",
+        }
+
+    if state == "awaiting_face_photo":
+        if not image_b64:
+            return {
+                "success": True,
+                "response": "Necesito una selfie clara. Envía la foto como adjunto.",
+            }
+        flow["face_image"] = image_b64
+        summary = ProviderFlow.build_confirmation_summary(flow)
+        flow["state"] = "confirm"
+        await establecer_flujo(phone, flow)
+        return {
+            "success": True,
+            "messages": [
+                {"response": "Información recibida. Procesando..."},
+                {"response": summary},
+            ],
+        }
+
+    if state == "confirm":
+        reply = await ProviderFlow.handle_confirm(
+            flow, message_text, phone,
+            lambda datos: registrar_proveedor(supabase, datos),
+            subir_medios_identidad,
+            lambda: reiniciar_flujo(phone),
+            logger,
+        )
+        new_flow = reply.pop("new_flow", None)
+        should_reset = reply.pop("reiniciar_flujo", False)
+        if new_flow:
+            await establecer_flujo(phone, new_flow)
+        elif not should_reset:
+            await establecer_flujo(phone, flow)
+        return reply
+
+    # Estados basados en texto (delegar a ProviderFlow)
+    handler_map = {
+        "awaiting_city": ProviderFlow.handle_awaiting_city,
+        "awaiting_name": ProviderFlow.handle_awaiting_name,
+        "awaiting_profession": ProviderFlow.handle_awaiting_profession,
+        "awaiting_specialty": ProviderFlow.handle_awaiting_specialty,
+        "awaiting_experience": ProviderFlow.handle_awaiting_experience,
+        "awaiting_email": ProviderFlow.handle_awaiting_email,
+        "awaiting_social_media": ProviderFlow.handle_awaiting_social_media,
+    }
+
+    if state in handler_map:
+        reply = handler_map[state](flow, message_text)
+        await establecer_flujo(phone, flow)
+        return reply
+
+    # Fallback
+    await reiniciar_flujo(phone)
+    return {
+        "success": True,
+        "response": "Empecemos de nuevo. Escribe 'registro' para crear tu perfil.",
+    }
 
 
 @app.get("/providers")
