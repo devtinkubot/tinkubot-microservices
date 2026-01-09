@@ -35,6 +35,11 @@ from templates.prompts import (
 )
 
 from shared_lib.config import settings
+
+# Importar configuración local de ai-proveedores
+from app.config import settings as local_settings
+from app.dependencies import get_supabase, get_openai
+
 from shared_lib.models import (
     ProviderCreate,
     ProviderResponse,
@@ -82,46 +87,20 @@ from services.business_logic import (
     registrar_proveedor,
 )
 
-# Configuración desde variables de entorno
-SUPABASE_URL = settings.supabase_url or os.getenv("SUPABASE_URL", "")
-# settings expone la clave JWT de servicio para Supabase
-SUPABASE_SERVICE_KEY = settings.supabase_service_key
-SUPABASE_PROVIDERS_BUCKET = (
-    os.getenv("SUPABASE_PROVIDERS_BUCKET")
-    or os.getenv("SUPABASE_BUCKET_NAME")
-    or "tinkubot-providers"
-)
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-ENABLE_DIRECT_WHATSAPP_SEND = (
-    os.getenv("AI_PROV_SEND_DIRECT", "false").lower() == "true"
-)
-WA_PROVEEDORES_URL = os.getenv("WA_PROVEEDORES_URL", "http://wa-proveedores:5002/send")
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
-SUPABASE_TIMEOUT_SECONDS = float(os.getenv("SUPABASE_TIMEOUT_SECONDS", "5"))
-PROFILE_CACHE_TTL_SECONDS = int(
-    os.getenv("PROFILE_CACHE_TTL_SECONDS", str(settings.cache_ttl_seconds))
-)
-PROFILE_CACHE_KEY = "prov_profile_cache:{}"
-PERF_LOG_ENABLED = os.getenv("PERF_LOG_ENABLED", "true").lower() == "true"
-SLOW_QUERY_THRESHOLD_MS = int(os.getenv("SLOW_QUERY_THRESHOLD_MS", "800"))
-
 # Configurar logging
-logging.basicConfig(level=getattr(logging, LOG_LEVEL))
+logging.basicConfig(level=getattr(logging, local_settings.log_level))
 logger = logging.getLogger(__name__)
 
 # Inicializar clientes de Supabase y OpenAI
-supabase: Optional[Client] = None
-openai_client: Optional[OpenAI] = None
+supabase = get_supabase()
+openai_client = get_openai()
 
-if SUPABASE_URL and SUPABASE_SERVICE_KEY:
-    supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+if supabase:
     logger.info("✅ Conectado a Supabase")
 else:
     logger.warning("⚠️ No se configuró Supabase")
 
-if OPENAI_API_KEY:
-    openai_client = OpenAI(api_key=OPENAI_API_KEY)
+if openai_client:
     logger.info("✅ Conectado a OpenAI")
 else:
     logger.warning("⚠️ No se configuró OpenAI")
@@ -371,7 +350,7 @@ async def cachear_perfil_proveedor(phone: str, perfil: Dict[str, Any]) -> None:
         await redis_client.set(
             PROFILE_CACHE_KEY.format(phone),
             perfil,
-            expire=PROFILE_CACHE_TTL_SECONDS,
+            expire=local_settings.profile_cache_ttl_seconds,
         )
     except Exception as exc:
         logger.debug(f"No se pudo cachear perfil de {phone}: {exc}")
@@ -695,12 +674,12 @@ async def subir_imagen_proveedor_almacenamiento(
 
         logger.info(f"📤 Subiendo imagen a Supabase Storage: {file_path}")
 
-        if not SUPABASE_PROVIDERS_BUCKET:
+        if not local_settings.supabase_providers_bucket:
             logger.error("❌ Bucket de almacenamiento para proveedores no configurado")
             return None
 
         def _upload():
-            storage_bucket = supabase.storage.from_(SUPABASE_PROVIDERS_BUCKET)
+            storage_bucket = supabase.storage.from_(local_settings.supabase_providers_bucket)
             try:
                 storage_bucket.remove([file_path])
             except Exception as remove_error:
@@ -737,7 +716,7 @@ async def subir_imagen_proveedor_almacenamiento(
                 )
                 return None
 
-            raw_public_url = supabase.storage.from_(SUPABASE_PROVIDERS_BUCKET).get_public_url(
+            raw_public_url = supabase.storage.from_(local_settings.supabase_providers_bucket).get_public_url(
                 file_path
             )
             return raw_public_url
@@ -1124,7 +1103,7 @@ async def send_whatsapp_message(
             f"{request.message[:80]}..."
         )
 
-        if not ENABLE_DIRECT_WHATSAPP_SEND:
+        if not local_settings.enable_direct_whatsapp_send:
             logger.info(
                 "📨 Envío simulado (AI_PROV_SEND_DIRECT=false). No se llamó a wa-proveedores."
             )
@@ -1140,7 +1119,7 @@ async def send_whatsapp_message(
 
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(
-                WA_PROVEEDORES_URL,
+                local_settings.wa_proveedores_url,
                 json={"phone": request.phone, "message": request.message},
             )
             resp.raise_for_status()
@@ -1937,14 +1916,14 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
         logger.error(f"❌ Error procesando mensaje WhatsApp: {e}")
         return {"success": False, "message": f"Error procesando mensaje: {str(e)}"}
     finally:
-        if PERF_LOG_ENABLED:
+        if local_settings.perf_log_enabled:
             elapsed_ms = (perf_counter() - start) * 1000
-            if elapsed_ms >= SLOW_QUERY_THRESHOLD_MS:
+            if elapsed_ms >= local_settings.slow_query_threshold_ms:
                 logger.info(
                     "perf_handler_whatsapp",
                     extra={
                         "elapsed_ms": round(elapsed_ms, 2),
-                        "threshold_ms": SLOW_QUERY_THRESHOLD_MS,
+                        "threshold_ms": local_settings.slow_query_threshold_ms,
                     },
                 )
 
