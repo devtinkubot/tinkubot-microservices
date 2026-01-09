@@ -47,8 +47,6 @@ from shared_lib.redis_client import redis_client
 
 # Importar modelos Pydantic locales
 from models.schemas import (
-    ProviderSearchRequest,
-    ProviderSearchResponse,
     IntelligentSearchRequest,
     WhatsAppMessageRequest,
     WhatsAppMessageReceive,
@@ -338,34 +336,6 @@ async def health_check() -> HealthResponse:
             service="ai-service-proveedores-mejorado",
             timestamp=datetime.now().isoformat(),
         )
-
-
-@app.post("/search-providers", response_model=ProviderSearchResponse)
-async def buscar_proveedores_endpoint(
-    request: ProviderSearchRequest,
-) -> ProviderSearchResponse:
-    """Endpoint simplificado de búsqueda usando query directa"""
-    try:
-        logger.info(f"🔍 Buscando {request.profession}s en {request.location}...")
-
-        # Usar función de búsqueda en español
-        proveedores = await buscar_proveedores(
-            profesion=request.profession,
-            ubicacion=request.location,
-            limite=request.limit or 10,
-        )
-
-        # Los proveedores ya vienen como diccionarios de buscar_proveedores()
-        return ProviderSearchResponse(
-            providers=proveedores,
-            count=len(proveedores),
-            location=request.location or "Ecuador",
-            profession=request.profession,
-        )
-
-    except Exception as e:
-        logger.error(f"Error en búsqueda: {e}")
-        raise HTTPException(status_code=500, detail=f"Error en búsqueda: {str(e)}")
 
 
 @app.post("/intelligent-search")

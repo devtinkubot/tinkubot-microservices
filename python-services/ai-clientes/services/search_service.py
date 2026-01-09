@@ -258,54 +258,23 @@ async def search_providers(
             error = result.get("error", "Error desconocido")
             logger.warning(f"⚠️ Search Service simple falló: {error}")
 
-            # Fallback al método antiguo
-            return await _fallback_search_providers_simple(
-                profession, location, radius_km
-            )
+            # Fallback eliminado: endpoint /search-providers ya no existe
+            logger.error(f"❌ No hay fallback disponible (endpoint /search-providers eliminado)")
+            return {
+                "ok": False,
+                "providers": [],
+                "total": 0,
+                "error": "Search Service falló y no hay fallback disponible"
+            }
 
     except Exception as exc:
         logger.error(f"❌ Error en búsqueda simple Search Service: {exc}")
 
-        # Fallback al método antiguo
-        return await _fallback_search_providers_simple(profession, location, radius_km)
-
-
-async def _fallback_search_providers_simple(
-    profession: str, location: str, radius_km: float = 10.0
-) -> Dict[str, Any]:
-    """
-    Fallback simple al método antiguo
-    """
-    url = f"{PROVEEDORES_AI_SERVICE_URL}/search-providers"
-    payload = {"profession": profession, "location": location, "radius": radius_km}
-    logger.info(
-        f"🔄 Fallback simple a AI Proveedores: profession='{profession}', "
-        f"location='{location}', radius={radius_km} -> {url}"
-    )
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(url, json=payload)
-        logger.info(f"⬅️ Respuesta de AI Proveedores status={resp.status_code}")
-        if resp.status_code == 200:
-            data = resp.json()
-            # Adapt to both possible response shapes
-            providers = data.get("providers") or []
-            providers = [
-                provider for provider in providers if provider.get("verified", False)
-            ]
-            total = len(providers)
-            logger.info(f"📦 Proveedores verificados tras fallback: total={total}")
-            return {"ok": True, "providers": providers, "total": total}
-        else:
-            body_preview = None
-            try:
-                body_preview = resp.text[:300]
-            except Exception:
-                body_preview = "<no-body>"
-            logger.warning(
-                f"⚠️ AI Proveedores respondió {resp.status_code}: {body_preview}"
-            )
-            return {"ok": False, "providers": [], "total": 0}
-    except Exception as e:
-        logger.error(f"❌ Error llamando a AI Proveedores: {e}")
-        return {"ok": False, "providers": [], "total": 0}
+        # Fallback eliminado: endpoint /search-providers ya no existe
+        logger.error(f"❌ No hay fallback disponible (endpoint /search-providers eliminado)")
+        return {
+            "ok": False,
+            "providers": [],
+            "total": 0,
+            "error": f"Error en búsqueda: {str(exc)}"
+        }

@@ -3,20 +3,6 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
 
 
-class ProviderSearchRequest(BaseModel):
-    profession: str
-    location: str
-    radius: float = 10.0
-    limit: Optional[int] = 10
-
-
-class ProviderSearchResponse(BaseModel):
-    providers: List[Dict[str, Any]]
-    count: int
-    location: str
-    profession: str
-
-
 class IntelligentSearchRequest(BaseModel):
     necesidad_real: Optional[str] = None
     profesion_principal: str
