@@ -1,7 +1,7 @@
 """Servicio de gestión de perfiles de proveedores."""
 import asyncio
 import logging
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict, List, Optional, cast
 
 from shared_lib.redis_client import redis_client
 from app.config import settings as local_settings
@@ -9,6 +9,7 @@ from app.config import settings as local_settings
 from services.business_logic import aplicar_valores_por_defecto_proveedor
 from utils.db_utils import run_supabase
 from utils.services_utils import extraer_servicios_guardados
+from utils.services_utils import sanitizar_servicios, formatear_servicios
 
 logger = logging.getLogger(__name__)
 
@@ -108,3 +109,46 @@ def determinar_estado_registro_proveedor(
         and provider_profile.get("full_name")
         and provider_profile.get("profession")
     )
+
+
+async def actualizar_servicios_proveedor(
+    supabase, provider_id: str, servicios: List[str]
+) -> List[str]:
+    """
+    Actualiza los servicios del proveedor en Supabase.
+
+    Args:
+        supabase: Cliente de Supabase
+        provider_id: ID del proveedor a actualizar
+        servicios: Lista de servicios a guardar
+
+    Returns:
+        Lista de servicios limpios y sanitizados
+
+    Raises:
+        Exception: Si hay error al actualizar en Supabase
+    """
+    if not supabase:
+        return servicios
+
+    servicios_limpios = sanitizar_servicios(servicios)
+    cadena_servicios = formatear_servicios(servicios_limpios)
+
+    try:
+        await run_supabase(
+            lambda: supabase.table("providers")
+            .update({"services": cadena_servicios})
+            .eq("id", provider_id)
+            .execute(),
+            label="providers.update_services",
+        )
+        logger.info("✅ Servicios actualizados para proveedor %s", provider_id)
+    except Exception as exc:
+        logger.error(
+            "❌ Error actualizando servicios para proveedor %s: %s",
+            provider_id,
+            exc,
+        )
+        raise
+
+    return servicios_limpios

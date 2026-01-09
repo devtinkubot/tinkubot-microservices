@@ -101,6 +101,7 @@ from services.profile_service import (
     refrescar_cache_perfil_proveedor,
     obtener_perfil_proveedor_cacheado,
     determinar_estado_registro_proveedor,
+    actualizar_servicios_proveedor,
 )
 
 # Importar servicios de consentimiento
@@ -218,36 +219,6 @@ RESET_KEYWORDS = {
 
 
 # === FUNCIONES SIMPLIFICADAS PARA ESQUEMA UNIFICADO ===
-
-async def actualizar_servicios_proveedor(
-    provider_id: str, servicios: List[str]
-) -> List[str]:
-    """Actualiza los servicios del proveedor en Supabase."""
-    if not supabase:
-        return servicios
-
-    servicios_limpios = sanitizar_servicios(servicios)
-    cadena_servicios = formatear_servicios(servicios_limpios)
-
-    try:
-        await run_supabase(
-            lambda: supabase.table("providers")
-            .update({"services": cadena_servicios})
-            .eq("id", provider_id)
-            .execute(),
-            label="providers.update_services",
-        )
-        logger.info("✅ Servicios actualizados para proveedor %s", provider_id)
-    except Exception as exc:
-        logger.error(
-            "❌ Error actualizando servicios para proveedor %s: %s",
-            provider_id,
-            exc,
-        )
-        raise
-
-    return servicios_limpios
-
 
 # Funciones obsoletas eliminadas - ahora se usa esquema unificado
 
@@ -929,7 +900,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
             servicios_actualizados = servicios_actuales + nuevos_recortados
             try:
                 servicios_finales = await actualizar_servicios_proveedor(
-                    provider_id, servicios_actualizados
+                    supabase, provider_id, servicios_actualizados
                 )
             except Exception:
                 flow["state"] = "awaiting_service_action"
@@ -1005,7 +976,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
             servicio_eliminado = servicios_actuales.pop(indice)
             try:
                 servicios_finales = await actualizar_servicios_proveedor(
-                    provider_id, servicios_actuales
+                    supabase, provider_id, servicios_actuales
                 )
             except Exception:
                 # Restaurar lista local si falla
