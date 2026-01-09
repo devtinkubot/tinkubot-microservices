@@ -13,67 +13,37 @@ from templates.prompts import (
     provider_under_review_message,
 )
 
+from services.validation_service import (
+    normalize_text,
+    parse_experience_years,
+    validate_city,
+    validate_name,
+    validate_profession,
+    validate_specialty,
+    validate_email,
+    parse_social_media,
+    validate_provider_payload,
+    parse_services_string,
+)
 
-def normalize_text(value: Optional[str]) -> str:
-    return (value or "").strip()
 
 
-def parse_experience_years(text: Optional[str]) -> Optional[int]:
-    normalized = (text or "").strip().lower()
-    if not normalized:
-        return None
 
-    digits = ""
-    for ch in normalized:
-        if ch.isdigit():
-            digits += ch
-        elif digits:
-            break
-
-    if not digits:
-        return None
-
-    try:
-        value = int(digits)
-    except ValueError:
-        return None
-
-    return max(0, min(60, value))
 
 
 class ProviderFlow:
     """Encapsula manejadores de cada estado del flujo de registro."""
 
     @staticmethod
-    def parse_services_string(value: Optional[str]) -> List[str]:
-        if not value:
-            return []
-
-        cleaned = value.strip()
-        if not cleaned:
-            return []
-
-        if re.search(r"[|;,\n]", cleaned):
-            candidates = re.split(r"[|;,\n]+", cleaned)
-        else:
-            candidates = [cleaned]
-
-        servicios: List[str] = []
-        for item in candidates:
-            servicio = item.strip()
-            if servicio and servicio not in servicios:
-                servicios.append(servicio)
-        return servicios[:5]
-
-    @staticmethod
     def handle_awaiting_city(
         flow: Dict[str, Any], message_text: Optional[str]
     ) -> Dict[str, Any]:
         city = normalize_text(message_text)
-        if len(city) < 2:
+        is_valid, error_message = validate_city(city)
+        if not is_valid:
             return {
                 "success": True,
-                "response": "*Indicame tu ciudad (ej: Quito, Guayaquil, Cuenca).*",
+                "response": error_message,
             }
 
         flow["city"] = city
@@ -88,10 +58,11 @@ class ProviderFlow:
         flow: Dict[str, Any], message_text: Optional[str]
     ) -> Dict[str, Any]:
         name = normalize_text(message_text)
-        if len(name) < 2:
+        is_valid, error_message = validate_name(name)
+        if not is_valid:
             return {
                 "success": True,
-                "response": "*Por favor, enviame tu nombre completo.*",
+                "response": error_message,
             }
 
         flow["name"] = name
@@ -109,21 +80,11 @@ class ProviderFlow:
         flow: Dict[str, Any], message_text: Optional[str]
     ) -> Dict[str, Any]:
         profession = normalize_text(message_text)
-        if len(profession) < 2:
+        is_valid, error_message = validate_profession(profession)
+        if not is_valid:
             return {
                 "success": True,
-                "response": (
-                    '*Indica tu profesión u oficio. Ejemplos: "Carpintero", '
-                    '"Ingeniero Electrico", "Abogado".*'
-                ),
-            }
-        if len(profession) > 150:
-            return {
-                "success": True,
-                "response": (
-                    "*Tu profesión debe ser breve (máximo 150 caracteres).* "
-                    "Envía una versión resumida (ej: 'Ingeniera en marketing' o 'Contratación pública')."
-                ),
+                "response": error_message,
             }
 
         flow["profession"] = profession
@@ -141,57 +102,14 @@ class ProviderFlow:
         flow: Dict[str, Any], message_text: Optional[str]
     ) -> Dict[str, Any]:
         specialty = normalize_text(message_text)
-        lowered = specialty.lower()
-        if lowered in {"omitir", "ninguna", "na", "n/a"}:
+        is_valid, error_message = validate_specialty(specialty)
+        if not is_valid:
             return {
                 "success": True,
-                "response": (
-                    "*La especialidad es obligatoria. Por favor escríbela tal como la trabajas, separando con comas si hay varias.*"
-                ),
+                "response": error_message,
             }
 
-        if len(specialty) < 2:
-            return {
-                "success": True,
-                "response": (
-                    "*La especialidad debe tener al menos 2 caracteres. "
-                    "Incluye tus servicios separados por comas (ej: gasfitería, mantenimiento).*"
-                ),
-            }
-
-        if len(specialty) > 300:
-            return {
-                "success": True,
-                "response": (
-                    "*El listado de servicios es muy largo (máx. 300 caracteres).* "
-                    "Envía una versión resumida con tus principales servicios separados por comas."
-                ),
-            }
-
-        services_list = [
-            item.strip()
-            for item in re.split(r"[;,/\n]+", specialty)
-            if item and item.strip()
-        ]
-
-        if len(services_list) > 10:
-            return {
-                "success": True,
-                "response": (
-                    "*Incluye máximo 10 servicios.* Envía nuevamente tus principales servicios separados por comas."
-                ),
-            }
-
-        if any(len(srv) > 120 for srv in services_list):
-            return {
-                "success": True,
-                "response": (
-                    "*Cada servicio debe ser breve (máx. 120 caracteres).* "
-                    "Recorta descripciones muy largas y envía de nuevo la lista."
-                ),
-            }
-
-        flow["specialty"] = ", ".join(services_list) if services_list else specialty
+        flow["specialty"] = specialty
         flow["state"] = "awaiting_experience"
         return {
             "success": True,
@@ -221,17 +139,14 @@ class ProviderFlow:
         flow: Dict[str, Any], message_text: Optional[str]
     ) -> Dict[str, Any]:
         email = normalize_text(message_text)
-        if email.lower() in {"omitir", "na", "n/a", "ninguno", "ninguna"}:
-            email = None
-        elif "@" not in email or "." not in email:
+        is_valid, error_message, normalized_email = validate_email(email)
+        if not is_valid:
             return {
                 "success": True,
-                "response": (
-                    "*El correo no parece valido. Envialo nuevamente o escribe 'omitir'.*"
-                ),
+                "response": error_message,
             }
 
-        flow["email"] = email
+        flow["email"] = normalized_email
         flow["state"] = "awaiting_social_media"
         return {
             "success": True,
@@ -244,14 +159,7 @@ class ProviderFlow:
     @staticmethod
     def parse_social_media_input(message_text: Optional[str]) -> Dict[str, Optional[str]]:
         """Parsea la entrada de red social y devuelve url + tipo."""
-        social = normalize_text(message_text)
-        if social.lower() in {"omitir", "na", "n/a", "ninguno"}:
-            return {"url": None, "type": None}
-        if "facebook.com" in social or "fb.com" in social:
-            return {"url": social, "type": "facebook"}
-        if "instagram.com" in social or "instagr.am" in social:
-            return {"url": social, "type": "instagram"}
-        return {"url": f"https://instagram.com/{social}", "type": "instagram"}
+        return parse_social_media(message_text)
 
     @staticmethod
     def handle_awaiting_social_media(
@@ -347,41 +255,11 @@ class ProviderFlow:
             or text.startswith("confirm")
             or text in {"si", "ok", "listo", "confirmar"}
         ):
-            specialty = flow.get("specialty")
-            services_list = []
-            if isinstance(specialty, str):
-                services_list = [
-                    item.strip()
-                    for item in re.split(r"[;,/\n]+", specialty)
-                    if item and item.strip()
-                ]
-                if not services_list and specialty.strip():
-                    services_list = [specialty.strip()]
+            is_valid, result = validate_provider_payload(flow, phone)
+            if not is_valid:
+                return result
 
-            try:
-                provider_payload = ProviderCreate(
-                    phone=phone,
-                    full_name=flow.get("name") or "",
-                    email=flow.get("email"),
-                    city=flow.get("city") or "",
-                    profession=flow.get("profession") or "",
-                    services_list=services_list,
-                    experience_years=flow.get("experience_years"),
-                    has_consent=flow.get("has_consent", False),
-                    social_media_url=flow.get("social_media_url"),
-                    social_media_type=flow.get("social_media_type"),
-                )
-            except ValidationError as exc:
-                logger.error("Datos de registro invalidos para %s: %s", phone, exc)
-                first_error = exc.errors()[0] if exc.errors() else {}
-                reason = first_error.get("msg") or "Datos inválidos"
-                return {
-                    "success": False,
-                    "response": (
-                        f"*No pude validar tus datos:* {reason}. "
-                        "Revisa que nombre, ciudad y profesión cumplan con el formato y longitud."
-                    ),
-                }
+            provider_payload = result
 
             registered_provider = await register_provider_fn(provider_payload)
             if registered_provider:
@@ -390,7 +268,7 @@ class ProviderFlow:
                     registered_provider.get("id"),
                 )
                 provider_id = registered_provider.get("id")
-                servicios_registrados = ProviderFlow.parse_services_string(
+                servicios_registrados = parse_services_string(
                     registered_provider.get("services")
                 )
                 flow["services"] = servicios_registrados
