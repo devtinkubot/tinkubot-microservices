@@ -91,24 +91,24 @@ NEGATIVE_WORDS = {
 
 def _normalize_token(text: str) -> str:
     """Normaliza un token simple: minúsculas, sin acentos, sin puntuación."""
-    stripped = (text or "").strip().lower()
-    normalized = unicodedata.normalize("NFD", stripped)
+    normalized_text = (text or "").strip().lower()
+    normalized = unicodedata.normalize("NFD", normalized_text)
     without_accents = "".join(
-        ch for ch in normalized if unicodedata.category(ch) != "Mn"
+        char for char in normalized if unicodedata.category(char) != "Mn"
     )
-    clean = without_accents.replace("!", "").replace("?", "").replace(",", "")
-    return clean
+    final_text = without_accents.replace("!", "").replace("?", "").replace(",", "")
+    return final_text
 
 
 def _normalize_text_for_matching(text: str) -> str:
     """Normaliza texto para búsquedas: minúsculas, sin acentos, solo alfanuméricos."""
-    base = (text or "").lower()
-    normalized = unicodedata.normalize("NFD", base)
+    text_base = (text or "").lower()
+    normalized = unicodedata.normalize("NFD", text_base)
     without_accents = "".join(
-        ch for ch in normalized if unicodedata.category(ch) != "Mn"
+        char for char in normalized if unicodedata.category(char) != "Mn"
     )
-    cleaned = re.sub(r"[^a-z0-9\s]", " ", without_accents)
-    return re.sub(r"\s+", " ", cleaned).strip()
+    sanitized_text = re.sub(r"[^a-z0-9\s]", " ", without_accents)
+    return re.sub(r"\s+", " ", sanitized_text).strip()
 
 
 def normalize_city_input(text: Optional[str]) -> Optional[str]:
@@ -122,8 +122,8 @@ def normalize_city_input(text: Optional[str]) -> Optional[str]:
         canonical_norm = _normalize_text_for_matching(canonical_city)
         if normalized == canonical_norm:
             return canonical_city
-        for syn in synonyms:
-            if normalized == _normalize_text_for_matching(syn):
+        for synonym in synonyms:
+            if normalized == _normalize_text_for_matching(synonym):
                 return canonical_city
     return None
 
@@ -132,16 +132,16 @@ def interpret_yes_no(text: Optional[str]) -> Optional[bool]:
     """Interpreta respuesta afirmativa o negativa."""
     if not text:
         return None
-    base = _normalize_token(text)
-    if not base:
+    text_base = _normalize_token(text)
+    if not text_base:
         return None
-    tokens = base.split()
+    tokens = text_base.split()
     normalized_affirmative = {_normalize_token(word) for word in AFFIRMATIVE_WORDS}
     normalized_negative = {_normalize_token(word) for word in NEGATIVE_WORDS}
 
-    if base in normalized_affirmative:
+    if text_base in normalized_affirmative:
         return True
-    if base in normalized_negative:
+    if text_base in normalized_negative:
         return False
 
     for token in tokens:
@@ -159,10 +159,10 @@ def _safe_json_loads(payload: str) -> Optional[Dict[str, Any]]:
     try:
         return json.loads(payload)
     except json.JSONDecodeError:
-        match = re.search(r"\{.*\}", payload, re.DOTALL)
-        if match:
+        json_match = re.search(r"\{.*\}", payload, re.DOTALL)
+        if json_match:
             try:
-                return json.loads(match.group(0))
+                return json.loads(json_match.group(0))
             except json.JSONDecodeError:
                 return None
         return None
