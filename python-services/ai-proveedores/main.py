@@ -124,12 +124,18 @@ from services.image_service import (
 # Importar servicio de búsqueda de proveedores
 from services.search_service import buscar_proveedores
 
+# Importar servicio OpenAI
+from services.openai_service import procesar_mensaje_proveedor
+
 # Importar servicios de sesión
 from services.session_service import (
     verificar_timeout_sesion,
     actualizar_timestamp_sesion,
     reiniciar_por_timeout,
 )
+
+# Importar servicio de notificaciones
+from services.notification_service import notificar_aprobacion_proveedor
 
 # Importar flujo de WhatsApp
 from flows.whatsapp_flow import WhatsAppFlow
@@ -248,50 +254,6 @@ RESET_KEYWORDS = {
 
 
 # Función obsoleta eliminada - ahora se usa register_provider_unified()
-
-
-# Función para procesar mensajes con OpenAI
-async def procesar_mensaje_con_openai(message: str, phone: str) -> str:
-    """Procesar mensaje entrante con OpenAI"""
-    if not openai_client:
-        return "Lo siento, el servicio de IA no está disponible en este momento."
-
-    try:
-        # Contexto para el asistente de proveedores
-        system_prompt = """Eres un asistente de TinkuBot Proveedores. Tu función es:
-
-1. Ayudar a los proveedores a registrarse en el sistema
-2. Responder preguntas sobre cómo funciona el servicio
-3. Proporcionar información sobre servicios disponibles
-4. Ser amable y profesional
-
-Si un proveedor quiere registrarse, pregunta:
-- Nombre completo
-- Profesión oficio
-- Número de teléfono
-- Correo electrónico (opcional)
-- Dirección
-- Ciudad
-
-Si es una consulta general, responde amablemente."""
-
-        response = openai_client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": message},
-            ],
-            max_tokens=500,
-            temperature=0.7,
-        )
-
-        return cast(str, response.choices[0].message.content)
-    except Exception as e:
-        logger.error(f"❌ Error procesando mensaje con OpenAI: {e}")
-        return (
-            "Lo siento, tuve un problema al procesar tu mensaje. "
-            "Por favor intenta de nuevo."
-        )
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -425,50 +387,29 @@ async def send_whatsapp_message(
 async def notify_provider_approval(
     provider_id: str, background_tasks: BackgroundTasks
 ) -> Dict[str, Any]:
-    """Notifica por WhatsApp que un proveedor fue aprobado."""
+    """
+    Notifica por WhatsApp que un proveedor fue aprobado.
+
+    Este endpoint es un wrapper HTTP que delega toda la lógica de negocio
+    al servicio de notificaciones. La notificación se envía en segundo plano
+    usando background tasks.
+
+    Args:
+        provider_id: ID del proveedor a notificar
+        background_tasks: FastAPI BackgroundTasks para ejecución asíncrona
+
+    Returns:
+        Dict[str, Any]: Respuesta indicando que la notificación fue encolada
+
+    Raises:
+        HTTPException: Si Supabase no está configurado (503)
+    """
     if not supabase:
         raise HTTPException(status_code=503, detail="Supabase no configurado")
 
     async def _notify():
-        try:
-            resp = await run_supabase(
-                lambda: supabase.table("providers")
-                .select("id, phone, full_name, verified")
-                .eq("id", provider_id)
-                .limit(1)
-                .execute(),
-                label="providers.by_id_notify",
-            )
-        except Exception as exc:
-            logger.error(f"No se pudo obtener proveedor {provider_id}: {exc}")
-            return
-
-        if not resp.data:
-            logger.warning("Proveedor %s no encontrado para notificar", provider_id)
-            return
-
-        provider = resp.data[0]
-        phone = provider.get("phone")
-        if not phone:
-            logger.warning("Proveedor %s sin teléfono, no se notifica", provider_id)
-            return
-
-        name = provider.get("full_name") or ""
-        message = provider_approved_notification(name)
-        await send_whatsapp_message(
-            WhatsAppMessageRequest(phone=phone, message=message)
-        )
-
-        try:
-            await run_supabase(
-                lambda: supabase.table("providers")
-                .update({"approved_notified_at": datetime.utcnow().isoformat()})
-                .eq("id", provider_id)
-                .execute(),
-                label="providers.mark_notified",
-            )
-        except Exception as exc:  # pragma: no cover - tolerante a esquema
-            logger.warning(f"No se pudo registrar approved_notified_at: {exc}")
+        """Ejecuta la notificación en segundo plano."""
+        await notificar_aprobacion_proveedor(supabase, provider_id)
 
     background_tasks.add_task(asyncio.create_task, _notify())
     return {"success": True, "queued": True}

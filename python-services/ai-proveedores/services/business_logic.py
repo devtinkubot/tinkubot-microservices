@@ -170,7 +170,8 @@ async def registrar_proveedor(
 
             perfil_normalizado = aplicar_valores_por_defecto_proveedor(provider_record)
             # Importar localmente para evitar ciclo de importación
-            from services.search_cache import cachear_perfil_proveedor
+            # CORRECCIÓN: search_cache no existe, usar profile_service
+            from services.profile_service import cachear_perfil_proveedor
 
             await cachear_perfil_proveedor(
                 perfil_normalizado.get("phone", datos_normalizados["phone"]),
