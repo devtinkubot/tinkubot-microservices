@@ -11,6 +11,7 @@ from .search_service import (
 )
 from .messaging_service import MessagingService
 from .customer_service import CustomerService
+from .consent_service import ConsentService
 
 __all__ = [
     "AvailabilityCoordinator",
@@ -20,4 +21,5 @@ __all__ = [
     "search_providers",
     "MessagingService",
     "CustomerService",
+    "ConsentService",
 ]

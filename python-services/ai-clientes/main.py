@@ -88,6 +88,7 @@ from services.validation_service import (
 # Importar servicios de mensajería y cliente (Sprint 1.10)
 from services.messaging_service import MessagingService
 from services.customer_service import CustomerService
+from services.consent_service import ConsentService
 from shared_lib.redis_client import redis_client
 from shared_lib.service_catalog import (
     COMMON_SERVICE_SYNONYMS,
@@ -192,6 +193,10 @@ messaging_service = MessagingService(
 ) if supabase else None
 
 customer_service = CustomerService(
+    supabase_client=supabase
+) if supabase else None
+
+consent_service = ConsentService(
     supabase_client=supabase
 ) if supabase else None
 
@@ -393,107 +398,6 @@ def ui_provider_results(text: str, providers: list[Dict[str, Any]]):
     }
 
 
-async def request_consent(phone: str) -> Dict[str, Any]:
-    """Envía mensaje de solicitud de consentimiento con formato numérico."""
-    messages = [{"response": msg} for msg in mensajes_flujo_consentimiento()]
-    return {"messages": messages}
-
-
-async def handle_consent_response(
-    phone: str,
-    customer_profile: Dict[str, Any],
-    selected_option: str,
-    payload: Dict[str, Any],
-) -> Dict[str, Any]:
-    """Maneja la respuesta de consentimiento del cliente."""
-
-    # Mapear respuesta del botón o texto
-    if selected_option in ["1", "Acepto"]:
-        response = "accepted"
-
-        # Actualizar has_consent a TRUE
-        try:
-            await run_supabase(
-                lambda: supabase.table("customers")
-                .update({"has_consent": True})
-                .eq("id", customer_profile.get("id"))
-                .execute(),
-                label="customers.update_consent",
-            )
-
-            # Guardar registro legal en tabla consents con metadata completa
-            consent_data = {
-                "consent_timestamp": payload.get("timestamp"),
-                "phone": payload.get("from_number"),
-                "message_id": payload.get("message_id"),
-                "exact_response": payload.get("content"),
-                "consent_type": "provider_contact",
-                "platform": "whatsapp",
-                "message_type": payload.get("message_type"),
-                "device_type": payload.get("device_type"),
-            }
-
-            consent_record = {
-                "user_id": customer_profile.get("id"),
-                "user_type": "customer",
-                "response": response,
-                "message_log": json.dumps(consent_data, ensure_ascii=False),
-            }
-            await run_supabase(
-                lambda: supabase.table("consents").insert(consent_record).execute(),
-                label="consents.insert_opt_in",
-            )
-
-            logger.info(f"✅ Consentimiento aceptado por cliente {phone}")
-
-        except Exception as exc:
-            logger.error(f"❌ Error guardando consentimiento para {phone}: {exc}")
-
-        # Después de aceptar, continuar con el flujo normal mostrando el prompt inicial
-        return {"response": mensaje_inicial_solicitud_servicio}
-
-    else:  # "No acepto"
-        response = "declined"
-        message = """Entendido. Sin tu consentimiento no puedo compartir tus datos con proveedores.
-
-Si cambias de opinión, simplemente escribe "hola" y podremos empezar de nuevo.
-
-📞 ¿Necesitas ayuda directamente? Llámanos al [número de atención al cliente]"""
-
-        # Guardar registro legal igualmente con metadata completa
-        try:
-            consent_data = {
-                "consent_timestamp": payload.get("timestamp"),
-                "phone": payload.get("from_number"),
-                "message_id": payload.get("message_id"),
-                "exact_response": payload.get("content"),
-                "consent_type": "provider_contact",
-                "platform": "whatsapp",
-                "message_type": payload.get("message_type"),
-                "device_type": payload.get("device_type"),
-            }
-
-            consent_record = {
-                "user_id": customer_profile.get("id"),
-                "user_type": "customer",
-                "response": response,
-                "message_log": json.dumps(consent_data, ensure_ascii=False),
-            }
-            await run_supabase(
-                lambda: supabase.table("consents").insert(consent_record).execute(),
-                label="consents.insert_decline",
-            )
-
-            logger.info(f"❌ Consentimiento rechazado por cliente {phone}")
-
-        except Exception as exc:
-            logger.error(
-                f"❌ Error guardando rechazo de consentimiento para {phone}: {exc}"
-            )
-
-        return {"response": message}
-
-
 def provider_prompt_messages(city: str, providers: list[Dict[str, Any]]):
     header = mensaje_intro_listado_proveedores(city)
     header_block = f"{header}\n\n{bloque_listado_proveedores_compacto(providers)}"
@@ -547,32 +451,6 @@ async def send_confirm_prompt(phone: str, flow: Dict[str, Any], title: str):
         except Exception:
             pass
     return {"messages": messages}
-
-
-def normalize_button(val: Optional[str]) -> Optional[str]:
-    """
-    Normaliza valores de botones/opciones enviados desde WhatsApp.
-
-    - Extrae el número inicial (e.g. "1 Sí, acepto" -> "1")
-    - Compacta espacios adicionales
-    - Devuelve None si la cadena está vacía tras limpiar
-    """
-    if val is None:
-        return None
-
-    text = str(val).strip()
-    if not text:
-        return None
-
-    # Reemplazar espacios múltiples por uno solo
-    text = re.sub(r"\s+", " ", text)
-
-    # Si inicia con un número (1, 2, 10, etc.), devolver solo el número
-    match = re.match(r"^(\d+)", text)
-    if match:
-        return match.group(1)
-
-    return text
 
 
 def formal_connection_message(provider: Dict[str, Any], service: str, city: str) -> Dict[str, Any]:
@@ -954,55 +832,12 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
 
         customer_profile = await customer_service.get_or_create_customer(phone=phone)
 
-        # Validación de consentimiento
-        if not customer_profile:
-            return await request_consent(phone)
-
-        # Si no tiene consentimiento, verificar si está respondiendo a la solicitud
-        if not customer_profile.get("has_consent"):
-            selected = normalize_button(payload.get("selected_option"))
-            text_content_raw = (payload.get("content") or "").strip()
-            text_numeric_option = normalize_button(text_content_raw)
-
-            # Normalizar para comparaciones case-insensitive
-            selected_lower = selected.lower() if isinstance(selected, str) else None
-
-            # Priorizar opciones seleccionadas mediante botones o quick replies
-            if selected in {"1", "2"}:
-                return await handle_consent_response(
-                    phone, customer_profile, selected, payload
-                )
-            if selected_lower in {
-                opciones_consentimiento_textos[0].lower(),
-                opciones_consentimiento_textos[1].lower(),
-            }:
-                option_to_process = (
-                    "1" if selected_lower == opciones_consentimiento_textos[0].lower() else "2"
-                )
-                return await handle_consent_response(
-                    phone, customer_profile, option_to_process, payload
-                )
-
-            # Interpretar texto libre numérico (ej. usuario responde "1" o "2")
-            if text_numeric_option in {"1", "2"}:
-                return await handle_consent_response(
-                    phone, customer_profile, text_numeric_option, payload
-                )
-
-            # Interpretar textos afirmativos/negativos libres
-            is_consent_text = interpret_yes_no(text_content_raw) == True
-            is_declined_text = interpret_yes_no(text_content_raw) == False
-
-            if is_consent_text:
-                return await handle_consent_response(
-                    phone, customer_profile, "1", payload
-                )
-            if is_declined_text:
-                return await handle_consent_response(
-                    phone, customer_profile, "2", payload
-                )
-
-            return await request_consent(phone)
+        # Validación de consentimiento usando ConsentService
+        consent_result = await consent_service.validate_and_handle_consent(
+            phone, customer_profile, payload, mensaje_inicial_solicitud_servicio
+        )
+        if consent_result:
+            return consent_result
 
         flow = await get_flow(phone)
 
@@ -1063,7 +898,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
             )
 
         text = (payload.get("content") or "").strip()
-        selected = normalize_button(payload.get("selected_option"))
+        selected = consent_service.normalize_button(payload.get("selected_option"))
         msg_type = payload.get("message_type")
         location = payload.get("location") or {}
 
