@@ -4,8 +4,16 @@ from .availability_service import (
     AvailabilityCoordinator,
     availability_coordinator,
 )
+from .search_service import (
+    extract_profession_and_location,
+    intelligent_search_providers_remote,
+    search_providers,
+)
 
 __all__ = [
     "AvailabilityCoordinator",
     "availability_coordinator",
+    "extract_profession_and_location",
+    "intelligent_search_providers_remote",
+    "search_providers",
 ]
