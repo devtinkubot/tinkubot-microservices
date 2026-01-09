@@ -253,3 +253,24 @@ def menu_opciones_confirmacion(include_city_option: bool = False) -> str:
             ]
         )
     return "\n".join(lines)
+
+
+# ============================================================================
+# MENSAJES DE VALIDACIÓN Y SEGURIDAD
+# ============================================================================
+
+mensaje_error_input_sin_sentido = (
+    "No entendí tu mensaje. ¿Podrías decirlo de otra forma?\n\n"
+    "Por favor, describe el servicio que necesitas (ej: plomero, electricista)."
+)
+
+mensaje_advertencia_contenido_ilegal = (
+    "⚠️ Tu mensaje contiene contenido que no está permitido en nuestra plataforma.\n\n"
+    "Por favor, mantén una comunicación respetuosa y apropiada."
+)
+
+mensaje_ban_usuario = (
+    "🚫 Tu cuenta ha sido temporalmente suspendida por infringir nuestras normas.\n\n"
+    "Podrás volver a intentarlo a partir de las {hora_reinicio}.\n\n"
+    "Si crees que esto es un error, por favor contáctanos."
+)

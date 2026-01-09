@@ -40,6 +40,9 @@ from templates.prompts import (
     texto_opcion_buscar_otro_servicio,
     titulo_confirmacion_repetir_busqueda,
     instruccion_seleccionar_proveedor,
+    mensaje_error_input_sin_sentido,
+    mensaje_advertencia_contenido_ilegal,
+    mensaje_ban_usuario,
 )
 
 from shared_lib.config import settings
@@ -73,6 +76,14 @@ from services.search_service import (
     extract_profession_and_location,
     intelligent_search_providers_remote,
     search_providers,
+)
+# Importar servicios de validación
+from services.validation_service import (
+    check_if_banned,
+    record_warning,
+    record_ban,
+    get_warning_count,
+    validate_content_with_ai,
 )
 from shared_lib.redis_client import redis_client
 from shared_lib.service_catalog import (
@@ -453,204 +464,6 @@ async def save_service_relation(
     except Exception as e:
         logger.warning(f"⚠️ Error guardando relación de servicio: {e}")
         return False
-
-
-# ============================================================================
-# SISTEMA DE BANEO Y TRACKING DE ADVERTENCIAS
-# ============================================================================
-
-async def check_if_banned(phone: str) -> bool:
-    """Verifica si el usuario está baneado.
-
-    Lee de Redis la clave ban:{phone} y retorna True si existe.
-    """
-    try:
-        ban_data = await redis_client.get(f"ban:{phone}")
-        return bool(ban_data)
-    except Exception as e:
-        logger.warning(f"⚠️ Error verificando ban para {phone}: {e}")
-        return False
-
-
-async def record_warning(phone: str, offense: str) -> None:
-    """Registra una advertencia en Redis (TTL 15 min).
-
-    Guarda en warnings:{phone} el contador de advertencias y la última ofensa.
-    """
-    try:
-        key = f"warnings:{phone}"
-        existing = await redis_client.get(key) or {}
-        existing = existing if isinstance(existing, dict) else {}
-
-        existing["count"] = existing.get("count", 0) + 1
-        existing["last_warning_at"] = datetime.utcnow().isoformat()
-        existing["last_offense"] = offense
-
-        await redis_client.set(key, existing, expire=900)  # 15 minutos
-        logger.info(f"⚠️ Advertencia registrada para {phone}: {offense} (total: {existing['count']})")
-    except Exception as e:
-        logger.warning(f"⚠️ Error registrando warning para {phone}: {e}")
-
-
-async def record_ban(phone: str, reason: str) -> None:
-    """Registra un ban de 15 minutos en Redis (TTL 15 min).
-
-    Guarda en ban:{phone} los detalles del ban con expiración automática.
-    """
-    from datetime import timedelta
-
-    try:
-        ban_data = {
-            "banned_at": datetime.utcnow().isoformat(),
-            "reason": reason,
-            "offense_count": 2,
-            "expires_at": (datetime.utcnow() + timedelta(minutes=15)).isoformat()
-        }
-        await redis_client.set(f"ban:{phone}", ban_data, expire=900)  # 15 minutos
-        logger.info(f"🚫 Ban registrado para {phone}: {reason}")
-    except Exception as e:
-        logger.warning(f"⚠️ Error registrando ban para {phone}: {e}")
-
-
-async def get_warning_count(phone: str) -> int:
-    """Obtiene el número de advertencias activas para un teléfono.
-
-    Lee de Redis warnings:{phone} y retorna el contador.
-    """
-    try:
-        data = await redis_client.get(f"warnings:{phone}")
-        if data and isinstance(data, dict):
-            return data.get("count", 0)
-        return 0
-    except Exception as e:
-        logger.warning(f"⚠️ Error obteniendo warning count para {phone}: {e}")
-        return 0
-
-
-# ============================================================================
-# VALIDACIÓN DE CONTENIDO CON IA
-# ============================================================================
-
-async def validate_content_with_ai(
-    text: str, phone: str
-) -> tuple[bool, Optional[str], Optional[str]]:
-    """
-    Valida el contenido usando IA para detectar contenido ilegal/inapropiado o sin sentido.
-
-    Retorna: (should_proceed, warning_message, ban_message)
-
-    - should_proceed: True si el contenido es válido, False si debe rechazarse
-    - warning_message: Mensaje de advertencia (1era ofensa), None si no aplica
-    - ban_message: Mensaje de ban (2da ofensa), None si no aplica
-    """
-    if not openai_client:
-        logger.warning("⚠️ validate_content_with_ai sin cliente OpenAI")
-        return True, None, None  # Si no hay OpenAI, permitir por defecto
-
-    logger.info(f"🔍 Validando contenido con IA: '{text[:50]}...' (phone: {phone})")
-
-    system_prompt = """
-Eres un moderador de contenido experto. Detecta si el texto contiene:
-
-1. CONTENIDO ILEGAL O INAPROPIADO:
-   - Armas, violencia, delitos
-   - Drogas, sustancias ilegales
-   - Servicios sexuales, prostitución, contenido pornográfico
-   - Odio, discriminación, acoso
-
-2. INPUT SIN SENTIDO O FALSO:
-   - "necesito dinero" (cuando NO busca préstamos, es engañoso)
-   - "dinero abeja" (sin sentido, alucinación)
-   - Textos que no expresan una necesidad real de servicio
-
-Responde SOLO con JSON:
-{
-  "is_valid": true/false,
-  "category": "valid" | "illegal" | "inappropriate" | "nonsense" | "false",
-  "reason": "explicación breve",
-  "should_ban": true/false
-}
-"""
-
-    user_prompt = f'Analiza este mensaje de usuario: "{text}"'
-
-    try:
-        async with openai_semaphore:
-            response = await asyncio.wait_for(
-                openai_client.chat.completions.create(
-                    model="gpt-3.5-turbo",
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                    temperature=0.3,
-                    max_tokens=150,
-                ),
-                timeout=OPENAI_TIMEOUT_SECONDS,
-            )
-
-        if not response.choices:
-            logger.warning("⚠️ OpenAI respondió sin choices en validate_content_with_ai")
-            return True, None, None  # Permitir por defecto si falla
-
-        content = (response.choices[0].message.content or "").strip()
-        if content.startswith("```"):
-            content = re.sub(r"^```(?:json)?", "", content, flags=re.IGNORECASE).strip()
-            content = re.sub(r"```$", "", content).strip()
-
-        logger.debug(f"🔍 Respuesta validación IA: {content}")
-
-        parsed = _safe_json_loads(content)
-        if not parsed or not isinstance(parsed, dict):
-            logger.warning(f"⚠️ No se pudo parsear respuesta de validación: {content}")
-            return True, None, None  # Permitir por defecto si falla
-
-        is_valid = parsed.get("is_valid", True)
-        category = parsed.get("category", "valid")
-        reason = parsed.get("reason", "")
-        should_ban = parsed.get("should_ban", False)
-
-        # Caso 1: Contenido válido
-        if is_valid and category == "valid":
-            logger.info(f"✅ Contenido válido: '{text[:30]}...'")
-            return True, None, None
-
-        # Caso 2: Input sin sentido o falso (NO banea, solo rechaza)
-        if category in ("nonsense", "false"):
-            from templates.prompts import mensaje_error_input_sin_sentido
-            logger.info(f"❌ Input sin sentido detectado: '{text[:30]}...' - {reason}")
-            return False, mensaje_error_input_sin_sentido, None
-
-        # Caso 3: Contenido ilegal/inapropiado (puede banear)
-        from templates.prompts import mensaje_advertencia_contenido_ilegal, mensaje_ban_usuario
-        from datetime import timedelta
-
-        # Verificar advertencias previas
-        warning_count = await get_warning_count(phone)
-
-        if warning_count == 0:
-            # Primera ofensa: advertir
-            logger.warning(f"⚠️ Primera ofensa ilegal/inapropiado para {phone}: {reason}")
-            await record_warning(phone, f"{category}: {reason}")
-            return False, mensaje_advertencia_contenido_ilegal, None
-        else:
-            # Segunda ofensa: banear
-            logger.warning(f"🚫 Segunda ofensa ilegal/inapropiado para {phone}: BANEANDO")
-            await record_ban(phone, f"{category}: {reason} (2da ofensa)")
-
-            # Calcular hora de reinicio
-            restart_time = datetime.utcnow() + timedelta(minutes=15)
-            restart_str = restart_time.strftime("%H:%M")
-
-            ban_msg = mensaje_ban_usuario.format(hora_reinicio=restart_str)
-            return False, None, ban_msg
-
-    except asyncio.TimeoutError:
-        logger.warning("⚠️ Timeout en validate_content_with_ai")
-        return True, None, None  # Permitir por defecto si timeout
-    except Exception as exc:
-        logger.exception("Fallo en validate_content_with_ai: %s", exc)
-        return True, None, None  # Permitir por defecto si error
 
 
 # --- Conversational flow helpers ---
@@ -1692,7 +1505,14 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
 
             # 2. Validación IA de contenido
             should_proceed, warning_msg, ban_msg = await validate_content_with_ai(
-                text or "", phone
+                text or "",
+                phone,
+                openai_client=openai_client,
+                openai_semaphore=openai_semaphore,
+                timeout_seconds=OPENAI_TIMEOUT_SECONDS,
+                mensaje_error_input=mensaje_error_input_sin_sentido,
+                mensaje_advertencia=mensaje_advertencia_contenido_ilegal,
+                mensaje_ban_template=mensaje_ban_usuario,
             )
 
             if ban_msg:
