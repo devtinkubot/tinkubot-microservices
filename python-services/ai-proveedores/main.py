@@ -123,6 +123,9 @@ from services.image_service import (
     subir_medios_identidad,
 )
 
+# Importar servicio de búsqueda de proveedores
+from services.search_service import buscar_proveedores
+
 # Configurar logging
 logging.basicConfig(level=getattr(logging, local_settings.log_level))
 logger = logging.getLogger(__name__)
@@ -247,36 +250,6 @@ async def actualizar_servicios_proveedor(
         raise
 
     return servicios_limpios
-
-
-async def buscar_proveedores(
-    profesion: str, ubicacion: Optional[str] = None, limite: int = 10
-) -> List[Dict[str, Any]]:
-    """
-    Búsqueda directa sin joins complejos usando el esquema unificado.
-    """
-    if not supabase:
-        return []
-
-    filtros: List[str] = []
-    if profesion:
-        filtros.append(f"profession.ilike.*{profesion}*")
-    if ubicacion:
-        filtros.append(f"city.ilike.*{ubicacion}*")
-
-    try:
-        query = supabase.table("providers").select("*").eq("verified", True)
-        if filtros:
-            query = query.or_(",".join(filtros))
-        consulta = await run_supabase(
-            lambda: query.limit(limite).execute(), label="providers.search"
-        )
-        resultados = consulta.data or []
-        return [aplicar_valores_por_defecto_proveedor(item) for item in resultados]
-
-    except Exception as e:
-        logger.error("❌ Error en búsqueda de proveedores: %s", e)
-        return []
 
 
 # Funciones obsoletas eliminadas - ahora se usa esquema unificado
