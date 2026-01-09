@@ -42,7 +42,6 @@ from app.dependencies import get_supabase, get_openai
 
 from shared_lib.models import (
     ProviderCreate,
-    ProviderResponse,
 )
 from shared_lib.redis_client import redis_client
 
@@ -356,14 +355,10 @@ async def buscar_proveedores_endpoint(
             limite=request.limit or 10,
         )
 
-        # Convertir a formato de respuesta
-        respuestas_proveedores = [
-            ProviderResponse(**proveedor) for proveedor in proveedores
-        ]
-
+        # Los proveedores ya vienen como diccionarios de buscar_proveedores()
         return ProviderSearchResponse(
-            providers=respuestas_proveedores,
-            count=len(respuestas_proveedores),
+            providers=proveedores,
+            count=len(proveedores),
             location=request.location or "Ecuador",
             profession=request.profession,
         )
