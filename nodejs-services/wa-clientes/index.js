@@ -8,11 +8,11 @@ const rateLimit = require('express-rate-limit');
 const axios = require('axios');
 const http = require('http');
 const https = require('https');
-const { Server } = require('socket.io');
 const SupabaseStore = require('./SupabaseStore');
 const config = require('./src/infrastructure/config/envConfig');
 const axiosClient = require('./src/infrastructure/http/axiosClient');
 const MessageSenderWithRetry = require('./src/infrastructure/messaging/MessageSenderWithRetry');
+const SocketIOServer = require('./src/infrastructure/websocket/SocketIOServer');
 
 // Validar configuración
 config.validate();
@@ -95,12 +95,7 @@ app.post('/send', async (req, res) => {
 
 // Configurar servidor HTTP y WebSocket
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: '*',
-    methods: ['GET', 'POST'],
-  },
-});
+const socketServer = new SocketIOServer(server);
 
 let qrCodeData = null;
 let clientStatus = 'disconnected';
@@ -304,11 +299,7 @@ client.on('qr', qr => {
   clientStatus = 'qr_ready';
 
   // Notificar a clientes WebSocket
-  io.emit('status', {
-    status: 'qr_ready',
-    qr,
-    timestamp: new Date().toISOString(),
-  });
+  socketServer.notifyQR(qr);
 });
 
 // Marcar como conectado al autenticarse (al escanear QR)
@@ -318,17 +309,13 @@ client.on('authenticated', () => {
   }
   clientStatus = 'connected';
   qrCodeData = null;
-  io.emit('status', { status: 'connected', timestamp: new Date().toISOString() });
+  socketServer.notifyConnected();
 });
 
 client.on('auth_failure', msg => {
   console.error(`[${instanceName}] Falla de autenticación:`, msg);
   clientStatus = 'disconnected';
-  io.emit('status', {
-    status: 'disconnected',
-    reason: 'auth_failure',
-    timestamp: new Date().toISOString(),
-  });
+  socketServer.notifyAuthFailure(msg);
   resetWhatsAppSession('auth_failure', { attemptLogout: false }).catch(error =>
     console.error(`[${instanceName}] Error intentando recuperar tras auth_failure:`, error)
   );
@@ -342,10 +329,7 @@ client.on('ready', () => {
   clientStatus = 'connected';
 
   // Notificar a clientes WebSocket
-  io.emit('status', {
-    status: 'connected',
-    timestamp: new Date().toISOString(),
-  });
+  socketServer.notifyConnected();
 });
 
 let lastSessionSavedLog = 0;
@@ -510,11 +494,7 @@ client.on('disconnected', reason => {
   console.error(`[${instanceName}] Estado previo a reinicio: ${clientStatus}`);
   clientStatus = 'disconnected';
 
-  io.emit('status', {
-    status: 'disconnected',
-    reason,
-    timestamp,
-  });
+  socketServer.notifyDisconnected(reason);
 
   if (!shouldAutoReconnect(reason)) {
     console.warn(`[${instanceName}] Desconexión provocada por logout manual; no se reintenta.`);
