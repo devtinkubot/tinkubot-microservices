@@ -43,15 +43,6 @@ from shared_lib.models import (
     ProviderCreate,
 )
 from shared_lib.redis_client import redis_client
-
-# Importar modelos Pydantic locales
-from models.schemas import (
-    IntelligentSearchRequest,
-    WhatsAppMessageRequest,
-    WhatsAppMessageReceive,
-    HealthResponse,
-)
-
 # Importar utilidades de servicios
 from utils.services_utils import (
     SERVICIOS_MAXIMOS,
@@ -72,9 +63,6 @@ from utils.storage_utils import (
     _safe_json_loads,
     extract_first_image_base64,
 )
-
-# Importar utilidades de base de datos
-from utils.db_utils import run_supabase
 
 # Importar lógica de negocio de proveedores
 from services.business_logic import (
@@ -124,9 +112,6 @@ from services.image_service import (
     subir_medios_identidad,
 )
 
-# Importar servicio de búsqueda de proveedores
-from services.search_service import buscar_proveedores
-
 # Importar servicio OpenAI
 from services.openai_service import procesar_mensaje_proveedor
 
@@ -137,12 +122,12 @@ from services.session_service import (
     reiniciar_por_timeout,
 )
 
-# Importar servicio de notificaciones
-from services.notification_service import notificar_aprobacion_proveedor
-
-# Importar servicio de orquestación de WhatsApp
-from services.whatsapp_orchestrator_service import (
-    WhatsAppOrchestrator,
+# Importar routers API
+from app.api import (
+    health_router,
+    search_router,
+    whatsapp_router,
+    providers_router,
 )
 
 # Configurar logging
@@ -162,10 +147,6 @@ if openai_client:
     logger.info("✅ Conectado a OpenAI")
 else:
     logger.warning("⚠️ No se configuró OpenAI")
-
-# Inicializar orquestador de WhatsApp
-whatsapp_orchestrator = WhatsAppOrchestrator(supabase_client=supabase)
-logger.info("✅ Orquestador de WhatsApp inicializado")
 
 
 # Crear aplicación FastAPI
@@ -199,33 +180,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Datos de fallback para proveedores (solo si Supabase no está disponible)
-FALLBACK_PROVIDERS = [
-    {
-        "id": 1,
-        "name": "Juan Pérez",
-        "profession": "plomero",
-        "phone": "+593999999999",
-        "email": "juan.perez@email.com",
-        "address": "Av. Principal 123",
-        "city": "Cuenca",
-        "rating": 4.5,
-        "distance_km": 2.5,
-        "available": True,
-    },
-    {
-        "id": 2,
-        "name": "María García",
-        "profession": "electricista",
-        "phone": "+593888888888",
-        "email": "maria.garcia@email.com",
-        "address": "Calle Central 456",
-        "city": "Cuenca",
-        "rating": 4.8,
-        "distance_km": 3.2,
-        "available": True,
-    },
-]
+# Incluir routers API
+app.include_router(health_router, tags=["health"])
+app.include_router(search_router, prefix="", tags=["search"])
+app.include_router(whatsapp_router, prefix="", tags=["whatsapp"])
+app.include_router(providers_router, prefix="", tags=["providers"])
 
 # ProviderMatch eliminado - ya no se usa con esquema unificado
 
@@ -245,229 +204,6 @@ FALLBACK_PROVIDERS = [
 
 
 # Función obsoleta eliminada - ahora se usa register_provider_unified()
-
-
-@app.get("/health", response_model=HealthResponse)
-async def health_check() -> HealthResponse:
-    """Health check endpoint"""
-    try:
-        # Verificar conexión a Supabase
-        supabase_status = "not_configured"
-        if supabase:
-            try:
-                await run_supabase(
-                    lambda: supabase.table("providers").select("id").limit(1).execute()
-                )
-                supabase_status = "connected"
-            except Exception:
-                supabase_status = "error"
-
-        return HealthResponse(
-            status="healthy",
-            service="ai-proveedores",
-            timestamp=datetime.now().isoformat(),
-            supabase=supabase_status,
-        )
-    except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        return HealthResponse(
-            status="unhealthy",
-            service="ai-service-proveedores-mejorado",
-            timestamp=datetime.now().isoformat(),
-        )
-
-
-@app.post("/intelligent-search")
-async def busqueda_inteligente(
-    request: IntelligentSearchRequest,
-) -> Dict[str, Any]:
-    """
-    Búsqueda inteligente simplificada usando búsqueda directa.
-    """
-    try:
-        ubicacion = request.ubicacion or ""
-        profesion = request.profesion_principal or (request.necesidad_real or "")
-        if not profesion:
-            raise HTTPException(
-                status_code=400,
-                detail="Se requiere al menos profesión principal para la búsqueda.",
-            )
-
-        # Usar búsqueda directa en español
-        proveedores = await buscar_proveedores(
-            profesion=profesion, ubicacion=ubicacion, limite=20
-        )
-
-        logger.info(
-            "🧠 Búsqueda inteligente simplificada profesion=%s ubicacion=%s "
-            "resultados=%s",
-            profesion,
-            ubicacion,
-            len(proveedores),
-        )
-
-        return {
-            "providers": proveedores,
-            "total": len(proveedores),
-            "query_expansions": [],  # Simplificado - sin expansión IA
-            "metadata": {
-                "specialties_used": request.especialidades or [],
-                "synonyms_used": request.sinonimos or [],
-                "urgency": request.urgencia,
-                "necesidad_real": request.necesidad_real,
-                "simplified": True,
-            },
-        }
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.error("❌ Error en busqueda_inteligente: %s", exc)
-        raise HTTPException(
-            status_code=500,
-            detail="No se pudo realizar la búsqueda inteligente en este momento.",
-        )
-
-
-@app.post("/send-whatsapp")
-async def send_whatsapp_message(
-    request: WhatsAppMessageRequest,
-) -> Dict[str, Any]:
-    """
-    Enviar mensaje de WhatsApp usando el servicio de WhatsApp
-    """
-    try:
-        logger.info(
-            f"📱 Enviando mensaje WhatsApp a {request.phone}: "
-            f"{request.message[:80]}..."
-        )
-
-        if not local_settings.enable_direct_whatsapp_send:
-            logger.info(
-                "📨 Envío simulado (AI_PROV_SEND_DIRECT=false). No se llamó a wa-proveedores."
-            )
-            return {
-                "success": True,
-                "message": (
-                    "Mensaje enviado exitosamente (simulado - AI_PROV_SEND_DIRECT=false)"
-                ),
-                "simulated": True,
-                "phone": request.phone,
-                "message_preview": (request.message[:80] + "..."),
-            }
-
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.post(
-                local_settings.wa_proveedores_url,
-                json={"phone": request.phone, "message": request.message},
-            )
-            resp.raise_for_status()
-        logger.info(f"✅ Mensaje enviado a {request.phone} via wa-proveedores")
-        return {
-            "success": True,
-            "simulated": False,
-            "phone": request.phone,
-            "message_preview": (request.message[:80] + "..."),
-        }
-
-    except Exception as e:
-        logger.error(f"❌ Error enviando WhatsApp: {e}")
-        return {"success": False, "message": f"Error enviando WhatsApp: {str(e)}"}
-
-
-@app.post("/api/v1/providers/{provider_id}/notify-approval")
-async def notify_provider_approval(
-    provider_id: str, background_tasks: BackgroundTasks
-) -> Dict[str, Any]:
-    """
-    Notifica por WhatsApp que un proveedor fue aprobado.
-
-    Este endpoint es un wrapper HTTP que delega toda la lógica de negocio
-    al servicio de notificaciones. La notificación se envía en segundo plano
-    usando background tasks.
-
-    Args:
-        provider_id: ID del proveedor a notificar
-        background_tasks: FastAPI BackgroundTasks para ejecución asíncrona
-
-    Returns:
-        Dict[str, Any]: Respuesta indicando que la notificación fue encolada
-
-    Raises:
-        HTTPException: Si Supabase no está configurado (503)
-    """
-    if not supabase:
-        raise HTTPException(status_code=503, detail="Supabase no configurado")
-
-    async def _notify():
-        """Ejecuta la notificación en segundo plano."""
-        await notificar_aprobacion_proveedor(supabase, provider_id)
-
-    background_tasks.add_task(asyncio.create_task, _notify())
-    return {"success": True, "queued": True}
-
-
-@app.post("/handle-whatsapp-message")
-async def manejar_mensaje_whatsapp(
-    request: WhatsAppMessageReceive,
-) -> Dict[str, Any]:
-    """
-    Recibir y procesar mensajes entrantes de WhatsApp.
-
-    Este endpoint delega toda la lógica de orquestación al servicio
-    WhatsAppOrchestrator, manteniendo solo la interfaz HTTP.
-
-    Args:
-        request: Mensaje recibido de WhatsApp
-
-    Returns:
-        Dict con la respuesta procesada
-    """
-    return await whatsapp_orchestrator.manejar_mensaje_whatsapp(request)
-
-
-@app.get("/providers")
-async def get_providers(
-    profession: Optional[str] = Query(None, description="Filtrar por profesión"),
-    city: Optional[str] = Query(None, description="Filtrar por ciudad"),
-    available: Optional[bool] = Query(True, description="Solo disponibles"),
-) -> Dict[str, Any]:
-    """Obtener lista de proveedores con filtros desde Supabase"""
-    try:
-        if supabase:
-            # Reusar lógica de búsqueda principal para mantener consistencia
-            lista_proveedores = await buscar_proveedores(
-                profession or "", city or "", 10
-            )
-        else:
-            # Usar datos de fallback
-            filtered_providers = FALLBACK_PROVIDERS
-
-            if profession:
-                filtered_providers = [
-                    p
-                    for p in filtered_providers
-                    if profession.lower() in str(p["profession"]).lower()
-                ]
-
-            if city:
-                filtered_providers = [
-                    p
-                    for p in filtered_providers
-                    if city.lower() in str(p["city"]).lower()
-                ]
-
-            if available is not None:
-                filtered_providers = [
-                    p for p in filtered_providers if p["available"] == available
-                ]
-
-            lista_proveedores = filtered_providers
-
-        return {"providers": lista_proveedores, "count": len(lista_proveedores)}
-
-    except Exception as e:
-        logger.error(f"Error getting providers: {e}")
-        return {"providers": [], "count": 0}
 
 
 if __name__ == "__main__":
