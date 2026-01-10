@@ -23,9 +23,6 @@ RUN pip3 install --no-cache-dir -r requirements.txt
 # Copiar código de la aplicación
 COPY ai-search/ .
 
-# Copiar librería compartida
-COPY shared-lib ./shared_lib
-
 # Crear usuario no root para seguridad
 RUN addgroup --system appgroup && adduser --system --group appuser
 RUN chown -R appuser:appgroup /app

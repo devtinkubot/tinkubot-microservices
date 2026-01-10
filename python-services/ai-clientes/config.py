@@ -1,3 +1,7 @@
+"""
+Configuración local para AI Clientes Service
+"""
+
 import os
 
 from pydantic_settings import BaseSettings
@@ -19,41 +23,17 @@ class Settings(BaseSettings):
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379")
     redis_password: str = os.getenv("REDIS_PASSWORD", "")
 
-    # Service Ports (actualizados según nuevo esquema simplificado)
-    frontend_service_port: int = int(os.getenv("FRONTEND_SERVICE_PORT", "5000"))
+    # Service Port
     clientes_service_port: int = int(
         os.getenv("CLIENTES_SERVER_PORT")
         or os.getenv("AI_SERVICE_CLIENTES_PORT", "8001")
     )
-    proveedores_service_port: int = int(
-        os.getenv("PROVEEDORES_SERVER_PORT")
-        or os.getenv("AI_SERVICE_PROVEEDORES_PORT", "8002")
-    )
-    whatsapp_clientes_port: int = int(
-        os.getenv("CLIENTES_WHATSAPP_PORT")
-        or os.getenv("WHATSAPP_CLIENTES_PORT", "5001")
-    )
-    whatsapp_proveedores_port: int = int(
-        os.getenv("PROVEEDORES_WHATSAPP_PORT")
-        or os.getenv("WHATSAPP_PROVEEDORES_PORT", "5002")
-    )
-    ai_search_port: int = int(os.getenv("AI_SEARCH_PORT", "8000"))
-    session_service_port: int = int(os.getenv("SESSION_SERVICE_PORT", "8004"))
-    api_gateway_port: int = int(os.getenv("API_GATEWAY_PORT", "8003"))
 
     # Instance Configuration
     clientes_instance_id: str = os.getenv("CLIENTES_INSTANCE_ID", "clientes")
     clientes_instance_name: str = os.getenv("CLIENTES_INSTANCE_NAME", "Bot Clientes")
     clientes_whatsapp_number: str = os.getenv(
         "CLIENTES_WHATSAPP_NUMBER", "+593998823053"
-    )
-
-    proveedores_instance_id: str = os.getenv("PROVEEDORES_INSTANCE_ID", "proveedores")
-    proveedores_instance_name: str = os.getenv(
-        "PROVEEDORES_INSTANCE_NAME", "Bot Proveedores"
-    )
-    proveedores_whatsapp_number: str = os.getenv(
-        "PROVEEDORES_WHATSAPP_NUMBER", "+593998823054"
     )
 
     # Database Configuration
@@ -63,12 +43,6 @@ class Settings(BaseSettings):
 
     # Logging
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
-
-    # Feedback scheduler
-    feedback_delay_seconds: int = int(
-        os.getenv("FEEDBACK_DELAY_SECONDS", "300")
-    )  # 5 min por defecto
-    task_poll_interval_seconds: int = int(os.getenv("TASK_POLL_INTERVAL_SECONDS", "60"))
 
     # Flow TTL (seconds) for conversational state in Redis
     flow_ttl_seconds: int = int(os.getenv("FLOW_TTL_SECONDS", "3600"))
@@ -83,16 +57,6 @@ class Settings(BaseSettings):
     session_timeout_warning_percent: float = float(
         os.getenv("SESSION_TIMEOUT_WARNING_PERCENT", "0.5")
     )
-
-    # Provider Session Timeouts (in minutes)
-    prov_timeout_default_minutes: int = int(os.getenv("PROV_TIMEOUT_DEFAULT_MINUTES", "30"))
-    prov_timeout_consent_minutes: int = int(os.getenv("PROV_TIMEOUT_CONSENT_MINUTES", "15"))
-    prov_timeout_data_minutes: int = int(os.getenv("PROV_TIMEOUT_DATA_MINUTES", "10"))
-    prov_timeout_profession_minutes: int = int(os.getenv("PROV_TIMEOUT_PROFESSION_MINUTES", "15"))
-    prov_timeout_photo_minutes: int = int(os.getenv("PROV_TIMEOUT_PHOTO_MINUTES", "30"))
-    prov_timeout_confirm_minutes: int = int(os.getenv("PROV_TIMEOUT_CONFIRM_MINUTES", "10"))
-    prov_timeout_verification_hours: int = int(os.getenv("PROV_TIMEOUT_VERIFICATION_HOURS", "72"))
-    prov_timeout_menu_minutes: int = int(os.getenv("PROV_TIMEOUT_MENU_MINUTES", "60"))
 
     # Client Session Timeouts (in minutes)
     client_timeout_default_minutes: int = int(os.getenv("CLIENT_TIMEOUT_DEFAULT_MINUTES", "20"))
@@ -110,6 +74,12 @@ class Settings(BaseSettings):
     search_api_prefix: str = os.getenv("SEARCH_API_PREFIX", "/api/v1")
     search_metrics_enabled: bool = os.getenv("SEARCH_METRICS_ENABLED", "true").lower() == "true"
     search_metrics_port: int = int(os.getenv("SEARCH_METRICS_PORT", "9091"))
+
+    # Feedback scheduler
+    feedback_delay_seconds: int = int(
+        os.getenv("FEEDBACK_DELAY_SECONDS", "300")
+    )  # 5 min por defecto
+    task_poll_interval_seconds: int = int(os.getenv("TASK_POLL_INTERVAL_SECONDS", "60"))
 
     class Config:
         env_file = ".env"

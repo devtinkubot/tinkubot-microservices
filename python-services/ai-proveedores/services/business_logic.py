@@ -5,7 +5,7 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from shared_lib.models import ProviderCreate
+from models.schemas import ProviderCreate
 from supabase import Client
 
 from utils.services_utils import formatear_servicios, normalizar_profesion_para_storage, normalizar_texto_para_busqueda, sanitizar_servicios

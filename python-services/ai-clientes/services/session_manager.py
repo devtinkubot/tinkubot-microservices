@@ -1,5 +1,5 @@
 """
-Session Manager para TinkuBot
+Session Manager para AI Clientes Service
 Gestiona sesiones de conversación con Redis para mantener contexto
 """
 
@@ -7,7 +7,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List
 
-from .redis_client import redis_client
+from infrastructure.redis import redis_client
 
 logger = logging.getLogger(__name__)
 

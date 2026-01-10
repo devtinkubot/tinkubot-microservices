@@ -24,13 +24,13 @@ from openai import AsyncOpenAI
 # Supabase
 from supabase import create_client
 
-# Shared Library
-from shared_lib.config import settings
-from shared_lib.redis_client import redis_client
-from shared_lib.service_catalog import (
+# Local modules (previously in shared-lib)
+from config import settings
+from infrastructure.redis import redis_client
+from utils.service_catalog import (
     normalize_profession_for_search,
 )
-from shared_lib.session_manager import session_manager
+from services.session_manager import session_manager
 
 # Servicios
 from services.availability_service import availability_coordinator

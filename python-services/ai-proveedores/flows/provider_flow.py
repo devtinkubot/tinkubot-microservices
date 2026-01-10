@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Awaitable, Callable, Dict, Optional
 
 
-from shared_lib.models import ProviderCreate
+from models.schemas import ProviderCreate
 from templates.prompts import (
     provider_under_review_message,
 )

@@ -10,10 +10,8 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from shared_lib.config import settings
-
 # Importar configuración local de ai-proveedores
-from app.config import settings as local_settings
+from app.config import settings
 from app.dependencies import get_supabase, get_openai
 
 # Importar utilidades de servicios
@@ -44,7 +42,7 @@ from app.api import (
 )
 
 # Configurar logging
-logging.basicConfig(level=getattr(logging, local_settings.log_level))
+logging.basicConfig(level=getattr(logging, settings.log_level))
 logger = logging.getLogger(__name__)
 
 # Inicializar clientes de Supabase y OpenAI
@@ -130,5 +128,5 @@ if __name__ == "__main__":
         host=server_host,
         port=server_port,
         reload=os.getenv("UVICORN_RELOAD", "false").lower() == "true",
-        log_level=local_settings.log_level.lower(),
+        log_level=settings.log_level.lower(),
     )

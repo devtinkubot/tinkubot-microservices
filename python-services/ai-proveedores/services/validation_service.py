@@ -4,7 +4,7 @@ import re
 from typing import Any, Dict, Optional, Tuple
 
 from pydantic import ValidationError
-from shared_lib.models import ProviderCreate
+from models.schemas import ProviderCreate
 
 from services.parser_service import (
     normalize_text,

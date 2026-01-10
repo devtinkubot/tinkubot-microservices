@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 import redis.asyncio as redis
 from models.schemas import CacheConfig, Metrics, SearchResult
 
-from shared_lib.config import settings
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 

@@ -3,8 +3,8 @@ from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
 import logging
 
-from shared_lib.redis_client import redis_client
-from shared_lib.config import settings
+from infrastructure.redis import redis_client
+from app.config import settings
 
 from templates.prompts import provider_post_registration_menu_message
 

@@ -12,7 +12,7 @@ from typing import Any, Dict
 from flows.client_flow import ClientFlow
 from services.search_service import extract_profession_and_location
 from services.validation_service import check_if_banned, validate_content_with_ai
-from shared_lib.service_catalog import COMMON_SERVICE_SYNONYMS
+from utils.service_catalog import COMMON_SERVICE_SYNONYMS
 from templates.prompts import (
     mensaje_error_input_sin_sentido,
     mensaje_advertencia_contenido_ilegal,

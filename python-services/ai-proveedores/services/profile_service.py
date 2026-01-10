@@ -3,7 +3,7 @@ import asyncio
 import logging
 from typing import Any, Dict, List, Optional, cast
 
-from shared_lib.redis_client import redis_client
+from infrastructure.redis import redis_client
 from app.config import settings as local_settings
 
 from services.business_logic import aplicar_valores_por_defecto_proveedor

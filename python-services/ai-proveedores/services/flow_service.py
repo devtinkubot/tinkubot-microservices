@@ -2,8 +2,8 @@
 import logging
 from typing import Any, Dict
 
-from shared_lib.redis_client import redis_client
-from shared_lib.config import settings
+from infrastructure.redis import redis_client
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 

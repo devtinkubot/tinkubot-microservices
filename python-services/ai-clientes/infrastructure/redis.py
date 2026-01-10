@@ -5,7 +5,7 @@ from typing import Any, Callable, Dict, Optional
 
 import redis.asyncio as redis
 
-from .config import settings
+from config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +28,7 @@ class RedisClient:
             try:
                 self.redis_client = redis.from_url(
                     settings.redis_url,
+                    password=settings.redis_password,
                     decode_responses=True,
                     socket_timeout=10,  # Aumentado timeout
                     socket_connect_timeout=10,

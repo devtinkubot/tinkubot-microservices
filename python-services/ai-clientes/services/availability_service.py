@@ -19,7 +19,7 @@ except Exception:
     MQTTClient = None
     MqttError = Exception
 
-from shared_lib.redis_client import redis_client
+from infrastructure.redis import redis_client
 
 # Configuración MQTT desde variables de entorno
 MQTT_HOST = os.getenv("MQTT_HOST", "mosquitto")

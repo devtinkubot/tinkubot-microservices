@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from openai import AsyncOpenAI
-from shared_lib.redis_client import redis_client
+from infrastructure.redis import redis_client
 from utils.services_utils import _safe_json_loads
 
 # Logger del módulo

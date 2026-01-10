@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
-from shared_lib.config import settings
+from config import settings
 
 logger = logging.getLogger(__name__)
 

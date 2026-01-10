@@ -13,8 +13,8 @@ import os
 from typing import Any, Dict, Optional
 
 import httpx
-from shared_lib.config import settings
-from shared_lib.service_catalog import COMMON_SERVICE_SYNONYMS, COMMON_SERVICES
+from config import settings
+from utils.service_catalog import COMMON_SERVICE_SYNONYMS, COMMON_SERVICES
 from search_client import search_client
 from utils.services_utils import (
     ECUADOR_CITY_SYNONYMS,

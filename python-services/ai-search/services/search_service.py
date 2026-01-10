@@ -25,7 +25,7 @@ from models.schemas import (
 from services.cache_service import cache_service
 from utils.text_processor import SERVICE_KEYWORDS, TextProcessor, analyze_query
 
-from shared_lib.config import settings
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 SUPABASE_TIMEOUT_SECONDS = float(getattr(settings, "search_timeout_ms", 5000) or 5000) / 1000.0
