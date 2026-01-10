@@ -15,6 +15,7 @@ const MessageSenderWithRetry = require('./src/infrastructure/messaging/MessageSe
 const SocketIOServer = require('./src/infrastructure/websocket/SocketIOServer');
 const AIServiceClient = require('./src/application/services/AIServiceClient');
 const TextMessageHandler = require('./src/application/handlers/TextMessageHandler');
+const HandlerRegistry = require('./src/application/handlers/HandlerRegistry');
 
 // Validar configuración
 config.validate();
@@ -106,7 +107,6 @@ let qrCodeData = null;
 let clientStatus = 'disconnected';
 let isRefreshing = false;
 let messageSender; // Se inicializará después de crear el cliente
-let textMessageHandler; // Se inicializará después de crear el cliente
 
 console.warn('Inicializando cliente de WhatsApp con RemoteAuth...');
 
@@ -225,8 +225,10 @@ const client = new Client({
 // Inicializar MessageSender con el cliente
 messageSender = new MessageSenderWithRetry(client);
 
-// Inicializar TextMessageHandler con las dependencias
-textMessageHandler = new TextMessageHandler(messageSender, aiServiceClient);
+// Inicializar HandlerRegistry y registrar handlers
+const handlerRegistry = new HandlerRegistry();
+handlerRegistry.register(new TextMessageHandler(messageSender, aiServiceClient));
+console.warn(`✅ HandlerRegistry inicializado con ${handlerRegistry.count} handler(s)`);
 
 client.on('qr', qr => {
   console.warn(`[${instanceName}] QR Code recibido, generándolo en terminal y guardándolo...`);
@@ -280,12 +282,9 @@ client.on('remote_session_saved', () => {
   console.debug(`[${instanceName}] Sesión guardada en Supabase Storage`);
 });
 
-// Manejar mensajes entrantes usando TextMessageHandler
+// Manejar mensajes entrantes usando HandlerRegistry
 client.on('message', async message => {
-  // Verificar si el handler puede procesar este tipo de mensaje
-  if (textMessageHandler.canHandle(message)) {
-    await textMessageHandler.handle(message);
-  }
+  await handlerRegistry.dispatch(message);
 });
 
 client.on('disconnected', reason => {
