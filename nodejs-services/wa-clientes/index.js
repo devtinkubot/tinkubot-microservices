@@ -14,6 +14,7 @@ const axiosClient = require('./src/infrastructure/http/axiosClient');
 const MessageSenderWithRetry = require('./src/infrastructure/messaging/MessageSenderWithRetry');
 const SocketIOServer = require('./src/infrastructure/websocket/SocketIOServer');
 const AIServiceClient = require('./src/application/services/AIServiceClient');
+const TextMessageHandler = require('./src/application/handlers/TextMessageHandler');
 
 // Validar configuración
 config.validate();
@@ -105,6 +106,7 @@ let qrCodeData = null;
 let clientStatus = 'disconnected';
 let isRefreshing = false;
 let messageSender; // Se inicializará después de crear el cliente
+let textMessageHandler; // Se inicializará después de crear el cliente
 
 console.warn('Inicializando cliente de WhatsApp con RemoteAuth...');
 
@@ -223,6 +225,9 @@ const client = new Client({
 // Inicializar MessageSender con el cliente
 messageSender = new MessageSenderWithRetry(client);
 
+// Inicializar TextMessageHandler con las dependencias
+textMessageHandler = new TextMessageHandler(messageSender, aiServiceClient);
+
 client.on('qr', qr => {
   console.warn(`[${instanceName}] QR Code recibido, generándolo en terminal y guardándolo...`);
   qrcode.generate(qr, { small: true });
@@ -275,146 +280,11 @@ client.on('remote_session_saved', () => {
   console.debug(`[${instanceName}] Sesión guardada en Supabase Storage`);
 });
 
-// Manejar mensajes entrantes
+// Manejar mensajes entrantes usando TextMessageHandler
 client.on('message', async message => {
-  console.warn(
-    `[${instanceName}] Mensaje recibido de ${message.from}:`,
-    message.body || '[Mensaje sin texto]'
-  );
-  console.warn('  tipo:', message.type, 'tieneUbicacion:', !!message.location);
-
-  // Depuración avanzada para ubicaciones
-  if (message.type === 'location' || message.type === 'live_location') {
-    console.warn('🔍 Detalles del mensaje de ubicación:');
-    console.warn('  - type:', message.type);
-    console.warn('  - hasMedia:', message.hasMedia);
-    console.warn('  - location type:', typeof message.location);
-    if (message.location) {
-      console.warn('  - location keys:', Object.keys(message.location));
-      console.warn('  - location completo:', JSON.stringify(message.location, null, 2));
-    }
-    console.warn('  - body length:', message.body ? message.body.length : 0);
-    console.warn(
-      '  - body preview:',
-      message.body ? message.body.substring(0, 100) + '...' : '[none]'
-    );
-  }
-
-  if (message.hasQuotedMsg) {
-    try {
-      const quoted = await message.getQuotedMessage();
-      console.warn('  quoted body:', quoted && quoted.body ? quoted.body : '[none]');
-    } catch {}
-  }
-
-  // Ignorar mensajes de broadcast y del sistema
-  if (
-    message.from === 'status@broadcast' ||
-    message.from.endsWith('@g.us') ||
-    message.from.endsWith('@broadcast')
-  ) {
-    return;
-  }
-
-  // ACTUALIZADO: La gestión de sesiones está integrada en aiServiceClient.processMessage()
-  // Ya no es necesario llamar a saveSession() por separado
-
-  // Procesar con IA y responder (soporta UI estructurada)
-  try {
-    // Ignorar tipos de mensaje no conversacionales (evita respuestas a notificaciones/templates)
-    const allowedTypes = new Set(['chat', 'location', 'live_location']);
-    if (!allowedTypes.has(message.type)) {
-      console.warn('  [ignorado] tipo no conversacional:', message.type);
-      return;
-    }
-
-    const ai = await aiServiceClient.processMessage(message);
-    try {
-      console.warn('AI raw:', JSON.stringify(ai).slice(0, 500));
-    } catch {}
-
-    async function sendAiObject(obj) {
-      const text = obj.ai_response || obj.response || obj.text;
-      const ui = obj.ui || {};
-      const mediaUrl = obj.media_url || obj.image_url || (obj.media && obj.media.url);
-      const mediaCaption = obj.media_caption || obj.caption || text;
-      let mediaSent = false;
-
-      if (mediaUrl) {
-        try {
-          await messageSender.sendMedia(message.from, mediaUrl, mediaCaption);
-          mediaSent = true;
-        } catch (err) {
-          console.error('No se pudo enviar la foto (media):', err?.message || err);
-        }
-      }
-
-      if (ui.type === 'buttons' && Array.isArray(ui.buttons)) {
-        await messageSender.sendButtons(message.from, text || 'Elige una opción:', ui.buttons);
-        console.warn('Respuesta enviada (IA):', text || ui.type || '[sin texto]');
-        return;
-      } else if (ui.type === 'location_request') {
-        await messageSender.sendText(
-          message.from,
-          text || 'Por favor comparte tu ubicación 📎 para mostrarte los más cercanos.'
-        );
-        console.warn('Respuesta enviada (IA):', text || ui.type || '[sin texto]');
-        return;
-      } else if (ui.type === 'provider_results') {
-        try {
-          const names = (ui.providers || []).map(p => p.name || 'Proveedor');
-          console.warn('➡️ Enviando provider_results al usuario:', { count: names.length, names });
-        } catch {}
-        await messageSender.sendProviderResults(
-          message.from,
-          text || 'Encontré estas opciones:',
-          ui.providers || []
-        );
-        console.warn('Respuesta enviada (IA):', text || ui.type || '[sin texto]');
-        return;
-      } else if (ui.type === 'feedback' && Array.isArray(ui.options)) {
-        await messageSender.sendButtons(message.from, text || 'Califica tu experiencia:', ui.options);
-        console.warn('Respuesta enviada (IA):', text || ui.type || '[sin texto]');
-        return;
-      } else if (ui.type === 'silent') {
-        return;
-      }
-
-      if (mediaSent && (!text || mediaCaption === text)) {
-        console.warn('Respuesta enviada (IA): media');
-        return;
-      }
-
-      if (mediaSent && text && mediaCaption !== text) {
-        await messageSender.sendText(message.from, text);
-        console.warn('Respuesta enviada (IA): media + texto');
-        return;
-      }
-
-      if (text) {
-        await messageSender.sendText(message.from, text);
-        console.warn('Respuesta enviada (IA):', text || ui.type || '[sin texto]');
-      } else {
-        await messageSender.sendText(message.from, 'Procesando tu mensaje...');
-        console.warn('Respuesta enviada (IA): procesamiento');
-      }
-    }
-
-    // Permitir múltiples mensajes en una sola respuesta de IA
-    if (Array.isArray(ai.messages) && ai.messages.length > 0) {
-      for (const m of ai.messages) {
-        await sendAiObject(m || {});
-      }
-    } else {
-      await sendAiObject(ai || {});
-    }
-  } catch (error) {
-    console.error('Error al procesar mensaje:', error);
-    // Enviar respuesta de fallback solo si falla la IA
-    await messageSender.sendText(
-      message.from,
-      'Lo siento, ocurrió un error al procesar tu mensaje. Por favor intenta de nuevo.'
-    );
+  // Verificar si el handler puede procesar este tipo de mensaje
+  if (textMessageHandler.canHandle(message)) {
+    await textMessageHandler.handle(message);
   }
 });
 
