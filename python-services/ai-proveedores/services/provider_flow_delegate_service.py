@@ -9,6 +9,7 @@ import logging
 from typing import Any, Callable, Awaitable, Dict, Optional
 
 from flows.provider_flow import ProviderFlow
+from handlers.state_router import StateRouter
 
 # Servicios de flujo
 from services.flow_service import (
@@ -60,6 +61,26 @@ class ProviderFlowDelegateService:
         self.storage_service = storage_service
         self.image_service = image_service or subir_medios_identidad
         self.logger = logger or logging.getLogger(__name__)
+
+        # Inicializar StateRouter para handlers basados en texto
+        self._text_state_router = StateRouter()
+        self._register_text_handlers()
+
+    def _register_text_handlers(self):
+        """
+        Registrar handlers de estados basados en texto en el router.
+
+        Aplica el principio Open/Closed: los handlers están registrados
+        dinámicamente, por lo que agregar un nuevo estado no requiere
+        modificar la lógica de routing.
+        """
+        self._text_state_router.register("awaiting_city", ProviderFlow.handle_awaiting_city)
+        self._text_state_router.register("awaiting_name", ProviderFlow.handle_awaiting_name)
+        self._text_state_router.register("awaiting_profession", ProviderFlow.handle_awaiting_profession)
+        self._text_state_router.register("awaiting_specialty", ProviderFlow.handle_awaiting_specialty)
+        self._text_state_router.register("awaiting_experience", ProviderFlow.handle_awaiting_experience)
+        self._text_state_router.register("awaiting_email", ProviderFlow.handle_awaiting_email)
+        self._text_state_router.register("awaiting_social_media", ProviderFlow.handle_awaiting_social_media)
 
     async def delegate_to_provider_flow(
         self,
@@ -159,19 +180,10 @@ class ProviderFlowDelegateService:
                 await establecer_flujo(phone, flow)
             return reply
 
-        # Estados basados en texto (delegar a ProviderFlow)
-        handler_map = {
-            "awaiting_city": ProviderFlow.handle_awaiting_city,
-            "awaiting_name": ProviderFlow.handle_awaiting_name,
-            "awaiting_profession": ProviderFlow.handle_awaiting_profession,
-            "awaiting_specialty": ProviderFlow.handle_awaiting_specialty,
-            "awaiting_experience": ProviderFlow.handle_awaiting_experience,
-            "awaiting_email": ProviderFlow.handle_awaiting_email,
-            "awaiting_social_media": ProviderFlow.handle_awaiting_social_media,
-        }
-
-        if state in handler_map:
-            reply = handler_map[state](flow, message_text)
+        # Estados basados en texto (delegar a ProviderFlow via StateRouter)
+        # Aplicar Strategy Pattern con StateRouter (Open/Closed Principle)
+        if self._text_state_router.has_handler(state):
+            reply = self._text_state_router.route(state, flow, message_text)
             await establecer_flujo(phone, flow)
             return reply
 

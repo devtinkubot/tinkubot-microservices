@@ -231,6 +231,7 @@ class WhatsAppOrchestrator:
                 return response
 
             # 12. Fallback para estados de registro (ProviderFlow)
+            # Usa StateRouter internamente (Strategy Pattern aplicado en ProviderFlowDelegateService)
             if state in ProviderFlow.get_supported_states():
                 delegate = self.provider_flow_delegate or ProviderFlowDelegateService(
                     supabase_client=self.supabase,
