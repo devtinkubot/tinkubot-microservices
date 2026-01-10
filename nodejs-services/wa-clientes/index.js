@@ -10,24 +10,11 @@ const SocketIOServer = require('./src/infrastructure/websocket/SocketIOServer');
 const AIServiceClient = require('./src/application/services/AIServiceClient');
 const TextMessageHandler = require('./src/application/handlers/TextMessageHandler');
 const HandlerRegistry = require('./src/application/handlers/HandlerRegistry');
-const healthRoutes = require('./src/presentation/http/routes/health.routes');
-const qrRoutes = require('./src/presentation/http/routes/qr.routes');
-const statusRoutes = require('./src/presentation/http/routes/status.routes');
-const refreshRoutes = require('./src/presentation/http/routes/refresh.routes');
-const sendRoutes = require('./src/presentation/http/routes/send.routes');
-
-// Middleware
-const configureCors = require('./src/presentation/http/middleware/cors.middleware');
-const configureHelmet = require('./src/presentation/http/middleware/helmet.middleware');
-const configureCompression = require('./src/presentation/http/middleware/compression.middleware');
-const configureRateLimit = require('./src/presentation/http/middleware/rateLimit.middleware');
-const configureJsonParser = require('./src/presentation/http/middleware/json.middleware');
-const configureTimeout = require('./src/presentation/http/middleware/timeout.middleware');
+const createApp = require('./src/presentation/http/app.js');
 
 // Validar configuración
 config.validate();
 
-const app = express();
 const port = config.port;
 const instanceId = config.instanceId;
 const instanceName = config.instanceName;
@@ -49,18 +36,7 @@ const startupInfo = config.getStartupInfo();
 console.warn(`🤖 Iniciando ${startupInfo.instanceName} (ID: ${startupInfo.instanceId})`);
 console.warn(`📱 Puerto: ${startupInfo.port}`);
 
-// Middleware
-configureCors(app);
-configureHelmet(app);
-configureCompression(app);
-configureRateLimit(app, config);
-configureJsonParser(app, config);
-configureTimeout(app, REQUEST_TIMEOUT_MS);
-
-// Configurar servidor HTTP y WebSocket
-const server = http.createServer(app);
-const socketServer = new SocketIOServer(server);
-
+// Variables de estado del cliente
 let qrCodeData = null;
 let clientStatus = 'disconnected';
 let isRefreshing = false;
@@ -188,6 +164,24 @@ const handlerRegistry = new HandlerRegistry();
 handlerRegistry.register(new TextMessageHandler(messageSender, aiServiceClient));
 console.warn(`✅ HandlerRegistry inicializado con ${handlerRegistry.count} handler(s)`);
 
+// Crear aplicación Express con todas las rutas y middleware
+const services = {
+  config,
+  instanceId,
+  instanceName,
+  port,
+  clientStatus,
+  aiServiceClient,
+  qrCodeData,
+  resetWhatsAppSession,
+  messageSender
+};
+const app = createApp(services);
+
+// Configurar servidor HTTP y WebSocket
+const server = http.createServer(app);
+const socketServer = new SocketIOServer(server);
+
 client.on('qr', qr => {
   console.warn(`[${instanceName}] QR Code recibido, generándolo en terminal y guardándolo...`);
   qrcode.generate(qr, { small: true });
@@ -266,24 +260,7 @@ client.on('disconnected', reason => {
 
 client.initialize();
 
-// Registrar rutas
-const services = {
-  config,
-  instanceId,
-  instanceName,
-  port,
-  clientStatus,
-  aiServiceClient,
-  qrCodeData,
-  resetWhatsAppSession,
-  messageSender
-};
-healthRoutes(app, services);
-qrRoutes(app, services);
-statusRoutes(app, services);
-refreshRoutes(app, services);
-sendRoutes(app, services);
-
+// Iniciar servidor
 server.listen(port, () => {
   console.warn(`🚀 ${instanceName} (ID: ${instanceId}) escuchando en http://localhost:${port}`);
   console.warn('🔌 WebSocket habilitado para notificaciones en tiempo real');
