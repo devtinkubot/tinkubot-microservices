@@ -7,7 +7,7 @@ service providers.
 
 import asyncio
 import logging
-from typing import Any, Callable, Dict
+from typing import Any, Dict
 
 from templates.prompts import mensaje_confirmando_disponibilidad
 

@@ -4,7 +4,7 @@ import logging
 import os
 from typing import Any, Dict, Optional
 
-from asyncio_mqtt import Client, MqttError
+from asyncio_mqtt import Client
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel
 

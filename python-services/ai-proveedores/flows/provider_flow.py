@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-import re
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, Optional
 
-from pydantic import ValidationError
 
 from shared_lib.models import ProviderCreate
 from templates.prompts import (
-    provider_post_registration_menu_message,
     provider_under_review_message,
 )
 

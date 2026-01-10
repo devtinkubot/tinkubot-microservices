@@ -6,7 +6,7 @@ Reutilizable por ai-clientes y ai-proveedores.
 
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 

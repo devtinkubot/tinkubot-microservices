@@ -20,8 +20,6 @@ from services.flow_service import establecer_flujo, reiniciar_flujo
 # Importar funciones de interpretación de respuestas
 from services.response_interpreter_service import (
     interpretar_consentimiento,
-    interpretar_opcion_menu,
-    interpretar_respuesta_usuario,
 )
 
 logger = logging.getLogger(__name__)

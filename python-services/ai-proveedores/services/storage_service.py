@@ -1,7 +1,7 @@
 """Servicio de almacenamiento de imágenes (Supabase Storage y DB)."""
 import logging
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Optional
 
 from app.config import settings
 from app.dependencies import get_supabase
@@ -184,43 +184,3 @@ async def actualizar_imagenes_proveedor(
     except Exception as e:
         logger.error(f"❌ Error actualizando URLs de imágenes: {e}")
         return False
-
-
-async def obtener_urls_imagenes_proveedor(
-    provider_id: str
-) -> Dict[str, Optional[str]]:
-    """
-    Obtener URLs de todas las imágenes de un proveedor.
-
-    Args:
-        supabase: Cliente de Supabase
-        provider_id: UUID del proveedor
-
-    Returns:
-        Diccionario con URLs de imágenes
-    """
-    if not supabase:
-        return {}
-
-    try:
-        result = await run_supabase(
-            lambda: supabase.table("providers")
-            .select("dni_front_photo_url, dni_back_photo_url, face_photo_url")
-            .eq("id", provider_id)
-            .limit(1)
-            .execute(),
-            label="providers.images_by_id",
-        )
-
-        if result.data:
-            return {
-                "dni_front": result.data[0].get("dni_front_photo_url"),
-                "dni_back": result.data[0].get("dni_back_photo_url"),
-                "face": result.data[0].get("face_photo_url"),
-            }
-        else:
-            return {}
-
-    except Exception as e:
-        logger.error(f"❌ Error obteniendo URLs de imágenes: {e}")
-        return {}

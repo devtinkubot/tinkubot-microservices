@@ -1,16 +1,14 @@
 """Servicio de validación de datos de proveedores."""
 import logging
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from pydantic import ValidationError
 from shared_lib.models import ProviderCreate
 
 from services.parser_service import (
     normalize_text,
-    parse_experience_years,
-    parse_services_string,
-    parse_social_media,
+    OMISSION_VALUES,
 )
 
 logger = logging.getLogger(__name__)
@@ -22,11 +20,12 @@ MIN_PROFESION_CHARS = 2
 MAX_PROFESION_CHARS = 150
 MIN_ESPECIALIDAD_CHARS = 2
 MAX_ESPECIALIDAD_CHARS = 300
-MAX_SERVICIOS_COUNT = 10
 MAX_SERVICIO_CHARS = 120
 
-# Valores de omisión
-OMISSION_VALUES = {"omitir", "na", "n/a", "ninguno", "ninguna"}
+# Límite de servicios por proveedor (unificado con utils/services_utils.py)
+# La lógica de negocio establece un máximo de 5 servicios para mantener
+# la calidad y foco en los servicios principales de cada proveedor
+from utils.services_utils import SERVICIOS_MAXIMOS
 
 
 def validate_city(city: str) -> Tuple[bool, Optional[str]]:
@@ -117,9 +116,9 @@ def validate_specialty(specialty: str) -> Tuple[bool, Optional[str]]:
         if item and item.strip()
     ]
 
-    if len(services_list) > MAX_SERVICIOS_COUNT:
+    if len(services_list) > SERVICIOS_MAXIMOS:
         return False, (
-            "*Incluye máximo 10 servicios.* Envía nuevamente tus principales servicios separados por comas."
+            f"*Incluye máximo {SERVICIOS_MAXIMOS} servicios.* Envía nuevamente tus principales servicios separados por comas."
         )
 
     if any(len(srv) > MAX_SERVICIO_CHARS for srv in services_list):

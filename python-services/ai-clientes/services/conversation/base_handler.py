@@ -30,7 +30,6 @@ class MessageHandler(ABC):
         Returns:
             True if this handler can process the state, False otherwise
         """
-        pass
 
     @abstractmethod
     async def handle(self, context: Dict[str, Any]) -> Dict[str, Any]:
@@ -54,4 +53,3 @@ class MessageHandler(ABC):
         Returns:
             Dictionary with response/messages to send to user
         """
-        pass

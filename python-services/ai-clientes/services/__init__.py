@@ -10,8 +10,6 @@ from .search_service import (
     search_providers,
 )
 from .messaging_service import MessagingService
-from .customer_service import CustomerService
-from .consent_service import ConsentService
 from .media_service import MediaService
 
 __all__ = [
@@ -21,7 +19,5 @@ __all__ = [
     "intelligent_search_providers_remote",
     "search_providers",
     "MessagingService",
-    "CustomerService",
-    "ConsentService",
     "MediaService",
 ]

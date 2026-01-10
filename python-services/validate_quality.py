@@ -12,10 +12,9 @@ Opciones:
 
 import subprocess
 import sys
-import os
 import argparse
 from pathlib import Path
-from typing import List, Tuple, Dict
+from typing import List, Tuple
 
 # Colores para salida
 class Colors:

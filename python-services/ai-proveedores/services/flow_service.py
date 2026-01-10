@@ -23,16 +23,6 @@ async def establecer_flujo(phone: str, data: Dict[str, Any]) -> None:
     )
 
 
-async def establecer_flujo_con_estado(
-    phone: str, data: Dict[str, Any], estado: str
-) -> None:
-    """Establecer estado de flujo con un estado específico."""
-    data["state"] = estado
-    await redis_client.set(
-        FLOW_KEY.format(phone), data, expire=settings.flow_ttl_seconds
-    )
-
-
 async def reiniciar_flujo(phone: str) -> None:
     """Reiniciar flujo para un teléfono."""
     await redis_client.delete(FLOW_KEY.format(phone))

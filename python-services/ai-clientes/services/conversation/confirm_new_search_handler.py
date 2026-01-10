@@ -82,7 +82,6 @@ class ConfirmNewSearchHandler(MessageHandler):
 
         async def _noop_save_bot_message(msg):
             """No-op save_bot_message simplified."""
-            pass
 
         return await ClientFlow.handle_confirm_new_search(
             flow,

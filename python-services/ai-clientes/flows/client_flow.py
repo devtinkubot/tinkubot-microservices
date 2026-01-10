@@ -5,8 +5,6 @@ from datetime import datetime
 from typing import Any, Awaitable, Callable, Dict, Optional, Tuple, Union
 
 from templates.prompts import (
-    opciones_consentimiento_textos,
-    mensaje_consentimiento_datos,
     mensaje_listado_sin_resultados,
 )
 

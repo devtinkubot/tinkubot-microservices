@@ -9,10 +9,10 @@ sys.path.insert(0, shared_lib_path)
 
 import asyncio
 import inspect
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # Ahora importar después de configurar el path
-from services.session_service import verificar_timeout_sesion, reiniciar_por_timeout, actualizar_timestamp_sesion
+from services.session_service import verificar_timeout_sesion, actualizar_timestamp_sesion
 
 
 async def run_all_tests():
@@ -24,18 +24,12 @@ async def run_all_tests():
     # Test 6: Backward compatibility
     print("=== Test 6: Backward Compatibility ===")
     sig_verificar = inspect.signature(verificar_timeout_sesion)
-    sig_reiniciar = inspect.signature(reiniciar_por_timeout)
     sig_actualizar = inspect.signature(actualizar_timestamp_sesion)
 
     print(f'verificar_timeout_sesion parámetros: {list(sig_verificar.parameters.keys())}')
     assert len(sig_verificar.parameters) == 3, 'Debe tener 3 parámetros'
     assert list(sig_verificar.parameters.keys()) == ['phone', 'flow', 'timeout_seconds'], 'Parámetros incorrectos'
     print('✅ verificar_timeout_sesion: signature correcta')
-
-    print(f'reiniciar_por_timeout parámetros: {list(sig_reiniciar.parameters.keys())}')
-    assert len(sig_reiniciar.parameters) == 2, 'Debe tener 2 parámetros'
-    assert list(sig_reiniciar.parameters.keys()) == ['phone', 'flow'], 'Parámetros incorrectos'
-    print('✅ reiniciar_por_timeout: signature correcta')
 
     print(f'actualizar_timestamp_sesion parámetros: {list(sig_actualizar.parameters.keys())}')
     assert len(sig_actualizar.parameters) == 1, 'Debe tener 1 parámetro'
@@ -62,13 +56,6 @@ async def run_all_tests():
     assert updated_flow["last_seen_at_prev"] == "2024-01-01T00:00:00", "Debe mover timestamp anterior"
     print('✅ Test 4: Actualización de timestamp correcta')
     print('=== Test 4: PASADO ✅ ===')
-    print()
-
-    # Test 3: reiniciar_por_timeout (solo estructura, sin Redis)
-    print("=== Test 3: Estructura de reiniciar_por_timeout ===")
-    # Solo verificamos que retorna lo esperado (sin ejecutarlo realmente porque necesita Redis)
-    print('✅ Test 3: Firma y retorno correctos')
-    print('=== Test 3: PASADO ✅ ===')
     print()
 
     print("=" * 60)

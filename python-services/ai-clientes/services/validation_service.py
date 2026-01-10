@@ -164,8 +164,7 @@ Responde SOLO con JSON:
 {
   "is_valid": true/false,
   "category": "valid" | "illegal" | "inappropriate" | "nonsense" | "false",
-  "reason": "explicación breve",
-  "should_ban": true/false
+  "reason": "explicación breve"
 }
 """
 
@@ -205,7 +204,6 @@ Responde SOLO con JSON:
         is_valid = parsed.get("is_valid", True)
         category = parsed.get("category", "valid")
         reason = parsed.get("reason", "")
-        should_ban = parsed.get("should_ban", False)
 
         # Caso 1: Contenido válido
         if is_valid and category == "valid":

@@ -8,10 +8,9 @@ Este módulo contiene la lógica de búsqueda de proveedores, incluyendo:
 - Extracción de profesión y ubicación desde texto
 """
 
-import asyncio
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import httpx
 from shared_lib.config import settings

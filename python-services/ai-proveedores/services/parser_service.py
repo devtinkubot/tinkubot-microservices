@@ -14,6 +14,9 @@ MAX_EXPERIENCE_YEARS = 60
 # Valores de omisión
 OMISSION_VALUES = {"omitir", "na", "n/a", "ninguno", "ninguna"}
 
+# Límite de servicios por proveedor (importado desde utils)
+from utils.services_utils import SERVICIOS_MAXIMOS
+
 
 def normalize_text(value: Optional[str]) -> str:
     """
@@ -123,7 +126,7 @@ def parse_services_string(value: Optional[str]) -> List[str]:
         value: Cadena con servicios separados por |;,\n
 
     Returns:
-        Lista de servicios únicos (máximo 5), sin espacios extra
+        Lista de servicios únicos (máximo SERVICIOS_MAXIMOS), sin espacios extra
 
     Examples:
         >>> parse_services_string("gasfitería, electricidad")
@@ -153,5 +156,5 @@ def parse_services_string(value: Optional[str]) -> List[str]:
         if servicio and servicio not in servicios:
             servicios.append(servicio)
 
-    # Limitar a máximo 5 servicios
-    return servicios[:5]
+    # Limitar a máximo SERVICIOS_MAXIMOS servicios
+    return servicios[:SERVICIOS_MAXIMOS]

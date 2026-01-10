@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
 
 from services.flow_service import establecer_flujo, reiniciar_flujo
-from services.parser_service import parse_social_media
 from services.profile_service import actualizar_servicios_proveedor
 from services.image_service import subir_medios_identidad
 from services.provider_update_service import (
@@ -26,12 +24,11 @@ from utils.services_utils import (
     limpiar_servicio_texto,
     construir_mensaje_servicios,
     construir_listado_servicios,
+    SERVICIOS_MAXIMOS,
 )
 from utils.storage_utils import extract_first_image_base64
 
 logger = logging.getLogger(__name__)
-
-SERVICIOS_MAXIMOS = 5
 
 
 class WhatsAppFlow:

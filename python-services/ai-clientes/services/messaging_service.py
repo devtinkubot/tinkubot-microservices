@@ -4,7 +4,6 @@ Servicio de mensajería para AI Clientes.
 
 import logging
 import os
-from typing import Any, Dict
 
 import httpx
 

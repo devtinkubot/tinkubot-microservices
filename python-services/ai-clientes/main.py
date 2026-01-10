@@ -28,7 +28,6 @@ from supabase import create_client
 from shared_lib.config import settings
 from shared_lib.redis_client import redis_client
 from shared_lib.service_catalog import (
-    COMMON_SERVICE_SYNONYMS,
     normalize_profession_for_search,
 )
 from shared_lib.session_manager import session_manager
@@ -50,7 +49,6 @@ from services.search_service import (
 
 # Templates
 from templates.prompts import (
-    bloque_detalle_proveedor,
     bloque_listado_proveedores_compacto,
     instruccion_seleccionar_proveedor,
     menu_opciones_confirmacion,
@@ -75,7 +73,6 @@ from models.schemas import (
 
 # Utils
 from utils.services_utils import (
-    _normalize_text_for_matching,
     _normalize_token,
 )
 

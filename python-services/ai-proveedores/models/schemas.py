@@ -14,19 +14,6 @@ class IntelligentSearchRequest(BaseModel):
     urgencia: Optional[str] = None
 
 
-class ProviderRegisterRequest(BaseModel):
-    name: str
-    profession: str
-    phone: str
-    email: Optional[str] = None
-    city: str
-    specialty: Optional[str] = None
-    experience_years: Optional[int] = None
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
-    has_consent: bool = False
-
-
 class WhatsAppMessageRequest(BaseModel):
     phone: str
     message: str

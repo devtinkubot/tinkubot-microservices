@@ -12,13 +12,10 @@ from typing import Any, Callable, Dict, Optional
 
 from flows.client_flow import ClientFlow
 from templates.prompts import (
-    bloque_detalle_proveedor,
     bloque_listado_proveedores_compacto,
     instruccion_seleccionar_proveedor,
     menu_opciones_confirmacion,
-    menu_opciones_detalle_proveedor,
     mensaje_confirmando_disponibilidad,
-    mensaje_inicial_solicitud_servicio,
     mensaje_intro_listado_proveedores,
     mensaje_sin_disponibilidad,
     opciones_confirmar_nueva_busqueda_textos,
@@ -41,13 +38,9 @@ from services.conversation.confirm_new_search_handler import (
     ConfirmNewSearchHandler,
 )
 from services.conversation.handler_registry import HandlerRegistry
-from shared_lib.service_catalog import COMMON_SERVICE_SYNONYMS
-from shared_lib.session_manager import session_manager
 from utils.services_utils import (
     GREETINGS,
     RESET_KEYWORDS,
-    _normalize_text_for_matching,
-    normalize_city_input,
 )
 
 logger = logging.getLogger(__name__)

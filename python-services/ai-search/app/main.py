@@ -3,7 +3,6 @@ Aplicación principal de Search Service
 """
 
 import os
-import asyncio
 import logging
 from contextlib import asynccontextmanager
 

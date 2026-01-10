@@ -7,7 +7,7 @@ their city location for the service search.
 
 import asyncio
 import logging
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Dict
 
 from flows.client_flow import ClientFlow
 from services.search_service import extract_profession_and_location
@@ -74,7 +74,6 @@ class AwaitingCityHandler(MessageHandler):
         """
         flow = context["flow"]
         text = context.get("text", "")
-        selected = context.get("selected", "")
         phone = context["phone"]
         customer_id = context.get("customer_id")
         respond = context["respond"]

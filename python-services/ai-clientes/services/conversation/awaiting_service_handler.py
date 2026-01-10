@@ -7,7 +7,7 @@ the type of service they need.
 
 import asyncio
 import logging
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Dict
 
 from flows.client_flow import ClientFlow
 from services.search_service import extract_profession_and_location
@@ -17,7 +17,6 @@ from templates.prompts import (
     mensaje_error_input_sin_sentido,
     mensaje_advertencia_contenido_ilegal,
     mensaje_ban_usuario,
-    mensaje_confirmando_disponibilidad,
 )
 from utils.services_utils import GREETINGS
 
@@ -91,7 +90,6 @@ class AwaitingServiceHandler(MessageHandler):
         text = context.get("text", "")
         phone = context["phone"]
         customer_profile = context.get("customer_profile", {})
-        customer_id = context.get("customer_id")
         respond = context["respond"]
 
         # 0. Check if user is banned

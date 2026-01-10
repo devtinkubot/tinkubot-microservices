@@ -6,7 +6,7 @@ para búsquedas eficientes en Search Service
 import logging
 import re
 import unicodedata
-from typing import List, Optional, Set, Tuple
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 

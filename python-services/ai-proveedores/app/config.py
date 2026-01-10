@@ -1,5 +1,4 @@
 """Configuración centralizada del servicio ai-proveedores."""
-import os
 from typing import Optional
 
 from pydantic_settings import BaseSettings

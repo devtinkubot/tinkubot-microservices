@@ -3,24 +3,17 @@ Endpoints API para Search Service
 """
 
 import logging
-import time
 import uuid
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from models.schemas import (
-    BulkIndexRequest,
-    BulkIndexResponse,
-    ErrorResponse,
     HealthCheck,
     Metrics,
-    ProviderInfo,
     SearchMetadata,
     SearchRequest,
     SearchResult,
-    SuggestionRequest,
     SuggestionResponse,
 )
 from services.cache_service import cache_service
@@ -181,23 +174,6 @@ async def health_check():
         )
 
 
-@router.get("/metrics", response_model=Metrics)
-async def get_metrics():
-    """
-    Obtener métricas del servicio
-    """
-    try:
-        metrics = await cache_service.get_metrics()
-        if not metrics:
-            return Metrics()
-
-        return metrics
-
-    except Exception as e:
-        logger.error(f"Error obteniendo métricas: {e}")
-        raise HTTPException(status_code=500, detail="Error obteniendo métricas")
-
-
 @router.get("/cache/info")
 async def get_cache_info():
     """
@@ -238,56 +214,6 @@ async def clear_cache(
         raise HTTPException(status_code=500, detail="Error limpiando caché")
 
 
-@router.post("/index/rebuild", response_model=BulkIndexResponse)
-async def rebuild_search_index(
-    request: BulkIndexRequest, background_tasks: BackgroundTasks
-):
-    """
-    Reconstruir índice de búsqueda
-
-    - **provider_ids**: Lista de IDs de proveedores a indexar (vacío = todos)
-    - **force_reindex**: Forzar reindexación incluso si ya existe
-    """
-    try:
-        # TODO: Implementar lógica de reindexación
-        background_tasks.add_task(
-            rebuild_index_task, request.provider_ids, request.force_reindex
-        )
-
-        return BulkIndexResponse(
-            total_processed=0, successful=0, failed=0, errors=[], processing_time_ms=0
-        )
-
-    except Exception as e:
-        logger.error(f"Error en reindexación: {e}")
-        raise HTTPException(status_code=500, detail="Error en reindexación")
-
-
-@router.get("/stats")
-async def get_search_stats():
-    """
-    Obtener estadísticas de búsqueda
-    """
-    try:
-        # Obtener consultas populares
-        popular_queries = await cache_service.get_popular_queries(10)
-
-        # Obtener información de caché
-        cache_info = await cache_service.get_cache_info()
-
-        # TODO: Obtener estadísticas de la base de datos
-
-        return {
-            "popular_queries": popular_queries,
-            "cache_info": cache_info,
-            "timestamp": datetime.now().isoformat(),
-        }
-
-    except Exception as e:
-        logger.error(f"Error obteniendo estadísticas: {e}")
-        raise HTTPException(status_code=500, detail="Error obteniendo estadísticas")
-
-
 # Funciones auxiliares
 async def update_search_statistics(
     request_id: str, query: str, metadata: SearchMetadata
@@ -299,18 +225,6 @@ async def update_search_statistics(
         logger.debug(f"📊 Estadísticas actualizadas para búsqueda [{request_id}]")
     except Exception as e:
         logger.warning(f"Error actualizando estadísticas [{request_id}]: {e}")
-
-
-async def rebuild_index_task(provider_ids: List[str], force_reindex: bool):
-    """Tarea en background para reconstruir índice"""
-    try:
-        logger.info(
-            f"🔄 Iniciando reindexación de {len(provider_ids) if provider_ids else 'todos'} proveedores"
-        )
-        # TODO: Implementar lógica completa de reindexación
-        logger.info("✅ Reindexación completada")
-    except Exception as e:
-        logger.error(f"❌ Error en reindexación: {e}")
 
 
 # Nota: El manejador de excepciones global está definido en main.py usando app.exception_handler()

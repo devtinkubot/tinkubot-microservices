@@ -6,7 +6,7 @@ encapsulando la lógica de manejo de fotos y confirmación de datos.
 """
 
 import logging
-from typing import Any, Callable, Awaitable, Dict, Optional
+from typing import Any, Dict
 
 from flows.provider_flow import ProviderFlow
 from handlers.state_router import StateRouter

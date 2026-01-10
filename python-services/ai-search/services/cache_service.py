@@ -4,8 +4,6 @@ Servicio de caché Redis para Search Service
 
 import json
 import logging
-import pickle
-from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 import redis.asyncio as redis

@@ -56,7 +56,6 @@ async def verificar_timeout_sesion(
                 f"Error al parsear timestamp de sesión para {phone}: {e}. "
                 "Continuando sin verificar timeout."
             )
-            pass
 
     # No hay timeout
     return False, None
@@ -82,28 +81,6 @@ async def actualizar_timestamp_sesion(flow: Dict[str, Any]) -> Dict[str, Any]:
     flow["last_seen_at"] = now_iso
 
     return flow
-
-
-async def reiniciar_por_timeout(phone: str, flow: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Reinicia el flujo por timeout de sesión.
-
-    Esta función se llama cuando se detecta un timeout.
-    Reinicia el flujo al estado "awaiting_menu_option" y retorna
-    el mensaje de timeout junto con el menú principal.
-
-    Args:
-        phone: Teléfono del usuario
-        flow: Diccionario con el estado actual del flujo (NO usado, mantenido por backward compatibility)
-
-    Returns:
-        Diccionario con la respuesta de timeout y menú principal
-    """
-    # Usar helper para reiniciar flujo
-    await _reiniciar_flujo_por_timeout(phone)
-
-    # Usar helper para crear respuesta
-    return _crear_respuesta_timeout()
 
 
 # =============================================================================

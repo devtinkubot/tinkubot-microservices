@@ -9,13 +9,12 @@ import logging
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 from time import perf_counter
 
 from openai import AsyncOpenAI
 from supabase import Client, create_client
 from models.schemas import (
-    Metrics,
     ProviderInfo,
     SearchFilters,
     SearchMetadata,
@@ -382,7 +381,7 @@ class SearchService:
     ) -> List[ProviderInfo]:
         """Búsqueda mejorada con IA"""
         try:
-            import openai
+            pass
 
             if not settings.openai_api_key:
                 logger.warning(

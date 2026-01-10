@@ -5,7 +5,7 @@ This module contains data validation logic for customer operations.
 """
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 

@@ -146,7 +146,6 @@ class MediaService:
         """
         name = provider.get("name") or provider.get("full_name") or "Proveedor"
         phone_raw = provider.get("phone") or provider.get("phone_number")
-        phone_display = self.pretty_phone(phone_raw)
         link = self.wa_click_to_chat(phone_raw)
         selfie_url_raw = (
             provider.get("face_photo_url")
