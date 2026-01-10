@@ -305,3 +305,25 @@ class ProviderFlow:
                 "*Por favor selecciona 1 para confirmar o 2 para editar tu informacion.*"
             ),
         }
+
+    @staticmethod
+    def get_supported_states() -> set:
+        """
+        Retorna el conjunto de estados soportados por ProviderFlow.
+
+        Returns:
+            Set con los nombres de estados que ProviderFlow puede manejar
+        """
+        return {
+            "awaiting_city",
+            "awaiting_name",
+            "awaiting_profession",
+            "awaiting_specialty",
+            "awaiting_experience",
+            "awaiting_email",
+            "awaiting_social_media",
+            "awaiting_dni_front_photo",
+            "awaiting_dni_back_photo",
+            "awaiting_face_photo",
+            "confirm",
+        }
