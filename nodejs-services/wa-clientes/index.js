@@ -13,6 +13,7 @@ const config = require('./src/infrastructure/config/envConfig');
 const axiosClient = require('./src/infrastructure/http/axiosClient');
 const MessageSenderWithRetry = require('./src/infrastructure/messaging/MessageSenderWithRetry');
 const SocketIOServer = require('./src/infrastructure/websocket/SocketIOServer');
+const AIServiceClient = require('./src/application/services/AIServiceClient');
 
 // Validar configuración
 config.validate();
@@ -23,6 +24,9 @@ const instanceId = config.instanceId;
 const instanceName = config.instanceName;
 const REQUEST_TIMEOUT_MS = config.requestTimeoutMs;
 const AI_SERVICE_URL = config.aiServiceUrl;
+
+// Inicializar AI Service Client
+const aiServiceClient = new AIServiceClient(AI_SERVICE_URL);
 
 // Configuración de Supabase para almacenamiento de sesiones
 const { url: supabaseUrl, key: supabaseKey, bucket: supabaseBucket } = config.supabase;
@@ -101,79 +105,6 @@ let qrCodeData = null;
 let clientStatus = 'disconnected';
 let isRefreshing = false;
 let messageSender; // Se inicializará después de crear el cliente
-
-// Función para procesar mensajes con IA (envía contexto enriquecido)
-async function processWithAI(message) {
-  try {
-    const payload = {
-      id: message.id._serialized || message.id,
-      from_number: message.from,
-      content: message.body || '',
-      timestamp: message.timestamp || new Date(),
-      status: 'received',
-      message_type: message.type,
-      message_id: message.id._serialized || message.id || '',
-      device_type: message.deviceType || ''
-    };
-
-    // Selección por reply-to: si responde citando una opción, usar el texto citado como selected_option
-    if (message.hasQuotedMsg) {
-      try {
-        const quoted = await message.getQuotedMessage();
-        if (quoted && quoted.body) {
-          payload.selected_option = quoted.body.trim();
-        }
-      } catch (e) {
-        console.warn('No se pudo obtener quoted message:', e.message || e);
-      }
-    }
-
-    // Ubicación compartida - Manejo mejorado según documentación oficial de WhatsApp Web.js
-    if ((message.type === 'location' || message.type === 'live_location') && message.location) {
-      console.warn('📍 Objeto location completo:', JSON.stringify(message.location, null, 2));
-
-      // Según documentación oficial, Location tiene propiedades: latitude, longitude, name, address, url
-      const lat = message.location.latitude;
-      const lng = message.location.longitude;
-
-      console.warn('📍 Coordenadas extraídas - lat:', lat, 'lng:', lng);
-
-      if (lat && lng && !isNaN(lat) && !isNaN(lng)) {
-        payload.location = {
-          lat: parseFloat(lat),
-          lng: parseFloat(lng),
-          name: message.location.name || undefined,
-          address: message.location.address || undefined,
-        };
-        console.warn('✅ Ubicación válida procesada:', payload.location);
-      } else {
-        console.warn('❌ Coordenadas inválidas - lat:', lat, 'lng:', lng);
-      }
-    }
-    // Solo adjuntar ubicación cuando sea mensaje de ubicación nativo
-    if (payload.location) {
-      console.warn('✅ Ubicación detectada desde objeto location nativo');
-    }
-
-    const response = await axiosClient.postWithRetry(`${AI_SERVICE_URL}/handle-whatsapp-message`, payload, {
-      timeout: 20000, // acortar para no bloquear el loop
-      retries: 0, // evitar duplicar solicitudes en casos de espera larga
-    });
-    return response.data;
-  } catch (error) {
-    if (error.response) {
-      console.error('Error IA status:', error.response.status, error.response.data);
-    } else {
-      console.error('Error al procesar con IA:', error.message || error);
-    }
-    if (error.response && error.response.status === 400) {
-      return {
-        text: 'Lo siento, no pude procesar tu mensaje. Por favor, intenta enviar un mensaje de texto claro.',
-      };
-    }
-    return { text: 'Lo siento, estoy teniendo problemas para procesar tu mensaje.' };
-  }
-}
 
 console.warn('Inicializando cliente de WhatsApp con RemoteAuth...');
 
@@ -385,7 +316,7 @@ client.on('message', async message => {
     return;
   }
 
-  // ACTUALIZADO: La gestión de sesiones está integrada en processWithAI()
+  // ACTUALIZADO: La gestión de sesiones está integrada en aiServiceClient.processMessage()
   // Ya no es necesario llamar a saveSession() por separado
 
   // Procesar con IA y responder (soporta UI estructurada)
@@ -397,7 +328,7 @@ client.on('message', async message => {
       return;
     }
 
-    const ai = await processWithAI(message);
+    const ai = await aiServiceClient.processMessage(message);
     try {
       console.warn('AI raw:', JSON.stringify(ai).slice(0, 500));
     } catch {}
@@ -562,11 +493,9 @@ app.get('/health', async (req, res) => {
 
   // Verificar conexión con AI Service Clientes
   try {
-    const aiResponse = await axiosClient.get(`${AI_SERVICE_URL}/health`, {
-      timeout: 5000,
-    });
-    healthStatus.ai_service = 'connected';
-    healthStatus.ai_service_status = aiResponse.data.status || 'ok';
+    const isHealthy = await aiServiceClient.healthCheck();
+    healthStatus.ai_service = isHealthy ? 'connected' : 'disconnected';
+    healthStatus.ai_service_status = isHealthy ? 'ok' : 'error';
   } catch (error) {
     healthStatus.ai_service = 'disconnected';
     healthStatus.ai_service_error = error.message;
