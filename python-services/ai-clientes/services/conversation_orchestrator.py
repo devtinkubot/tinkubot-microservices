@@ -30,11 +30,11 @@ from templates.prompts import (
 )
 from services.search_service import extract_profession_and_location
 from services.validation_service import check_if_banned, validate_content_with_ai
+from shared_lib.service_catalog import COMMON_SERVICE_SYNONYMS
 from shared_lib.session_manager import session_manager
 from utils.services_utils import (
     GREETINGS,
     RESET_KEYWORDS,
-    COMMON_SERVICE_SYNONYMS,
     _normalize_text_for_matching,
     normalize_city_input,
 )
