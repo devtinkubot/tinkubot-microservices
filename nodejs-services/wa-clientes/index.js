@@ -11,6 +11,10 @@ const AIServiceClient = require('./src/application/services/AIServiceClient');
 const TextMessageHandler = require('./src/application/handlers/TextMessageHandler');
 const HandlerRegistry = require('./src/application/handlers/HandlerRegistry');
 const healthRoutes = require('./src/presentation/http/routes/health.routes');
+const qrRoutes = require('./src/presentation/http/routes/qr.routes');
+const statusRoutes = require('./src/presentation/http/routes/status.routes');
+const refreshRoutes = require('./src/presentation/http/routes/refresh.routes');
+const sendRoutes = require('./src/presentation/http/routes/send.routes');
 
 // Middleware
 const configureCors = require('./src/presentation/http/middleware/cors.middleware');
@@ -52,27 +56,6 @@ configureCompression(app);
 configureRateLimit(app, config);
 configureJsonParser(app, config);
 configureTimeout(app, REQUEST_TIMEOUT_MS);
-
-// Endpoint simple para envíos salientes desde otros servicios
-app.post('/send', async (req, res) => {
-  try {
-    const { to, message } = req.body || {};
-    if (!to || !message) {
-      return res.status(400).json({ error: 'to and message are required' });
-    }
-    if (typeof to !== 'string' || typeof message !== 'string') {
-      return res.status(400).json({ error: 'invalid parameters' });
-    }
-    if (message.length > 1000) {
-      return res.status(413).json({ error: 'message too long' });
-    }
-    await messageSender.sendText(to, message);
-    return res.json({ status: 'sent' });
-  } catch (err) {
-    console.error('Error en /send:', err.message || err);
-    return res.status(500).json({ error: 'failed to send message' });
-  }
-});
 
 // Configurar servidor HTTP y WebSocket
 const server = http.createServer(app);
@@ -283,45 +266,6 @@ client.on('disconnected', reason => {
 
 client.initialize();
 
-// --- Endpoints de la API ---
-
-// Endpoint para obtener el QR code
-app.get('/qr', (req, res) => {
-  if (clientStatus === 'qr_ready' && qrCodeData) {
-    res.json({ qr: qrCodeData });
-  } else {
-    res.status(404).json({ error: 'QR code no disponible o ya conectado.' });
-  }
-});
-
-// Endpoint para obtener el estado
-app.get('/status', (req, res) => {
-  res.json({ status: clientStatus });
-});
-
-app.post('/refresh', async (req, res) => {
-  try {
-    const result = await resetWhatsAppSession('manual', { attemptLogout: true });
-    if (result === 'in_progress') {
-      return res.status(409).json({
-        success: false,
-        error: 'Ya hay un proceso de regeneración en curso.',
-      });
-    }
-
-    res.json({
-      success: true,
-      message: 'Regeneración de QR iniciada. Escanea el nuevo código cuando aparezca.',
-    });
-  } catch (error) {
-    console.error(`[${instanceName}] Error durante la regeneración manual:`, error);
-    res.status(500).json({
-      success: false,
-      error: 'No se pudo regenerar el código QR.',
-    });
-  }
-});
-
 // Registrar rutas
 const services = {
   config,
@@ -329,9 +273,16 @@ const services = {
   instanceName,
   port,
   clientStatus,
-  aiServiceClient
+  aiServiceClient,
+  qrCodeData,
+  resetWhatsAppSession,
+  messageSender
 };
 healthRoutes(app, services);
+qrRoutes(app, services);
+statusRoutes(app, services);
+refreshRoutes(app, services);
+sendRoutes(app, services);
 
 server.listen(port, () => {
   console.warn(`🚀 ${instanceName} (ID: ${instanceId}) escuchando en http://localhost:${port}`);
