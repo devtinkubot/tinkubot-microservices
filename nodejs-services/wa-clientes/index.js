@@ -10,78 +10,38 @@ const http = require('http');
 const https = require('https');
 const { Server } = require('socket.io');
 const SupabaseStore = require('./SupabaseStore');
+const config = require('./src/infrastructure/config/envConfig');
 
-const parsePort = value => {
-  const num = Number(value);
-  return Number.isFinite(num) && num > 0 ? num : undefined;
-};
-
-const resolvePort = (defaultValue, ...candidates) => {
-  for (const candidate of candidates) {
-    const parsed = parsePort(candidate);
-    if (parsed !== undefined) {
-      return parsed;
-    }
-  }
-  return defaultValue;
-};
+// Validar configuración
+config.validate();
 
 const app = express();
-const port = resolvePort(
-  5001,
-  process.env.CLIENTES_WHATSAPP_PORT,
-  process.env.WHATSAPP_CLIENTES_PORT
-);
-const instanceId = process.env.CLIENTES_INSTANCE_ID || 'bot-clientes';
-const instanceName = process.env.CLIENTES_INSTANCE_NAME || 'TinkuBot Clientes';
-const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS || '8000', 10);
-const LOG_SAMPLING_RATE = parseInt(process.env.LOG_SAMPLING_RATE || '10', 10);
+const port = config.port;
+const instanceId = config.instanceId;
+const instanceName = config.instanceName;
+const REQUEST_TIMEOUT_MS = config.requestTimeoutMs;
+const AI_SERVICE_URL = config.aiServiceUrl;
 
-// Configuración de servicios externos
-// ESPECIALIZADO: Siempre usa el AI Service Clientes
-const defaultAiPort = resolvePort(
-  8001,
-  process.env.CLIENTES_SERVER_PORT,
-  process.env.AI_SERVICE_CLIENTES_PORT
-);
-const fallbackAiHosts = [
-  process.env.SERVER_DOMAIN && `http://${process.env.SERVER_DOMAIN}:${defaultAiPort}`,
-  `http://ai-clientes:${defaultAiPort}`,
-  'http://ai-srv-clientes:8001',
-].filter(Boolean);
-
-const AI_SERVICE_URL =
-  process.env.AI_SERVICE_CLIENTES_URL ||
-  process.env.CLIENTES_AI_SERVICE_URL ||
-  fallbackAiHosts[0];
-console.warn(`[${instanceName}] IA Clientes URL: ${AI_SERVICE_URL}`);
-const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 20 });
-const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 20 });
+// Configurar HTTP agents
+const httpAgent = new http.Agent(config.httpAgent);
+const httpsAgent = new https.Agent(config.httpAgent);
 const axiosClient = axios.create({
   httpAgent,
   httpsAgent,
-  timeout: 5000
+  timeout: config.axiosTimeout
 });
 
 // Configuración de Supabase para almacenamiento de sesiones
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_BACKEND_API_KEY;
-const supabaseBucket = process.env.SUPABASE_BUCKET_NAME;
-
-// Validar configuración de Supabase
-if (!supabaseUrl || !supabaseKey || !supabaseBucket) {
-  console.error('❌ Error: Faltan variables de entorno de Supabase');
-  console.error('Requeridas: SUPABASE_URL, SUPABASE_BACKEND_API_KEY, SUPABASE_BUCKET_NAME');
-  process.exit(1);
-}
+const { url: supabaseUrl, key: supabaseKey, bucket: supabaseBucket } = config.supabase;
 
 // Inicializar Supabase Store
 const supabaseStore = new SupabaseStore(supabaseUrl, supabaseKey, supabaseBucket);
 console.warn('✅ Supabase Store inicializado');
 
 // Configuración de instancia
-console.warn(`🤖 Iniciando ${instanceName} (ID: ${instanceId})`);
-console.warn(`📱 Puerto: ${port}`);
+const startupInfo = config.getStartupInfo();
+console.warn(`🤖 Iniciando ${startupInfo.instanceName} (ID: ${startupInfo.instanceId})`);
+console.warn(`📱 Puerto: ${startupInfo.port}`);
 
 // Middleware
 app.use(cors());
@@ -90,14 +50,14 @@ app.use(compression());
 app.use(
   rateLimit({
     windowMs: 60 * 1000,
-    max: parseInt(process.env.RATE_LIMIT_MAX || '120', 10),
+    max: config.rateLimitMax,
     standardHeaders: true,
     legacyHeaders: false
   })
 );
 app.use(
   express.json({
-    limit: process.env.BODY_SIZE_LIMIT || '200kb'
+    limit: config.bodySizeLimit
   })
 );
 app.use((req, res, next) => {
