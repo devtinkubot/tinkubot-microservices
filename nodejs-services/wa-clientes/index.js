@@ -11,6 +11,7 @@ const https = require('https');
 const { Server } = require('socket.io');
 const SupabaseStore = require('./SupabaseStore');
 const config = require('./src/infrastructure/config/envConfig');
+const axiosClient = require('./src/infrastructure/http/axiosClient');
 
 // Validar configuración
 config.validate();
@@ -21,15 +22,6 @@ const instanceId = config.instanceId;
 const instanceName = config.instanceName;
 const REQUEST_TIMEOUT_MS = config.requestTimeoutMs;
 const AI_SERVICE_URL = config.aiServiceUrl;
-
-// Configurar HTTP agents
-const httpAgent = new http.Agent(config.httpAgent);
-const httpsAgent = new https.Agent(config.httpAgent);
-const axiosClient = axios.create({
-  httpAgent,
-  httpsAgent,
-  timeout: config.axiosTimeout
-});
 
 // Configuración de Supabase para almacenamiento de sesiones
 const { url: supabaseUrl, key: supabaseKey, bucket: supabaseBucket } = config.supabase;
@@ -162,27 +154,6 @@ async function sendMedia(to, mediaUrl, caption) {
   return sendWithRetry(() => client.sendMessage(to, media, options));
 }
 
-// Helpers HTTP con reintentos
-async function postWithRetry(url, payload, { timeout = 15000, retries = 2, baseDelay = 300 } = {}) {
-  let attempt = 0;
-  let lastErr;
-  while (attempt <= retries) {
-    try {
-      return await axiosClient.post(url, payload, { timeout });
-    } catch (err) {
-      lastErr = err;
-      const msg = err?.message || '';
-      const retriable = /ENOTFOUND|ECONNRESET|ETIMEDOUT|EAI_AGAIN|timeout/i.test(msg);
-      if (!retriable || attempt === retries) throw err;
-      const delay = baseDelay * Math.pow(2, attempt);
-      console.warn(`HTTP retry ${attempt + 1}/${retries} en ${delay}ms: ${msg}`);
-      await new Promise(r => setTimeout(r, delay));
-      attempt++;
-    }
-  }
-  throw lastErr;
-}
-
 // Función para procesar mensajes con IA (envía contexto enriquecido)
 async function processWithAI(message) {
   try {
@@ -236,7 +207,7 @@ async function processWithAI(message) {
       console.warn('✅ Ubicación detectada desde objeto location nativo');
     }
 
-    const response = await postWithRetry(`${AI_SERVICE_URL}/handle-whatsapp-message`, payload, {
+    const response = await axiosClient.postWithRetry(`${AI_SERVICE_URL}/handle-whatsapp-message`, payload, {
       timeout: 20000, // acortar para no bloquear el loop
       retries: 0, // evitar duplicar solicitudes en casos de espera larga
     });
@@ -655,7 +626,7 @@ app.get('/health', async (req, res) => {
 
   // Verificar conexión con AI Service Clientes
   try {
-    const aiResponse = await axios.get(`${AI_SERVICE_URL}/health`, {
+    const aiResponse = await axiosClient.get(`${AI_SERVICE_URL}/health`, {
       timeout: 5000,
     });
     healthStatus.ai_service = 'connected';
