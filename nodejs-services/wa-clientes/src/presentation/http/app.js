@@ -11,19 +11,19 @@
 const express = require('express');
 
 // Middleware
-const configureCors = require('../middleware/cors.middleware');
-const configureHelmet = require('../middleware/helmet.middleware');
-const configureCompression = require('../middleware/compression.middleware');
-const configureRateLimit = require('../middleware/rateLimit.middleware');
-const configureJsonParser = require('../middleware/json.middleware');
-const configureTimeout = require('../middleware/timeout.middleware');
+const configureCors = require('./middleware/cors.middleware');
+const configureHelmet = require('./middleware/helmet.middleware');
+const configureCompression = require('./middleware/compression.middleware');
+const configureRateLimit = require('./middleware/rateLimit.middleware');
+const configureJsonParser = require('./middleware/json.middleware');
+const configureTimeout = require('./middleware/timeout.middleware');
 
 // Routes
-const healthRoutes = require('../routes/health.routes');
-const qrRoutes = require('../routes/qr.routes');
-const statusRoutes = require('../routes/status.routes');
-const refreshRoutes = require('../routes/refresh.routes');
-const sendRoutes = require('../routes/send.routes');
+const healthRoutes = require('./routes/health.routes');
+const qrRoutes = require('./routes/qr.routes');
+const statusRoutes = require('./routes/status.routes');
+const refreshRoutes = require('./routes/refresh.routes');
+const sendRoutes = require('./routes/send.routes');
 
 /**
  * Crea y configura la aplicación Express
