@@ -34,8 +34,12 @@ from services.whatsapp_service import inicializar_flow_con_perfil
 
 # Servicio de consentimiento
 from services.consent_service import (
-    interpretar_respuesta_usuario,
     manejar_respuesta_consentimiento,
+)
+
+# Importar servicios de interpretación de respuestas
+from services.response_interpreter_service import (
+    interpretar_respuesta_usuario,
 )
 
 # Flows

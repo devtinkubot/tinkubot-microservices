@@ -94,9 +94,13 @@ from services.profile_service import (
 # Importar servicios de consentimiento
 from services.consent_service import (
     solicitar_consentimiento_proveedor,
-    interpretar_respuesta_usuario,
     registrar_consentimiento_proveedor,
     manejar_respuesta_consentimiento,
+)
+
+# Importar servicios de interpretación de respuestas
+from services.response_interpreter_service import (
+    interpretar_respuesta_usuario,
 )
 
 # Importar servicios de gestión de imágenes
