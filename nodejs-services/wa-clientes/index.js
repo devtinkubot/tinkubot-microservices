@@ -12,6 +12,7 @@ const { Server } = require('socket.io');
 const SupabaseStore = require('./SupabaseStore');
 const config = require('./src/infrastructure/config/envConfig');
 const axiosClient = require('./src/infrastructure/http/axiosClient');
+const MessageSenderWithRetry = require('./src/infrastructure/messaging/MessageSenderWithRetry');
 
 // Validar configuración
 config.validate();
@@ -84,7 +85,7 @@ app.post('/send', async (req, res) => {
     if (message.length > 1000) {
       return res.status(413).json({ error: 'message too long' });
     }
-    await sendText(to, message);
+    await messageSender.sendText(to, message);
     return res.json({ status: 'sent' });
   } catch (err) {
     console.error('Error en /send:', err.message || err);
@@ -104,55 +105,7 @@ const io = new Server(server, {
 let qrCodeData = null;
 let clientStatus = 'disconnected';
 let isRefreshing = false;
-
-// Envío robusto con retry/backoff para mitigar errores de Puppeteer/Chromium
-async function sendWithRetry(sendFn, maxRetries = 3, baseDelayMs = 300) {
-  let attempt = 0;
-  let lastErr;
-  while (attempt <= maxRetries) {
-    try {
-      return await sendFn();
-    } catch (err) {
-      lastErr = err;
-      const msg = (err && (err.message || err.originalMessage)) || '';
-      const retriable =
-        /Execution context was destroyed|Target closed|Evaluation failed|Protocol error/i.test(msg);
-      if (!retriable || attempt === maxRetries) {
-        console.error('sendWithRetry: fallo definitivo:', msg);
-        throw err;
-      }
-      const delay = baseDelayMs * Math.pow(2, attempt);
-      console.warn(
-        `sendWithRetry: reintentando en ${delay}ms (intento ${attempt + 1}/${maxRetries})`
-      );
-      await new Promise(r => setTimeout(r, delay));
-      attempt++;
-    }
-  }
-  throw lastErr;
-}
-
-async function sendText(to, text) {
-  const safeText = text || ' ';
-  return sendWithRetry(() => client.sendMessage(to, safeText));
-}
-
-// Helpers para renderizar UI en WhatsApp (opciones numeradas)
-async function sendButtons(to, text) {
-  await sendText(to, text || 'Responde con el número de tu opción:');
-}
-
-async function sendProviderResults(to, text) {
-  // No añadir menú numérico aquí; ai-clientes ya envía la instrucción adecuada.
-  await sendText(to, text || ''); // texto ya viene con la instrucción a-e
-}
-
-async function sendMedia(to, mediaUrl, caption) {
-  if (!mediaUrl) return;
-  const media = await MessageMedia.fromUrl(mediaUrl, { unsafeMime: true });
-  const options = caption ? { caption } : {};
-  return sendWithRetry(() => client.sendMessage(to, media, options));
-}
+let messageSender; // Se inicializará después de crear el cliente
 
 // Función para procesar mensajes con IA (envía contexto enriquecido)
 async function processWithAI(message) {
@@ -341,6 +294,9 @@ const client = new Client({
   },
 });
 
+// Inicializar MessageSender con el cliente
+messageSender = new MessageSenderWithRetry(client);
+
 client.on('qr', qr => {
   console.warn(`[${instanceName}] QR Code recibido, generándolo en terminal y guardándolo...`);
   qrcode.generate(qr, { small: true });
@@ -471,7 +427,7 @@ client.on('message', async message => {
 
       if (mediaUrl) {
         try {
-          await sendMedia(message.from, mediaUrl, mediaCaption);
+          await messageSender.sendMedia(message.from, mediaUrl, mediaCaption);
           mediaSent = true;
         } catch (err) {
           console.error('No se pudo enviar la foto (media):', err?.message || err);
@@ -479,11 +435,11 @@ client.on('message', async message => {
       }
 
       if (ui.type === 'buttons' && Array.isArray(ui.buttons)) {
-        await sendButtons(message.from, text || 'Elige una opción:', ui.buttons);
+        await messageSender.sendButtons(message.from, text || 'Elige una opción:', ui.buttons);
         console.warn('Respuesta enviada (IA):', text || ui.type || '[sin texto]');
         return;
       } else if (ui.type === 'location_request') {
-        await sendText(
+        await messageSender.sendText(
           message.from,
           text || 'Por favor comparte tu ubicación 📎 para mostrarte los más cercanos.'
         );
@@ -494,7 +450,7 @@ client.on('message', async message => {
           const names = (ui.providers || []).map(p => p.name || 'Proveedor');
           console.warn('➡️ Enviando provider_results al usuario:', { count: names.length, names });
         } catch {}
-        await sendProviderResults(
+        await messageSender.sendProviderResults(
           message.from,
           text || 'Encontré estas opciones:',
           ui.providers || []
@@ -502,7 +458,7 @@ client.on('message', async message => {
         console.warn('Respuesta enviada (IA):', text || ui.type || '[sin texto]');
         return;
       } else if (ui.type === 'feedback' && Array.isArray(ui.options)) {
-        await sendButtons(message.from, text || 'Califica tu experiencia:', ui.options);
+        await messageSender.sendButtons(message.from, text || 'Califica tu experiencia:', ui.options);
         console.warn('Respuesta enviada (IA):', text || ui.type || '[sin texto]');
         return;
       } else if (ui.type === 'silent') {
@@ -515,16 +471,16 @@ client.on('message', async message => {
       }
 
       if (mediaSent && text && mediaCaption !== text) {
-        await sendText(message.from, text);
+        await messageSender.sendText(message.from, text);
         console.warn('Respuesta enviada (IA): media + texto');
         return;
       }
 
       if (text) {
-        await sendText(message.from, text);
+        await messageSender.sendText(message.from, text);
         console.warn('Respuesta enviada (IA):', text || ui.type || '[sin texto]');
       } else {
-        await sendText(message.from, 'Procesando tu mensaje...');
+        await messageSender.sendText(message.from, 'Procesando tu mensaje...');
         console.warn('Respuesta enviada (IA): procesamiento');
       }
     }
@@ -540,7 +496,7 @@ client.on('message', async message => {
   } catch (error) {
     console.error('Error al procesar mensaje:', error);
     // Enviar respuesta de fallback solo si falla la IA
-    await sendText(
+    await messageSender.sendText(
       message.from,
       'Lo siento, ocurrió un error al procesar tu mensaje. Por favor intenta de nuevo.'
     );
