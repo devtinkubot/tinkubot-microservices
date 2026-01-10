@@ -2,34 +2,18 @@ const express = require('express');
 const { Client, MessageMedia, RemoteAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const http = require('http');
-const SupabaseStore = require('./SupabaseStore');
-const config = require('./src/infrastructure/config/envConfig');
-const axiosClient = require('./src/infrastructure/http/axiosClient');
-const MessageSenderWithRetry = require('./src/infrastructure/messaging/MessageSenderWithRetry');
-const SocketIOServer = require('./src/infrastructure/websocket/SocketIOServer');
-const AIServiceClient = require('./src/application/services/AIServiceClient');
-const TextMessageHandler = require('./src/application/handlers/TextMessageHandler');
-const HandlerRegistry = require('./src/application/handlers/HandlerRegistry');
-const createApp = require('./src/presentation/http/app.js');
+const container = require('./container');
 
-// Validar configuración
-config.validate();
+// Inicializar contenedor de dependencias
+container.initialize();
 
+const config = container.config;
 const port = config.port;
 const instanceId = config.instanceId;
 const instanceName = config.instanceName;
 const REQUEST_TIMEOUT_MS = config.requestTimeoutMs;
-const AI_SERVICE_URL = config.aiServiceUrl;
-
-// Inicializar AI Service Client
-const aiServiceClient = new AIServiceClient(AI_SERVICE_URL);
-
-// Configuración de Supabase para almacenamiento de sesiones
-const { url: supabaseUrl, key: supabaseKey, bucket: supabaseBucket } = config.supabase;
-
-// Inicializar Supabase Store
-const supabaseStore = new SupabaseStore(supabaseUrl, supabaseKey, supabaseBucket);
-console.warn('✅ Supabase Store inicializado');
+const supabaseStore = container.supabaseStore;
+const aiServiceClient = container.aiServiceClient;
 
 // Configuración de instancia
 const startupInfo = config.getStartupInfo();
@@ -40,7 +24,6 @@ console.warn(`📱 Puerto: ${startupInfo.port}`);
 let qrCodeData = null;
 let clientStatus = 'disconnected';
 let isRefreshing = false;
-let messageSender; // Se inicializará después de crear el cliente
 
 console.warn('Inicializando cliente de WhatsApp con RemoteAuth...');
 
@@ -156,31 +139,23 @@ const client = new Client({
   },
 });
 
-// Inicializar MessageSender con el cliente
-messageSender = new MessageSenderWithRetry(client);
-
-// Inicializar HandlerRegistry y registrar handlers
-const handlerRegistry = new HandlerRegistry();
-handlerRegistry.register(new TextMessageHandler(messageSender, aiServiceClient));
-console.warn(`✅ HandlerRegistry inicializado con ${handlerRegistry.count} handler(s)`);
+// Registrar cliente en el contenedor
+container.registerWhatsAppClient(client);
 
 // Crear aplicación Express con todas las rutas y middleware
-const services = {
-  config,
-  instanceId,
-  instanceName,
-  port,
+const runtimeServices = {
   clientStatus,
-  aiServiceClient,
   qrCodeData,
-  resetWhatsAppSession,
-  messageSender
+  resetWhatsAppSession
 };
-const app = createApp(services);
+const app = container.createExpressApp(runtimeServices);
 
 // Configurar servidor HTTP y WebSocket
-const server = http.createServer(app);
-const socketServer = new SocketIOServer(server);
+const server = container.createHttpServer();
+const socketServer = container.createSocketServer();
+const messageSender = container.messageSender;
+const handlerRegistry = container.handlerRegistry;
+console.warn(`✅ HandlerRegistry inicializado con ${handlerRegistry.count} handler(s)`);
 
 client.on('qr', qr => {
   console.warn(`[${instanceName}] QR Code recibido, generándolo en terminal y guardándolo...`);
