@@ -113,11 +113,15 @@ from services.consent_service import (
 )
 
 # Importar servicios de gestión de imágenes
-from services.image_service import (
+from services.image_processing_service import (
     procesar_imagen_base64,
+)
+from services.storage_service import (
     subir_imagen_proveedor_almacenamiento,
     actualizar_imagenes_proveedor,
     obtener_urls_imagenes_proveedor,
+)
+from services.image_service import (
     subir_medios_identidad,
 )
 
