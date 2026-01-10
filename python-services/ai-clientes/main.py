@@ -93,6 +93,8 @@ from services.consent_service import ConsentService
 from services.media_service import MediaService
 # Importar servicio de búsqueda en segundo plano (Sprint 1.14)
 from services.background_search_service import BackgroundSearchService
+# Importar servicio de procesamiento de mensajes (Sprint 1.15)
+from services.message_processor_service import MessageProcessorService
 from shared_lib.redis_client import redis_client
 from shared_lib.service_catalog import (
     COMMON_SERVICE_SYNONYMS,
@@ -228,6 +230,16 @@ background_search_service = BackgroundSearchService(
         "opciones_confirmar_nueva_busqueda_textos": opciones_confirmar_nueva_busqueda_textos,
     },
 ) if (messaging_service and availability_coordinator) else None
+
+# Inicializar servicio de procesamiento de mensajes (Sprint 1.15)
+message_processor_service = MessageProcessorService(
+    openai_client=openai_client,
+    extract_profession_and_location=extract_profession_and_location,
+    intelligent_search_providers_remote=intelligent_search_providers_remote,
+    search_providers=search_providers,
+    session_manager=session_manager,
+    supabase=supabase,
+)
 
 
 
@@ -451,193 +463,21 @@ async def health_check():
 async def process_client_message(request: MessageProcessingRequest):
     """
     Procesar mensaje de cliente usando OpenAI con contexto de sesión
+
+    Sprint 1.15: Ahora usa MessageProcessorService
     """
     try:
         phone = request.context.get("phone", "unknown")
-        logger.info(
-            f"📨 Procesando mensaje de cliente: {phone} - {request.message[:100]}..."
+
+        # Usar el servicio de procesamiento de mensajes
+        result = await message_processor_service.process_message(
+            request=request,
+            phone=phone,
+            normalize_profession_for_search=normalize_profession_for_search,
+            _normalize_token=_normalize_token,
         )
 
-        # Guardar mensaje del usuario en sesión
-        await session_manager.save_session(phone, request.message, is_bot=False)
-
-        # Obtener contexto de conversación para extracción
-        conversation_context = await session_manager.get_session_context(phone)
-
-        # Extraer profesión y ubicación usando el método simple
-        detected_profession, detected_location = extract_profession_and_location(
-            conversation_context, request.message
-        )
-        profession = detected_profession
-        location = detected_location
-
-        if location:
-            location = location.strip()
-
-        normalized_profession_token = None
-        if profession:
-            normalized_profession_token = _normalize_token(profession)
-            normalized_for_search = normalize_profession_for_search(profession)
-            if normalized_for_search:
-                profession = normalized_for_search
-            elif normalized_profession_token:
-                profession = normalized_profession_token
-
-        if profession and location:
-            search_payload = {
-                "main_profession": profession,
-                "location": location,
-            }
-            providers_result = await intelligent_search_providers_remote(search_payload)
-
-            if not providers_result["ok"] or not providers_result["providers"]:
-                providers_result = await search_providers(profession, location)
-
-            if providers_result["ok"] and providers_result["providers"]:
-                providers = providers_result["providers"][:3]
-                lines = []
-                lines.append(
-                    f"¡Excelente! He encontrado {len(providers)} {profession}s "
-                    f"en {location.title() if isinstance(location, str) else location}:"
-                )
-                lines.append("")
-                for i, p in enumerate(providers, 1):
-                    name = p.get("name") or p.get("provider_name") or "Proveedor"
-                    rating = p.get("rating", 4.5)
-                    phone_out = p.get("phone") or p.get("phone_number") or "s/n"
-                    desc = p.get("description") or p.get("services_offered") or ""
-                    exp = p.get("experience") or f"{p.get('experience_years', 0)} años"
-                    lines.append(f"{i}. {name} ⭐{rating}")
-                    lines.append(f"   - Teléfono: {phone_out}")
-                    if exp and exp != "0 años":
-                        lines.append(f"   - Experiencia: {exp}")
-                    if isinstance(desc, list):
-                        desc = ", ".join(desc[:3])
-                    if desc:
-                        lines.append(f"   - {desc}")
-                    specialty_tags = p.get("matched_terms") or p.get("specialties")
-                    if specialty_tags:
-                        if isinstance(specialty_tags, list):
-                            display = ", ".join(
-                                str(item)
-                                for item in specialty_tags[:3]
-                                if str(item).strip()
-                            )
-                        else:
-                            display = str(specialty_tags)
-                        if display:
-                            lines.append(f"   - Coincidencias: {display}")
-                    lines.append("")
-                lines.append("¿Quieres que te comparta el contacto de alguno?")
-                ai_response_text = "\n".join(lines)
-
-                await session_manager.save_session(phone, ai_response_text, is_bot=True)
-
-                try:
-                    if supabase:
-                        supabase.table("service_requests").insert(
-                            {
-                                "phone": phone,
-                                "intent": "service_request",
-                                "profession": profession,
-                                "location_city": location,
-                                "requested_at": datetime.utcnow().isoformat(),
-                                "resolved_at": datetime.utcnow().isoformat(),
-                                "suggested_providers": providers,
-                            }
-                        ).execute()
-                except Exception as e:
-                    logger.warning(
-                        f"⚠️ No se pudo registrar service_request en Supabase: {e}"
-                    )
-
-                return MessageProcessingResponse(
-                    response=ai_response_text,
-                    intent="service_request",
-                    entities={
-                        "profession": profession,
-                        "location": location,
-                        "providers": providers,
-                    },
-                    confidence=0.9,
-                )
-
-        if not profession:
-            guidance_text = (
-                "Estoy teniendo problemas para entender exactamente el servicio que "
-                "necesitas. ¿Podrías decirlo en una palabra? Por ejemplo: marketing, "
-                "publicidad, diseño, plomería."
-            )
-            await session_manager.save_session(phone, guidance_text, is_bot=True)
-            return MessageProcessingResponse(
-                response=guidance_text,
-                intent="service_request",
-                entities={
-                    "profession": None,
-                    "location": location,
-                },
-                confidence=0.5,
-            )
-
-        # Construir prompt con contexto
-        context_prompt = (
-            "Eres un asistente de TinkuBot, un marketplace de servicios profesionales en "
-            "Ecuador. Tu rol es entender las necesidades del cliente y extraer:\n"
-            "1. Tipo de servicio/profesión que necesita\n"
-            "2. Ubicación (si menciona)\n"
-            "3. Urgencia\n"
-            "4. Presupuesto (si menciona)\n\n"
-            f"CONTEXTO DE LA CONVERSACIÓN:\n{conversation_context}\n\n"
-            "Responde de manera amable y profesional, siempre en español."
-        )
-
-        # Llamar a OpenAI (si hay API key). Si no, fallback básico
-        if not openai_client:
-            ai_response = (
-                "Gracias por tu mensaje. Para ayudarte mejor, cuéntame el servicio que "
-                "necesitas (por ejemplo, plomero, electricista) y tu ciudad."
-            )
-        else:
-            response = await openai_client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": context_prompt},
-                    {"role": "user", "content": request.message},
-                ],
-                temperature=0.7,
-                max_tokens=500,
-            )
-            ai_response = response.choices[0].message.content
-        confidence = 0.85  # Confianza base
-
-        # Extraer entidades básicas (aquí podrías usar NLP más avanzado)
-        entities = {
-            "profession": None,
-            "location": None,
-            "urgency": None,
-            "budget": None,
-        }
-
-        # Detectar intenciones comunes
-        intent = "information_request"
-        if "necesito" in request.message.lower() or "busco" in request.message.lower():
-            intent = "service_request"
-        elif "precio" in request.message.lower() or "costo" in request.message.lower():
-            intent = "pricing_inquiry"
-        elif "disponible" in request.message.lower():
-            intent = "availability_check"
-
-        # Guardar respuesta del bot en sesión
-        await session_manager.save_session(phone, ai_response, is_bot=True)
-
-        logger.info(f"✅ Mensaje procesado. Intent: {intent}")
-
-        return MessageProcessingResponse(
-            response=ai_response,
-            intent=intent,
-            entities=entities,
-            confidence=confidence,
-        )
+        return result
 
     except Exception as e:
         logger.error(f"❌ Error procesando mensaje: {e}")
