@@ -6,6 +6,13 @@ from typing import Any, Dict, List, Optional, Tuple
 from pydantic import ValidationError
 from shared_lib.models import ProviderCreate
 
+from services.parser_service import (
+    normalize_text,
+    parse_experience_years,
+    parse_services_string,
+    parse_social_media,
+)
+
 logger = logging.getLogger(__name__)
 
 # Constantes de validación
@@ -17,56 +24,9 @@ MIN_ESPECIALIDAD_CHARS = 2
 MAX_ESPECIALIDAD_CHARS = 300
 MAX_SERVICIOS_COUNT = 10
 MAX_SERVICIO_CHARS = 120
-MIN_EXPERIENCE_YEARS = 0
-MAX_EXPERIENCE_YEARS = 60
 
 # Valores de omisión
 OMISSION_VALUES = {"omitir", "na", "n/a", "ninguno", "ninguna"}
-
-
-def normalize_text(value: Optional[str]) -> str:
-    """
-    Normaliza texto eliminando espacios en blanco.
-
-    Args:
-        value: Texto a normalizar
-
-    Returns:
-        Texto sin espacios al inicio y final, o cadena vacía si es None
-    """
-    return (value or "").strip()
-
-
-def parse_experience_years(text: Optional[str]) -> Optional[int]:
-    """
-    Parsea años de experiencia desde texto.
-
-    Args:
-        text: Texto que contiene un número
-
-    Returns:
-        Entero entre 0 y 60, o None si no se puede parsear
-    """
-    normalized = (text or "").strip().lower()
-    if not normalized:
-        return None
-
-    digits = ""
-    for ch in normalized:
-        if ch.isdigit():
-            digits += ch
-        elif digits:
-            break
-
-    if not digits:
-        return None
-
-    try:
-        value = int(digits)
-    except ValueError:
-        return None
-
-    return max(MIN_EXPERIENCE_YEARS, min(MAX_EXPERIENCE_YEARS, value))
 
 
 def validate_city(city: str) -> Tuple[bool, Optional[str]]:
@@ -194,26 +154,6 @@ def validate_email(email: str) -> Tuple[bool, Optional[str], Optional[str]]:
     return True, None, normalized
 
 
-def parse_social_media(message_text: Optional[str]) -> Dict[str, Optional[str]]:
-    """
-    Parsea la entrada de red social y devuelve url + tipo.
-
-    Args:
-        message_text: Texto con URL o nombre de usuario
-
-    Returns:
-        Dict con keys: 'url', 'type'
-    """
-    social = normalize_text(message_text)
-    if social.lower() in OMISSION_VALUES:
-        return {"url": None, "type": None}
-    if "facebook.com" in social or "fb.com" in social:
-        return {"url": social, "type": "facebook"}
-    if "instagram.com" in social or "instagr.am" in social:
-        return {"url": social, "type": "instagram"}
-    return {"url": f"https://instagram.com/{social}", "type": "instagram"}
-
-
 def validate_provider_payload(
     flow: Dict[str, Any], phone: str
 ) -> Tuple[bool, Optional[Dict[str, Any]]]:
@@ -264,33 +204,3 @@ def validate_provider_payload(
             ),
         }
         return False, error_response
-
-
-def parse_services_string(value: Optional[str]) -> List[str]:
-    """
-    Parsea cadena de servicios separados por separadores.
-
-    Args:
-        value: Cadena con servicios separados por |;,\n
-
-    Returns:
-        Lista de servicios (máximo 5)
-    """
-    if not value:
-        return []
-
-    cleaned = value.strip()
-    if not cleaned:
-        return []
-
-    if re.search(r"[|;,\n]", cleaned):
-        candidates = re.split(r"[|;,\n]+", cleaned)
-    else:
-        candidates = [cleaned]
-
-    servicios: List[str] = []
-    for item in candidates:
-        servicio = item.strip()
-        if servicio and servicio not in servicios:
-            servicios.append(servicio)
-    return servicios[:5]

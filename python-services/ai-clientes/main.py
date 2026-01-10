@@ -91,6 +91,8 @@ from services.customer_service import CustomerService
 from services.consent_service import ConsentService
 # Importar servicio de medios (Sprint 1.12)
 from services.media_service import MediaService
+# Importar servicio de búsqueda en segundo plano (Sprint 1.14)
+from services.background_search_service import BackgroundSearchService
 from shared_lib.redis_client import redis_client
 from shared_lib.service_catalog import (
     COMMON_SERVICE_SYNONYMS,
@@ -209,84 +211,24 @@ media_service = MediaService(
     bucket_name=SUPABASE_PROVIDERS_BUCKET,
 ) if supabase else None
 
-async def background_search_and_notify(phone: str, flow: Dict[str, Any]):
-    """Ejecuta búsqueda + disponibilidad y envía resultado vía WhatsApp en segundo plano."""
-    try:
-        service = (flow.get("service") or "").strip()
-        city = (flow.get("city") or "").strip()
-        service_full = flow.get("service_full") or service
-        if not service or not city:
-            return
+# Inicializar servicio de búsqueda en segundo plano (Sprint 1.14)
+background_search_service = BackgroundSearchService(
+    search_service=search_providers,
+    availability_coordinator=availability_coordinator,
+    messaging_service=messaging_service,
+    session_manager=session_manager,
+    templates={
+        "mensaje_intro_listado_proveedores": mensaje_intro_listado_proveedores,
+        "bloque_listado_proveedores_compacto": bloque_listado_proveedores_compacto,
+        "instruccion_seleccionar_proveedor": instruccion_seleccionar_proveedor,
+        "mensaje_listado_sin_resultados": mensaje_listado_sin_resultados,
+        "titulo_confirmacion_repetir_busqueda": titulo_confirmacion_repetir_busqueda,
+        "menu_opciones_confirmacion": menu_opciones_confirmacion,
+        "pie_instrucciones_respuesta_numerica": pie_instrucciones_respuesta_numerica,
+        "opciones_confirmar_nueva_busqueda_textos": opciones_confirmar_nueva_busqueda_textos,
+    },
+) if (messaging_service and availability_coordinator) else None
 
-        # Búsqueda inicial
-        results = await search_providers(service, city)
-        providers = results.get("providers") or []
-
-        providers_final: List[Dict[str, Any]] = []
-
-        if not providers:
-            logger.info(
-                "🔍 Sin proveedores tras búsqueda inicial",
-                extra={"service": service, "city": city, "query": service_full},
-            )
-        else:
-            # Filtrar por disponibilidad en vivo
-            availability = await availability_coordinator.request_and_wait(
-                phone=phone,
-                service=service,
-                city=city,
-                need_summary=service_full,
-                providers=providers,
-            )
-            accepted = availability.get("accepted") or []
-            providers_final = (accepted if accepted else [])[:5]
-
-        # Construir texto para enviar
-        messages_to_send: List[str] = []
-        if providers_final:
-            intro = mensaje_intro_listado_proveedores(city)
-            block = bloque_listado_proveedores_compacto(providers_final)
-            header_block = f"{intro}\n\n{block}\n{instruccion_seleccionar_proveedor}"
-            messages_to_send.append(header_block)
-        else:
-            block = mensaje_listado_sin_resultados(city)
-            messages_to_send.append(block)
-            # Cambiar flujo a confirmación de nueva búsqueda (sin proveedores)
-            flow["state"] = "confirm_new_search"
-            flow["confirm_attempts"] = 0
-            flow["confirm_title"] = titulo_confirmacion_repetir_busqueda
-            flow["confirm_include_city_option"] = True
-            await set_flow(phone, flow)
-            confirm_msgs = mensajes_confirmacion_busqueda(
-                flow["confirm_title"], include_city_option=True
-            )
-            # Añadir respuestas de texto (el mensaje de botones se envía aparte)
-            messages_to_send.extend([msg.get("response") or "" for msg in confirm_msgs])
-            for cmsg in confirm_msgs:
-                if cmsg.get("response"):
-                    try:
-                        await session_manager.save_session(
-                            phone, cmsg["response"], is_bot=True
-                        )
-                    except Exception:
-                        pass
-
-        # Actualizar flow con proveedores finales y estado
-        if providers_final:
-            flow["providers"] = providers_final
-            flow["state"] = "presenting_results"
-            flow.pop("provider_detail_idx", None)
-            await set_flow(phone, flow)
-
-        for msg in messages_to_send:
-            if msg:
-                await messaging_service.send_whatsapp_text(phone, msg)
-                try:
-                    await session_manager.save_session(phone, msg, is_bot=True)
-                except Exception:
-                    pass
-    except Exception as exc:
-        logger.error(f"❌ Error en background_search_and_notify: {exc}")
 
 
 # --- Helpers for detection and providers search ---
@@ -940,7 +882,8 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                     flow["state"] = "searching"
                     flow["searching_dispatched"] = True
                     await set_flow(phone, flow)
-                    asyncio.create_task(background_search_and_notify(phone, flow.copy()))
+                    if background_search_service:
+                        asyncio.create_task(background_search_service.search_and_notify(phone, flow.copy(), set_flow))
                     return {"response": mensaje_confirmando_disponibilidad}
 
                 flow["state"] = "awaiting_city"
@@ -1015,9 +958,10 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
             if flow.get("state") == "searching":
                 flow["searching_dispatched"] = True
                 await set_flow(phone, flow)
-                asyncio.create_task(
-                    background_search_and_notify(phone, flow.copy())
-                )
+                if background_search_service:
+                    asyncio.create_task(
+                        background_search_service.search_and_notify(phone, flow.copy(), set_flow)
+                    )
                 return {"messages": [{"response": city_response.get("response")}]}
 
             # 6. Si no tiene ciudad, pedir normalmente
@@ -1103,7 +1047,8 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
 
             waiting_msg = {"response": mensaje_confirmando_disponibilidad}
             await save_bot_message(waiting_msg.get("response"))
-            asyncio.create_task(background_search_and_notify(phone, flow.copy()))
+            if background_search_service:
+                asyncio.create_task(background_search_service.search_and_notify(phone, flow.copy(), set_flow))
             return {"messages": [waiting_msg]}
 
         if state == "searching":
@@ -1114,7 +1059,8 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
             if flow.get("service") and flow.get("city"):
                 flow["searching_dispatched"] = True
                 await set_flow(phone, flow)
-                asyncio.create_task(background_search_and_notify(phone, flow.copy()))
+                if background_search_service:
+                    asyncio.create_task(background_search_service.search_and_notify(phone, flow.copy(), set_flow))
                 return {"response": mensaje_confirmando_disponibilidad}
             return await do_search()
 
@@ -1128,7 +1074,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                 save_bot_message,
                 media_service.formal_connection_message,
                 mensajes_confirmacion_busqueda,
-                messaging_service.schedule_feedback_request,
+                None,  # ← Eliminar funcionalidad de feedback
                 logger,
                 "¿Te ayudo con otro servicio?",
                 bloque_detalle_proveedor,
@@ -1147,7 +1093,7 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
                 save_bot_message,
                 media_service.formal_connection_message,
                 mensajes_confirmacion_busqueda,
-                messaging_service.schedule_feedback_request,
+                None,  # ← Eliminar funcionalidad de feedback
                 logger,
                 "¿Te ayudo con otro servicio?",
                 lambda: send_provider_prompt(phone, flow, flow.get("city", "")),
@@ -1295,24 +1241,17 @@ async def get_session_stats():
 
 if __name__ == "__main__":
     # Iniciar servicio
-    async def startup_wrapper():
-        # Lanzar scheduler en background
-        if messaging_service:
-            await messaging_service.start_scheduler()
-        server_host = os.getenv("SERVER_HOST", "0.0.0.0")
-        server_port = int(
-            os.getenv("CLIENTES_SERVER_PORT")
-            or os.getenv("AI_SERVICE_CLIENTES_PORT")
-            or settings.clientes_service_port
-        )
-        config = {
-            "app": "main:app",
-            "host": server_host,
-            "port": server_port,
-            "reload": os.getenv("UVICORN_RELOAD", "true").lower() == "true",
-            "log_level": settings.log_level.lower(),
-        }
-        uvicorn.run(**config)
-
-    # Ejecutar
-    asyncio.run(startup_wrapper())
+    server_host = os.getenv("SERVER_HOST", "0.0.0.0")
+    server_port = int(
+        os.getenv("CLIENTES_SERVER_PORT")
+        or os.getenv("AI_SERVICE_CLIENTES_PORT")
+        or settings.clientes_service_port
+    )
+    config = {
+        "app": "main:app",
+        "host": server_host,
+        "port": server_port,
+        "reload": os.getenv("UVICORN_RELOAD", "true").lower() == "true",
+        "log_level": settings.log_level.lower(),
+    }
+    uvicorn.run(**config)
