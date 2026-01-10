@@ -251,64 +251,6 @@ FAREWELL_MESSAGE = (
 )
 
 
-async def save_service_relation(
-    user_query: str,
-    inferred_profession: str,
-    search_terms: List[str],
-    confidence_score: float = 0.8
-):
-    """Guarda relación de servicio inferida por la IA para aprendizaje continuo"""
-    if not supabase:
-        return False
-
-    try:
-        # Verificar si ya existe esta relación
-        existing = await run_supabase(
-            lambda: supabase.table("service_relations")
-            .select("id, usage_count")
-            .eq("user_query", user_query.lower().strip())
-            .eq("inferred_profession", inferred_profession.lower().strip())
-            .execute(),
-            label="service_relations.fetch",
-        )
-
-        if existing.data:
-            # Actualizar contador de uso
-            relation_id = existing.data[0]["id"]
-            current_count = existing.data[0].get("usage_count", 1)
-
-            await run_supabase(
-                lambda: supabase.table("service_relations").update({
-                    "usage_count": current_count + 1,
-                    "updated_at": datetime.utcnow().isoformat()
-                }).eq("id", relation_id).execute(),
-                label="service_relations.update_usage",
-            )
-
-            logger.info(f"🔄 Relación actualizada: '{user_query}' → '{inferred_profession}' (usos: {current_count + 1})")
-        else:
-            # Crear nueva relación
-            await run_supabase(
-                lambda: supabase.table("service_relations").insert({
-                    "user_query": user_query.lower().strip(),
-                    "inferred_profession": inferred_profession.lower().strip(),
-                    "confidence_score": confidence_score,
-                    "search_terms": search_terms,
-                    "created_at": datetime.utcnow().isoformat(),
-                    "updated_at": datetime.utcnow().isoformat(),
-                    "usage_count": 1
-                }).execute(),
-                label="service_relations.insert",
-            )
-
-            logger.info(f"✅ Nueva relación guardada: '{user_query}' → '{inferred_profession}'")
-
-        return True
-    except Exception as e:
-        logger.warning(f"⚠️ Error guardando relación de servicio: {e}")
-        return False
-
-
 # --- Conversational flow helpers ---
 FLOW_KEY = "flow:{}"  # phone
 
