@@ -29,8 +29,8 @@ from utils.services_utils import (
 )
 
 # Nuevos servicios (Sprint 2.4)
-from query_interpreter_service import query_interpreter
-from providers.provider_repository import provider_repository
+from services.query_interpreter_service import query_interpreter
+from services.providers.provider_repository import provider_repository
 
 # Logger del módulo
 logger = logging.getLogger(__name__)
