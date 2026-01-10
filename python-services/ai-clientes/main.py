@@ -36,8 +36,8 @@ from shared_lib.session_manager import session_manager
 # Servicios
 from services.availability_service import availability_coordinator
 from services.background_search_service import BackgroundSearchService
-from services.consent_service import ConsentService
-from services.customer_service import CustomerService
+from services.consent.consent_service import ConsentService
+from services.customer.customer_service import CustomerService
 from services.media_service import MediaService
 from services.message_processor_service import MessageProcessorService
 from services.messaging_service import MessagingService
