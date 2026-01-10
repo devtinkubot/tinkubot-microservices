@@ -9,6 +9,8 @@ Extraído desde main.py como parte de la refactorización de Sprint 1.14.
 import logging
 from typing import Any, Dict, List
 
+from templates.prompts import _bold
+
 logger = logging.getLogger(__name__)
 
 
@@ -194,8 +196,6 @@ class BackgroundSearchService:
         Returns:
             Lista de mensajes de confirmación
         """
-        from utils.services_utils import _bold
-
         title_bold = _bold(title)
         return [
             {
