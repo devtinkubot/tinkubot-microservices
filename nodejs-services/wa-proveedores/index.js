@@ -158,9 +158,6 @@ const app = container.createExpressApp(runtimeServices);
 // Configurar servidor HTTP y WebSocket
 const server = container.createHttpServer();
 const socketServer = container.createSocketServer();
-const messageSender = container.messageSender;
-const handlerRegistry = container.handlerRegistry;
-const mqttClient = container.mqttClient;
 console.warn(`✅ HandlerRegistry inicializado con ${handlerRegistry.count} handler(s)`);
 console.warn(`✅ MQTT Client inicializado`);
 
