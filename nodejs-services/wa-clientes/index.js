@@ -16,6 +16,7 @@ const SocketIOServer = require('./src/infrastructure/websocket/SocketIOServer');
 const AIServiceClient = require('./src/application/services/AIServiceClient');
 const TextMessageHandler = require('./src/application/handlers/TextMessageHandler');
 const HandlerRegistry = require('./src/application/handlers/HandlerRegistry');
+const healthRoutes = require('./src/presentation/http/routes/health.routes');
 
 // Validar configuración
 config.validate();
@@ -66,16 +67,6 @@ app.use((req, res, next) => {
     }
   });
   next();
-});
-
-// Endpoint básico de health check para orquestadores
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    instanceId,
-    aiServiceUrl: AI_SERVICE_URL,
-    uptime_seconds: Math.round(process.uptime()),
-  });
 });
 
 // Endpoint simple para envíos salientes desde otros servicios
@@ -347,41 +338,16 @@ app.post('/refresh', async (req, res) => {
   }
 });
 
-// Endpoint de Health Check extendido
-app.get('/health', async (req, res) => {
-  const healthStatus = {
-    status: 'healthy',
-    instance: instanceId,
-    name: instanceName,
-    port,
-    whatsapp_status: clientStatus,
-    ai_service: 'unknown',
-    websocket_connected: true,
-    timestamp: new Date().toISOString(),
-  };
-
-  // Verificar conexión con AI Service Clientes
-  try {
-    const isHealthy = await aiServiceClient.healthCheck();
-    healthStatus.ai_service = isHealthy ? 'connected' : 'disconnected';
-    healthStatus.ai_service_status = isHealthy ? 'ok' : 'error';
-  } catch (error) {
-    healthStatus.ai_service = 'disconnected';
-    healthStatus.ai_service_error = error.message;
-  }
-
-  // Si WhatsApp no está conectado, marcar como degradado
-  if (clientStatus !== 'connected') {
-    healthStatus.status = 'degraded';
-  }
-
-  // Si AI Service no está conectado, marcar como unhealthy
-  if (healthStatus.ai_service === 'disconnected') {
-    healthStatus.status = 'unhealthy';
-  }
-
-  res.json(healthStatus);
-});
+// Registrar rutas
+const services = {
+  config,
+  instanceId,
+  instanceName,
+  port,
+  clientStatus,
+  aiServiceClient
+};
+healthRoutes(app, services);
 
 server.listen(port, () => {
   console.warn(`🚀 ${instanceName} (ID: ${instanceId}) escuchando en http://localhost:${port}`);
