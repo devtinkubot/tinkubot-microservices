@@ -14,8 +14,6 @@ const instanceName = config.instanceName;
 const REQUEST_TIMEOUT_MS = config.requestTimeoutMs;
 const supabaseStore = container.supabaseStore;
 const aiServiceClient = container.aiServiceClient;
-const mqttClient = container.mqttClient;
-const handlerRegistry = container.handlerRegistry;
 
 // Configuración de instancia
 const startupInfo = config.getStartupInfo();
@@ -146,6 +144,11 @@ const client = new Client({
 
 // Registrar cliente en el contenedor
 container.registerWhatsAppClient(client);
+
+// Obtener servicios del contenedor (después de registrar el cliente)
+const mqttClient = container.mqttClient;
+const handlerRegistry = container.handlerRegistry;
+const messageSender = container.messageSender;
 
 // Crear aplicación Express con todas las rutas y middleware
 const runtimeServices = {
