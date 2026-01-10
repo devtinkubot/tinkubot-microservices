@@ -18,9 +18,6 @@ from templates.prompts import (
     menu_opciones_confirmacion,
     menu_opciones_detalle_proveedor,
     mensaje_confirmando_disponibilidad,
-    mensaje_error_input_sin_sentido,
-    mensaje_advertencia_contenido_ilegal,
-    mensaje_ban_usuario,
     mensaje_inicial_solicitud_servicio,
     mensaje_intro_listado_proveedores,
     mensaje_sin_disponibilidad,
@@ -29,7 +26,21 @@ from templates.prompts import (
     titulo_confirmacion_repetir_busqueda,
 )
 from services.search_service import extract_profession_and_location
-from services.validation_service import check_if_banned, validate_content_with_ai
+from services.conversation.awaiting_service_handler import (
+    AwaitingServiceHandler,
+)
+from services.conversation.awaiting_city_handler import AwaitingCityHandler
+from services.conversation.searching_handler import SearchingHandler
+from services.conversation.presenting_results_handler import (
+    PresentingResultsHandler,
+)
+from services.conversation.viewing_provider_detail_handler import (
+    ViewingProviderDetailHandler,
+)
+from services.conversation.confirm_new_search_handler import (
+    ConfirmNewSearchHandler,
+)
+from services.conversation.handler_registry import HandlerRegistry
 from shared_lib.service_catalog import COMMON_SERVICE_SYNONYMS
 from shared_lib.session_manager import session_manager
 from utils.services_utils import (
@@ -98,6 +109,76 @@ class ConversationOrchestrator:
         self.openai_client = openai_client
         self.openai_semaphore = openai_semaphore
         self.templates = templates
+
+        # Initialize HandlerRegistry and register all handlers
+        self.handler_registry = HandlerRegistry()
+        self._register_handlers()
+
+    def _register_handlers(self):
+        """
+        Register all conversation state handlers with the registry.
+
+        This method creates handler instances with their required
+        dependencies and registers them with the HandlerRegistry.
+        """
+        # Register awaiting_service handler
+        self.handler_registry.register(
+            AwaitingServiceHandler(
+                customer_service=self.customer_service,
+                openai_client=self.openai_client,
+                openai_semaphore=self.openai_semaphore,
+                session_manager=self.session_manager,
+                background_search_service=self.background_search_service,
+                templates=self.templates,
+            )
+        )
+
+        # Register awaiting_city handler
+        self.handler_registry.register(
+            AwaitingCityHandler(
+                customer_service=self.customer_service,
+                session_manager=self.session_manager,
+                background_search_service=self.background_search_service,
+                templates=self.templates,
+            )
+        )
+
+        # Register searching handler
+        self.handler_registry.register(
+            SearchingHandler(
+                background_search_service=self.background_search_service,
+                templates=self.templates,
+            )
+        )
+
+        # Register presenting_results handler
+        self.handler_registry.register(
+            PresentingResultsHandler(
+                media_service=self.media_service,
+                templates=self.templates,
+                messages_confirmation_search=self._mensajes_confirmacion_busqueda,
+            )
+        )
+
+        # Register viewing_provider_detail handler
+        self.handler_registry.register(
+            ViewingProviderDetailHandler(
+                media_service=self.media_service,
+                templates=self.templates,
+                messages_confirmation_search=self._mensajes_confirmacion_busqueda,
+                send_provider_prompt=self._send_provider_prompt,
+            )
+        )
+
+        # Register confirm_new_search handler
+        self.handler_registry.register(
+            ConfirmNewSearchHandler(
+                session_manager=self.session_manager,
+                templates=self.templates,
+                send_provider_prompt=self._send_provider_prompt,
+                send_confirm_prompt=self._send_confirm_prompt,
+            )
+        )
 
     async def handle_message(
         self,
@@ -403,35 +484,26 @@ class ConversationOrchestrator:
             }
 
         # Máquina de estados - despachar según estado actual
-        if state == "awaiting_service":
-            return await self._handle_state_awaiting_service(
-                flow, text, phone, customer_profile, customer_id, respond
-            )
+        # Using HandlerRegistry for dynamic dispatch (OCP)
+        context = {
+            "flow": flow,
+            "phone": phone,
+            "text": text,
+            "selected": selected,
+            "location": location,
+            "respond": respond,
+            "set_flow_fn": set_flow_fn,
+            "save_bot_message": save_bot_message,
+            "do_search": do_search,
+            "customer_profile": customer_profile,
+            "customer_id": customer_id,
+        }
 
-        if state == "awaiting_city":
-            return await self._handle_state_awaiting_city(
-                flow, text, selected, phone, customer_id, respond, save_bot_message
-            )
-
-        if state == "searching":
-            return await self._handle_state_searching(
-                flow, phone, set_flow_fn, do_search
-            )
-
-        if state == "presenting_results":
-            return await self._handle_state_presenting_results(
-                flow, text, selected, phone, set_flow_fn, save_bot_message
-            )
-
-        if state == "viewing_provider_detail":
-            return await self._handle_state_viewing_provider_detail(
-                flow, text, selected, phone, set_flow_fn, save_bot_message
-            )
-
-        if state == "confirm_new_search":
-            return await self._handle_state_confirm_new_search(
-                flow, text, selected, phone, respond
-            )
+        try:
+            return await self.handler_registry.dispatch(state, context)
+        except ValueError:
+            # No handler found, use fallback logic
+            pass
 
         # Fallback: mantener o guiar según progreso
         helper = flow if isinstance(flow, dict) else {}
@@ -444,321 +516,6 @@ class ConversationOrchestrator:
             helper["state"] = "awaiting_city"
             return await respond(helper, {"response": "*¿En qué ciudad lo necesitas?*"})
         return {"response": "¿Podrías reformular tu mensaje?"}
-
-    async def _handle_state_awaiting_service(
-        self,
-        flow: Dict[str, Any],
-        text: str,
-        phone: str,
-        customer_profile: Dict,
-        customer_id: Optional[str],
-        respond: Callable,
-    ) -> Dict[str, Any]:
-        """
-        Manejar estado: Esperando servicio del usuario.
-
-        Valida el input, extrae el servicio y verifica si tiene ciudad.
-        """
-        from flows.client_flow import validate_service_input, check_city_and_proceed
-
-        # 0. Verificar si está baneado
-        if await check_if_banned(phone):
-            return await respond(
-                flow, {"response": "🚫 Tu cuenta está temporalmente suspendida."}
-            )
-
-        # 1. Validación estructurada básica
-        is_valid, error_msg, extracted_service = validate_service_input(
-            text or "", GREETINGS, COMMON_SERVICE_SYNONYMS
-        )
-
-        if not is_valid:
-            return await respond(flow, {"response": error_msg})
-
-        # 2. Validación IA de contenido
-        should_proceed, warning_msg, ban_msg = await validate_content_with_ai(
-            text or "",
-            phone,
-            openai_client=self.openai_client,
-            openai_semaphore=self.openai_semaphore,
-            timeout_seconds=self.templates.get("OPENAI_TIMEOUT_SECONDS", 5),
-            mensaje_error_input=mensaje_error_input_sin_sentido,
-            mensaje_advertencia=mensaje_advertencia_contenido_ilegal,
-            mensaje_ban_template=mensaje_ban_usuario,
-        )
-
-        if ban_msg:
-            return await respond(flow, {"response": ban_msg})
-
-        if warning_msg:
-            return await respond(flow, {"response": warning_msg})
-
-        # 3. Extraer servicio usando NLP
-        updated_flow, reply = ClientFlow.handle_awaiting_service(
-            flow,
-            text,
-            GREETINGS,
-            self.templates["mensaje_inicial_solicitud_servicio"],
-            extract_profession_and_location,
-        )
-        flow = updated_flow
-
-        # 4. Verificar ciudad existente
-        city_response = await check_city_and_proceed(flow, customer_profile)
-
-        # 5. Si tiene ciudad, disparar búsqueda
-        if flow.get("state") == "searching":
-            flow["searching_dispatched"] = True
-            await self.session_manager.redis_client.set(
-                f"flow:{phone}", flow, expire=self.templates.get("flow_ttl", 3600)
-            )
-            if self.background_search_service:
-                asyncio.create_task(
-                    self.background_search_service.search_and_notify(
-                        phone, flow.copy(), lambda p, d: self.session_manager.redis_client.set(f"flow:{p}", d)
-                    )
-                )
-            return {"messages": [{"response": city_response.get("response")}]}
-
-        # 6. Si no tiene ciudad, pedir normalmente
-        return await respond(flow, city_response)
-
-    async def _handle_state_awaiting_city(
-        self,
-        flow: Dict[str, Any],
-        text: str,
-        selected: str,
-        phone: str,
-        customer_id: Optional[str],
-        respond: Callable,
-        save_bot_message: Callable,
-    ) -> Dict[str, Any]:
-        """
-        Manejar estado: Esperando ciudad del usuario.
-
-        Permite reencaminar si el usuario ingresa un servicio,
-        valida la ciudad y actualiza el perfil.
-        """
-        # Reencaminar si el usuario ingresó un servicio
-        if text and not flow.get("service"):
-            detected_profession, detected_city = extract_profession_and_location(
-                "", text
-            )
-            current_service_norm = _normalize_text_for_matching(
-                flow.get("service") or ""
-            )
-            new_service_norm = _normalize_text_for_matching(
-                detected_profession or text or ""
-            )
-            if detected_profession and new_service_norm != current_service_norm:
-                for key in [
-                    "providers",
-                    "chosen_provider",
-                    "provider_detail_idx",
-                    "city",
-                    "city_confirmed",
-                    "searching_dispatched",
-                ]:
-                    flow.pop(key, None)
-                service_value = (detected_profession or text).strip()
-                flow.update(
-                    {
-                        "service": service_value,
-                        "service_full": text,
-                        "state": "awaiting_city",
-                        "city_confirmed": False,
-                    }
-                )
-                await self.session_manager.redis_client.set(
-                    f"flow:{phone}", flow, expire=self.templates.get("flow_ttl", 3600)
-                )
-                return await respond(
-                    flow,
-                    {
-                        "response": (
-                            f"Entendido, para {service_value} "
-                            f"¿en qué ciudad lo necesitas? "
-                            f"(ejemplo: Quito, Cuenca)"
-                        )
-                    },
-                )
-
-        # Validar input de ciudad
-        normalized_city_input = normalize_city_input(text)
-        if text and not normalized_city_input:
-            return await respond(
-                flow,
-                {
-                    "response": (
-                        "No reconocí la ciudad. Escríbela de nuevo usando "
-                        "una ciudad de Ecuador (ej: Quito, Guayaquil, Cuenca)."
-                    )
-                },
-            )
-
-        updated_flow, reply = ClientFlow.handle_awaiting_city(
-            flow,
-            normalized_city_input or text,
-            "Indica la ciudad por favor (por ejemplo: Quito, Cuenca).",
-        )
-
-        if text:
-            normalized_input = (normalized_city_input or text).strip().title()
-            updated_flow["city"] = normalized_input
-            updated_flow["city_confirmed"] = True
-            update_result = await self.customer_service.update_customer_city(
-                updated_flow.get("customer_id") or customer_id, normalized_input
-            )
-            if update_result:
-                updated_flow["city_confirmed_at"] = update_result.get(
-                    "city_confirmed_at"
-                )
-
-        if reply.get("response"):
-            return await respond(updated_flow, reply)
-
-        flow = updated_flow
-        flow["state"] = "searching"
-        flow["searching_dispatched"] = True
-        await self.session_manager.redis_client.set(
-            f"flow:{phone}", flow, expire=self.templates.get("flow_ttl", 3600)
-        )
-
-        waiting_msg = {"response": mensaje_confirmando_disponibilidad}
-        await save_bot_message(waiting_msg.get("response"))
-        if self.background_search_service:
-            asyncio.create_task(
-                self.background_search_service.search_and_notify(
-                    phone, flow.copy(), lambda p, d: self.session_manager.redis_client.set(f"flow:{p}", d)
-                )
-            )
-        return {"messages": [waiting_msg]}
-
-    async def _handle_state_searching(
-        self,
-        flow: Dict[str, Any],
-        phone: str,
-        set_flow_fn: Callable,
-        do_search: Callable,
-    ) -> Dict[str, Any]:
-        """
-        Manejar estado: Búsqueda en proceso.
-
-        Evita duplicados si ya se despachó la búsqueda.
-        """
-        if flow.get("searching_dispatched"):
-            return {"response": mensaje_confirmando_disponibilidad}
-
-        # Si por alguna razón no se despachó, lanzarla ahora
-        if flow.get("service") and flow.get("city"):
-            flow["searching_dispatched"] = True
-            await set_flow_fn(phone, flow)
-            if self.background_search_service:
-                asyncio.create_task(
-                    self.background_search_service.search_and_notify(
-                        phone, flow.copy(), set_flow_fn
-                    )
-                )
-            return {"response": mensaje_confirmando_disponibilidad}
-
-        return await do_search()
-
-    async def _handle_state_presenting_results(
-        self,
-        flow: Dict[str, Any],
-        text: str,
-        selected: str,
-        phone: str,
-        set_flow_fn: Callable,
-        save_bot_message: Callable,
-    ) -> Dict[str, Any]:
-        """
-        Manejar estado: Presentando resultados al usuario.
-
-        Delegado completamente a ClientFlow.handle_presenting_results.
-        """
-        return await ClientFlow.handle_presenting_results(
-            flow,
-            text,
-            selected,
-            phone,
-            lambda data: set_flow_fn(phone, data),
-            save_bot_message,
-            self.media_service.formal_connection_message,
-            self._mensajes_confirmacion_busqueda,
-            None,  # Feedback eliminado
-            logger,
-            "¿Te ayudo con otro servicio?",
-            bloque_detalle_proveedor,
-            menu_opciones_detalle_proveedor,
-            self.templates["mensaje_inicial_solicitud_servicio"],
-            FAREWELL_MESSAGE,
-        )
-
-    async def _handle_state_viewing_provider_detail(
-        self,
-        flow: Dict[str, Any],
-        text: str,
-        selected: str,
-        phone: str,
-        set_flow_fn: Callable,
-        save_bot_message: Callable,
-    ) -> Dict[str, Any]:
-        """
-        Manejar estado: Mostrando detalles de proveedor.
-
-        Delegado completamente a ClientFlow.handle_viewing_provider_detail.
-        """
-        return await ClientFlow.handle_viewing_provider_detail(
-            flow,
-            text,
-            selected,
-            phone,
-            lambda data: set_flow_fn(phone, data),
-            save_bot_message,
-            self.media_service.formal_connection_message,
-            self._mensajes_confirmacion_busqueda,
-            None,  # Feedback eliminado
-            logger,
-            "¿Te ayudo con otro servicio?",
-            lambda: self._send_provider_prompt(phone, flow, flow.get("city", "")),
-            self.templates["mensaje_inicial_solicitud_servicio"],
-            FAREWELL_MESSAGE,
-            menu_opciones_detalle_proveedor,
-        )
-
-    async def _handle_state_confirm_new_search(
-        self,
-        flow: Dict[str, Any],
-        text: str,
-        selected: str,
-        phone: str,
-        respond: Callable,
-    ) -> Dict[str, Any]:
-        """
-        Manejar estado: Confirmando nueva búsqueda.
-
-        Delegado completamente a ClientFlow.handle_confirm_new_search.
-        """
-
-        async def _noop_save_bot_message(msg):
-            """No-op save_bot_message simplificado."""
-            pass
-
-        return await ClientFlow.handle_confirm_new_search(
-            flow,
-            text,
-            selected,
-            lambda: self.session_manager.redis_client.delete(f"flow:{phone}"),
-            respond,
-            lambda: self._send_provider_prompt(phone, flow, flow.get("city", "")),
-            lambda data, title: self._send_confirm_prompt(phone, data, title),
-            _noop_save_bot_message,
-            self.templates["mensaje_inicial_solicitud_servicio"],
-            FAREWELL_MESSAGE,
-            titulo_confirmacion_repetir_busqueda,
-            MAX_CONFIRM_ATTEMPTS,
-        )
 
     # Helpers privados para UI y mensajes
 
