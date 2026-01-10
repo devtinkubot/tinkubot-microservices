@@ -28,7 +28,6 @@ async def verificar_timeout_sesion(
         - response_dict: Diccionario con respuesta de timeout o None si no hay timeout
     """
     now_utc = datetime.utcnow()
-    now_iso = now_utc.isoformat()
 
     # Verificar timeout de inactividad
     last_seen_raw = flow.get("last_seen_at_prev")
@@ -45,33 +44,11 @@ async def verificar_timeout_sesion(
                     f"{inactive_seconds:.0f}s inactivo (límite: {timeout_seconds}s)"
                 )
 
-                # Reiniciar flujo
-                await redis_client.delete(f"prov_flow:{phone}")
+                # Usar helper para reiniciar flujo
+                await _reiniciar_flujo_por_timeout(phone)
 
-                # Crear nuevo flujo en estado inicial
-                new_flow = {
-                    "state": "awaiting_menu_option",
-                    "last_seen_at": now_iso,
-                    "last_seen_at_prev": now_iso,
-                }
-                await redis_client.set(
-                    f"prov_flow:{phone}", new_flow, expire=settings.flow_ttl_seconds
-                )
-
-                # Retornar respuesta de timeout
-                response_dict = {
-                    "success": True,
-                    "messages": [
-                        {
-                            "response": (
-                                "**No tuve respuesta y reinicié la conversación para ayudarte mejor. "
-                                "Gracias por usar TinkuBot Proveedores; escríbeme cuando quieras.**"
-                            )
-                        },
-                        {"response": provider_post_registration_menu_message()},
-                    ]
-                }
-                return True, response_dict
+                # Usar helper para crear respuesta
+                return True, _crear_respuesta_timeout()
 
         except (ValueError, TypeError) as e:
             # Error al parsear timestamp - continuar sin timeout
@@ -117,10 +94,35 @@ async def reiniciar_por_timeout(phone: str, flow: Dict[str, Any]) -> Dict[str, A
 
     Args:
         phone: Teléfono del usuario
-        flow: Diccionario con el estado actual del flujo
+        flow: Diccionario con el estado actual del flujo (NO usado, mantenido por backward compatibility)
 
     Returns:
         Diccionario con la respuesta de timeout y menú principal
+    """
+    # Usar helper para reiniciar flujo
+    await _reiniciar_flujo_por_timeout(phone)
+
+    # Usar helper para crear respuesta
+    return _crear_respuesta_timeout()
+
+
+# =============================================================================
+# FUNCIONES AUXILIARES PRIVADAS (Sprint 1.16)
+# =============================================================================
+
+
+async def _reiniciar_flujo_por_timeout(phone: str) -> Dict[str, Any]:
+    """
+    Reinicia el flujo al estado inicial tras timeout.
+
+    Función auxiliar privada que encapsula la lógica de reinicio de flujo
+    en Redis. Elimina el flujo existente y crea uno nuevo en estado inicial.
+
+    Args:
+        phone: Teléfono del usuario
+
+    Returns:
+        Diccionario con el nuevo flujo creado (para propósitos de logging)
     """
     now_utc = datetime.utcnow()
     now_iso = now_utc.isoformat()
@@ -138,7 +140,19 @@ async def reiniciar_por_timeout(phone: str, flow: Dict[str, Any]) -> Dict[str, A
         f"prov_flow:{phone}", new_flow, expire=settings.flow_ttl_seconds
     )
 
-    # Retornar mensaje de timeout + menú
+    return new_flow
+
+
+def _crear_respuesta_timeout() -> Dict[str, Any]:
+    """
+    Crea la respuesta estándar de timeout de sesión.
+
+    Función auxiliar privada que encapsula la creación del mensaje
+    de timeout y el menú principal posterior.
+
+    Returns:
+        Diccionario con la respuesta de timeout y menú principal
+    """
     return {
         "success": True,
         "messages": [
