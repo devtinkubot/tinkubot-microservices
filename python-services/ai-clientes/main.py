@@ -21,6 +21,9 @@ import uvicorn
 # OpenAI
 from openai import AsyncOpenAI
 
+# Supabase
+from supabase import create_client
+
 # Shared Library
 from shared_lib.config import settings
 from shared_lib.redis_client import redis_client
@@ -180,7 +183,9 @@ openai_semaphore = (
 
 # Supabase
 supabase = (
-    settings.supabase_client
+    create_client(settings.supabase_url, settings.supabase_service_key)
+    if settings.supabase_url and settings.supabase_service_key
+    else None
 )
 
 # ============================================================================
