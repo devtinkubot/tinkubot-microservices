@@ -7,7 +7,7 @@ manejando todos los estados del flujo de WhatsApp con clientes.
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional
 
 from flows.client_flow import ClientFlow
@@ -145,7 +145,7 @@ class ConversationOrchestrator:
         flow = await flow_manager(phone)
 
         # Actualizar timestamp de última actividad
-        now_utc = datetime.utcnow()
+        now_utc = datetime.now(timezone.utc)
         now_iso = now_utc.isoformat()
         flow["last_seen_at"] = now_iso
 
@@ -451,7 +451,7 @@ class ConversationOrchestrator:
         text: str,
         phone: str,
         customer_profile: Dict,
-        customer_id: str,
+        customer_id: Optional[str],
         respond: Callable,
     ) -> Dict[str, Any]:
         """
@@ -529,7 +529,7 @@ class ConversationOrchestrator:
         text: str,
         selected: str,
         phone: str,
-        customer_id: str,
+        customer_id: Optional[str],
         respond: Callable,
         save_bot_message: Callable,
     ) -> Dict[str, Any]:
@@ -740,6 +740,11 @@ class ConversationOrchestrator:
 
         Delegado completamente a ClientFlow.handle_confirm_new_search.
         """
+
+        async def _noop_save_bot_message(msg):
+            """No-op save_bot_message simplificado."""
+            pass
+
         return await ClientFlow.handle_confirm_new_search(
             flow,
             text,
@@ -748,7 +753,7 @@ class ConversationOrchestrator:
             respond,
             lambda: self._send_provider_prompt(phone, flow, flow.get("city", "")),
             lambda data, title: self._send_confirm_prompt(phone, data, title),
-            lambda msg: None,  # save_bot_message simplificado
+            _noop_save_bot_message,
             self.templates["mensaje_inicial_solicitud_servicio"],
             FAREWELL_MESSAGE,
             titulo_confirmacion_repetir_busqueda,
