@@ -1,13 +1,7 @@
 const express = require('express');
 const { Client, MessageMedia, RemoteAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
-const cors = require('cors');
-const helmet = require('helmet');
-const compression = require('compression');
-const rateLimit = require('express-rate-limit');
-const axios = require('axios');
 const http = require('http');
-const https = require('https');
 const SupabaseStore = require('./SupabaseStore');
 const config = require('./src/infrastructure/config/envConfig');
 const axiosClient = require('./src/infrastructure/http/axiosClient');
@@ -17,6 +11,14 @@ const AIServiceClient = require('./src/application/services/AIServiceClient');
 const TextMessageHandler = require('./src/application/handlers/TextMessageHandler');
 const HandlerRegistry = require('./src/application/handlers/HandlerRegistry');
 const healthRoutes = require('./src/presentation/http/routes/health.routes');
+
+// Middleware
+const configureCors = require('./src/presentation/http/middleware/cors.middleware');
+const configureHelmet = require('./src/presentation/http/middleware/helmet.middleware');
+const configureCompression = require('./src/presentation/http/middleware/compression.middleware');
+const configureRateLimit = require('./src/presentation/http/middleware/rateLimit.middleware');
+const configureJsonParser = require('./src/presentation/http/middleware/json.middleware');
+const configureTimeout = require('./src/presentation/http/middleware/timeout.middleware');
 
 // Validar configuración
 config.validate();
@@ -44,30 +46,12 @@ console.warn(`🤖 Iniciando ${startupInfo.instanceName} (ID: ${startupInfo.inst
 console.warn(`📱 Puerto: ${startupInfo.port}`);
 
 // Middleware
-app.use(cors());
-app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
-app.use(compression());
-app.use(
-  rateLimit({
-    windowMs: 60 * 1000,
-    max: config.rateLimitMax,
-    standardHeaders: true,
-    legacyHeaders: false
-  })
-);
-app.use(
-  express.json({
-    limit: config.bodySizeLimit
-  })
-);
-app.use((req, res, next) => {
-  res.setTimeout(REQUEST_TIMEOUT_MS, () => {
-    if (!res.headersSent) {
-      res.status(503).json({ error: 'Request timed out' });
-    }
-  });
-  next();
-});
+configureCors(app);
+configureHelmet(app);
+configureCompression(app);
+configureRateLimit(app, config);
+configureJsonParser(app, config);
+configureTimeout(app, REQUEST_TIMEOUT_MS);
 
 // Endpoint simple para envíos salientes desde otros servicios
 app.post('/send', async (req, res) => {
