@@ -6,8 +6,10 @@ usando OpenAI con contexto de sesión, extracción de entidades y búsqueda de p
 """
 
 import logging
-from datetime import datetime
-from typing import Any, Dict, Optional, Tuple
+from datetime import datetime, timezone
+from typing import Optional
+
+from models.schemas import MessageProcessingResponse
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +49,7 @@ class MessageProcessorService:
 
     async def process_message(
         self, request, phone, normalize_profession_for_search, _normalize_token
-    ) -> Dict[str, Any]:
+    ) -> MessageProcessingResponse:
         """
         Procesa mensaje de cliente usando OpenAI con contexto de sesión.
 
@@ -114,7 +116,7 @@ class MessageProcessorService:
 
     async def _search_and_build_response(
         self, profession: str, location: str, phone: str, request
-    ) -> Dict[str, Any]:
+    ) -> MessageProcessingResponse:
         """
         Busca proveedores y construye respuesta.
 
@@ -183,8 +185,8 @@ class MessageProcessorService:
                             "intent": "service_request",
                             "profession": profession,
                             "location_city": location,
-                            "requested_at": datetime.utcnow().isoformat(),
-                            "resolved_at": datetime.utcnow().isoformat(),
+                            "requested_at": datetime.now(timezone.utc).isoformat(),
+                            "resolved_at": datetime.now(timezone.utc).isoformat(),
                             "suggested_providers": providers,
                         }
                     ).execute()
@@ -192,9 +194,6 @@ class MessageProcessorService:
                 logger.warning(
                     f"⚠️ No se pudo registrar service_request en Supabase: {e}"
                 )
-
-            # Importar modelos aquí para evitar dependencias circulares
-            from models.schemas import MessageProcessingResponse
 
             return MessageProcessingResponse(
                 response=ai_response_text,
@@ -208,8 +207,6 @@ class MessageProcessorService:
             )
 
         # Si no hay proveedores, retornar respuesta vacía con baja confianza
-        from models.schemas import MessageProcessingResponse
-
         return MessageProcessingResponse(
             response="Lo siento, no encontré proveedores disponibles en este momento.",
             intent="service_request",
@@ -219,7 +216,7 @@ class MessageProcessorService:
 
     async def _build_guidance_response(
         self, location: Optional[str], phone: str, request
-    ) -> Dict[str, Any]:
+    ) -> MessageProcessingResponse:
         """
         Construye respuesta de guía cuando no hay profesión.
 
@@ -238,8 +235,6 @@ class MessageProcessorService:
         )
         await self.session_manager.save_session(phone, guidance_text, is_bot=True)
 
-        from models.schemas import MessageProcessingResponse
-
         return MessageProcessingResponse(
             response=guidance_text,
             intent="service_request",
@@ -252,7 +247,7 @@ class MessageProcessorService:
 
     async def _build_openai_response(
         self, request, conversation_context: str, phone: str
-    ) -> Dict[str, Any]:
+    ) -> MessageProcessingResponse:
         """
         Construye respuesta usando OpenAI.
 
@@ -317,8 +312,6 @@ class MessageProcessorService:
         await self.session_manager.save_session(phone, ai_response, is_bot=True)
 
         logger.info(f"✅ Mensaje procesado. Intent: {intent}")
-
-        from models.schemas import MessageProcessingResponse
 
         return MessageProcessingResponse(
             response=ai_response,
