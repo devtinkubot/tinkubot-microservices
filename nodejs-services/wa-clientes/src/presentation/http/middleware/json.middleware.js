@@ -6,6 +6,8 @@
  * - Parsear body de requests JSON
  */
 
+const express = require('express');
+
 /**
  * Configura middleware JSON parser
  * @param {object} app - Aplicación Express
