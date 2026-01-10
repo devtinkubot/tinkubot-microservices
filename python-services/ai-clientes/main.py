@@ -45,7 +45,12 @@ from services.search_service import (
     extract_profession_and_location,
     intelligent_search_providers_remote,
     search_providers,
+    initialize_openai_semaphore,
 )
+
+# Nuevos servicios (Sprint 2.4)
+from services.query_interpreter_service import initialize_query_interpreter
+from services.providers.provider_repository import initialize_provider_repository
 
 # Templates
 from templates.prompts import (
@@ -244,6 +249,11 @@ media_service = MediaService(
     settings=settings,
     bucket_name=SUPABASE_PROVIDERS_BUCKET,
 ) if supabase else None
+
+# Nuevos servicios (Sprint 2.4) - Eliminar SPOF ai-search
+initialize_query_interpreter(openai_client)  # Inicializa QueryInterpreterService
+initialize_provider_repository(supabase)     # Inicializa ProviderRepository
+initialize_openai_semaphore()                 # Inicializa semáforo para búsquedas
 
 # Servicio de búsqueda en segundo plano
 background_search_service = BackgroundSearchService(
