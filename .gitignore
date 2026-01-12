@@ -99,7 +99,8 @@ package-lock.json
 CLAUDE.md
 
 # Documentación local
-docs/
+docs/*
+!docs/*.md
 
 # Tokens de autenticación
 .token
