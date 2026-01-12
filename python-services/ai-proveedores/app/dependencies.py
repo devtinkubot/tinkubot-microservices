@@ -37,3 +37,13 @@ def reset_clients():
     global _supabase_client, _openai_client
     _supabase_client = None
     _openai_client = None
+
+
+def get_provider_repository(supabase: Client):
+    """
+    Factory para el repositorio de proveedores.
+
+    Permite cambiar la implementación fácilmente (DIP).
+    """
+    from repositories.provider_repository import SupabaseProviderRepository
+    return SupabaseProviderRepository(supabase)
