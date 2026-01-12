@@ -6,13 +6,11 @@ import logging
 from infrastructure.redis import redis_client
 from app.config import settings
 
-from templates.prompts import provider_post_registration_menu_message
-
 logger = logging.getLogger(__name__)
 
 
 async def verificar_timeout_sesion(
-    phone: str, flow: Dict[str, Any], timeout_seconds: int = 300
+    phone: str, flow: Dict[str, Any], supabase=None, timeout_seconds: int = 300
 ) -> Tuple[bool, Optional[Dict[str, Any]]]:
     """
     Verifica si la sesión ha expirado por inactividad.
@@ -20,6 +18,7 @@ async def verificar_timeout_sesion(
     Args:
         phone: Teléfono del usuario
         flow: Diccionario con el estado del flujo
+        supabase: Cliente de Supabase para re-validar estado del proveedor
         timeout_seconds: Segundos de inactividad antes de timeout (default: 300 = 5 minutos)
 
     Returns:
@@ -44,11 +43,8 @@ async def verificar_timeout_sesion(
                     f"{inactive_seconds:.0f}s inactivo (límite: {timeout_seconds}s)"
                 )
 
-                # Usar helper para reiniciar flujo
-                await _reiniciar_flujo_por_timeout(phone)
-
-                # Usar helper para crear respuesta
-                return True, _crear_respuesta_timeout()
+                # Usar helper para reiniciar flujo con re-validación
+                return await _reiniciar_flujo_por_timeout(phone, supabase)
 
         except (ValueError, TypeError) as e:
             # Error al parsear timestamp - continuar sin timeout
@@ -88,49 +84,86 @@ async def actualizar_timestamp_sesion(flow: Dict[str, Any]) -> Dict[str, Any]:
 # =============================================================================
 
 
-async def _reiniciar_flujo_por_timeout(phone: str) -> Dict[str, Any]:
+async def _reiniciar_flujo_por_timeout(
+    phone: str, supabase=None
+) -> Tuple[bool, Dict[str, Any]]:
     """
-    Reinicia el flujo al estado inicial tras timeout.
+    Reinicia el flujo al estado inicial tras timeout, re-validando el estado del proveedor.
 
-    Función auxiliar privada que encapsula la lógica de reinicio de flujo
-    en Redis. Elimina el flujo existente y crea uno nuevo en estado inicial.
+    Función auxiliar privada que:
+    1. Elimina el flujo existente de Redis
+    2. Re-valida el estado del proveedor desde Supabase
+    3. Preserva has_consent y city si existen
+    4. Muestra el menú CORRECTO según el estado actual
 
     Args:
         phone: Teléfono del usuario
+        supabase: Cliente de Supabase para re-validar estado
 
     Returns:
-        Diccionario con el nuevo flujo creado (para propósitos de logging)
+        Tupla (should_reset, response_dict):
+        - should_reset: True (siempre)
+        - response_dict: Respuesta con menú correcto
     """
+    from services.profile_service import (
+        obtener_perfil_proveedor_cacheado,
+        determinar_estado_registro_proveedor,
+    )
+    from templates.prompts import (
+        provider_main_menu_message,
+        provider_post_registration_menu_message,
+    )
+
     now_utc = datetime.utcnow()
     now_iso = now_utc.isoformat()
 
-    # Reiniciar flujo
-    await redis_client.delete(f"prov_flow:{phone}")
+    # 1. Obtener estado actual del proveedor desde Supabase
+    provider_profile = await obtener_perfil_proveedor_cacheado(supabase, phone)
 
-    # Crear nuevo flujo en estado inicial
+    # 2. Determinar si está registrado
+    esta_registrado = determinar_estado_registro_proveedor(provider_profile)
+
+    # 3. Preservar consentimiento y ciudad si existen
+    has_consent = bool(
+        provider_profile and provider_profile.get("has_consent")
+    ) if provider_profile else False
+
+    city = (
+        provider_profile.get("city") if provider_profile else None
+    )
+
+    # 4. Crear nuevo flujo con estado correcto
     new_flow = {
         "state": "awaiting_menu_option",
         "last_seen_at": now_iso,
         "last_seen_at_prev": now_iso,
+        "has_consent": has_consent,
+        "esta_registrado": esta_registrado,
     }
+
+    if city:
+        new_flow["city"] = city
+        new_flow["city_confirmed"] = True
+
+    # 5. Guardar flujo en Redis
     await redis_client.set(
         f"prov_flow:{phone}", new_flow, expire=settings.flow_ttl_seconds
     )
 
-    return new_flow
+    # 6. Determinar menú CORRECTO según estado actual
+    menu_message = (
+        provider_main_menu_message()
+        if not esta_registrado
+        else provider_post_registration_menu_message()
+    )
 
+    logger.info(
+        f"Timeout reiniciado para {phone}: esta_registrado={esta_registrado}, "
+        f"has_consent={has_consent}, city={city}"
+    )
 
-def _crear_respuesta_timeout() -> Dict[str, Any]:
-    """
-    Crea la respuesta estándar de timeout de sesión.
-
-    Función auxiliar privada que encapsula la creación del mensaje
-    de timeout y el menú principal posterior.
-
-    Returns:
-        Diccionario con la respuesta de timeout y menú principal
-    """
-    return {
+    # 7. Retornar respuesta correcta
+    return True, {
         "success": True,
         "messages": [
             {
@@ -139,6 +172,6 @@ def _crear_respuesta_timeout() -> Dict[str, Any]:
                     "Gracias por usar TinkuBot Proveedores; escríbeme cuando quieras.**"
                 )
             },
-            {"response": provider_post_registration_menu_message()},
+            {"response": menu_message},
         ]
     }

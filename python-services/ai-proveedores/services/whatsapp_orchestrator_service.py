@@ -134,7 +134,9 @@ class WhatsAppOrchestrator:
             state = flow.get("state")
 
             # 4. Verificar timeout de sesión
-            should_reset, timeout_response = await verificar_timeout_sesion(phone, flow)
+            should_reset, timeout_response = await verificar_timeout_sesion(
+                phone, flow, self.supabase
+            )
             if should_reset:
                 return timeout_response
 
