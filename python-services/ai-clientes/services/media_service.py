@@ -136,6 +136,8 @@ class MediaService:
         - Enlace click-to-chat de WhatsApp
         - Información de contacto formateada
 
+        Prioriza real_phone sobre phone para contacto (para proveedores con @lid).
+
         Args:
             provider: Diccionario con datos del proveedor
             service: Servicio solicitado
@@ -145,7 +147,14 @@ class MediaService:
             Diccionario con el mensaje y opcionalmente media_url y media_type
         """
         name = provider.get("name") or provider.get("full_name") or "Proveedor"
-        phone_raw = provider.get("phone") or provider.get("phone_number")
+
+        # Prioridad: real_phone (para @lid) > phone > phone_number
+        phone_raw = (
+            provider.get("real_phone")  # Número real cuando phone es @lid
+            or provider.get("phone")     # Phone normal (puede ser @c.us o @lid)
+            or provider.get("phone_number")
+        )
+
         link = self.wa_click_to_chat(phone_raw)
         selfie_url_raw = (
             provider.get("face_photo_url")

@@ -125,7 +125,7 @@ class AwaitingServiceHandler(MessageHandler):
             return await respond(flow, {"response": warning_msg})
 
         # 3. Extract service using NLP
-        updated_flow, reply = ClientFlow.handle_awaiting_service(
+        updated_flow, reply = await ClientFlow.handle_awaiting_service(
             flow,
             text,
             GREETINGS,

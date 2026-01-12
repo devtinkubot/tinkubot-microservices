@@ -81,7 +81,7 @@ class AwaitingCityHandler(MessageHandler):
 
         # Reroute if user entered a service
         if text and not flow.get("service"):
-            detected_profession, detected_city = extract_profession_and_location(
+            detected_profession, detected_city = await extract_profession_and_location(
                 "", text
             )
             current_service_norm = _normalize_text_for_matching(

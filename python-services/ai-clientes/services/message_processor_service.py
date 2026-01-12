@@ -75,11 +75,12 @@ class MessageProcessorService:
             # Obtener contexto de conversación para extracción
             conversation_context = await self.session_manager.get_session_context(phone)
 
-            # Extraer profesión y ubicación usando el método simple
+            # Extraer profesión y ubicación SOLO del último mensaje (sin historial del asistente)
+            # El historial puede incluir palabras de ejemplo como "plomeria" que causan falsos positivos
             (
                 detected_profession,
                 detected_location,
-            ) = self.extract_profession_and_location(conversation_context, request.message)
+            ) = await self.extract_profession_and_location("", request.message)  # history_text vacío
             profession = detected_profession
             location = detected_location
 

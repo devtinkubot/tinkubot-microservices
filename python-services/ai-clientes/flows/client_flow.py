@@ -1,5 +1,6 @@
 """Lógica modularizada del flujo conversacional de clientes."""
 
+import asyncio
 import re
 from datetime import datetime
 from typing import Any, Awaitable, Callable, Dict, Optional, Tuple, Union
@@ -110,12 +111,12 @@ class ClientFlow:
     """Encapsula handlers por estado de la conversación."""
 
     @staticmethod
-    def handle_awaiting_service(
+    async def handle_awaiting_service(
         flow: Dict[str, Any],
         text: Optional[str],
         greetings: set[str],
         initial_prompt: str,
-        extract_fn: Callable[[str, str], Tuple[Optional[str], Optional[str]]],
+        extract_fn: Callable[[str, str], Any],  # Async or sync function
     ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """Procesa el estado `awaiting_service`.
 
@@ -143,7 +144,12 @@ class ClientFlow:
             }
 
         try:
-            profession, _ = extract_fn("", cleaned)
+            # Llamada async o síncrona según el tipo de función
+            result = extract_fn("", cleaned)
+            if asyncio.iscoroutine(result):
+                profession, _ = await result
+            else:
+                profession, _ = result  # type: ignore
         except Exception:
             profession = None
 
@@ -583,22 +589,12 @@ class ClientFlow:
             }
 
         if choice in yes_choices:
-            preserved_city = flow.get("city")
-            preserved_city_confirmed = flow.get("city_confirmed")
             await reset_flow_fn()
-            if isinstance(flow, dict):
-                flow.pop("confirm_attempts", None)
-                flow.pop("confirm_title", None)
-                flow.pop("confirm_prompt", None)
-                flow.pop("confirm_include_city_option", None)
-                flow.pop("", None)
-            new_flow: Dict[str, Any] = {"state": "awaiting_service"}
-            if preserved_city:
-                new_flow["city"] = preserved_city
-                if preserved_city_confirmed is not None:
-                    new_flow["city_confirmed"] = preserved_city_confirmed
+            # NO preservar ciudad - dejar que el flujo normal funcione
+            # Si el usuario tiene ciudad confirmada en perfil, se usará automáticamente
+            # Si no tiene, se preguntará
             return await respond_fn(
-                new_flow,
+                {"state": "awaiting_service"},
                 {"response": initial_prompt},
             )
 

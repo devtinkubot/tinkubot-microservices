@@ -48,16 +48,25 @@ class ProviderRepository:
             Lista de proveedores encontrados (vacía si hay error)
         """
         try:
+            # Construir query dinámicamente según parámetros
+            query = self.supabase.table("providers").select("*")
+
+            # Filtro de verificados (siempre)
+            query = query.eq("verified", True)
+
+            # Filtro por ciudad si se proporciona
+            if city and city.strip():
+                query = query.ilike("city", f"%{city}%")
+
+            # Filtro por profesión si se proporciona
+            if profession and profession.strip():
+                query = query.ilike("profession", f"%{profession}%")
+
+            # Ordenar por rating y limitar
+            query = query.order("rating", desc=True).limit(limit)
+
             result = await run_supabase(
-                lambda: self.supabase.table("providers")
-                .select("*")
-                .eq("verified", True)       # Solo verificados
-                .eq("available", True)      # Solo disponibles
-                .ilike("city", f"%{city}%")
-                .ilike("profession", f"%{profession}%")
-                .order("rating", desc=True)  # Mejores rating primero
-                .limit(limit)
-                .execute(),
+                lambda: query.execute(),
                 label="providers.search",
             )
             return result.data if result.data else []

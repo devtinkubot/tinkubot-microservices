@@ -28,9 +28,32 @@ let isRefreshing = false;
 let lastSessionSavedLog = 0;
 const SESSION_LOG_INTERVAL_MS = 5 * 60 * 1000;
 
+// Variables para detectar bucles de reinicio (Solución 1)
+let restartAttempts = 0;
+const MAX_RESTART_ATTEMPTS = 3;
+let lastRestartTime = 0;
+const RESTART_COOLDOWN_MS = 60000; // 1 minuto
+
 console.warn('Inicializando cliente de WhatsApp con RemoteAuth...');
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+// Global error handlers para debugging
+process.on('uncaughtException', (error) => {
+  console.error(`[${instanceName}] UNCAUGHT EXCEPTION:`, error);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error(`[${instanceName}] UNHANDLED REJECTION:`, reason);
+});
+
+process.on('SIGTERM', () => {
+  console.error(`[${instanceName}] SIGTERM received`);
+});
+
+process.on('SIGINT', () => {
+  console.error(`[${instanceName}] SIGINT received`);
+});
 
 function shouldAutoReconnect(reason) {
   if (!reason) return true;
@@ -44,7 +67,40 @@ function shouldAutoReconnect(reason) {
   return true;
 }
 
-async function resetWhatsAppSession(trigger = 'manual', { attemptLogout = true } = {}) {
+async function resetWhatsAppSession(trigger = 'manual', { attemptLogout = true, force = false } = {}) {
+  const now = Date.now();
+
+  // Solución 3: Si es forzado, resetear el contador de intentos
+  if (force) {
+    console.warn(`[${instanceName}] ⚠️ FORZANDO limpieza completa de sesión...`);
+    restartAttempts = 0; // Resetear contador
+  }
+
+  // Detectar reinicios excesivos (Solución 1 - Romper bucle infinito)
+  if (!force && now - lastRestartTime < RESTART_COOLDOWN_MS) {
+    restartAttempts++;
+    if (restartAttempts > MAX_RESTART_ATTEMPTS) {
+      console.error(
+        `[${instanceName}] ❌ DEMASIADOS REINTENTOS DE REINICIO (${restartAttempts} intentos). ` +
+        `Posible sesión corrupta en Supabase. Deteniendo bucle automático.`
+      );
+      console.error(
+        `[${instanceName}] ⚠️ ACCIÓN REQUERIDA: Eliminar manualmente la sesión desde Supabase Console ` +
+        `o usar POST /refresh con {force:true}`
+      );
+      clientStatus = 'error';
+      // NO eliminar la sesión de Supabase
+      // NO reiniciar el cliente
+      isRefreshing = false;
+      return 'error';
+    }
+    console.warn(`[${instanceName}] Reinicio intento #${restartAttempts} de ${MAX_RESTART_ATTEMPTS}`);
+  } else if (!force) {
+    // Reiniciar contador si pasó suficiente tiempo
+    restartAttempts = 1;
+  }
+  lastRestartTime = now;
+
   if (isRefreshing) {
     console.warn(
       `[${instanceName}] Reinicio (${trigger}) ignorado: ya existe un proceso de regeneración en curso.`
@@ -154,7 +210,10 @@ const messageSender = container.messageSender;
 const runtimeServices = {
   clientStatus,
   qrCodeData,
-  resetWhatsAppSession
+  resetWhatsAppSession,
+  // Getters para acceder a los valores actuales (Solución para problema de referencia)
+  getClientStatus: () => clientStatus,
+  getQrCodeData: () => qrCodeData
 };
 const app = container.createExpressApp(runtimeServices);
 
@@ -165,13 +224,20 @@ console.warn(`✅ HandlerRegistry inicializado con ${handlerRegistry.count} hand
 console.warn(`✅ MQTT Client inicializado`);
 
 client.on('qr', qr => {
-  console.warn(`[${instanceName}] QR Code recibido, generándolo en terminal y guardándolo...`);
-  qrcode.generate(qr, { small: true });
-  qrCodeData = qr; // Guardamos el QR para la API
-  clientStatus = 'qr_ready';
+  try {
+    console.warn(`[${instanceName}] QR Code recibido, generándolo en terminal y guardándolo...`);
+    // Temporarily disabled qrcode.generate to prevent crash
+    // qrcode.generate(qr, { small: true });
+    qrCodeData = qr; // Guardamos el QR para la API
+    clientStatus = 'qr_ready';
+    console.warn(`[${instanceName}] Estado cambiado a qr_ready, QR data length: ${qr.length}`);
 
-  // Notificar a clientes WebSocket
-  socketServer.notifyQR(qr);
+    // Notificar a clientes WebSocket
+    socketServer.notifyQR(qr);
+    console.warn(`[${instanceName}] Notificación QR enviada`);
+  } catch (error) {
+    console.error(`[${instanceName}] Error en evento QR:`, error);
+  }
 });
 
 // Marcar como conectado al autenticarse (al escanear QR)
@@ -188,9 +254,17 @@ client.on('auth_failure', msg => {
   console.error(`[${instanceName}] Falla de autenticación:`, msg);
   clientStatus = 'disconnected';
   socketServer.notifyAuthFailure(msg);
-  resetWhatsAppSession('auth_failure', { attemptLogout: false }).catch(error =>
-    console.error(`[${instanceName}] Error intentando recuperar tras auth_failure:`, error)
-  );
+
+  // SOLO intentar reinicio si NO hemos excedido los intentos (Solución 1)
+  if (restartAttempts < MAX_RESTART_ATTEMPTS) {
+    resetWhatsAppSession('auth_failure', { attemptLogout: false }).catch(error =>
+      console.error(`[${instanceName}] Error intentando recuperar tras auth_failure:`, error)
+    );
+  } else {
+    console.error(
+      `[${instanceName}] ⚠️ Sesión corrupta detectada. Se requiere limpieza manual de Supabase.`
+    );
+  }
 });
 
 client.on('ready', () => {
@@ -233,9 +307,16 @@ client.on('disconnected', reason => {
     return;
   }
 
-  resetWhatsAppSession('auto-disconnected', { attemptLogout: false }).catch(error =>
-    console.error(`[${instanceName}] Error durante reinicio automático tras desconexión:`, error)
-  );
+  // SOLO intentar reinicio si NO hemos excedido los intentos (Solución 1)
+  if (restartAttempts < MAX_RESTART_ATTEMPTS) {
+    resetWhatsAppSession('auto-disconnected', { attemptLogout: false }).catch(error =>
+      console.error(`[${instanceName}] Error durante reinicio automático tras desconexión:`, error)
+    );
+  } else {
+    console.error(
+      `[${instanceName}] ⚠️ Límite de intentos de reconexión alcanzado. Se requiere intervención manual.`
+    );
+  }
 });
 
 client.initialize();

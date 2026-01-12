@@ -67,7 +67,7 @@ services:
       - "${CLIENTES_WHATSAPP_PORT:-5001}:${CLIENTES_WHATSAPP_PORT:-5001}"
     environment:
       # ACTUALIZADO: Usa el AI Service Clientes específico para esta instancia
-      - AI_SERVICE_CLIENTES_URL=${AI_SERVICE_CLIENTES_URL}
+      - AI_SERVICE_CLIENTES_URL=${AI_CLIENTES_SERVICE_URL}
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_BACKEND_API_KEY=${SUPABASE_BACKEND_API_KEY}
       - SUPABASE_BUCKET_NAME=${SUPABASE_BUCKET_NAME}
@@ -122,6 +122,14 @@ services:
       - CLIENTES_SERVER_PORT=${CLIENTES_SERVER_PORT}
       - AI_SERVICE_CLIENTES_PORT=${AI_SERVICE_CLIENTES_PORT}
       - SERVER_HOST=${SERVER_HOST}
+      - WHATSAPP_CLIENTES_URL=${WHATSAPP_CLIENTES_URL}
+      - WHATSAPP_CLIENTES_PORT=${WHATSAPP_CLIENTES_PORT}
+      - MQTT_HOST=${MQTT_HOST:-mosquitto}
+      - MQTT_PORT=${MQTT_PORT:-1883}
+      - MQTT_USUARIO=${MQTT_USUARIO}
+      - MQTT_PASSWORD=${MQTT_PASSWORD}
+      - MQTT_TEMA_SOLICITUD=${MQTT_TEMA_SOLICITUD:-av-proveedores/solicitud}
+      - MQTT_TEMA_RESPUESTA=${MQTT_TEMA_RESPUESTA:-av-proveedores/respuesta}
       - NODE_ENV=production
     networks:
       - tinkubot-network
@@ -151,27 +159,7 @@ services:
       - tinkubot-network
     restart: unless-stopped
 
-  # AI Search Service - Servicio de búsqueda optimizado con IA
-  ai-search:
-    build:
-      context: ./python-services
-      dockerfile: ai-search/Dockerfile
-    container_name: tinkubot-ai-search
-    ports:
-      - "${AI_SEARCH_PORT:-8000}:${AI_SEARCH_PORT:-8000}"
-    environment:
-      - DATABASE_URL=${DATABASE_URL}
-      - REDIS_URL=${REDIS_URL}
-      - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - AI_SEARCH_PORT=${AI_SEARCH_PORT}
-      - NODE_ENV=production
-    networks:
-      - tinkubot-network
-    restart: unless-stopped
 
-  
 
 networks:
   tinkubot-network:

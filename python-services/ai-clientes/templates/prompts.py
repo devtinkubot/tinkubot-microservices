@@ -12,7 +12,7 @@ mensaje_confirmando_disponibilidad = (
     "⏳ *Estoy confirmando disponibilidad con proveedores y te aviso en breve.*"
 )
 instruccion_seleccionar_proveedor = (
-    "**Responde con el número (1-5) del proveedor para ver detalles.**"
+    "**Responde con el número del proveedor para ver detalles.**"
 )
 
 # Consentimiento de protección de datos
@@ -59,7 +59,10 @@ def bloque_listado_proveedores_compacto(providers: List[Dict[str, Any]]) -> str:
     lines: List[str] = [""]
     for idx, provider in enumerate(providers[:5], start=1):
         name = (
-            provider.get("name") or provider.get("provider_name") or "Proveedor"
+            provider.get("name")
+            or provider.get("provider_name")
+            or provider.get("full_name")
+            or "Proveedor"
         ).strip()
         lines.append(f"{idx}) {name}")
     lines.append("")

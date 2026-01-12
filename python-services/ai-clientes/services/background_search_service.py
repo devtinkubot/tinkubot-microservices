@@ -182,8 +182,10 @@ class BackgroundSearchService:
             flow["state"] = "presenting_results"
             flow.pop("provider_detail_idx", None)
 
-            if set_flow_fn:
-                await set_flow_fn(phone, flow)
+        # SIEMPRE persistir el flow si set_flow_fn está disponible
+        # Esto es crucial cuando no hay proveedores y el estado es "confirm_new_search"
+        if set_flow_fn:
+            await set_flow_fn(phone, flow)
 
     def _mensajes_confirmacion_busqueda(self, title: str, include_city_option: bool = False):
         """

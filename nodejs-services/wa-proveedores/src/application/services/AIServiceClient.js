@@ -55,7 +55,9 @@ class AIServiceClient {
       id: message.id._serialized || message.id,
       from_number: message.from,
       content: message.body || '',
-      timestamp: message.timestamp || new Date(),
+      timestamp: message.timestamp
+        ? new Date(message.timestamp * 1000).toISOString()
+        : new Date().toISOString(),
       status: 'received',
       message_type: message.type,
       message_id: message.id._serialized || message.id || '',
@@ -100,6 +102,23 @@ class AIServiceClient {
     // Solo adjuntar ubicación cuando sea mensaje de ubicación nativo
     if (payload.location) {
       console.warn('✅ Ubicación detectada desde objeto location nativo');
+    }
+
+    // Manejo de imágenes y media - EXTRAER IMÁGENES PARA REGISTRO DE PROVEEDORES
+    if (message.hasMedia) {
+      try {
+        const media = await message.downloadMedia();
+        if (media && media.mimetype && media.mimetype.startsWith('image/')) {
+          payload.image_base64 = media.data;
+          payload.mime_type = media.mimetype;
+          console.warn('✅ Imagen extraída del mensaje:', media.mimetype, 'tamaño:', media.data.length, 'bytes');
+        } else if (media) {
+          console.warn('⚠️ Media no es imagen, mimetype:', media.mimetype || 'desconocido');
+        }
+      } catch (error) {
+        console.error('❌ Error descargando media del mensaje:', error.message);
+        // No fallar el flujo por errores de descarga de media
+      }
     }
 
     return payload;

@@ -12,7 +12,7 @@ import asyncio
 import json
 import logging
 import re
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from openai import AsyncOpenAI
 from utils.services_utils import _safe_json_loads
@@ -45,12 +45,20 @@ class QueryInterpreterService:
 
 El usuario te dirá lo que necesita en lenguaje natural.
 Tu tarea es extraer:
-1. profesion: el servicio principal (plomero, electricista, albañil, carpintero, pintor, etc)
+1. profesion: el servicio principal (plomero, electricista, albañil, carpintero, pintor, marketing, etc)
 2. ciudad: la ciudad donde lo necesita (si está explícita)
 3. detalles: descripción ampliada del servicio (para enviar a proveedores)
 
 REGLAS:
 - La profesión debe ser un término de búsqueda estándar (ej: "plomero", no "fontanero")
+- Mapeos específicos IMPORTANTES:
+  * "gestor de redes sociales" → "marketing"
+  * "community manager" → "marketing"
+  * "social media manager" → "marketing"
+  * "administrador de redes sociales" → "marketing"
+  * "redes sociales" → "marketing"
+  * "goteras" / "fugas" → "plomero"
+  * "cortocircuito" / "problemas eléctricos" → "electricista"
 - Si la ciudad no está clara, déjala vacía
 - Los detalles deben mantener el lenguaje original del usuario
 
@@ -67,7 +75,7 @@ Responde SOLO en JSON formato:
         city_context: Optional[str] = None,
         semaphore: Optional[asyncio.Semaphore] = None,
         timeout_seconds: float = 5.0
-    ) -> Dict[str, str]:
+    ) -> Dict[str, Any]:
         """Interpreta query del usuario con IA.
 
         Args:
@@ -82,6 +90,15 @@ Responde SOLO en JSON formato:
                 - city: ciudad extraída (o city_context si no se detectó)
                 - details: detalles del servicio
         """
+        # Validar que no sea un número puro (sin contexto no tiene sentido)
+        if user_message.strip().isdigit():
+            logger.info(f"⚠️ Número puro detectado en interpret_query, rechazando: '{user_message}'")
+            return {
+                "profession": None,
+                "city": city_context,
+                "details": user_message
+            }
+
         try:
             # Usar semáforo si está disponible
             if semaphore:
@@ -151,11 +168,20 @@ Responde SOLO en JSON formato:
         self,
         message: str,
         city: Optional[str]
-    ) -> Dict[str, str]:
+    ) -> Dict[str, Any]:
         """Fallback simple sin IA (método privado).
 
         Si IA falla, usa el mensaje tal cual como profesión.
         """
+        # Si es solo un número, no tratar como profesión
+        if message.strip().isdigit():
+            logger.info(f"⚠️ Número puro detectado en fallback, rechazando: '{message}'")
+            return {
+                "profession": None,
+                "city": city or "",
+                "details": message
+            }
+
         logger.info(f"🔄 Usando fallback sin IA para: '{message[:50]}...'")
 
         # Normalización simple: minúsculas, quitar espacios extras

@@ -81,6 +81,7 @@ class ProviderFlowDelegateService:
         self._text_state_router.register("awaiting_experience", ProviderFlow.handle_awaiting_experience)
         self._text_state_router.register("awaiting_email", ProviderFlow.handle_awaiting_email)
         self._text_state_router.register("awaiting_social_media", ProviderFlow.handle_awaiting_social_media)
+        self._text_state_router.register("awaiting_real_phone", ProviderFlow.handle_awaiting_real_phone)
 
     async def delegate_to_provider_flow(
         self,

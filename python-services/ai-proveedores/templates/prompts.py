@@ -93,6 +93,7 @@ PROVIDER_POST_REGISTRATION_MENU = (
     "2) Actualizar selfie\n"
     "3) Actualizar redes sociales (Instagram/Facebook)\n"
     "4) Salir\n"
+    "5) Eliminar mi registro\n"
 )
 
 

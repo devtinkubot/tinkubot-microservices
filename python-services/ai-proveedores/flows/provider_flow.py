@@ -24,6 +24,7 @@ from services.validation_service import (
     validate_provider_payload,
     validate_specialty,
 )
+from services.phone_type_detector import PhoneTypeDetector
 
 
 
@@ -178,6 +179,56 @@ class ProviderFlow:
         }
 
     @staticmethod
+    def handle_awaiting_real_phone(
+        flow: Dict[str, Any], message_text: Optional[str]
+    ) -> Dict[str, Any]:
+        """
+        Maneja el estado de recolección del número real de celular.
+
+        Este estado se activa cuando el phone original es tipo @lid,
+        lo cual requiere que el proveedor proporcione su número real
+        de celular para poder ser contactado por clientes.
+
+        El número ingresado se normaliza a formato @c.us.
+
+        Args:
+            flow: Diccionario del flujo conversacional
+            message_text: Mensaje del usuario con el número real
+
+        Returns:
+            Dict con respuesta y transición al siguiente estado
+        """
+        raw_phone = normalize_text(message_text)
+
+        # Normalizar a formato @c.us
+        normalized_phone = PhoneTypeDetector.normalize_to_c_us_format(raw_phone)
+
+        if not normalized_phone:
+            return {
+                "success": True,
+                "response": (
+                    "❌ *Formato no válido*\n\n"
+                    "Por favor ingresa un número ecuatoriano válido (ej: 0991234567)."
+                ),
+            }
+
+        # Guardar el número real normalizado en el flujo
+        flow["real_phone"] = normalized_phone
+        flow["phone_verified"] = True
+
+        # Transicionar al siguiente estado
+        flow["state"] = "awaiting_city"
+
+        return {
+            "success": True,
+            "response": (
+                "*✅ Número confirmado.*\n\n"
+                "Ahora continuemos con el registro.\n\n"
+                "*¿En qué ciudad trabajas principalmente?*"
+            ),
+        }
+
+    @staticmethod
     def build_confirmation_summary(flow: Dict[str, Any]) -> str:
         email = flow.get("email") or "No especificado"
         social = flow.get("social_media_url") or "No especificada"
@@ -322,5 +373,6 @@ class ProviderFlow:
             "awaiting_dni_front_photo",
             "awaiting_dni_back_photo",
             "awaiting_face_photo",
+            "awaiting_real_phone",  # Estado para pedir número real cuando phone es @lid
             "confirm",
         }

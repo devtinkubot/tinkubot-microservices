@@ -232,7 +232,18 @@ class ConversationOrchestrator:
         except Exception:
             last_seen_dt = None
 
-        if last_seen_dt and (now_utc - last_seen_dt).total_seconds() > 180:
+        # Log para debug del timeout
+        time_diff = (now_utc - last_seen_dt).total_seconds() if last_seen_dt else None
+        if time_diff:
+            logger.debug(
+                f"⏱️ Tiempo desde último mensaje: {time_diff:.1f}s "
+                f"(last_seen={last_seen_raw[:19] if last_seen_raw else None})"
+            )
+
+        if last_seen_dt and time_diff and time_diff > 180:
+            logger.warning(
+                f"⏰ TIMEOUT DETECTADO: {time_diff:.1f}s > 180s para {phone}, reiniciando..."
+            )
             await reset_flow_fn(phone)
             await set_flow_fn(
                 phone,
@@ -246,20 +257,19 @@ class ConversationOrchestrator:
                 "messages": [
                     {
                         "response": (
-                            "*No tuve respuesta y reinicié la conversación "
-                            "para ayudarte mejor*, Tinkubot."
+                            "⏰ *Han pasado 3 minutos sin respuesta.* "
+                            "He reiniciado la conversación para ayudarte mejor.\n\n"
+                            "¿Qué servicio necesitas hoy?"
                         )
-                    },
-                    {
-                        "response": self.templates[
-                            "mensaje_inicial_solicitud_servicio"
-                        ]
-                    },
+                    }
                 ]
             }
 
         # Guardar referencia anterior
         flow["last_seen_at_prev"] = now_iso
+
+        # Log para verificar actualización
+        logger.debug(f"✅ Actualizado last_seen_at_prev para {phone}: {now_iso[:19]}")
 
         # Sincronizar customer_id y ciudad del perfil
         customer_id = None
@@ -289,7 +299,7 @@ class ConversationOrchestrator:
         location = payload.get("location") or {}
 
         # Detectar ciudad en el mensaje y actualizar perfil
-        detected_profession, detected_city = extract_profession_and_location("", text)
+        detected_profession, detected_city = await extract_profession_and_location("", text)
         if detected_city:
             normalized_city = detected_city
             current_city = (flow.get("city") or "").strip()
@@ -437,9 +447,16 @@ class ConversationOrchestrator:
             return result
 
         # Iniciar o reiniciar conversación
-        if not state or selected == opciones_confirmar_nueva_busqueda_textos[0]:
+        if (not state or selected == opciones_confirmar_nueva_busqueda_textos[0]) and state != "confirm_new_search":
             cleaned = text.strip().lower() if text else ""
             if text and cleaned not in GREETINGS:
+                # Validar: si detected_profession es None (número puro), rechazar
+                if detected_profession is None and cleaned.isdigit():
+                    return await respond(
+                        flow,
+                        {"response": "❌ *Input no válido*\n\nPor favor describe el servicio que buscas (ej: plomero, electricista, manicure, doctor)."}
+                    )
+
                 service_value = (detected_profession or text).strip()
                 flow.update({"service": service_value, "service_full": text})
 

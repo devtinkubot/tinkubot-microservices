@@ -24,6 +24,9 @@ class ProviderCreate(BaseModel):
     dni_back_photo_url: Optional[str] = None
     face_photo_url: Optional[str] = None
     has_consent: bool = False
+    # Campos para manejar phones tipo @lid
+    real_phone: Optional[str] = None  # Número real cuando phone es @lid
+    phone_verified: Optional[bool] = None  # Si el número fue verificado
 
 
 class ProviderResponse(BaseModel):

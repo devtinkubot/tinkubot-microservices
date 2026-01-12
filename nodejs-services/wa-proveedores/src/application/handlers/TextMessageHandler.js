@@ -21,7 +21,7 @@ class TextMessageHandler extends BaseMessageHandler {
    * @returns {boolean} true si el mensaje es de tipo conversacional
    */
   canHandle(message) {
-    const allowedTypes = new Set(['chat', 'location', 'live_location']);
+    const allowedTypes = new Set(['chat', 'image', 'location', 'live_location']);
     return allowedTypes.has(message.type);
   }
 

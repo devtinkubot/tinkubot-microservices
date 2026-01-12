@@ -101,14 +101,46 @@ def determinar_estado_registro_proveedor(
 ) -> bool:
     """
     Determina si el proveedor está COMPLETAMENTE registrado (True) o es nuevo (False).
-    Un proveedor con solo consentimiento pero sin datos completos no está registrado.
+
+    Un proveedor debe tener TODAS las fotos para ser considerado registrado.
+    Esto distingue entre:
+    - Registro incompleto (sin fotos completas) → Retorna False
+    - Registro completo (con todas las fotos) → Retorna True
     """
-    return bool(
-        provider_profile
-        and provider_profile.get("id")
-        and provider_profile.get("full_name")
-        and provider_profile.get("profession")
-    )
+    if not provider_profile:
+        return False
+
+    # Sin datos básicos, no está registrado
+    if not (provider_profile.get("id")
+            and provider_profile.get("full_name")
+            and provider_profile.get("profession")):
+        return False
+
+    # DEBUG: Log para depurar
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning(f"🔍 DEBUG - Estado registro para {provider_profile.get('phone')}:")
+    logger.warning(f"  - id: {bool(provider_profile.get('id'))}")
+    logger.warning(f"  - full_name: {bool(provider_profile.get('full_name'))}")
+    logger.warning(f"  - profession: {bool(provider_profile.get('profession'))}")
+    logger.warning(f"  - verified: {bool(provider_profile.get('verified'))}")
+    logger.warning(f"  - dni_front: {bool(provider_profile.get('dni_front_photo_url'))}")
+    logger.warning(f"  - dni_back: {bool(provider_profile.get('dni_back_photo_url'))}")
+    logger.warning(f"  - face: {bool(provider_profile.get('face_photo_url'))}")
+
+    # Para ser considerado registrado, debe tener las 3 fotos o estar verificado
+    has_all_photos = all([
+        provider_profile.get("dni_front_photo_url"),
+        provider_profile.get("dni_back_photo_url"),
+        provider_profile.get("face_photo_url"),
+    ])
+
+    result = bool(provider_profile.get("verified") or has_all_photos)
+    logger.warning(f"  - has_all_photos: {has_all_photos}")
+    logger.warning(f"  - RESULT: {result}")
+
+    # Está verificado o tiene todas las fotos completas
+    return result
 
 
 async def actualizar_servicios_proveedor(

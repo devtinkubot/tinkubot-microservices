@@ -41,7 +41,7 @@ AVAILABILITY_STATE_TTL_SECONDS = int(os.getenv("AVAILABILITY_STATE_TTL_SECONDS",
 AVAILABILITY_POLL_INTERVAL_SECONDS = float(
     os.getenv("AVAILABILITY_POLL_INTERVAL_SECONDS", "1.5")
 )
-LOG_SAMPLING_RATE = int(os.getenv("LOG_SAMPLING_RATE", "10"))
+LOG_SAMPLING_RATE = int(os.getenv("LOG_SAMPLING_RATE", "1"))  # Changed to 1 for debugging
 
 # Logger del módulo
 logger = logging.getLogger(__name__)
@@ -100,12 +100,16 @@ class AvailabilityCoordinator:
 
     async def start_listener(self):
         """Inicia tarea de escucha de respuestas MQTT."""
+        logger.info("🔧 [DEBUG] start_listener() called")
         if not MQTTClient:
             logger.warning("⚠️ asyncio-mqtt no instalado; disponibilidad en vivo deshabilitada.")
             return
         if self.listener_task and not self.listener_task.done():
+            logger.info(f"⚠️ Listener task already running: {self.listener_task}")
             return
+        logger.info("🔧 [DEBUG] Creating listener task...")
         self.listener_task = asyncio.create_task(self._listener_loop())
+        logger.info(f"✅ [DEBUG] Listener task created: {self.listener_task}")
 
     async def start_publisher(self):
         """Inicia tarea de publicación de solicitudes MQTT."""
@@ -117,17 +121,26 @@ class AvailabilityCoordinator:
 
     async def _listener_loop(self):
         """Loop de escucha de respuestas MQTT (método privado)."""
+        logger.info("🔧 [DEBUG] _listener_loop() starting...")
         if not MQTTClient:
+            logger.error("❌ [DEBUG] MQTTClient is None!")
             return
+        logger.info("🔧 [DEBUG] Starting listener loop...")
         while True:
             try:
+                logger.info("🔧 [DEBUG] Connecting to MQTT broker...")
                 async with MQTTClient(**self._client_params()) as client:
-                    async with client.unfiltered_messages() as messages:
-                        await client.subscribe(MQTT_TEMA_RESPUESTA)
-                        logger.info(
-                            f"📡 Suscrito a MQTT para respuestas de disponibilidad: {MQTT_TEMA_RESPUESTA}"
-                        )
+                    logger.info("✅ [DEBUG] MQTT client connected")
+                    # CRITICAL: Subscribe to topic first
+                    topic_filter = MQTT_TEMA_RESPUESTA
+                    await client.subscribe(topic_filter, qos=MQTT_QOS)
+                    logger.info(
+                        f"📡 Suscrito a MQTT para respuestas de disponibilidad: {topic_filter}"
+                    )
+                    async with client.filtered_messages(topic_filter) as messages:
+                        logger.info("🔧 [DEBUG] Waiting for messages...")
                         async for message in messages:
+                            logger.info("🔧 [DEBUG] Message received!")
                             await self._handle_response_message(message)
             except asyncio.CancelledError:
                 break
@@ -177,14 +190,21 @@ class AvailabilityCoordinator:
 
     async def _handle_response_message(self, message):
         """Procesa mensaje MQTT de respuesta (método privado)."""
+        # DEBUG: Log EVERY received MQTT message
+        logger.info(f"📨 MQTT message received on topic: {message.topic}")
+
         try:
             payload = json.loads(message.payload.decode())
         except Exception as exc:
             logger.warning(f"⚠️ Payload MQTT inválido: {exc}")
             return
 
+        # DEBUG: Log the raw payload
+        logger.info(f"📦 Raw payload: {payload}")
+
         req_id = payload.get("req_id") or payload.get("request_id")
         if not req_id:
+            logger.warning(f"⚠️ MQTT message missing req_id: {payload}")
             return
 
         provider_id = (

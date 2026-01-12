@@ -12,6 +12,7 @@ from services.image_service import subir_medios_identidad
 from services.provider_update_service import (
     actualizar_redes_sociales,
 )
+from services.phone_type_detector import PhoneTypeDetector
 from templates.prompts import (
     provider_post_registration_menu_message,
     provider_main_menu_message,
@@ -133,12 +134,33 @@ class WhatsAppFlow:
         if not esta_registrado:
             if choice == "1" or "registro" in lowered:
                 flow["mode"] = "registration"
-                flow["state"] = "awaiting_city"
-                await establecer_flujo(phone, flow)
-                return {
-                    "success": True,
-                    "response": "*Perfecto. Empecemos. ¿En qué ciudad trabajas principalmente?*",
-                }
+
+                # Detectar tipo de phone para manejar @lid vs @c.us
+                phone_type = PhoneTypeDetector.detect(phone)
+
+                if PhoneTypeDetector.is_lid(phone):
+                    # Si es @lid, pedir número real
+                    flow["state"] = "awaiting_real_phone"
+                    await establecer_flujo(phone, flow)
+                    return {
+                        "success": True,
+                        "response": (
+                            "*📱 Registro de Proveedores*\n\n"
+                            "Detecté que tu número es un ID temporal. "
+                            "Para poder contactarte, necesito tu número real de celular.\n\n"
+                            "*Por favor ingresa tu número de celular (ej: 0991234567)*"
+                        ),
+                    }
+                else:
+                    # Si es @c.us, guardarlo en real_phone y continuar normal
+                    flow["real_phone"] = phone  # Guardar el phone @c.us en real_phone
+                    flow["phone_verified"] = True
+                    flow["state"] = "awaiting_city"
+                    await establecer_flujo(phone, flow)
+                    return {
+                        "success": True,
+                        "response": "*Perfecto. Empecemos. ¿En qué ciudad trabajas principalmente?*",
+                    }
             if choice == "2" or "salir" in lowered:
                 await reiniciar_flujo(phone)
                 await establecer_flujo(phone, {"has_consent": True})

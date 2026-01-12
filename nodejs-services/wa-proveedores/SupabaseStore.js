@@ -83,13 +83,36 @@ class SupabaseStore {
     try {
       const sessionZipPath = path || `${session}.zip`;
 
+      // Solución 2: Verificar edad del archivo antes de descargar
+      const { data: fileList, error: listError } = await this.supabase.storage
+        .from(this.bucketName)
+        .list('');
+
+      if (!listError && Array.isArray(fileList)) {
+        const fileMetadata = fileList.find(item => item.name === `${session}.zip`);
+        if (fileMetadata && fileMetadata.updated_at) {
+          const fileAge = Date.now() - new Date(fileMetadata.updated_at).getTime();
+          const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 días
+
+          if (fileAge > MAX_AGE_MS) {
+            const ageDays = Math.floor(fileAge / (24 * 60 * 60 * 1000));
+            console.warn(
+              `⚠️ [SupabaseStore] Session ${session} is too old (${ageDays} days). ` +
+              `Deleting and requesting fresh QR.`
+            );
+            await this.delete({ session });
+            return null; // Forzar generación de nuevo QR
+          }
+        }
+      }
+
       const { data, error } = await this.supabase.storage
         .from(this.bucketName)
         .download(`${session}.zip`);
 
       if (error || !data) {
         console.warn(
-          `ℹ️ No remote session found or download failed for ${session}. Continuing without restore.`
+          `ℹ️ [SupabaseStore] No remote session found for ${session}. Will generate new QR code.`
         );
         return null; // Permitir generar QR nuevo
       }
@@ -100,11 +123,13 @@ class SupabaseStore {
       }
 
       await fs.writeFile(sessionZipPath, fileBuffer);
-      console.warn(`✅ Session ${session} downloaded to ${sessionZipPath}`);
+      // Solución 4: Agregar tamaño del archivo al log
+      const sizeKB = (fileBuffer.length / 1024).toFixed(2);
+      console.warn(`✅ [SupabaseStore] Session ${session} downloaded to ${sessionZipPath} (${sizeKB} KB)`);
       // Nota: no descomprimir ni eliminar; whatsapp-web.js se encarga
       return true;
     } catch (error) {
-      console.warn(`ℹ️ Skipping restore for ${session} due to error:`, error?.message || error);
+      console.warn(`ℹ️ [SupabaseStore] Skipping restore for ${session} due to error:`, error?.message || error);
       return null; // Continuar sin sesión
     }
   }

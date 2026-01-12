@@ -29,6 +29,10 @@ class Settings(BaseSettings):
         or os.getenv("AI_SERVICE_CLIENTES_PORT", "8001")
     )
 
+    # WhatsApp Services Ports
+    whatsapp_clientes_port: int = int(os.getenv("WHATSAPP_CLIENTES_PORT", "8080"))
+    whatsapp_proveedores_port: int = int(os.getenv("WHATSAPP_PROVEEDORES_PORT", "8081"))
+
     # Instance Configuration
     clientes_instance_id: str = os.getenv("CLIENTES_INSTANCE_ID", "clientes")
     clientes_instance_name: str = os.getenv("CLIENTES_INSTANCE_NAME", "Bot Clientes")
@@ -74,6 +78,10 @@ class Settings(BaseSettings):
     search_api_prefix: str = os.getenv("SEARCH_API_PREFIX", "/api/v1")
     search_metrics_enabled: bool = os.getenv("SEARCH_METRICS_ENABLED", "true").lower() == "true"
     search_metrics_port: int = int(os.getenv("SEARCH_METRICS_PORT", "9091"))
+
+    # AI Search Service (legacy, para ser eliminado)
+    ai_search_port: int = int(os.getenv("AI_SEARCH_PORT", "8000"))
+    proveedores_service_port: int = int(os.getenv("PROVEEDORES_SERVICE_PORT", "8002"))
 
     # Feedback scheduler
     feedback_delay_seconds: int = int(

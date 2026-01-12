@@ -150,9 +150,12 @@ async def validate_content_with_ai(
 Eres un moderador de contenido experto. Detecta si el texto contiene:
 
 1. CONTENIDO ILEGAL O INAPROPIADO:
-   - Armas, violencia, delitos
-   - Drogas, sustancias ilegales
+   - Armas, violencia, delitos, actividades criminales
+   - Drogas, sustancias ilegales, narcóticos
    - Servicios sexuales, prostitución, contenido pornográfico
+   - Tráfico de órganos, compra/venta de órganos (riñón, hígado, corazón, etc.)
+   - Explotación infantil, servicios con niños/menores, pederastia
+   - Tráfico de personas, esclavitud, explotación sexual forzada
    - Odio, discriminación, acoso
 
 2. INPUT SIN SENTIDO O FALSO:

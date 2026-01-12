@@ -19,7 +19,8 @@ def normalizar_datos_proveedor(datos_crudos: ProviderCreate) -> Dict[str, Any]:
     Normaliza datos del formulario para el esquema unificado.
     """
     servicios_limpios = sanitizar_servicios(datos_crudos.services_list or [])
-    return {
+
+    datos = {
         "phone": datos_crudos.phone.strip(),
         "full_name": datos_crudos.full_name.strip().title(),  # Formato legible
         "email": datos_crudos.email.strip() if datos_crudos.email else None,
@@ -36,6 +37,14 @@ def normalizar_datos_proveedor(datos_crudos: ProviderCreate) -> Dict[str, Any]:
         "social_media_url": datos_crudos.social_media_url,
         "social_media_type": datos_crudos.social_media_type,
     }
+
+    # Agregar real_phone y phone_verified si están disponibles
+    if hasattr(datos_crudos, 'real_phone') and datos_crudos.real_phone:
+        datos["real_phone"] = datos_crudos.real_phone.strip()
+    if hasattr(datos_crudos, 'phone_verified') and datos_crudos.phone_verified is not None:
+        datos["phone_verified"] = datos_crudos.phone_verified
+
+    return datos
 
 
 def aplicar_valores_por_defecto_proveedor(
@@ -77,6 +86,7 @@ async def registrar_proveedor(
         Dict con el proveedor registrado o None si falló
     """
     if not supabase:
+        logger.warning("⚠️ Supabase client no disponible para registrar proveedor")
         return None
 
     try:
@@ -167,6 +177,16 @@ async def registrar_proveedor(
                     "created_at", datetime.now().isoformat()
                 ),
             }
+
+            # Agregar real_phone y phone_verified si están en los datos
+            if "real_phone" in datos_normalizados:
+                provider_record["real_phone"] = registro_insertado.get(
+                    "real_phone", datos_normalizados.get("real_phone")
+                )
+            if "phone_verified" in datos_normalizados:
+                provider_record["phone_verified"] = registro_insertado.get(
+                    "phone_verified", datos_normalizados.get("phone_verified")
+                )
 
             perfil_normalizado = aplicar_valores_por_defecto_proveedor(provider_record)
             # Importar localmente para evitar ciclo de importación

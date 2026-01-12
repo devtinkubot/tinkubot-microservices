@@ -164,7 +164,7 @@ def validate_provider_payload(
         phone: Teléfono del proveedor
 
     Returns:
-        Tupla (es_válido, provider_payload o error_response)
+        Tupla (es_válido, provider_payload como Dict o error_response)
     """
     specialty = flow.get("specialty")
     services_list = []
@@ -178,7 +178,7 @@ def validate_provider_payload(
             services_list = [specialty.strip()]
 
     try:
-        provider_payload = ProviderCreate(
+        provider_create = ProviderCreate(
             phone=phone,
             full_name=flow.get("name") or "",
             email=flow.get("email"),
@@ -189,8 +189,12 @@ def validate_provider_payload(
             has_consent=flow.get("has_consent", False),
             social_media_url=flow.get("social_media_url"),
             social_media_type=flow.get("social_media_type"),
+            # Campos para manejar phones tipo @lid
+            real_phone=flow.get("real_phone"),
+            phone_verified=flow.get("phone_verified"),
         )
-        return True, provider_payload
+        # Convertir a dict para compatibilidad con el tipo de retorno
+        return True, provider_create.model_dump()
     except ValidationError as exc:
         logger.error("Datos de registro invalidos para %s: %s", phone, exc)
         first_error = exc.errors()[0] if exc.errors() else {}

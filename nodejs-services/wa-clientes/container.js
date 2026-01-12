@@ -125,7 +125,12 @@ class ServiceContainer {
       aiServiceClient: this._aiServiceClient,
       qrCodeData: runtimeServices.qrCodeData,
       resetWhatsAppSession: runtimeServices.resetWhatsAppSession,
-      messageSender: this._messageSender
+      messageSender: this._messageSender,
+      supabaseStore: this._supabaseStore,
+      client: this._whatsappClient,
+      // Getters para acceder a los valores actuales (Solución para problema de referencia)
+      getClientStatus: runtimeServices.getClientStatus,
+      getQrCodeData: runtimeServices.getQrCodeData
     };
 
     this._app = createApp(services);

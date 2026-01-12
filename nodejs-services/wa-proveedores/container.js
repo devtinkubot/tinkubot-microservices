@@ -72,9 +72,10 @@ class ServiceContainer {
     this._mqttClient = new MqttClient(this._config.mqtt, client);
 
     // Inicializar HandlerRegistry y registrar handlers
+    // Orden crítico: AvailabilityMessageHandler PRIMERO para que tenga prioridad
     this._handlerRegistry = new HandlerRegistry();
-    this._handlerRegistry.register(new TextMessageHandler(this._messageSender, this._aiServiceClient));
     this._handlerRegistry.register(new AvailabilityMessageHandler(this._messageSender, this._aiServiceClient, this._mqttClient));
+    this._handlerRegistry.register(new TextMessageHandler(this._messageSender, this._aiServiceClient));
   }
 
   /**
@@ -140,7 +141,12 @@ class ServiceContainer {
       aiServiceClient: this._aiServiceClient,
       qrCodeData: runtimeServices.qrCodeData,
       resetWhatsAppSession: runtimeServices.resetWhatsAppSession,
-      messageSender: this._messageSender
+      messageSender: this._messageSender,
+      supabaseStore: this._supabaseStore,
+      client: this._whatsappClient,
+      // Getters para acceder a los valores actuales (Solución para problema de referencia)
+      getClientStatus: runtimeServices.getClientStatus,
+      getQrCodeData: runtimeServices.getQrCodeData
     };
 
     this._app = createApp(services);

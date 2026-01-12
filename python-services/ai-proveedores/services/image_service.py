@@ -20,6 +20,7 @@ async def subir_medios_identidad(
 ) -> None:
     """Subir todos los medios de identidad de un proveedor."""
     if not supabase:
+        logger.warning("⚠️ Supabase no configurado para subir imágenes de identidad")
         return
 
     uploads: Dict[str, Optional[str]] = {
