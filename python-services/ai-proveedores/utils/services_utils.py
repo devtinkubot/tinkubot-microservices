@@ -3,7 +3,7 @@ Utilidades para procesamiento de texto y servicios de proveedores.
 """
 import re
 import unicodedata
-from typing import List, Optional, Set
+from typing import Dict, List, Optional, Set
 
 
 # Constantes
@@ -164,3 +164,82 @@ def construir_listado_servicios(servicios: List[str]) -> str:
     lines = ["Servicios registrados:"]
     lines.extend(f"{idx + 1}. {servicio}" for idx, servicio in enumerate(servicios))
     return "\n".join(lines)
+
+
+# ============================================================================
+# CIUDADES DE ECUADOR (compartido desde ai-clientes)
+# ============================================================================
+
+ECUADOR_CITY_SYNONYMS: Dict[str, Set[str]] = {
+    "Quito": {"quito"},
+    "Guayaquil": {"guayaquil"},
+    "Cuenca": {"cuenca", "cueca"},
+    "Santo Domingo": {"santo domingo", "santo domingo de los tsachilas"},
+    "Manta": {"manta"},
+    "Portoviejo": {"portoviejo"},
+    "Machala": {"machala"},
+    "Durán": {"duran", "durán"},
+    "Loja": {"loja"},
+    "Ambato": {"ambato"},
+    "Riobamba": {"riobamba"},
+    "Esmeraldas": {"esmeraldas"},
+    "Quevedo": {"quevedo"},
+    "Babahoyo": {"babahoyo", "baba hoyo"},
+    "Milagro": {"milagro"},
+    "Ibarra": {"ibarra"},
+    "Tulcán": {"tulcan", "tulcán"},
+    "Latacunga": {"latacunga"},
+    "Salinas": {"salinas"},
+}
+
+ECUADOR_CITIES = set(ECUADOR_CITY_SYNONYMS.keys())
+
+
+def normalize_city_input(text: Optional[str]) -> Optional[str]:
+    """
+    Devuelve la ciudad canónica si coincide con la lista de ciudades de Ecuador.
+
+    Args:
+        text: Nombre de ciudad ingresado por el usuario
+
+    Returns:
+        Nombre canónico de la ciudad (Title Case) o None si no es válida
+    """
+    if not text:
+        return None
+
+    # Normalizar: minúsculas, sin acentos, sin caracteres especiales
+    normalized = (text or "").lower().strip()
+    normalized = unicodedata.normalize("NFD", normalized)
+    without_accents = "".join(
+        char for char in normalized if unicodedata.category(char) != "Mn"
+    )
+    # Remover caracteres que no sean letras, números o espacios
+    clean = re.sub(r"[^a-z0-9\s]", "", without_accents)
+    clean = re.sub(r"\s+", " ", clean).strip()
+
+    if not clean:
+        return None
+
+    # Buscar coincidencia exacta con ciudad canónica
+    for canonical_city in ECUADOR_CITIES:
+        canonical_norm = canonical_city.lower()
+        canonical_norm = unicodedata.normalize("NFD", canonical_norm)
+        canonical_norm = "".join(
+            c for c in canonical_norm if unicodedata.category(c) != "Mn"
+        )
+        if clean == canonical_norm:
+            return canonical_city
+
+    # Buscar en sinónimos
+    for canonical_city, synonyms in ECUADOR_CITY_SYNONYMS.items():
+        for synonym in synonyms:
+            synonym_norm = synonym.lower()
+            synonym_norm = unicodedata.normalize("NFD", synonym_norm)
+            synonym_norm = "".join(
+                c for c in synonym_norm if unicodedata.category(c) != "Mn"
+            )
+            if clean == synonym_norm:
+                return canonical_city
+
+    return None

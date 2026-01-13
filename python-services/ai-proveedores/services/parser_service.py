@@ -158,3 +158,127 @@ def parse_services_string(value: Optional[str]) -> List[str]:
 
     # Limitar a máximo SERVICIOS_MAXIMOS servicios
     return servicios[:SERVICIOS_MAXIMOS]
+
+
+def normalize_city(value: Optional[str]) -> str:
+    """
+    Normaliza nombre de ciudad a formato canónico.
+
+    - Convierte a mayúscula inicial (Title Case)
+    - Usa lista de ciudades de Ecuador para validar
+    - Remueve caracteres especiales
+
+    Args:
+        value: Ciudad a normalizar
+
+    Returns:
+        Ciudad canónica en Title Case o cadena vacía si es inválida
+
+    Examples:
+        >>> normalize_city("cuenca+")
+        "Cuenca"
+        >>> normalize_city("QUITO")
+        "Quito"
+        >>> normalize_city("santo domingo")
+        "Santo Domingo"
+    """
+    if not value:
+        return ""
+
+    from utils.services_utils import normalize_city_input as get_canonical_city
+
+    canonical = get_canonical_city(value)
+    return canonical if canonical else ""
+
+
+def normalize_name(value: Optional[str]) -> str:
+    """
+    Normaliza nombre de persona a formato estándar.
+
+    - Convierte a Title Case (primera letra mayúscula de cada palabra)
+    - Preserva acentos
+    - Elimina espacios extras
+
+    Args:
+        value: Nombre a normalizar
+
+    Returns:
+        Nombre normalizado en Title Case
+
+    Examples:
+        >>> normalize_name("juan pérez")
+        "Juan Pérez"
+        >>> normalize_name("MARÍA GONZÁLEZ")
+        "María González"
+    """
+    if not value:
+        return ""
+
+    cleaned = " ".join(value.strip().split())
+
+    if not cleaned:
+        return ""
+
+    return cleaned.title()
+
+
+def normalize_profession(value: Optional[str]) -> str:
+    """
+    Normaliza profesión a formato estándar.
+
+    - Convierte a Sentence Case (solo primera letra mayúscula)
+    - Preserva acentos
+    - Elimina espacios extras
+
+    Args:
+        value: Profesión a normalizar
+
+    Returns:
+        Profesión normalizada en Sentence Case
+
+    Examples:
+        >>> normalize_profession("ingeniero civil")
+        "Ingeniero civil"
+        >>> normalize_profession("ABOGADO")
+        "Abogado"
+    """
+    if not value:
+        return ""
+
+    cleaned = " ".join(value.strip().split())
+
+    if not cleaned:
+        return ""
+
+    return cleaned[0].upper() + cleaned[1:].lower() if len(cleaned) > 1 else cleaned.upper()
+
+
+def normalize_email(value: Optional[str]) -> Optional[str]:
+    """
+    Normaliza email a formato estándar.
+
+    - Convierte a minúsculas
+    - Elimina espacios
+    - Retorna None si es valor de omisión
+
+    Args:
+        value: Email a normalizar
+
+    Returns:
+        Email en minúsculas o None si el usuario quiere omitir
+
+    Examples:
+        >>> normalize_email("USUARIO@EMAIL.COM")
+        "usuario@email.com"
+        >>> normalize_email("omitir")
+        None
+    """
+    if not value:
+        return None
+
+    cleaned = value.strip().lower()
+
+    if cleaned in OMISSION_VALUES:
+        return None
+
+    return cleaned

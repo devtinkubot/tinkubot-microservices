@@ -105,7 +105,10 @@ class SupabaseProviderRepository(IProviderRepository):
             logger.error("❌ Failed to create provider: no data returned from upsert")
             raise RepositoryError("Failed to create provider: no data returned")
 
-        logger.info(f"✅ Provider created: {registro.get('id')} (phone: {datos_normalizados['phone']})")
+        phone = datos_normalizados['phone']
+        logger.info(
+            f"✅ Provider created: {registro.get('id')} (phone: {phone})"
+        )
         return registro
 
     async def find_by_phone(self, phone: str) -> Optional[Dict[str, Any]]:
@@ -406,9 +409,9 @@ class SupabaseProviderRepository(IProviderRepository):
         )
 
         count = getattr(result, "count", 0)
-        exists = count and count > 0
+        exists = count is not None and count > 0
         logger.debug(f"🔍 Provider exists by phone {phone}: {exists}")
-        return exists
+        return bool(exists)
 
     async def toggle_availability(self, provider_id: str) -> Dict[str, Any]:
         """

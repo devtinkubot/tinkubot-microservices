@@ -10,8 +10,21 @@ from templates.prompts import (
     provider_under_review_message,
 )
 
+# Feature flags para Saga Pattern
+# ACTIVADO: Saga Pattern habilitado para producción
+USE_SAGA_ROLLBACK = True
+
+# Feature flags para validación y upload de imágenes (Fase 4)
+# ACTIVADO: Validación y upload paralelo habilitados
+ENABLE_IMAGE_VALIDATION = True
+ENABLE_PARALLEL_UPLOAD = True
+
 from services.parser_service import (
     normalize_text,
+    normalize_city,
+    normalize_name,
+    normalize_profession,
+    normalize_email,
     parse_experience_years,
     parse_services_string,
     parse_social_media,
@@ -38,15 +51,17 @@ class ProviderFlow:
     def handle_awaiting_city(
         flow: Dict[str, Any], message_text: Optional[str]
     ) -> Dict[str, Any]:
-        city = normalize_text(message_text)
-        is_valid, error_message = validate_city(city)
+        city_raw = normalize_text(message_text)
+        is_valid, error_message = validate_city(city_raw)
         if not is_valid:
             return {
                 "success": True,
                 "response": error_message,
             }
 
-        flow["city"] = city
+        # Normalizar a formato canónico
+        city_normalized = normalize_city(city_raw)
+        flow["city"] = city_normalized
         flow["state"] = "awaiting_name"
         return {
             "success": True,
@@ -57,15 +72,17 @@ class ProviderFlow:
     def handle_awaiting_name(
         flow: Dict[str, Any], message_text: Optional[str]
     ) -> Dict[str, Any]:
-        name = normalize_text(message_text)
-        is_valid, error_message = validate_name(name)
+        name_raw = normalize_text(message_text)
+        is_valid, error_message = validate_name(name_raw)
         if not is_valid:
             return {
                 "success": True,
                 "response": error_message,
             }
 
-        flow["name"] = name
+        # Normalizar a Title Case
+        name_normalized = normalize_name(name_raw)
+        flow["name"] = name_normalized
         flow["state"] = "awaiting_profession"
         return {
             "success": True,
@@ -79,15 +96,17 @@ class ProviderFlow:
     def handle_awaiting_profession(
         flow: Dict[str, Any], message_text: Optional[str]
     ) -> Dict[str, Any]:
-        profession = normalize_text(message_text)
-        is_valid, error_message = validate_profession(profession)
+        profession_raw = normalize_text(message_text)
+        is_valid, error_message = validate_profession(profession_raw)
         if not is_valid:
             return {
                 "success": True,
                 "response": error_message,
             }
 
-        flow["profession"] = profession
+        # Normalizar a Sentence Case
+        profession_normalized = normalize_profession(profession_raw)
+        flow["profession"] = profession_normalized
         flow["state"] = "awaiting_specialty"
         return {
             "success": True,
@@ -138,15 +157,17 @@ class ProviderFlow:
     def handle_awaiting_email(
         flow: Dict[str, Any], message_text: Optional[str]
     ) -> Dict[str, Any]:
-        email = normalize_text(message_text)
-        is_valid, error_message, normalized_email = validate_email(email)
+        email_raw = normalize_text(message_text)
+        is_valid, error_message, normalized_email = validate_email(email_raw)
         if not is_valid:
             return {
                 "success": True,
                 "response": error_message,
             }
 
-        flow["email"] = normalized_email
+        # Normalizar email (minúsculas)
+        email_final = normalize_email(normalized_email or email_raw)
+        flow["email"] = email_final
         flow["state"] = "awaiting_social_media"
         return {
             "success": True,
@@ -286,9 +307,72 @@ class ProviderFlow:
         reset_flow_fn: Callable[[], Awaitable[None]],
         logger: Any,
     ) -> Dict[str, Any]:
+        """
+        Maneja la confirmación de datos del proveedor usando Saga Pattern.
+
+        Esta implementación utiliza el ProviderRegistrationSaga para coordinar el registro
+        con compensaciones automáticas si algún paso falla.
+
+        Benefits:
+        - Rollback automático en caso de fallo
+        - Logging detallado de cada paso
+        - Transaccionalidad distribuida
+        """
+        return await ProviderFlow._handle_confirm_with_saga(
+            flow=flow,
+            message_text=message_text,
+            phone=phone,
+            register_provider_fn=register_provider_fn,
+            upload_media_fn=upload_media_fn,
+            reset_flow_fn=reset_flow_fn,
+            logger=logger,
+        )
+
+    @staticmethod
+    async def _handle_confirm_with_saga(
+        flow: Dict[str, Any],
+        message_text: Optional[str],
+        phone: str,
+        register_provider_fn: Callable[
+            [ProviderCreate], Awaitable[Optional[Dict[str, Any]]]
+        ],
+        upload_media_fn: Callable[[str, Dict[str, Any]], Awaitable[None]],
+        reset_flow_fn: Callable[[], Awaitable[None]],
+        logger: Any,
+    ) -> Dict[str, Any]:
+        """
+        Implementación de handle_confirm usando Saga Pattern con rollback automático.
+
+        Esta versión utiliza el ProviderRegistrationSaga para coordinar el registro
+        con compensaciones automáticas si algún paso falla.
+
+        Benefits:
+        - Rollback automático en caso de fallo
+        - Logging detallado de cada paso
+        - Transaccionalidad distribuida
+
+        Args:
+            flow: Diccionario del flujo conversacional
+            message_text: Mensaje de confirmación del usuario
+            phone: Número de teléfono del proveedor
+            register_provider_fn: Función para registrar proveedor
+            upload_media_fn: Función para subir archivos media
+            reset_flow_fn: Función para resetear el flujo
+            logger: Logger para diagnóstico
+
+        Returns:
+            Dict con respuesta apropiada o mensajes de error
+        """
+        from core.saga import ProviderRegistrationSaga
+        from core.commands import RegisterProviderCommand
+        from core.exceptions import SagaExecutionError
+        from app.dependencies import get_provider_repository
+        from app.config import settings
+
         raw_text = normalize_text(message_text)
         text = raw_text.lower()
 
+        # Manejar edición
         if text.startswith("2") or "editar" in text:
             has_consent = flow.get("has_consent", False)
             flow.clear()
@@ -300,6 +384,7 @@ class ProviderFlow:
                 "response": ("Reiniciemos. *En que ciudad trabajas principalmente?*"),
             }
 
+        # Manejar confirmación
         if (
             text.startswith("1")
             or text.startswith("confirm")
@@ -307,24 +392,107 @@ class ProviderFlow:
         ):
             is_valid, result = validate_provider_payload(flow, phone)
             if not is_valid:
+                assert result is not None, "error_response should not be None when validation fails"
                 return result
 
             provider_payload = result
+            assert provider_payload is not None, "provider_payload cannot be None after validation"
 
-            registered_provider = await register_provider_fn(provider_payload)
-            if registered_provider:
+            try:
+                # Obtener repositorio
+                supabase_client = None
+                if settings.supabase_url and settings.supabase_service_key:
+                    from supabase import create_client
+                    supabase_client = create_client(
+                        settings.supabase_url,
+                        settings.supabase_service_key
+                    )
+
+                if not supabase_client:
+                    logger.error("No se pudo obtener cliente de Supabase para Saga")
+                    return {
+                        "success": False,
+                        "response": (
+                            "*Hubo un error al guardar tu informacion. "
+                            "Por favor intenta de nuevo.*"
+                        ),
+                    }
+
+                provider_repository = get_provider_repository(supabase_client)
+
+                # Crear y configurar Saga con los comandos necesarios
+                saga = ProviderRegistrationSaga()
+
+                # Paso 1: Registrar proveedor en base de datos
+                register_command = RegisterProviderCommand(
+                    provider_repository=provider_repository,
+                    data=provider_payload  # type: ignore[arg-type]
+                )
+                saga.add_command(register_command)
+
+                # NOTA: Futuros pasos (upload de imágenes) se agregarán aquí
+                # cuando los comandos correspondientes estén implementados:
+                # saga.add_command(UploadDniFrontCommand(...))
+                # saga.add_command(UploadDniBackCommand(...))
+                # saga.add_command(UploadFacePhotoCommand(...))
+
+                # Ejecutar Saga con rollback automático
+                logger.info("🚀 Iniciando registro de proveedor con Saga Pattern")
+                saga_result = await saga.execute()
+
                 logger.info(
-                    "Proveedor registrado exitosamente: %s",
-                    registered_provider.get("id"),
+                    f"✅ Saga completada exitosamente: "
+                    f"{saga_result.get('commands_executed')} comandos ejecutados"
                 )
-                provider_id = registered_provider.get("id")
-                servicios_registrados = parse_services_string(
-                    registered_provider.get("services")
-                )
+
+                # Obtener resultado del registro
+                registered_provider = register_command.provider_id
+                if not registered_provider:
+                    logger.error("Saga completó pero no se obtuvo provider_id")
+                    return {
+                        "success": False,
+                        "response": (
+                            "*Hubo un error al guardar tu informacion. "
+                            "Por favor intenta de nuevo.*"
+                        ),
+                    }
+
+                logger.info(f"Proveedor registrado exitosamente: {registered_provider}")
+
+                # Obtener servicios registrados (necesario para el flujo)
+                provider_data = await provider_repository.find_by_id(registered_provider)
+                if provider_data is None:
+                    logger.error("No se pudo encontrar el proveedor recién registrado")
+                    return {
+                        "success": False,
+                        "response": (
+                            "*Hubo un error al guardar tu informacion. "
+                            "Por favor intenta de nuevo.*"
+                        ),
+                    }
+
+                services_value = provider_data.get("services")
+
+                # Convertir services a string para parse_services_string
+                services_str: Optional[str] = None
+                if services_value is not None:
+                    if isinstance(services_value, str):
+                        services_str = services_value
+                    elif isinstance(services_value, list):
+                        # Convertir lista a string separado por comas
+                        services_str = ", ".join(str(s) for s in services_value)
+
+                servicios_registrados = parse_services_string(services_str)
                 flow["services"] = servicios_registrados
-                if provider_id:
-                    await upload_media_fn(provider_id, flow)
+
+                # Upload media (usando función existente por compatibilidad)
+                # NOTA: En el futuro, esto será parte de la Saga
+                if registered_provider:
+                    await upload_media_fn(registered_provider, flow)
+
+                # Resetear flujo
                 await reset_flow_fn()
+
                 return {
                     "success": True,
                     "messages": [{"response": provider_under_review_message()}],
@@ -333,20 +501,41 @@ class ProviderFlow:
                         "state": "pending_verification",
                         "has_consent": True,
                         "registration_allowed": False,
-                        "provider_id": provider_id,
+                        "provider_id": registered_provider,
                         "services": servicios_registrados,
                         "awaiting_verification": True,
                     },
                 }
 
-            logger.error("No se pudo registrar el proveedor")
-            return {
-                "success": False,
-                "response": (
-                    "*Hubo un error al guardar tu informacion. Por favor intenta de nuevo.*"
-                ),
-            }
+            except SagaExecutionError as saga_error:
+                # El Saga ya ejecutó rollback automático
+                logger.error(
+                    f"❌ Saga falló y rollback fue ejecutado: {saga_error.message}\n"
+                    f"   Comandos completados antes del fallo: "
+                    f"{', '.join(saga_error.completed_commands)}"
+                )
 
+                return {
+                    "success": False,
+                    "response": (
+                        "*Hubo un error al guardar tu informacion. "
+                        "Por favor intenta de nuevo.*"
+                    ),
+                }
+
+            except Exception as e:
+                # Error inesperado no manejado por el Saga
+                logger.error(f"❌ Error inesperado en handle_confirm_with_saga: {e}")
+
+                return {
+                    "success": False,
+                    "response": (
+                        "*Hubo un error al guardar tu informacion. "
+                        "Por favor intenta de nuevo.*"
+                    ),
+                }
+
+        # Respuesta por defecto si no es confirmación ni edición
         return {
             "success": True,
             "response": (

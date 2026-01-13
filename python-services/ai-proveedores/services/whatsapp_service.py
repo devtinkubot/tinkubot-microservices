@@ -50,6 +50,26 @@ async def inicializar_flow_con_perfil(
     esta_registrado = determinar_estado_registro_proveedor(provider_profile)
     flow["esta_registrado"] = esta_registrado
 
+    # Detectar proveedor en estado de revisión pendiente
+    # Si el proveedor existe pero no está verificado, está pendiente de revisión
+    if provider_profile and provider_profile.get("id"):
+        is_verified = bool(provider_profile.get("verified", False))
+        if not is_verified:
+            # Proveedor existe pero no está verificado → pendiente de revisión
+            flow["is_pending_review"] = True
+            # Mantener el estado en pending_verification si no está ya definido
+            if not flow.get("state") or flow.get("state") not in ["pending_verification", "verified"]:
+                flow["state"] = "pending_verification"
+        else:
+            # Proveedor verificado
+            flow["is_verified"] = True
+            # Si estaba pendiente, actualizar que ya fue verificado
+            if flow.get("was_pending_review"):
+                flow["was_pending_review"] = False  # Ya no está pendiente
+            # Si no tiene estado o está en pending_verification, moverlo a verified
+            if not flow.get("state") or flow.get("state") == "pending_verification":
+                flow["state"] = "verified"
+
     # Persistir el flow actualizado
     await establecer_flujo(phone, flow)
 

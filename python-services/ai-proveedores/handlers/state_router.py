@@ -1,6 +1,12 @@
 """Router dinámico para manejadores de estado."""
 
+import logging
 from typing import Any, Callable, Dict, Optional
+
+logger = logging.getLogger(__name__)
+
+# Feature flag: ACTIVADO - State Machine habilitado para producción
+USE_STATE_MACHINE = True
 
 
 class StateRouter:
@@ -21,8 +27,19 @@ class StateRouter:
     """
 
     def __init__(self):
-        """Inicializa el router con un diccionario vacío de handlers."""
+        """
+        Inicializa el router con State Machine para transiciones.
+        """
         self._handlers: Dict[str, Callable] = {}
+
+        try:
+            from core.state_machine import ProviderStateMachine, ProviderState
+            self._state_machine = ProviderStateMachine(enable_validation=True)
+            self._ProviderState = ProviderState
+            logger.info("✅ StateRouter initialized with State Machine")
+        except ImportError as e:
+            logger.error(f"❌ Could not import State Machine: {e}")
+            raise RuntimeError("State Machine is required and must be available")
 
     def register(self, state_name: str, handler: Callable) -> None:
         """
@@ -42,6 +59,14 @@ class StateRouter:
 
         self._handlers[state_name] = handler
 
+        # Registrar también en State Machine
+        try:
+            state_enum = self._ProviderState(state_name)
+            self._state_machine.register_handler(state_enum, handler)
+            logger.debug(f"Registered handler for state {state_name} in State Machine")
+        except ValueError:
+            logger.warning(f"⚠️ State {state_name} not in ProviderState enum")
+
     def route(
         self,
         state: str,
@@ -50,7 +75,7 @@ class StateRouter:
         **kwargs
     ) -> Dict[str, Any]:
         """
-        Enrutar al manejador apropiado según el estado.
+        Enrutar al manejador apropiado usando State Machine.
 
         Args:
             state: Estado actual del flujo
@@ -64,14 +89,16 @@ class StateRouter:
         Raises:
             ValueError: Si el estado no tiene un handler registrado
         """
-        handler = self._handlers.get(state)
-        if not handler:
-            raise ValueError(
-                f"Estado desconocido: '{state}'. "
-                f"Estados registrados: {list(self._handlers.keys())}"
+        try:
+            return self._state_machine.execute_handler(
+                current_state=state,
+                flow=flow,
+                message_text=message_text,
+                **kwargs
             )
-
-        return handler(flow, message_text, **kwargs)
+        except Exception as e:
+            logger.error(f"❌ Error in State Machine handler execution: {e}")
+            raise
 
     def has_handler(self, state: str) -> bool:
         """

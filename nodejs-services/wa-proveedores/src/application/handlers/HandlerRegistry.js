@@ -34,9 +34,14 @@ class HandlerRegistry {
    * @returns {Promise<boolean>} true si algún handler procesó el mensaje
    */
   async dispatch(message) {
+    console.warn(`[HandlerRegistry] Dispatching message type: ${message.type}, from: ${message.from}`);
     for (const handler of this.handlers) {
       try {
-        if (handler.canHandle(message)) {
+        const handlerName = handler.constructor.name;
+        const canHandle = handler.canHandle(message);
+        console.warn(`[HandlerRegistry] ${handlerName}.canHandle(${message.type}): ${canHandle}`);
+        if (canHandle) {
+          console.warn(`[HandlerRegistry] Delegating to ${handlerName}`);
           await handler.handle(message);
           return true;
         }

@@ -213,12 +213,30 @@ class WhatsAppFlow:
                 "success": True,
                 "response": "*Perfecto. Si necesitas algo más, solo escríbeme.*",
             }
+        if choice == "5" or "eliminar" in lowered or "borrar" in lowered or "delete" in lowered:
+            flow["state"] = "awaiting_deletion_confirmation"
+            await establecer_flujo(phone, flow)
+            return {
+                "success": True,
+                "response": (
+                    "*⚠️ ¿Estás seguro de eliminar tu registro?*\n\n"
+                    "Esta acción eliminará:\n"
+                    "- Tu perfil de la base de datos\n"
+                    "- Tus servicios registrados\n"
+                    "- Tus fotos y documentos\n"
+                    "- Todas tus configuraciones\n\n"
+                    "*Esta acción NO se puede deshacer*\n\n"
+                    "Responde:\n"
+                    "1) Confirmar eliminación\n"
+                    "2) Cancelar y volver al menú"
+                ),
+            }
 
         await establecer_flujo(phone, flow)
         return {
             "success": True,
             "messages": [
-                {"response": "No reconoci esa opcion. Por favor elige 1, 2, 3 o 4."},
+                {"response": "No reconoci esa opcion. Por favor elige 1, 2, 3, 4 o 5."},
                 {"response": provider_post_registration_menu_message()},
             ],
         }
@@ -592,6 +610,96 @@ class WhatsAppFlow:
         }
 
     @staticmethod
+    async def handle_awaiting_deletion_confirmation(
+        flow: Dict[str, Any],
+        phone: str,
+        message_text: Optional[str],
+        supabase: Any,
+    ) -> Dict[str, Any]:
+        """
+        Maneja la confirmación de eliminación del registro del proveedor.
+
+        Args:
+            flow: Diccionario del flujo
+            phone: Teléfono del proveedor
+            message_text: Respuesta del usuario
+            supabase: Cliente de Supabase
+
+        Returns:
+            Dict con la respuesta procesada
+        """
+        from services.provider_update_service import eliminar_registro_proveedor
+        from services.parser_service import normalize_text
+
+        raw_text = normalize_text(message_text)
+        text = raw_text.lower()
+
+        # Opción 2: Cancelar
+        if text.startswith("2") or "cancelar" in text or "no" in text:
+            flow["state"] = "awaiting_menu_option"
+            await establecer_flujo(phone, flow)
+            return {
+                "success": True,
+                "messages": [
+                    {"response": "*✅ Cancelado. Tu registro se mantiene activo.*"},
+                    {"response": provider_post_registration_menu_message()},
+                ],
+            }
+
+        # Opción 1: Confirmar eliminación
+        if (
+            text.startswith("1")
+            or text.startswith("confirm")
+            or text in {"si", "ok", "listo", "confirmar", "eliminar"}
+        ):
+            # Ejecutar eliminación
+            resultado = await eliminar_registro_proveedor(supabase, phone)
+
+            if resultado["success"]:
+                # Eliminación exitosa - volver a consentimiento
+                nuevo_flow = {
+                    "state": "awaiting_consent",
+                    "has_consent": False,
+                }
+                await establecer_flujo(phone, nuevo_flow)
+
+                return {
+                    "success": True,
+                    "messages": [
+                        {"response": resultado["message"]},
+                        {"response": (
+                            "*Has eliminado tu registro correctamente.*\n\n"
+                            "Si deseas volver a registrarte en el futuro, "
+                            "serás bienvenido/a."
+                        )},
+                    ],
+                }
+            else:
+                # Error en eliminación - volver al menú
+                flow["state"] = "awaiting_menu_option"
+                await establecer_flujo(phone, flow)
+                return {
+                    "success": True,
+                    "messages": [
+                        {"response": f"*❌ {resultado['message']}*"},
+                        {"response": provider_post_registration_menu_message()},
+                    ],
+                }
+
+        # Respuesta no reconocida
+        return {
+            "success": True,
+            "messages": [
+                {"response": "*No entendí tu respuesta.*"},
+                {"response": (
+                    "Responde:\n"
+                    "1) Confirmar eliminación\n"
+                    "2) Cancelar y volver al menú"
+                )},
+            ],
+        }
+
+    @staticmethod
     async def handle_reset_conversation(phone: str) -> Dict[str, Any]:
         """
         Maneja keywords de reset para reiniciar la conversación.
@@ -638,4 +746,6 @@ class WhatsAppFlow:
             return WhatsAppFlow.handle_awaiting_service_remove
         if state == "awaiting_face_photo_update":
             return WhatsAppFlow.handle_awaiting_face_photo_update
+        if state == "awaiting_deletion_confirmation":
+            return WhatsAppFlow.handle_awaiting_deletion_confirmation
         return None

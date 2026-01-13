@@ -18,8 +18,8 @@ from utils.db_utils import run_supabase
 logger = logging.getLogger(__name__)
 
 # Feature Flag: Repository Pattern (Fase 1.1)
-# Cambiar a True cuando esté listo para producción
-USE_REPOSITORY_PATTERN = False
+# ACTIVADO: Repository Pattern habilitado para producción
+USE_REPOSITORY_PATTERN = True
 
 
 def normalizar_datos_proveedor(datos_crudos: Dict[str, Any]) -> Dict[str, Any]:
@@ -121,21 +121,22 @@ async def registrar_proveedor(
     timeout: float = 5.0,
 ) -> Optional[Dict[str, Any]]:
     """
-    Registra proveedor usando el esquema unificado simplificado.
+    Registra proveedor usando Repository Pattern con Command/Saga.
 
     Principio Dependency Inversion (DIP):
     - Acepta Dict en lugar de ProviderCreate específico
     - Permite flexibilidad en el origen de los datos
     - La validación ocurre antes de llamar esta función
 
-    Feature Flag: USE_REPOSITORY_PATTERN
-    - False: Usa implementación original (código legacy probado)
-    - True: Usa nuevo Repository Pattern con Command/Saga
+    Esta implementación usa:
+    - SupabaseProviderRepository para acceso a datos
+    - RegisterProviderCommand para encapsular la operación
+    - ProviderRegistrationSaga para rollback automático
 
     Args:
         supabase: Cliente de Supabase
         datos_proveedor: Dict con los datos del proveedor a registrar
-        timeout: Timeout para operaciones de Supabase (segundos)
+        timeout: Timeout para operaciones (no usado en Repository, el timeout es interno)
 
     Returns:
         Dict con el proveedor registrado o None si falló
@@ -144,127 +145,7 @@ async def registrar_proveedor(
         logger.warning("⚠️ Supabase client no disponible para registrar proveedor")
         return None
 
-    # Feature Flag: Usar nuevo Repository Pattern
-    if USE_REPOSITORY_PATTERN:
-        return await _registrar_proveedor_with_repository(supabase, datos_proveedor, timeout)
-
-    # Implementación original (código existente sin cambios)
-    try:
-        # Normalizar datos
-        datos_normalizados = normalizar_datos_proveedor(datos_proveedor)
-
-        # Upsert por teléfono: reabre rechazados como pending, evita doble round-trip
-        upsert_payload = {
-            **datos_normalizados,
-            "verified": False,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }
-
-        resultado = await run_supabase(
-            lambda: supabase.table("providers")
-            .upsert(upsert_payload, on_conflict="phone")
-            .execute(),
-            timeout=timeout,
-            label="providers.upsert",
-        )
-        error_respuesta = getattr(resultado, "error", None)
-        if error_respuesta:
-            logger.error("❌ Supabase rechazó el registro/upsert: %s", error_respuesta)
-            return None
-
-        registro_insertado: Optional[Dict[str, Any]] = None
-        data_resultado = getattr(resultado, "data", None)
-        if isinstance(data_resultado, list) and data_resultado:
-            registro_insertado = data_resultado[0]
-        elif isinstance(data_resultado, dict) and data_resultado:
-            registro_insertado = data_resultado
-
-        # Algunos proyectos usan Prefer: return=minimal, hacer fetch adicional
-        if registro_insertado is None:
-            try:
-                refetch = await run_supabase(
-                    lambda: supabase.table("providers")
-                    .select("*")
-                    .eq("phone", datos_normalizados["phone"])
-                    .limit(1)
-                    .execute(),
-                    timeout=timeout,
-                    label="providers.fetch_after_upsert",
-                )
-                if refetch.data:
-                    registro_insertado = refetch.data[0]
-            except Exception as refetch_error:
-                logger.warning(
-                    "⚠️ No se pudo recuperar proveedor recién creado: %s",
-                    refetch_error,
-                )
-
-        if registro_insertado:
-            id_proveedor = registro_insertado.get("id")
-            logger.info(f"✅ Proveedor registrado en esquema unificado: {id_proveedor}")
-
-            provider_record = {
-                "id": id_proveedor,
-                "phone": registro_insertado.get("phone", datos_normalizados["phone"]),
-                "full_name": registro_insertado.get(
-                    "full_name", datos_normalizados["full_name"]
-                ),
-                "email": registro_insertado.get("email", datos_normalizados["email"]),
-                "city": registro_insertado.get("city", datos_normalizados["city"]),
-                "profession": registro_insertado.get(
-                    "profession", datos_normalizados["profession"]
-                ),
-                "services": registro_insertado.get(
-                    "services", datos_normalizados["services"]
-                ),
-                "experience_years": registro_insertado.get(
-                    "experience_years", datos_normalizados["experience_years"]
-                ),
-                "rating": registro_insertado.get("rating", datos_normalizados["rating"]),
-                "verified": registro_insertado.get(
-                    "verified", datos_normalizados["verified"]
-                ),
-                "has_consent": registro_insertado.get(
-                    "has_consent", datos_normalizados["has_consent"]
-                ),
-                "social_media_url": registro_insertado.get(
-                    "social_media_url", datos_normalizados["social_media_url"]
-                ),
-                "social_media_type": registro_insertado.get(
-                    "social_media_type", datos_normalizados["social_media_type"]
-                ),
-                "created_at": registro_insertado.get(
-                    "created_at", datetime.now(timezone.utc).isoformat()
-                ),
-            }
-
-            # Agregar real_phone y phone_verified si están en los datos
-            if "real_phone" in datos_normalizados:
-                provider_record["real_phone"] = registro_insertado.get(
-                    "real_phone", datos_normalizados.get("real_phone")
-                )
-            if "phone_verified" in datos_normalizados:
-                provider_record["phone_verified"] = registro_insertado.get(
-                    "phone_verified", datos_normalizados.get("phone_verified")
-                )
-
-            perfil_normalizado = aplicar_valores_por_defecto_proveedor(provider_record)
-            # Importar localmente para evitar ciclo de importación
-            # CORRECCIÓN: search_cache no existe, usar profile_service
-            from services.profile_service import cachear_perfil_proveedor
-
-            await cachear_perfil_proveedor(
-                perfil_normalizado.get("phone", datos_normalizados["phone"]),
-                perfil_normalizado,
-            )
-            return perfil_normalizado
-        else:
-            logger.error("❌ No se pudo registrar proveedor")
-            return None
-
-    except Exception as e:
-        logger.error(f"❌ Error en registrar_proveedor: {e}")
-        return None
+    return await _registrar_proveedor_with_repository(supabase, datos_proveedor, timeout)
 
 
 async def _registrar_proveedor_with_repository(
@@ -273,7 +154,7 @@ async def _registrar_proveedor_with_repository(
     timeout: float = 5.0,
 ) -> Optional[Dict[str, Any]]:
     """
-    NUEVA IMPLEMENTACIÓN: Registra proveedor usando Repository Pattern.
+    Implementación principal de registro usando Repository Pattern.
 
     Esta implementación usa:
     - SupabaseProviderRepository para acceso a datos
@@ -293,7 +174,7 @@ async def _registrar_proveedor_with_repository(
         from core.commands import RegisterProviderCommand
         from core.saga import ProviderRegistrationSaga
 
-        logger.info("🔧 Usando Repository Pattern para registro (feature flag activado)")
+        logger.info("🔧 Usando Repository Pattern para registro")
 
         # Crear repositorio
         repo = SupabaseProviderRepository(supabase)
@@ -324,5 +205,4 @@ async def _registrar_proveedor_with_repository(
 
     except Exception as e:
         logger.error(f"❌ Error en Repository Pattern: {e}")
-        logger.warning("⚠️ Fallback a implementación original deshabilitado (feature flag=True)")
         return None

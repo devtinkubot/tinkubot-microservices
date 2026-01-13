@@ -96,3 +96,88 @@ async def actualizar_redes_sociales(
             "error": f"No se pudo actualizar redes sociales: {str(exc)}",
             "data": None,
         }
+
+
+async def eliminar_registro_proveedor(
+    supabase: Any,
+    phone: str,
+) -> Dict[str, Any]:
+    """
+    Elimina completamente el registro de un proveedor.
+
+    Proceso:
+    1. Eliminar de Supabase (hard delete)
+    2. Eliminar cache de Redis (perfil + flujo)
+    3. Retornar resultado
+
+    Args:
+        supabase: Cliente de Supabase
+        phone: Teléfono del proveedor
+
+    Returns:
+        Dict con:
+            - success: bool
+            - message: str (mensaje de resultado)
+            - deleted_from_db: bool
+            - deleted_from_cache: bool
+
+    Raises:
+        ValueError: Si phone es None o vacío
+
+    Examples:
+        >>> resultado = await eliminar_registro_proveedor(supabase, "593999999999@c.us")
+        >>> resultado["success"]
+        True
+    """
+    if not phone:
+        raise ValueError("phone es requerido")
+
+    if not supabase:
+        return {
+            "success": False,
+            "message": "Cliente Supabase no disponible",
+            "deleted_from_db": False,
+            "deleted_from_cache": False,
+        }
+
+    result = {
+        "success": False,
+        "message": "",
+        "deleted_from_db": False,
+        "deleted_from_cache": False,
+    }
+
+    try:
+        # Importar aquí para evitar circular imports
+        from repositories.provider_repository import SupabaseProviderRepository
+        from services.flow_service import reiniciar_flujo
+        from infrastructure.redis import redis_client
+
+        # 1. Eliminar de Supabase
+        repo = SupabaseProviderRepository(supabase)
+        db_deleted = await repo.delete_by_phone(phone)
+        result["deleted_from_db"] = db_deleted
+
+        if not db_deleted:
+            result["message"] = "No se encontró el proveedor en la base de datos."
+            logger.warning(f"⚠️ Proveedor {phone} no encontrado para eliminación")
+            return result
+
+        # 2. Eliminar perfil cacheado de Redis
+        profile_cache_key = f"prov_profile_cache:{phone}"
+        await redis_client.delete(profile_cache_key)
+        result["deleted_from_cache"] = True
+
+        # 3. Eliminar flujo conversacional
+        await reiniciar_flujo(phone)
+
+        result["success"] = True
+        result["message"] = "Tu registro ha sido eliminado correctamente."
+
+        logger.info(f"✅ Proveedor {phone} eliminado completamente (DB + Redis)")
+        return result
+
+    except Exception as exc:
+        logger.error(f"❌ Error eliminando proveedor {phone}: {exc}")
+        result["message"] = "Hubo un error al eliminar tu registro. Por favor intenta nuevamente."
+        return result

@@ -1,5 +1,7 @@
 """Excepciones personalizadas del dominio."""
 
+from typing import Optional
+
 
 class RepositoryError(Exception):
     """Error en operaciones del repositorio."""
@@ -47,7 +49,7 @@ class SagaExecutionError(Exception):
         self,
         message: str,
         completed_commands: list,
-        failed_at: int = None
+        failed_at: Optional[int] = None
     ):
         """
         Initialize the SagaExecutionError.

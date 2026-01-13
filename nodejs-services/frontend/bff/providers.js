@@ -414,8 +414,6 @@ const construirRutaSupabasePendientes = (incluirEstado = true) => {
     parametrosBase.push('verified=eq.false');
   }
 
-  parametrosBase.push('verified=eq.false');
-
   return `${supabaseProvidersTable}?${parametrosBase.join('&')}`;
 };
 

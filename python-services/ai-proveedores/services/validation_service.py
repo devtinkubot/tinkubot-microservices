@@ -30,7 +30,12 @@ from utils.services_utils import SERVICIOS_MAXIMOS
 
 def validate_city(city: str) -> Tuple[bool, Optional[str]]:
     """
-    Valida ciudad del proveedor.
+    Valida ciudad del proveedor contra lista de ciudades ecuatorianas.
+
+    Validaciones:
+    - Debe ser una ciudad de Ecuador reconocida
+    - No permite números ni signos (solo letras y espacios)
+    - Normaliza a mayúscula inicial (Title Case)
 
     Args:
         city: Ciudad a validar
@@ -38,14 +43,32 @@ def validate_city(city: str) -> Tuple[bool, Optional[str]]:
     Returns:
         Tupla (es_válido, mensaje_error)
     """
+    from utils.services_utils import normalize_city_input
+
     if len(city) < MIN_CIUDAD_CHARS:
-        return False, f"*Indicame tu ciudad (ej: Quito, Guayaquil, Cuenca).*"
+        return False, "*Indicame tu ciudad (ej: Quito, Guayaquil, Cuenca).*"
+
+    # Normalizar y validar contra lista de ciudades de Ecuador
+    canonical_city = normalize_city_input(city)
+
+    if not canonical_city:
+        return False, (
+            "*No reconozco esa ciudad. Debe ser una ciudad de Ecuador.*\n"
+            "*Ejemplos: Quito, Guayaquil, Cuenca, Ambato, Manta.*"
+        )
+
     return True, None
 
 
 def validate_name(name: str) -> Tuple[bool, Optional[str]]:
     """
     Valida nombre del proveedor.
+
+    Validaciones:
+    - Solo permite letras, espacios y acentos
+    - No permite números
+    - No permite caracteres especiales (@, #, $, etc.)
+    - Mínimo 2 caracteres
 
     Args:
         name: Nombre a validar
@@ -55,12 +78,36 @@ def validate_name(name: str) -> Tuple[bool, Optional[str]]:
     """
     if len(name) < MIN_NOMBRE_CHARS:
         return False, "*Por favor, enviame tu nombre completo.*"
+
+    # Verificar que contenga al menos una letra
+    has_letter = any(c.isalpha() for c in name)
+    if not has_letter:
+        return False, "*El nombre debe contener al menos una letra.*"
+
+    # Verificar caracteres permitidos: letras, espacios, acentos, apóstrofes
+    allowed_chars_pattern = r"^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s'\-]+$"
+    if not re.match(allowed_chars_pattern, name):
+        return False, (
+            "*El nombre solo puede contener letras y espacios.* "
+            "No números ni símbolos (ej: Juan Pérez)."
+        )
+
+    # Verificar que no sea solo espacios
+    if name.strip().isspace() or not name.strip():
+        return False, "*Por favor, enviame tu nombre completo.*"
+
     return True, None
 
 
 def validate_profession(profession: str) -> Tuple[bool, Optional[str]]:
     """
     Valida profesión del proveedor.
+
+    Validaciones:
+    - No permite emails (detecta @)
+    - No permite URLs (http, https, www)
+    - Longitud entre 2 y 150 caracteres
+    - Debe contener al menos una letra
 
     Args:
         profession: Profesión a validar
@@ -73,11 +120,37 @@ def validate_profession(profession: str) -> Tuple[bool, Optional[str]]:
             '*Indica tu profesión u oficio. Ejemplos: "Carpintero", '
             '"Ingeniero Electrico", "Abogado".*'
         )
+
     if len(profession) > MAX_PROFESION_CHARS:
         return False, (
             "*Tu profesión debe ser breve (máximo 150 caracteres).* "
             "Envía una versión resumida (ej: 'Ingeniera en marketing' o 'Contratación pública')."
         )
+
+    # Detectar email (@)
+    if "@" in profession.lower():
+        return False, (
+            "*La profesión no puede ser un correo electrónico.* "
+            "Por favor indica tu profesión u oficio (ej: 'Carpintero', 'Ingeniero', 'Abogado')."
+        )
+
+    # Detectar URLs
+    lowered = profession.lower()
+    url_patterns = ["http://", "https://", "www.", ".com", ".edu", ".org", ".net"]
+    if any(pattern in lowered for pattern in url_patterns):
+        return False, (
+            "*La profesión no puede ser una URL o enlace web.* "
+            "Por favor indica tu profesión u oficio (ej: 'Carpintero', 'Ingeniero', 'Abogado')."
+        )
+
+    # Verificar que contenga al menos una letra (no solo números/símbolos)
+    has_letter = any(c.isalpha() for c in profession)
+    if not has_letter:
+        return False, (
+            "*La profesión debe contener al menos una letra.* "
+            "Ejemplo: 'Carpintero', 'Ingeniero', 'Abogado'."
+        )
+
     return True, None
 
 
@@ -132,7 +205,12 @@ def validate_specialty(specialty: str) -> Tuple[bool, Optional[str]]:
 
 def validate_email(email: str) -> Tuple[bool, Optional[str], Optional[str]]:
     """
-    Valida email del proveedor.
+    Valida email del proveedor con regex mejorado.
+
+    Validaciones:
+    - Formato de email válido (regex)
+    - Opción de omitir ("omitir", "na", "n/a", etc.)
+    - Normalizado a minúsculas
 
     Args:
         email: Email a validar
@@ -142,15 +220,24 @@ def validate_email(email: str) -> Tuple[bool, Optional[str], Optional[str]]:
         - email_normalizado puede ser None si el usuario quiere omitir
     """
     normalized = normalize_text(email)
+
+    # Verificar si quiere omitir
     if normalized.lower() in OMISSION_VALUES:
         return True, None, None
 
-    if "@" not in normalized or "." not in normalized:
+    # Regex mejorado para email
+    email_regex = re.compile(
+        r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
+    )
+
+    if not email_regex.match(normalized):
         return False, (
-            "*El correo no parece valido. Envialo nuevamente o escribe 'omitir'.*"
+            "*El correo no parece valido. Debe tener formato:* "
+            "*usuario@dominio.com* "
+            "*Envialo nuevamente o escribe 'omitir'.*"
         ), normalized
 
-    return True, None, normalized
+    return True, None, normalized.lower()
 
 
 def validate_provider_payload(

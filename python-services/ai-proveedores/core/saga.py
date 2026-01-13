@@ -23,7 +23,7 @@ Example:
 """
 
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from core.commands import Command
 from core.exceptions import SagaExecutionError
 
@@ -157,7 +157,7 @@ class ProviderRegistrationSaga:
                     f"{command.__class__.__name__}"
                 )
 
-                result = await command.execute()
+                await command.execute()
                 self.executed_commands.append(command)
 
                 logger.info(
