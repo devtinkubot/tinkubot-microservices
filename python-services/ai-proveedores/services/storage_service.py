@@ -1,10 +1,11 @@
 """Servicio de almacenamiento de imágenes (Supabase Storage y DB)."""
 import logging
 from datetime import datetime
-from typing import Optional
+from typing import Optional, cast
 
 from app.config import settings
 from app.dependencies import get_supabase
+from supabase import Client
 from utils.db_utils import run_supabase
 from utils.storage_utils import _coerce_storage_string
 
@@ -35,6 +36,9 @@ async def subir_imagen_proveedor_almacenamiento(
         logger.error("❌ Supabase no configurado para upload de imágenes")
         return None
 
+    # supabase is guaranteed to be non-None here after the check above
+    client: Client = cast(Client, supabase)
+
     try:
         # Determinar carpeta según tipo
         folder_map = {
@@ -58,7 +62,7 @@ async def subir_imagen_proveedor_almacenamiento(
             return None
 
         def _upload():
-            storage_bucket = supabase.storage.from_(bucket_name)
+            storage_bucket = client.storage.from_(bucket_name)
             try:
                 storage_bucket.remove([file_path])
             except Exception as remove_error:
@@ -95,7 +99,7 @@ async def subir_imagen_proveedor_almacenamiento(
                 )
                 return None
 
-            raw_public_url = supabase.storage.from_(bucket_name).get_public_url(
+            raw_public_url = client.storage.from_(bucket_name).get_public_url(
                 file_path
             )
             return raw_public_url
@@ -134,6 +138,8 @@ async def actualizar_imagenes_proveedor(
         logger.error("❌ Supabase no configurado para actualización de imágenes")
         return False
 
+    client: Client = cast(Client, supabase)
+
     try:
         update_data = {}
 
@@ -157,7 +163,7 @@ async def actualizar_imagenes_proveedor(
             update_data["updated_at"] = datetime.now().isoformat()
 
             result = await run_supabase(
-                lambda: supabase.table("providers")
+                lambda: client.table("providers")
                 .update(update_data)
                 .eq("id", provider_id)
                 .execute(),

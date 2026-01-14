@@ -8,7 +8,7 @@ del flujo conversacional.
 
 import logging
 from time import perf_counter
-from typing import Any, Dict
+from typing import Any, Dict, Optional, cast
 
 from models.schemas import WhatsAppMessageReceive
 from app.config import settings as local_settings
@@ -138,7 +138,7 @@ class WhatsAppOrchestrator:
                 phone, flow, self.supabase
             )
             if should_reset:
-                return timeout_response
+                return cast(Dict[str, Any], timeout_response)
 
             # 5. Actualizar timestamp
             flow = await actualizar_timestamp_sesion(flow)
@@ -178,12 +178,20 @@ class WhatsAppOrchestrator:
                     from templates.prompts import (
                         provider_main_menu_message,
                         provider_post_registration_menu_message,
+                        provider_under_review_message,
                     )
-                    menu_msg = (
-                        provider_main_menu_message()
-                        if not esta_registrado
-                        else provider_post_registration_menu_message()
-                    )
+                    # Determinar menú correcto según estado de VERIFICACIÓN (no solo registro)
+                    if not is_verified:
+                        # No está verificado → puede ser sin perfil o pendiente de revisión
+                        if esta_registrado:
+                            # Tiene perfil completo pero NO verificado → pendiente de revisión
+                            menu_msg = provider_under_review_message()
+                        else:
+                            # Sin perfil completo → menú de registro
+                            menu_msg = provider_main_menu_message()
+                    else:
+                        # Está verificado → menú de gestión
+                        menu_msg = provider_post_registration_menu_message()
                     return {"success": True, "messages": [{"response": menu_msg}]}
                 return await manejar_respuesta_consentimiento(
                     phone, flow, payload, provider_profile, self.supabase
@@ -192,7 +200,7 @@ class WhatsAppOrchestrator:
             # 11. Router principal de estados
             if state == "awaiting_menu_option":
                 response = await self.whatsapp_flow.handle_awaiting_menu_option(
-                    flow, phone, message_text, menu_choice, esta_registrado
+                    flow, phone, message_text, cast(Optional[str], menu_choice), esta_registrado, is_verified
                 )
                 await establecer_flujo(phone, flow)
                 return response
@@ -206,7 +214,7 @@ class WhatsAppOrchestrator:
 
             if state == "awaiting_service_action":
                 response = await self.whatsapp_flow.handle_awaiting_service_action(
-                    flow, phone, message_text, menu_choice
+                    flow, phone, message_text, cast(Optional[str], menu_choice)
                 )
                 await establecer_flujo(phone, flow)
                 return response
@@ -228,6 +236,13 @@ class WhatsAppOrchestrator:
             if state == "awaiting_face_photo_update":
                 response = await self.whatsapp_flow.handle_awaiting_face_photo_update(
                     flow, phone, payload
+                )
+                await establecer_flujo(phone, flow)
+                return response
+
+            if state == "awaiting_deletion_confirmation":
+                response = await self.whatsapp_flow.handle_awaiting_deletion_confirmation(
+                    flow, phone, message_text, self.supabase
                 )
                 await establecer_flujo(phone, flow)
                 return response

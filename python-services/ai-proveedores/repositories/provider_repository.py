@@ -11,7 +11,7 @@ Principios SOLID aplicados:
 """
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from supabase import Client
 
@@ -337,6 +337,8 @@ class SupabaseProviderRepository(IProviderRepository):
         Note:
             Esta operación es irreversible. Usar con precaución.
         """
+        logger.info(f"🗑️ Attempting to delete provider by phone: {phone}")
+
         result = await run_supabase(
             lambda: self._supabase.table("providers")
             .delete()
@@ -346,13 +348,22 @@ class SupabaseProviderRepository(IProviderRepository):
             label="providers.delete_by_phone",
         )
 
-        # Verificar si se eliminó algo chequendo si hay error
+        # Verificar si se eliminó algo revisando los datos retornados
+        data = getattr(result, "data", [])
         error = getattr(result, "error", None)
+
+        logger.info(f"🗑️ Delete result - error: {error}, data_count: {len(data) if data else 0}")
+
         if error:
+            logger.warning(f"⚠️ Error deleting provider by phone {phone}: {error}")
+            return False
+
+        # Si no hay datos, significa que no se encontró el registro
+        if not data or len(data) == 0:
             logger.warning(f"⚠️ Provider not found for deletion by phone: {phone}")
             return False
 
-        logger.info(f"🗑️ Provider deleted by phone: {phone}")
+        logger.info(f"✅ Provider deleted by phone: {phone} ({len(data)} row(s) affected)")
         return True
 
     # ========================================================================
@@ -370,7 +381,7 @@ class SupabaseProviderRepository(IProviderRepository):
             Número de proveedores que cumplen los filtros
         """
         # Construir query base
-        query = self._supabase.table("providers").select("*", count="exact")
+        query = self._supabase.table("providers").select("*", count="exact")  # type: ignore
 
         # Aplicar filtros si se proporcionan
         if filters:
@@ -400,10 +411,8 @@ class SupabaseProviderRepository(IProviderRepository):
             True si existe, False en caso contrario
         """
         result = await run_supabase(
-            lambda: self._supabase.table("providers")
-            .select("id", count="exact")
-            .eq("phone", phone)
-            .execute(),
+            lambda: self._supabase.table("providers").select("id", count="exact")  # type: ignore
+            .eq("phone", phone).execute(),
             timeout=5.0,
             label="providers.exists_by_phone",
         )

@@ -14,26 +14,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.dependencies import get_supabase, get_openai
 
-# Importar utilidades de servicios
-
-# Importar utilidades de storage
-
-# Importar lógica de negocio de proveedores
-
-# Importar servicios de flujo conversacional
-
-# Importar servicios de perfil de proveedor
-
-# Importar servicios de consentimiento
-
-# Importar servicios de interpretación de respuestas
-
-# Importar servicios de gestión de imágenes
-
-# Importar servicio OpenAI
-
-# Importar servicios de sesión
-
 # Importar routers API
 from app.api import (
     health_router,
@@ -95,25 +75,6 @@ app.add_middleware(
 app.include_router(health_router, tags=["health"])
 app.include_router(search_router, prefix="", tags=["search"])
 app.include_router(whatsapp_router, prefix="", tags=["whatsapp"])
-
-# ProviderMatch eliminado - ya no se usa con esquema unificado
-
-
-# === FUNCIONES SIMPLIFICADAS PARA ESQUEMA UNIFICADO ===
-
-# Funciones obsoletas eliminadas - ahora se usa esquema unificado
-
-
-# Función obsoleta eliminada - ahora se usa search_providers_direct_query()
-
-
-# Función expand_query_with_ai eliminada - búsqueda simplificada no requiere expansión
-
-
-# Funciones de búsqueda complejas eliminadas - ahora se usa búsqueda directa con ILIKE
-
-
-# Función obsoleta eliminada - ahora se usa register_provider_unified()
 
 
 if __name__ == "__main__":

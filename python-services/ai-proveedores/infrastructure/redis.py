@@ -34,6 +34,7 @@ class RedisClient:
                     socket_connect_timeout=10,
                 )
                 # Test connection
+                assert self.redis_client is not None
                 await self.redis_client.ping()
                 self._connected = True
                 self._retry_count = 0
@@ -99,6 +100,9 @@ class RedisClient:
         """Suscribirse a canal Redis Pub/Sub"""
         if not self.redis_client:
             await self.connect()
+
+        if not self.redis_client:
+            raise RuntimeError("Could not connect to Redis")
 
         try:
             self.pubsub = self.redis_client.pubsub()

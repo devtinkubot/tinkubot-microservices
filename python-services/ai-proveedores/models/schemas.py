@@ -67,11 +67,6 @@ class IntelligentSearchRequest(BaseModel):
     urgencia: Optional[str] = None
 
 
-class WhatsAppMessageRequest(BaseModel):
-    phone: str
-    message: str
-
-
 class WhatsAppMessageReceive(BaseModel):
     # Modelo flexible para soportar payload de los servicios Node
     id: Optional[str] = None

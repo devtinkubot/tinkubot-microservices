@@ -1,8 +1,6 @@
 """
 Utilidades de almacenamiento para normalización de datos de Supabase Storage.
 """
-import json
-import re
 from typing import Any, Dict, Optional
 
 
@@ -79,29 +77,7 @@ def _coerce_storage_string(value: Any) -> Optional[str]:
             if nested_value:
                 return nested_value
 
-    text_attr = getattr(value, "text", None)
-    if isinstance(text_attr, str) and text_attr.strip():
-        parsed = _safe_json_loads(text_attr.strip())
-        if isinstance(parsed, dict):
-            nested_value = _from_mapping(parsed)
-            if nested_value:
-                return nested_value
-
     return None
-
-
-def _safe_json_loads(payload: str) -> Optional[Any]:
-    if not payload:
-        return None
-    try:
-        return json.loads(payload)
-    except json.JSONDecodeError:
-        match = re.search(r"\[.*\]|\{.*\}", payload, re.DOTALL)
-        if match:
-            try:
-                return json.loads(match.group(0))
-            except json.JSONDecodeError:
-                return None
 
 
 def extract_first_image_base64(payload: Dict[str, Any]) -> Optional[str]:

@@ -85,7 +85,8 @@ class WhatsAppFlow:
         is_verified: bool,
     ) -> Dict[str, Any]:
         """Maneja el estado inicial del flujo WhatsApp."""
-        if not has_consent:
+        # Importante: Si el usuario ya está registrado, asumir que ya dio su consentimiento
+        if not has_consent and not esta_registrado:
             nuevo_flujo = {"state": "awaiting_consent", "has_consent": False}
             await establecer_flujo(phone, nuevo_flujo)
             from services.consent_service import solicitar_consentimiento_proveedor
@@ -107,17 +108,33 @@ class WhatsAppFlow:
                     {"response": provider_post_registration_menu_message()},
                 ],
             }
-        menu_message = (
-            provider_main_menu_message()
-            if not esta_registrado
-            else provider_post_registration_menu_message()
-        )
-        await establecer_flujo(phone, flow)
-        mensajes = []
-        if not esta_registrado:
-            mensajes.append({"response": provider_guidance_message()})
-        mensajes.append({"response": menu_message})
-        return {"success": True, "messages": mensajes}
+
+        # Determinar menú correcto según estado de VERIFICACIÓN (no solo registro)
+        # Casos:
+        # - Sin perfil/registro incompleto (is_verified=False, esta_registrado=False) → Menú de registro
+        # - Con perfil pero NO verificado (is_verified=False, esta_registrado=True) → Pendiente de revisión
+        # - Verificado (is_verified=True) → Menú de proveedor
+        if not is_verified:
+            # No está verificado → puede ser:
+            # - Sin perfil completo → mostrar menú de registro
+            # - Con perfil completo pero pendiente de verificación → mensaje de pendiente
+            if esta_registrado:
+                # Tiene perfil completo pero NO verificado → mostrar mensaje de pendiente
+                await establecer_flujo(phone, flow)
+                return {"success": True, "messages": [{"response": provider_under_review_message()}]}
+            else:
+                # Sin perfil completo → mostrar menú de registro
+                menu_message = provider_main_menu_message()
+                await establecer_flujo(phone, flow)
+                mensajes = []
+                mensajes.append({"response": provider_guidance_message()})
+                mensajes.append({"response": menu_message})
+                return {"success": True, "messages": mensajes}
+        else:
+            # Está verificado → mostrar menú de gestión
+            menu_message = provider_post_registration_menu_message()
+            await establecer_flujo(phone, flow)
+            return {"success": True, "messages": [{"response": menu_message}]}
 
     @staticmethod
     async def handle_awaiting_menu_option(
@@ -126,10 +143,20 @@ class WhatsAppFlow:
         message_text: Optional[str],
         menu_choice: Optional[str],
         esta_registrado: bool,
+        is_verified: bool = False,
     ) -> Dict[str, Any]:
         """Maneja la selección de opciones del menú principal."""
         choice = menu_choice
         lowered = (message_text or "").strip().lower()
+
+        # Si tiene perfil completo pero NO está verificado, mostrar mensaje de pendiente
+        # Esto previene que usuarios con perfil completo pero sin verificación accedan al menú de proveedor
+        if esta_registrado and not is_verified:
+            from templates.prompts import provider_under_review_message
+            return {
+                "success": True,
+                "messages": [{"response": provider_under_review_message()}],
+            }
 
         if not esta_registrado:
             if choice == "1" or "registro" in lowered:
@@ -656,12 +683,14 @@ class WhatsAppFlow:
             resultado = await eliminar_registro_proveedor(supabase, phone)
 
             if resultado["success"]:
-                # Eliminación exitosa - volver a consentimiento
-                nuevo_flow = {
-                    "state": "awaiting_consent",
-                    "has_consent": False,
-                }
-                await establecer_flujo(phone, nuevo_flow)
+                # Eliminación exitosa - volver a estado inicial COMPLETAMENTE limpio
+                # Importante: Limpiar el diccionario flow local para que el orquestador
+                # guarde un flujo vacío en lugar de restaurar el flujo anterior
+                flow.clear()
+                from services.consent_service import solicitar_consentimiento_proveedor
+
+                # Establecer flujo de consentimiento para empezar de nuevo
+                consent_prompt = await solicitar_consentimiento_proveedor(phone)
 
                 return {
                     "success": True,
@@ -677,7 +706,6 @@ class WhatsAppFlow:
             else:
                 # Error en eliminación - volver al menú
                 flow["state"] = "awaiting_menu_option"
-                await establecer_flujo(phone, flow)
                 return {
                     "success": True,
                     "messages": [

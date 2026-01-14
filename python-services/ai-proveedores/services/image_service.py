@@ -691,9 +691,11 @@ async def upload_all_images_parallel(
                 )
                 uploads[image_type] = None
             else:
-                uploads[image_type] = result
+                # result is Tuple[int, Any], extract the actual value (second element)
+                _, actual_result = result
+                uploads[image_type] = actual_result
                 logger.info(
-                    f"✅ Parallel upload success for {image_type}: {result}"
+                    f"✅ Parallel upload success for {image_type}: {actual_result}"
                 )
 
         # Log summary

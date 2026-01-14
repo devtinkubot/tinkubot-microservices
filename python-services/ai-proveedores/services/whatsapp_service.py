@@ -30,21 +30,31 @@ async def inicializar_flow_con_perfil(
         Dict con el flow actualizado y sincronizado
     """
     if provider_profile:
-        # Sincronizar has_consent si no está en el flow
-        if provider_profile.get("has_consent") and not flow.get("has_consent"):
-            flow["has_consent"] = True
-
         # Extraer y sincronizar provider_id
         provider_id = provider_profile.get("id")
         if provider_id:
             flow["provider_id"] = provider_id
 
+        # Sincronizar has_consent si no está en el flow
+        # Importante: Si el proveedor tiene un perfil (tiene id), asumir que ya dio su consentimiento
+        has_consent_from_db = provider_profile.get("has_consent")
+
+        if (has_consent_from_db or provider_id) and not flow.get("has_consent"):
+            flow["has_consent"] = True
+
         # Extraer y sanitizar services_list desde provider_profile
         servicios_guardados = provider_profile.get("services_list") or []
         flow["services"] = servicios_guardados
     else:
-        # Si no hay perfil, inicializar services como lista vacía
-        flow.setdefault("services", [])
+        # Si no hay perfil, limpiar TODOS los campos relacionados con el perfil
+        # Esto es crítico para evitar que se muestre el menú de proveedor registrado
+        # después de eliminar el registro
+        flow.pop("provider_id", None)
+        flow.pop("is_verified", None)
+        flow.pop("is_pending_review", None)
+        flow.pop("was_pending_review", None)
+        flow["esta_registrado"] = False
+        flow["services"] = []
 
     # Determinar estado de registro del proveedor
     esta_registrado = determinar_estado_registro_proveedor(provider_profile)

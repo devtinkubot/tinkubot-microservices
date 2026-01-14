@@ -177,7 +177,7 @@ class ProviderFlowDelegateService:
                 }
 
             # Validar imagen si el flag está habilitado
-            is_valid, error_msg = self._validate_image(image_b64, mime_type, size_bytes)
+            is_valid, error_msg = self._validate_image(image_b64, mime_type, int(size_bytes))
             if not is_valid:
                 return {
                     "success": True,
@@ -200,7 +200,7 @@ class ProviderFlowDelegateService:
                 }
 
             # Validar imagen si el flag está habilitado
-            is_valid, error_msg = self._validate_image(image_b64, mime_type, size_bytes)
+            is_valid, error_msg = self._validate_image(image_b64, mime_type, int(size_bytes))
             if not is_valid:
                 return {
                     "success": True,
@@ -223,7 +223,7 @@ class ProviderFlowDelegateService:
                 }
 
             # Validar imagen si el flag está habilitado
-            is_valid, error_msg = self._validate_image(image_b64, mime_type, size_bytes)
+            is_valid, error_msg = self._validate_image(image_b64, mime_type, int(size_bytes))
             if not is_valid:
                 return {
                     "success": True,

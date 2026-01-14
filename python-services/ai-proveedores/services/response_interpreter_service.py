@@ -5,13 +5,13 @@ from typing import Optional
 
 def interpretar_opcion_menu(text: Optional[str]) -> Optional[str]:
     """
-    Interpretar respuesta de menú (opciones 1-4).
+    Interpretar respuesta de menú (opciones 1-5).
 
     Args:
         text: Texto a interpretar
 
     Returns:
-        "1", "2", "3", "4" o None si no es reconocido
+        "1", "2", "3", "4", "5" o None si no es reconocido
     """
     value = (text or "").strip().lower()
     if not value:
@@ -67,6 +67,18 @@ def interpretar_opcion_menu(text: Optional[str]) -> Optional[str]:
     ):
         return "4"
 
+    # Opción 5 - Eliminar registro
+    if (
+        normalized_value.startswith("5")
+        or normalized_value.startswith("cinco")
+        or "eliminar" in normalized_value
+        or "borrar" in normalized_value
+        or "delete" in normalized_value
+        or "eliminar mi" in normalized_value
+        or "eliminar registro" in normalized_value
+    ):
+        return "5"
+
     return None
 
 
@@ -121,10 +133,10 @@ def interpretar_respuesta_usuario(
 
     Args:
         text: Texto a interpretar
-        modo: "menu" para opciones 1-4, "consentimiento" para sí/no
+        modo: "menu" para opciones 1-5, "consentimiento" para sí/no
 
     Returns:
-        - modo="menu": "1", "2", "3", "4" o None
+        - modo="menu": "1", "2", "3", "4", "5" o None
         - modo="consentimiento": True, False o None
     """
     if modo == "consentimiento":

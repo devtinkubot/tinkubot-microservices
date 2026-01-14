@@ -5,6 +5,7 @@ import logging
 
 from infrastructure.redis import redis_client
 from app.config import settings
+from services.profile_service import cachear_perfil_proveedor
 
 logger = logging.getLogger(__name__)
 
@@ -106,26 +107,41 @@ async def _reiniciar_flujo_por_timeout(
         - response_dict: Respuesta con menú correcto
     """
     from services.profile_service import (
-        obtener_perfil_proveedor_cacheado,
+        obtener_perfil_proveedor,
         determinar_estado_registro_proveedor,
     )
     from templates.prompts import (
         provider_main_menu_message,
         provider_post_registration_menu_message,
+        provider_under_review_message,
     )
 
     now_utc = datetime.utcnow()
     now_iso = now_utc.isoformat()
 
-    # 1. Obtener estado actual del proveedor desde Supabase
-    provider_profile = await obtener_perfil_proveedor_cacheado(supabase, phone)
+    # 1. Obtener estado actual del proveedor desde Supabase (SIN cache, datos frescos)
+    provider_profile = await obtener_perfil_proveedor(supabase, phone)
 
-    # 2. Determinar si está registrado
+    # 1.1. Actualizar cache con datos frescos para futuras llamadas
+    if provider_profile:
+        await cachear_perfil_proveedor(phone, provider_profile)
+
+    # 2. Determinar si está registrado (para persistencia del flujo)
     esta_registrado = determinar_estado_registro_proveedor(provider_profile)
 
+    # 2.1. Determinar si está VERIFICADO (crítico: solo verificados ven menú de proveedor)
+    esta_verificado = bool(
+        provider_profile
+        and provider_profile.get("verified", False)
+    )
+
     # 3. Preservar consentimiento y ciudad si existen
+    # Importante: Si el proveedor ya está registrado (tiene perfil completo),
+    # asumir que ya dio su consentimiento, aunque el campo no esté establecido
     has_consent = bool(
-        provider_profile and provider_profile.get("has_consent")
+        provider_profile and (
+            provider_profile.get("has_consent") or esta_registrado
+        )
     ) if provider_profile else False
 
     city = (
@@ -150,16 +166,25 @@ async def _reiniciar_flujo_por_timeout(
         f"prov_flow:{phone}", new_flow, expire=settings.flow_ttl_seconds
     )
 
-    # 6. Determinar menú CORRECTO según estado actual
-    menu_message = (
-        provider_main_menu_message()
-        if not esta_registrado
-        else provider_post_registration_menu_message()
-    )
+    # 6. Determinar menú CORRECTO según estado de VERIFICACIÓN (no solo registro)
+    # Casos:
+    # - Sin perfil/incompleto → Menú principal de registro
+    # - Con perfil pero NO verificado → Mensaje de revisión pendiente
+    # - Con perfil Y verificado → Menú de proveedor (gestión)
+    if not provider_profile or not provider_profile.get("id"):
+        # Sin perfil → mostrar menú de registro
+        menu_message = provider_main_menu_message()
+    elif not esta_verificado:
+        # Perfil existe pero NO verificado → pendiente de revisión
+        # Importante: NO mostrar menú de proveedor hasta que se verifique
+        menu_message = provider_under_review_message()
+    else:
+        # Perfil verificado → mostrar menú de gestión
+        menu_message = provider_post_registration_menu_message()
 
     logger.info(
         f"Timeout reiniciado para {phone}: esta_registrado={esta_registrado}, "
-        f"has_consent={has_consent}, city={city}"
+        f"esta_verificado={esta_verificado}, has_consent={has_consent}, city={city}"
     )
 
     # 7. Retornar respuesta correcta
