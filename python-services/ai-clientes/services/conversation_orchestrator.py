@@ -15,11 +15,16 @@ from flows.client_flow import ClientFlow
 # Fase 2: State Machine imports (activado vía feature flag)
 try:
     from core.state_machine import ClientStateMachine, ClientState
-    from core.feature_flags import USE_STATE_MACHINE, USE_SAGA_ROLLBACK
+    from core.feature_flags import (
+        USE_STATE_MACHINE,
+        USE_SAGA_ROLLBACK,
+        ENABLE_PERFORMANCE_OPTIMIZATIONS
+    )
 except ImportError:
     # Si los módulos no existen, usar valores por defecto
     USE_STATE_MACHINE = False
     USE_SAGA_ROLLBACK = False
+    ENABLE_PERFORMANCE_OPTIMIZATIONS = False
     ClientStateMachine = None
     ClientState = None
 
@@ -32,6 +37,14 @@ except ImportError:
     SagaExecutionError = None
     UpdateCustomerCityCommand = None
     SaveSearchResultsCommand = None
+
+# Fase 4: Performance optimizations imports (activado vía feature flag)
+try:
+    from core.cache import CacheManager
+    from core.metrics import metrics
+except ImportError:
+    CacheManager = None
+    metrics = None
 from templates.prompts import (
     bloque_listado_proveedores_compacto,
     instruccion_seleccionar_proveedor,
@@ -144,6 +157,19 @@ class ConversationOrchestrator:
             logger.info("✅ Saga Pattern inicializado (Fase 3) - Rollback automático activo")
         else:
             logger.info("⏳ Saga Pattern desactivado (feature flag USE_SAGA_ROLLBACK=False)")
+
+        # Fase 4: Inicializar Cache Manager y métricas (solo si ENABLE_PERFORMANCE_OPTIMIZATIONS=True)
+        self.cache_manager = None
+        self.use_cache = ENABLE_PERFORMANCE_OPTIMIZATIONS and CacheManager is not None
+        if self.use_cache:
+            self.cache_manager = CacheManager(session_manager)
+            logger.info("✅ Cache Manager inicializado (Fase 4) - Optimizaciones activas")
+        else:
+            logger.info("⏳ Cache Manager desactivado (feature flag ENABLE_PERFORMANCE_OPTIMIZATIONS=False)")
+
+        # Fase 4: Métricas globales ya inicializadas en core/metrics.py
+        if ENABLE_PERFORMANCE_OPTIMIZATIONS and metrics is not None:
+            logger.info("✅ Performance metrics tracking activado (Fase 4)")
 
 
     def _register_handlers(self):

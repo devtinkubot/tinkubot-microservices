@@ -385,6 +385,43 @@ async def debug_feature_flags():
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 
+@app.get("/debug/metrics")
+async def debug_metrics():
+    """
+    Endpoint para ver métricas de performance.
+
+    Útil para monitorear tiempos de respuesta y tasas de éxito.
+    Fase 4: Performance Optimizations.
+    """
+    try:
+        from core.metrics import metrics
+        from core.cache import CacheManager
+
+        # Obtener resumen de métricas
+        metrics_summary = metrics.get_summary()
+
+        # Obtener estadísticas de cache si está disponible
+        cache_stats = None
+        if hasattr(conversation_orchestrator, 'cache_manager') and \
+           conversation_orchestrator.cache_manager is not None:
+            cache_stats = conversation_orchestrator.cache_manager.get_stats()
+
+        return {
+            "service": "ai-clientes",
+            "metrics": {
+                "summary": metrics_summary,
+                "all_operations": metrics.get_all_stats(),
+                "slow_operations": metrics.get_slow_operations(threshold_ms=1000, min_calls=5),
+            },
+            "cache": cache_stats,
+        }
+    except ImportError:
+        raise HTTPException(status_code=503, detail="Metrics module not available")
+    except Exception as e:
+        logger.error(f"Error getting metrics: {e}")
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
 @app.post("/handle-whatsapp-message")
 async def handle_whatsapp_message(payload: Dict[str, Any]):
     """
