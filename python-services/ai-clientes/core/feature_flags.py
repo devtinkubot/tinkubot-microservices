@@ -31,10 +31,13 @@ USE_REPOSITORY_INTERFACES = True
 # ESTADO: ✅ ACTIVO (validación de transiciones habilitada)
 USE_STATE_MACHINE = True  # ACTIVADO: Validación de transiciones habilitada
 
-# FASE 3: [FUTURO] Saga Pattern
+# FASE 3: Saga Pattern
 # Activa el patrón Saga para rollback automático en caso de errores.
-# ESTADO: ⏳ PENDIENTE
-USE_SAGA_ROLLBACK = False
+# - Implementa: Saga + Command Pattern
+# - Archivos: core/saga.py, core/commands.py, services/conversation_orchestrator.py
+# - Tests: tests/unit/test_saga.py
+# ESTADO: ✅ ACTIVO (rollback transaccional habilitado)
+USE_SAGA_ROLLBACK = True  # ACTIVADO: Rollback automático habilitado
 
 # FASE 4: [FUTURO] Optimizaciones adicionales
 # Optimizaciones de performance y cacheo.

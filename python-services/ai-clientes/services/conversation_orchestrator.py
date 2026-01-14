@@ -15,12 +15,23 @@ from flows.client_flow import ClientFlow
 # Fase 2: State Machine imports (activado vía feature flag)
 try:
     from core.state_machine import ClientStateMachine, ClientState
-    from core.feature_flags import USE_STATE_MACHINE
+    from core.feature_flags import USE_STATE_MACHINE, USE_SAGA_ROLLBACK
 except ImportError:
     # Si los módulos no existen, usar valores por defecto
     USE_STATE_MACHINE = False
+    USE_SAGA_ROLLBACK = False
     ClientStateMachine = None
     ClientState = None
+
+# Fase 3: Saga Pattern imports (activado vía feature flag)
+try:
+    from core.saga import ClientSaga, SagaExecutionError
+    from core.commands import UpdateCustomerCityCommand, SaveSearchResultsCommand
+except ImportError:
+    ClientSaga = None
+    SagaExecutionError = None
+    UpdateCustomerCityCommand = None
+    SaveSearchResultsCommand = None
 from templates.prompts import (
     bloque_listado_proveedores_compacto,
     instruccion_seleccionar_proveedor,
@@ -126,6 +137,13 @@ class ConversationOrchestrator:
             logger.info("✅ State Machine inicializado (Fase 2)")
         else:
             logger.info("⏳ State Machine desactivado (feature flag USE_STATE_MACHINE=False)")
+
+        # Fase 3: Inicializar Saga para rollback transaccional (solo si USE_SAGA_ROLLBACK=True)
+        self.use_saga = USE_SAGA_ROLLBACK and ClientSaga is not None
+        if self.use_saga:
+            logger.info("✅ Saga Pattern inicializado (Fase 3) - Rollback automático activo")
+        else:
+            logger.info("⏳ Saga Pattern desactivado (feature flag USE_SAGA_ROLLBACK=False)")
 
 
     def _register_handlers(self):
