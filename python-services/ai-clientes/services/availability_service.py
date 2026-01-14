@@ -11,13 +11,16 @@ import logging
 import os
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING, cast
 
-try:
+if TYPE_CHECKING:
     from asyncio_mqtt import Client as MQTTClient, MqttError
-except Exception:
-    MQTTClient = None
-    MqttError = Exception
+else:
+    try:
+        from asyncio_mqtt import Client as MQTTClient, MqttError
+    except Exception:
+        MQTTClient = None  # type: ignore
+        MqttError = Exception
 
 from infrastructure.redis import redis_client
 
@@ -83,8 +86,8 @@ class AvailabilityCoordinator:
         """Inicializa coordinador sin conectar."""
         self.listener_task: Optional[asyncio.Task] = None
         self.publisher_task: Optional[asyncio.Task] = None
-        self.publish_queue: "asyncio.Queue[Dict[str, Any]]" = asyncio.Queue()
-        self._publisher_client: Optional[MQTTClient] = None
+        self.publish_queue: "asyncio.Queue[Dict[str, Any]]" = asyncio.Queue()  # type: ignore[valid-type]
+        self._publisher_client: Optional["MQTTClient"] = None
         self._publisher_lock = asyncio.Lock()
 
     def _client_params(self) -> Dict[str, Any]:
@@ -148,7 +151,7 @@ class AvailabilityCoordinator:
                 logger.warning(f"⚠️ Error en listener MQTT: {exc}")
                 await asyncio.sleep(3)
 
-    async def _ensure_publisher_client(self) -> MQTTClient:
+    async def _ensure_publisher_client(self) -> "MQTTClient":
         """Asegura que existe cliente MQTT conectado (método privado)."""
         if not MQTTClient:
             raise RuntimeError("MQTT client no disponible")
@@ -157,10 +160,11 @@ class AvailabilityCoordinator:
         if self._publisher_client is None:
             async with self._publisher_lock:
                 if self._publisher_client is None:
-                    self._publisher_client = MQTTClient(**self._client_params())
-                    await self._publisher_client.connect()
+                    client = MQTTClient(**self._client_params())
+                    await client.connect()
+                    self._publisher_client = client
                     logger.info("✅ Cliente MQTT (publisher) conectado")
-        return self._publisher_client
+        return cast("MQTTClient", self._publisher_client)
 
     async def _publisher_loop(self):
         """Loop de publicación de solicitudes MQTT (método privado)."""

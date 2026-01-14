@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, cast
 
 import redis.asyncio as redis
 
@@ -34,6 +34,7 @@ class RedisClient:
                     socket_connect_timeout=10,
                 )
                 # Test connection
+                assert self.redis_client is not None
                 await self.redis_client.ping()
                 self._connected = True
                 self._retry_count = 0
@@ -100,8 +101,11 @@ class RedisClient:
         if not self.redis_client:
             await self.connect()
 
+        # redis_client is guaranteed to be non-None here after the check above
+        client = cast(redis.Redis, self.redis_client)
+
         try:
-            self.pubsub = self.redis_client.pubsub()
+            self.pubsub = client.pubsub()
             await self.pubsub.subscribe(channel)
             logger.info(f"📥 Suscrito al canal '{channel}'")
 

@@ -74,9 +74,9 @@ class DynamicServiceCatalog:
                 self._build_reverse_map()
                 logger.info(
                     f"✅ Catálogo de servicios cargado desde Redis cache "
-                    f"({len(self._cache)} profesiones)"
+                    f"({len(self._cache) if self._cache else 0} profesiones)"
                 )
-                return self._cache
+                return self._cache if self._cache is not None else {}
         except Exception as e:
             logger.warning(f"⚠️ Error cargando catálogo desde Redis: {e}")
 

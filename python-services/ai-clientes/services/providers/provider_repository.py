@@ -3,18 +3,24 @@ Provider Repository Module
 
 This module contains database access logic for provider search operations.
 Replaces ai-search service with direct Supabase queries.
+Implements IProviderRepository interface following SOLID principles.
 """
 
 import logging
 from typing import Any, Dict, List, Optional
 
 from utils.db_utils import run_supabase
+from repositories.interfaces import IProviderRepository
+from core.exceptions import RepositoryError
 
 logger = logging.getLogger(__name__)
 
 
-class ProviderRepository:
+class ProviderRepository(IProviderRepository):
     """Repository for provider database operations.
+
+    Implements IProviderRepository interface for provider data access.
+    Maintains backward compatibility with existing methods.
 
     Responsabilidad:
     - Búsqueda directa de proveedores en Supabase
@@ -155,6 +161,112 @@ class ProviderRepository:
         except Exception as e:
             logger.error(f"❌ Error obteniendo provider por phone={phone}: {e}")
         return None
+
+    # =========================================================================
+    # IProviderRepository Interface Methods
+    # =========================================================================
+
+    async def find_by_id(self, entity_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Find a provider by ID.
+
+        Args:
+            entity_id: Provider ID
+
+        Returns:
+            Provider dictionary if found, None otherwise
+        """
+        try:
+            result = await run_supabase(
+                lambda: self.supabase.table("providers")
+                .select("*")
+                .eq("id", entity_id)
+                .limit(1)
+                .execute(),
+                label="providers.by_id",
+            )
+            if result.data:
+                return result.data[0]
+        except Exception as e:
+            logger.error(f"❌ Error finding provider by ID {entity_id}: {e}")
+        return None
+
+    async def create(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Create a new provider record.
+
+        Args:
+            data: Provider data dictionary
+
+        Returns:
+            Created provider dictionary
+
+        Raises:
+            RepositoryError: If creation fails
+        """
+        try:
+            result = await run_supabase(
+                lambda: self.supabase.table("providers")
+                .insert(data)
+                .execute(),
+                label="providers.insert",
+            )
+            if result.data:
+                return result.data[0]
+            raise RepositoryError("Failed to create provider")
+        except Exception as e:
+            logger.error(f"❌ Error creating provider: {e}")
+            raise RepositoryError(f"Failed to create provider: {e}")
+
+    async def update(
+        self, entity_id: str, data: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Update provider fields.
+
+        Args:
+            entity_id: Provider ID
+            data: Fields to update
+
+        Returns:
+            Updated provider dictionary or None
+        """
+        try:
+            result = await run_supabase(
+                lambda: self.supabase.table("providers")
+                .update(data)
+                .eq("id", entity_id)
+                .execute(),
+                label="providers.update",
+            )
+            if result.data:
+                return result.data[0]
+        except Exception as e:
+            logger.error(f"❌ Error updating provider {entity_id}: {e}")
+        return None
+
+    async def delete(self, entity_id: str) -> bool:
+        """
+        Delete a provider by ID.
+
+        Args:
+            entity_id: Provider ID
+
+        Returns:
+            True if deleted, False otherwise
+        """
+        try:
+            await run_supabase(
+                lambda: self.supabase.table("providers")
+                .delete()
+                .eq("id", entity_id)
+                .execute(),
+                label="providers.delete",
+            )
+            return True
+        except Exception as e:
+            logger.error(f"❌ Error deleting provider {entity_id}: {e}")
+        return False
 
 
 # ============================================================================

@@ -11,6 +11,16 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional
 
 from flows.client_flow import ClientFlow
+
+# Fase 2: State Machine imports (activado vía feature flag)
+try:
+    from core.state_machine import ClientStateMachine, ClientState
+    from core.feature_flags import USE_STATE_MACHINE
+except ImportError:
+    # Si los módulos no existen, usar valores por defecto
+    USE_STATE_MACHINE = False
+    ClientStateMachine = None
+    ClientState = None
 from templates.prompts import (
     bloque_listado_proveedores_compacto,
     instruccion_seleccionar_proveedor,
@@ -106,6 +116,17 @@ class ConversationOrchestrator:
         # Initialize HandlerRegistry and register all handlers
         self.handler_registry = HandlerRegistry()
         self._register_handlers()
+
+        # Fase 2: Inicializar State Machine (solo si USE_STATE_MACHINE=True)
+        self.state_machine = None
+        if USE_STATE_MACHINE and ClientStateMachine is not None:
+            self.state_machine = ClientStateMachine(
+                enable_validation=True  # Activar validación
+            )
+            logger.info("✅ State Machine inicializado (Fase 2)")
+        else:
+            logger.info("⏳ State Machine desactivado (feature flag USE_STATE_MACHINE=False)")
+
 
     def _register_handlers(self):
         """

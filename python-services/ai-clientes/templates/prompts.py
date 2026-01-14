@@ -113,11 +113,12 @@ def bloque_detalle_proveedor(provider: Dict[str, Any]) -> str:
         or "Proveedor"
     )
     profession = provider.get("profession") or provider.get("service_title") or ""
-    if not profession and isinstance(provider.get("professions"), list):
+    professions_list = provider.get("professions")
+    if not profession and isinstance(professions_list, list) and professions_list is not None:
         profession = ", ".join(
             [
                 str(item).strip()
-                for item in provider.get("professions")
+                for item in professions_list
                 if str(item).strip()
             ]
         )

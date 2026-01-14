@@ -10,7 +10,6 @@ AI Service Clientes - Bot de WhatsApp para Búsqueda de Proveedores
 import asyncio
 import logging
 import os
-from datetime import datetime
 from typing import Any, Dict
 
 # FastAPI
@@ -27,10 +26,20 @@ from supabase import create_client
 # Local modules (previously in shared-lib)
 from config import settings
 from infrastructure.redis import redis_client
-from utils.service_catalog import (
-    normalize_profession_for_search,
-)
 from services.session_manager import session_manager
+
+# Feature Flags (Fase 5)
+try:
+    from core.feature_flags import (
+        get_all_flags,
+        validate_activation_order,
+    )
+except ImportError:
+    # Si el módulo no existe, usar funciones dummy
+    def get_all_flags():
+        return {}
+    def validate_activation_order():
+        return {"valid": False, "errors": [], "warnings": []}
 
 # Servicios
 from services.availability_service import availability_coordinator
@@ -69,25 +78,7 @@ from templates.prompts import (
     titulo_confirmacion_repetir_busqueda,
 )
 
-# Modelos
-from models.schemas import (
-    MessageProcessingRequest,
-    MessageProcessingResponse,
-    SessionCreateRequest,
-    SessionStats,
-)
 
-# Utils
-from utils.services_utils import (
-    _normalize_token,
-)
-
-# MQTT
-try:
-    from asyncio_mqtt import Client as MQTTClient, MqttError
-except Exception:
-    MQTTClient = None
-    MqttError = Exception
 
 # ============================================================================
 # 2. CONFIGURACIÓN
@@ -340,6 +331,12 @@ async def root():
 async def health_check():
     """Health check del servicio."""
     try:
+        if redis_client.redis_client is None:
+            return {
+                "status": "unhealthy",
+                "redis": "disconnected",
+                "service": "ai-clientes",
+            }
         await redis_client.redis_client.ping()
         return {
             "status": "healthy",
@@ -350,31 +347,42 @@ async def health_check():
         raise HTTPException(status_code=503, detail=f"Service unhealthy: {str(e)}")
 
 
-@app.post("/process-message", response_model=MessageProcessingResponse)
-async def process_client_message(request: MessageProcessingRequest):
+@app.get("/debug/feature-flags")
+async def debug_feature_flags():
     """
-    Procesar mensaje de cliente usando OpenAI con contexto de sesión.
+    Endpoint para debuggear el estado de feature flags.
 
-    Sprint 1.15: Usa MessageProcessorService.
+    Útil para verificar qué fases de la migración están activadas.
+    Fase 5: Feature Flags System.
     """
     try:
-        phone = request.context.get("phone", "unknown")
+        flags = get_all_flags()
+        validation = validate_activation_order()
 
-        result = await message_processor_service.process_message(
-            request=request,
-            phone=phone,
-            normalize_profession_for_search=normalize_profession_for_search,
-            _normalize_token=_normalize_token,
-        )
-
-        return result
-
+        return {
+            "service": "ai-clientes",
+            "feature_flags": flags,
+            "validation": {
+                "valid": validation["valid"],
+                "errors": validation["errors"],
+                "warnings": validation["warnings"],
+            },
+            "phases": {
+                "phase_1": "Repository Pattern (Interfaces)",
+                "phase_1_active": flags.get("USE_REPOSITORY_INTERFACES", False),
+                "phase_2": "State Machine",
+                "phase_2_active": flags.get("USE_STATE_MACHINE", False),
+                "phase_3": "Saga Pattern [Futuro]",
+                "phase_3_active": flags.get("USE_SAGA_ROLLBACK", False),
+                "phase_4": "Performance Optimizations [Futuro]",
+                "phase_4_active": flags.get("ENABLE_PERFORMANCE_OPTIMIZATIONS", False),
+                "phase_5": "Feature Flags System",
+                "phase_5_active": flags.get("ENABLE_FEATURE_FLAGS", False),
+            },
+        }
     except Exception as e:
-        logger.error(f"❌ Error procesando mensaje: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error processing message: {str(e)}"
-        )
+        logger.error(f"Error getting feature flags: {e}")
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 
 @app.post("/handle-whatsapp-message")
@@ -402,122 +410,6 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
         raise HTTPException(
             status_code=500,
             detail=f"Error handling WhatsApp message: {str(e)}"
-        )
-
-
-# ============================================================================
-# 8. ENDPOINTS DE COMPATIBILIDAD (Session Service)
-# ============================================================================
-
-@app.post("/sessions")
-async def create_session(session_request: SessionCreateRequest):
-    """
-    Endpoint compatible con el Session Service anterior.
-    Crea/guarda una nueva sesión de conversación.
-    """
-    try:
-        phone = session_request.phone
-        message = session_request.message
-        timestamp = session_request.timestamp or datetime.now()
-
-        if not phone or not message:
-            raise HTTPException(
-                status_code=400,
-                detail="phone and message are required"
-            )
-
-        success = await session_manager.save_session(
-            phone=phone,
-            message=message,
-            is_bot=False,
-            metadata={"timestamp": timestamp.isoformat()},
-        )
-
-        if success:
-            return {"status": "saved", "phone": phone}
-        else:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to save session"
-            )
-
-    except Exception as e:
-        logger.error(f"❌ Error creando sesión: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error creating session: {str(e)}"
-        )
-
-
-@app.get("/sessions/{phone}")
-async def get_sessions(phone: str, limit: int = 10):
-    """
-    Endpoint compatible con el Session Service anterior.
-    Obtiene todas las sesiones de un número de teléfono.
-    """
-    try:
-        history = await session_manager.get_conversation_history(phone, limit=limit)
-
-        sessions_data = []
-        for msg in history:
-            session_data = {
-                "phone": phone,
-                "message": msg.message,
-                "timestamp": msg.timestamp.isoformat(),
-                "created_at": msg.timestamp.isoformat(),
-                "is_bot": msg.is_bot,
-            }
-            if msg.metadata:
-                session_data.update(msg.metadata)
-            sessions_data.append(session_data)
-
-        return {"sessions": sessions_data}
-
-    except Exception as e:
-        logger.error(f"❌ Error obteniendo sesiones para {phone}: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error getting sessions: {str(e)}"
-        )
-
-
-@app.delete("/sessions/{phone}")
-async def delete_sessions(phone: str):
-    """
-    Endpoint compatible con el Session Service anterior.
-    Elimina todas las sesiones de un número de teléfono.
-    """
-    try:
-        success = await session_manager.delete_sessions(phone)
-
-        if success:
-            return {"status": "deleted", "phone": phone}
-        else:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to delete sessions"
-            )
-
-    except Exception as e:
-        logger.error(f"❌ Error eliminando sesiones para {phone}: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error deleting sessions: {str(e)}"
-        )
-
-
-@app.get("/sessions/stats", response_model=SessionStats)
-async def get_session_stats():
-    """Obtiene estadísticas de sesiones."""
-    try:
-        stats = await session_manager.get_session_stats()
-        return SessionStats(**stats)
-
-    except Exception as e:
-        logger.error(f"❌ Error obteniendo estadísticas de sesiones: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error getting session stats: {str(e)}"
         )
 
 

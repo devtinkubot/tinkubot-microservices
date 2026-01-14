@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from typing import Dict, Optional, Set, Tuple
+from typing import Dict, Optional, Set
 
 # Sinónimos comunes de servicios/profesiones
 COMMON_SERVICE_SYNONYMS: Dict[str, Set[str]] = {
@@ -134,24 +134,3 @@ def normalize_profession_for_search(term: Optional[str]) -> Optional[str]:
         return term
     return NORMALIZED_PROFESSION_MAP.get(normalized, term)
 
-
-def normalize_text_pair(value: Optional[str]) -> Tuple[str, str]:
-    """
-    Retorna (original_limpio, normalizado_para_busqueda).
-    - original_limpio: mantiene mayúsculas pero quita espacios duplicados/acentos raros de Unicode.
-    - normalizado: minúsculas, sin acentos, solo [a-z0-9 ], espacios colapsados.
-    """
-    original_clean = (value or "").strip()
-    if not original_clean:
-        return "", ""
-
-    # Normalizar visualmente el original (sin perder capitalización)
-    original_normalized = unicodedata.normalize("NFKC", original_clean)
-
-    # Generar versión 100% normalizada para búsquedas
-    normalized = unicodedata.normalize("NFD", original_normalized.lower())
-    normalized = "".join(ch for ch in normalized if unicodedata.category(ch) != "Mn")
-    normalized = re.sub(r"[^a-z0-9\s]", " ", normalized)
-    normalized = re.sub(r"\s+", " ", normalized).strip()
-
-    return original_normalized, normalized

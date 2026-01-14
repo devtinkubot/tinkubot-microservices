@@ -7,15 +7,6 @@ from models.schemas import (
     MessageProcessingResponse,
     SessionCreateRequest,
     SessionStats,
-    # Modelos específicos de ai-clientes
-    WhatsAppMessageRequest,
-    IncomingWhatsAppMessage,
-    CustomerProfileRequest,
-    CustomerConsentResponse,
-    HealthResponse,
-    ConversationFlowState,
-    ProviderSearchRequest,
-    IntelligentSearchRequest,
 )
 
 __all__ = [
@@ -24,12 +15,4 @@ __all__ = [
     "MessageProcessingResponse",
     "SessionCreateRequest",
     "SessionStats",
-    "WhatsAppMessageRequest",
-    "IncomingWhatsAppMessage",
-    "CustomerProfileRequest",
-    "CustomerConsentResponse",
-    "HealthResponse",
-    "ConversationFlowState",
-    "ProviderSearchRequest",
-    "IntelligentSearchRequest",
 ]

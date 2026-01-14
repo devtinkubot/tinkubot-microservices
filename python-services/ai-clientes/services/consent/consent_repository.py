@@ -2,6 +2,7 @@
 Consent Repository Module
 
 This module contains database persistence logic for consent records.
+Implements IConsentRepository interface following SOLID principles.
 """
 
 import json
@@ -9,12 +10,18 @@ import logging
 from typing import Any, Dict
 
 from utils.db_utils import run_supabase
+from repositories.interfaces import IConsentRepository
+from core.exceptions import RepositoryError
 
 logger = logging.getLogger(__name__)
 
 
-class ConsentRepository:
-    """Repository for consent database operations."""
+class ConsentRepository(IConsentRepository):
+    """Repository for consent database operations.
+
+    Implements IConsentRepository interface for consent data access.
+    Maintains backward compatibility with existing methods.
+    """
 
     def __init__(self, supabase_client):
         """

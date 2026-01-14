@@ -2,8 +2,7 @@
 Modelos Pydantic locales para AI Service Clientes.
 
 Este módulo contiene modelos MOVIDOS desde shared_lib/models.py que
-son usados EXCLUSIVAMENTE por ai-clientes, más modelos específicos
-de este servicio.
+son usados EXCLUSIVAMENTE por ai-clientes.
 """
 
 from datetime import datetime
@@ -53,115 +52,7 @@ class SessionStats(BaseModel):
 
 
 # ============================================================================
-# Modelos específicos de ai-clientes (nuevos)
-# ============================================================================
-
-class WhatsAppMessageRequest(BaseModel):
-    """Request para enviar mensaje de WhatsApp."""
-    phone: str
-    message: str
-
-
-class IncomingWhatsAppMessage(BaseModel):
-    """
-    Modelo flexible para mensajes entrantes de WhatsApp.
-
-    Compatible con el formato de mensajes entrantes desde wa-clientes.
-    """
-    # Campos principales
-    id: Optional[str] = None
-    from_number: Optional[str] = None
-    content: Optional[str] = None
-    timestamp: Optional[str] = None
-    status: Optional[str] = None
-
-    # Metadatos de mensaje
-    message_type: Optional[str] = None
-    device_type: Optional[str] = None
-    selected_option: Optional[str] = None
-    location: Optional[Dict[str, Any]] = None
-
-    # Compatibilidad con formatos anteriores
-    phone: Optional[str] = None
-    message: Optional[str] = None
-
-    # Attachments (futuro)
-    media_base64: Optional[str] = None
-    media_mimetype: Optional[str] = None
-    media_filename: Optional[str] = None
-    image_base64: Optional[str] = None
-    attachments: Optional[List[Dict[str, Any]]] = None
-
-
-class CustomerProfileRequest(BaseModel):
-    """Request para actualizar perfil de cliente."""
-    phone: str
-    full_name: Optional[str] = None
-    city: Optional[str] = None
-
-
-class CustomerConsentResponse(BaseModel):
-    """Respuesta de consentimiento de cliente."""
-    user_id: str
-    user_type: str = "customer"
-    response: str  # "accepted" | "declined"
-    message_log: Optional[str] = None
-
-
-class HealthResponse(BaseModel):
-    """Respuesta de health check."""
-    status: str
-    service: str
-    timestamp: str
-    redis: str = "connected"
-    supabase: str = "disconnected"
-
-
-# ============================================================================
-# Modelos para validación interna (no expuestos en API)
-# ============================================================================
-
-class ConversationFlowState(BaseModel):
-    """Estado del flujo conversacional del cliente."""
-    state: str
-    phone: Optional[str] = None
-    service: Optional[str] = None
-    city: Optional[str] = None
-    service_full: Optional[str] = None
-    providers: Optional[List[Dict[str, Any]]] = None
-    customer_id: Optional[str] = None
-    last_seen_at: Optional[str] = None
-    city_confirmed: Optional[bool] = None
-    city_confirmed_at: Optional[str] = None
-    searching_dispatched: Optional[bool] = None
-    provider_detail_idx: Optional[int] = None
-    confirm_attempts: Optional[int] = None
-    confirm_title: Optional[str] = None
-    confirm_include_city_option: Optional[bool] = None
-
-
-class ProviderSearchRequest(BaseModel):
-    """Request para búsqueda de proveedores."""
-    profession: str
-    location: str
-    radius: float = 10.0
-    limit: Optional[int] = 10
-
-
-class IntelligentSearchRequest(BaseModel):
-    """Request para búsqueda inteligente con IA."""
-    actual_need: Optional[str] = None
-    main_profession: str
-    specialties: Optional[List[str]] = None
-    required_specialties: Optional[List[str]] = None
-    synonyms: Optional[List[str]] = None
-    possible_synonyms: Optional[List[str]] = None
-    location: str
-    urgency: Optional[str] = None
-
-
-# ============================================================================
-# Exportar todos los modelos
+# Exportar solo los modelos usados
 # ============================================================================
 __all__ = [
     # Modelos MOVIDOS desde shared_lib (solo ai-clientes los usa)
@@ -170,13 +61,4 @@ __all__ = [
     "MessageProcessingResponse",
     "SessionCreateRequest",
     "SessionStats",
-    # Modelos específicos de ai-clientes
-    "WhatsAppMessageRequest",
-    "IncomingWhatsAppMessage",
-    "CustomerProfileRequest",
-    "CustomerConsentResponse",
-    "HealthResponse",
-    "ConversationFlowState",
-    "ProviderSearchRequest",
-    "IntelligentSearchRequest",
 ]

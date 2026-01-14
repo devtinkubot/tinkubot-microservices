@@ -5,7 +5,7 @@ Gestiona sesiones de conversación con Redis para mantener contexto
 
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from infrastructure.redis import redis_client
 
@@ -18,14 +18,14 @@ class SessionMessage:
     def __init__(
         self,
         message: str,
-        timestamp: datetime = None,
+        timestamp: Optional[datetime] = None,
         is_bot: bool = False,
-        metadata: Dict = None,
+        metadata: Optional[Dict] = None,
     ):
         self.message = message
-        self.timestamp = timestamp or datetime.now()
+        self.timestamp = timestamp if timestamp is not None else datetime.now()
         self.is_bot = is_bot
-        self.metadata = metadata or {}
+        self.metadata = metadata if metadata is not None else {}
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -56,7 +56,7 @@ class SessionManager:
         self._redis_available = True  # Estado de conexión a Redis
 
     async def save_session(
-        self, phone: str, message: str, is_bot: bool = False, metadata: Dict = None
+        self, phone: str, message: str, is_bot: bool = False, metadata: Optional[Dict] = None
     ) -> bool:
         """
         Guarda un mensaje en la sesión del usuario
@@ -141,7 +141,7 @@ class SessionManager:
             return False
 
     async def get_conversation_history(
-        self, phone: str, limit: int = None
+        self, phone: str, limit: Optional[int] = None
     ) -> List[SessionMessage]:
         """
         Obtiene el historial de conversación de un usuario
@@ -183,7 +183,7 @@ class SessionManager:
                     continue
 
             # Aplicar límite si se especificó
-            if limit:
+            if limit is not None:
                 messages = messages[:limit]
 
             return messages
@@ -195,12 +195,12 @@ class SessionManager:
             return self._get_history_fallback(phone, limit)
 
     def _get_history_fallback(
-        self, phone: str, limit: int = None
+        self, phone: str, limit: Optional[int] = None
     ) -> List[SessionMessage]:
         """Obtiene historial desde almacenamiento en memoria como fallback"""
         try:
             messages = self._fallback_storage.get(phone, [])
-            if limit:
+            if limit is not None:
                 messages = messages[:limit]
             logger.warning(
                 f"📖 Historial obtenido desde memoria para {phone}: {len(messages)} mensajes"
@@ -271,6 +271,8 @@ class SessionManager:
             Dict[str, Any]: Estadísticas de uso
         """
         try:
+            if not self.redis_client or not self.redis_client.redis_client:
+                return {}
             session_keys = await self.redis_client.redis_client.keys("session:*")
 
             total_users = len(session_keys)

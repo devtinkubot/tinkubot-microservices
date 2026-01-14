@@ -5,7 +5,7 @@ This module coordinates consent management operations.
 """
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 from templates.prompts import mensajes_flujo_consentimiento
 from services.consent.consent_validator import ConsentValidator
@@ -69,14 +69,15 @@ class ConsentService:
             response = "accepted"
 
             # Update has_consent to TRUE
-            await self.repository.update_customer_consent_status(
-                customer_profile.get("id")
-            )
+            customer_id = customer_profile.get("id")
+            if not customer_id:
+                raise ValueError("Customer ID is required")
+            await self.repository.update_customer_consent_status(cast(str, customer_id))
 
             # Save legal consent record with complete metadata
             consent_data = self.repository.build_consent_metadata(payload)
             await self.repository.save_consent_record(
-                user_id=customer_profile.get("id"),
+                user_id=cast(str, customer_id),
                 response=response,
                 consent_data=consent_data,
             )
@@ -99,8 +100,11 @@ class ConsentService:
 
             # Save legal consent record equally with complete metadata
             consent_data = self.repository.build_consent_metadata(payload)
+            customer_id = customer_profile.get("id")
+            if not customer_id:
+                raise ValueError("Customer ID is required")
             await self.repository.save_consent_record(
-                user_id=customer_profile.get("id"),
+                user_id=cast(str, customer_id),
                 response=response,
                 consent_data=consent_data,
             )

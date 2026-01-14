@@ -230,7 +230,7 @@ class ClientFlow:
             flow["confirm_attempts"] = 0
             flow["confirm_title"] = confirm_prompt_title_default
             flow["confirm_include_city_option"] = True
-            flow[""] = False
+            flow["has_multiple_providers"] = False
             await set_flow_fn(flow)
             block = mensaje_listado_sin_resultados(city)
             await save_bot_message_fn(block)
@@ -247,7 +247,7 @@ class ClientFlow:
         flow["providers"] = providers[:5]
         flow["state"] = "presenting_results"
         flow["confirm_include_city_option"] = False
-        flow[""] = len(flow["providers"]) > 1
+        flow["has_multiple_providers"] = len(flow["providers"]) > 1
         flow.pop("provider_detail_idx", None)
 
         if supabase_client:
@@ -498,13 +498,13 @@ class ClientFlow:
         choice = choice_raw.lower().strip()
         choice = choice.rstrip(".!¡¿)")
 
-        provider_option_enabled = bool(flow.get(""))
+        provider_option_enabled = bool(flow.get("has_multiple_providers"))
         city_option_enabled = bool(flow.get("confirm_include_city_option"))
 
         if choice in {"0", "opcion 0", "opción 0"} and provider_option_enabled:
             flow["state"] = "presenting_results"
             flow.pop("chosen_provider", None)
-            flow[""] = False
+            flow["has_multiple_providers"] = False
             flow["confirm_include_city_option"] = False
             flow["confirm_attempts"] = 0
             return await resend_providers_fn()
