@@ -28,8 +28,8 @@ USE_REPOSITORY_INTERFACES = True
 # - Implementa: State Machine + Strategy Pattern
 # - Archivos: core/state_machine.py, services/conversation_orchestrator.py
 # - Tests: tests/unit/test_state_machine.py
-# ESTADO: ⏳ INACTIVO (activar después de validar Fase 1)
-USE_STATE_MACHINE = False  # IMPORTANTE: False por defecto para no romper
+# ESTADO: ✅ ACTIVO (validación de transiciones habilitada)
+USE_STATE_MACHINE = True  # ACTIVADO: Validación de transiciones habilitada
 
 # FASE 3: [FUTURO] Saga Pattern
 # Activa el patrón Saga para rollback automático en caso de errores.

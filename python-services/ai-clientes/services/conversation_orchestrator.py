@@ -194,6 +194,10 @@ class ConversationOrchestrator:
             )
         )
 
+        # Fase 2: State Machine se inicializa pero NO registra handlers
+        # La validación de transiciones ocurre DESPUÉS de que handlers ejecutan
+        # Ver: lógica en handle_message() después de dispatch
+
     async def handle_message(
         self,
         payload: Dict[str, Any],
@@ -530,8 +534,43 @@ class ConversationOrchestrator:
             "customer_id": customer_id,
         }
 
+        # Fase 2: State Machine - Guardar estado antes de dispatch
+        old_state = state
+
         try:
-            return await self.handler_registry.dispatch(state, context)
+            result = await self.handler_registry.dispatch(state, context)
+
+            # Fase 2: Validar transición de estado después del dispatch
+            if USE_STATE_MACHINE and self.state_machine is not None:
+                new_state = flow.get("state")
+
+                if new_state and new_state != old_state:
+                    try:
+                        from core.state_machine import ClientState
+                        from core.exceptions import InvalidTransitionError
+
+                        old_state_enum = ClientState(old_state)
+                        new_state_enum = ClientState(new_state)
+
+                        # Validar transición
+                        if not self.state_machine.can_transition(old_state_enum, new_state_enum):
+                            logger.warning(
+                                f"⚠️ [Fase 2] Transición INVÁLIDA detectada: "
+                                f"{old_state} → {new_state} para {phone}"
+                            )
+                            # NOTA: No rompemos el flujo existente por compatibilidad
+                            # Solo logueamos la advertencia para debugging
+                        else:
+                            logger.info(
+                                f"✅ [Fase 2] Transición válida: {old_state} → {new_state}"
+                            )
+                    except (ValueError, KeyError) as e:
+                        # Estado no reconocido por la State Machine
+                        logger.debug(
+                            f"[Fase 2] Estado no mapeado en SM: {old_state} → {new_state} ({e})"
+                        )
+
+            return result
         except ValueError:
             # No handler found, use fallback logic
             pass
