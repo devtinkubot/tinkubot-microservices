@@ -23,7 +23,6 @@ const healthRoutes = require('./routes/health.routes');
 const qrRoutes = require('./routes/qr.routes');
 const statusRoutes = require('./routes/status.routes');
 const refreshRoutes = require('./routes/refresh.routes');
-const sendRoutes = require('./routes/send.routes');
 
 /**
  * Crea y configura la aplicación Express
@@ -49,7 +48,6 @@ function createApp(services) {
   qrRoutes(app, services);
   statusRoutes(app, services);
   refreshRoutes(app, services);
-  sendRoutes(app, services);
 
   return app;
 }

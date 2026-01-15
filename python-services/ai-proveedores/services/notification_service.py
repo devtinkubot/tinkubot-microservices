@@ -4,12 +4,12 @@ Servicio de notificaciones para proveedores.
 Este módulo contiene la lógica de negocio para enviar notificaciones
 a proveedores a través de WhatsApp.
 
-MQTT MIGRATION (Fase 1):
-- Usa MQTT para comunicación con wa-proveedores si USE_MQTT_WHATSAPP=true
-- Mantiene HTTP como fallback para backward compatibility
+MQTT MIGRATION (Completado):
+- Usa MQTT para comunicación con wa-proveedores
+- Topic: whatsapp/proveedores/send
+- HTTP fallback eliminado - MQTT es el único transporte
 """
 
-import httpx
 import json
 import logging
 import os
@@ -26,9 +26,8 @@ from app.config import settings as local_settings
 
 logger = logging.getLogger(__name__)
 
-# Feature flag: MQTT vs HTTP para WhatsApp
-USE_MQTT_WHATSAPP = os.getenv("USE_MQTT_WHATSAPP", "false").lower() == "true"
-MQTT_WHATSAP_TOPIC = os.getenv("MQTT_WHATSAP_TOPIC", "whatsapp/proveedores/send")
+# Topic MQTT para envío de mensajes WhatsApp
+MQTT_WHATSAP_TOPIC = os.getenv("MQTT_WHATSAP_TOPIC_PROVEEDORES", "whatsapp/proveedores/send")
 
 # MQTT client (singleton)
 _mqtt_client = None
@@ -36,11 +35,10 @@ _mqtt_client = None
 
 async def _enviar_mensaje_whatsapp(phone: str, message: str) -> Dict[str, Any]:
     """
-    Envía un mensaje de WhatsApp usando el servicio wa-proveedores.
+    Envía un mensaje de WhatsApp usando el servicio wa-proveedores vía MQTT.
 
-    MQTT MIGRATION:
-    - Si USE_MQTT_WHATSAPP=true: Usa MQTT topic whatsapp/proveedores/send
-    - Si no: Usa HTTP POST como antes (backward compatible)
+    Topic: whatsapp/proveedores/send
+    Transporte: MQTT exclusivamente (HTTP eliminado)
 
     Args:
         phone: Número de teléfono del destinatario
@@ -50,7 +48,7 @@ async def _enviar_mensaje_whatsapp(phone: str, message: str) -> Dict[str, Any]:
         Dict[str, Any]: Resultado del envío con claves:
             - success (bool): True si se envió correctamente
             - simulated (bool): True si fue una simulación
-            - transport (str): "mqtt" o "http"
+            - transport (str): "mqtt" o "none"
             - message (str): Mensaje de estado
     """
     try:
@@ -73,24 +71,21 @@ async def _enviar_mensaje_whatsapp(phone: str, message: str) -> Dict[str, Any]:
                 "message_preview": (message[:80] + "..."),
             }
 
-        # ELEGIR TRANSPORTE: MQTT vs HTTP
-        if USE_MQTT_WHATSAPP:
-            return await _send_via_mqtt(phone, message)
-        else:
-            return await _send_via_http(phone, message)
+        # Enviar vía MQTT
+        return await _send_via_mqtt(phone, message)
 
     except Exception as e:
         logger.error(f"❌ Error enviando WhatsApp: {e}")
         return {
             "success": False,
             "message": f"Error enviando WhatsApp: {str(e)}",
-            "transport": "mqtt" if USE_MQTT_WHATSAPP else "http",
+            "transport": "mqtt",
         }
 
 
 async def _send_via_mqtt(phone: str, message: str) -> Dict[str, Any]:
     """
-    Envía mensaje vía MQTT (nuevo método - Fase 1).
+    Envía mensaje vía MQTT.
 
     Topic: whatsapp/proveedores/send
     QoS: 1 (at least once)
@@ -98,7 +93,7 @@ async def _send_via_mqtt(phone: str, message: str) -> Dict[str, Any]:
     global _mqtt_client
 
     try:
-        # Importar MQTT client (lazy import para no romper si no está disponible)
+        # Importar MQTT client (lazy import)
         import sys
         sys.path.insert(0, "/home/du/produccion/tinkubot-microservices/python-services")
 
@@ -133,45 +128,12 @@ async def _send_via_mqtt(phone: str, message: str) -> Dict[str, Any]:
             "message_preview": (message[:80] + "..."),
         }
 
-    except ImportError:
-        logger.warning(
-            "⚠️ MQTT client no disponible, fallback a HTTP"
-        )
-        return await _send_via_http(phone, message)
-
     except Exception as e:
-        logger.error(f"❌ Error enviando vía MQTT: {e}, fallback a HTTP")
-        # Fallback a HTTP en caso de error
-        return await _send_via_http(phone, message)
-
-
-async def _send_via_http(phone: str, message: str) -> Dict[str, Any]:
-    """
-    Envía mensaje vía HTTP (método original - backward compatible).
-    """
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.post(
-                local_settings.wa_proveedores_url,
-                json={"phone": phone, "message": message},
-            )
-            resp.raise_for_status()
-
-        logger.info(f"✅ Mensaje enviado a {phone} vía HTTP")
-        return {
-            "success": True,
-            "simulated": False,
-            "transport": "http",
-            "phone": phone,
-            "message_preview": (message[:80] + "..."),
-        }
-
-    except Exception as e:
-        logger.error(f"❌ Error enviando vía HTTP: {e}")
+        logger.error(f"❌ Error enviando vía MQTT: {e}")
         return {
             "success": False,
-            "message": f"Error enviando vía HTTP: {str(e)}",
-            "transport": "http",
+            "message": f"Error enviando vía MQTT: {str(e)}",
+            "transport": "mqtt",
         }
 
 
