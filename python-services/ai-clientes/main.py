@@ -61,6 +61,7 @@ from services.search_service import (
 from services.query_interpreter_service import initialize_query_interpreter
 from services.providers.provider_repository import initialize_provider_repository
 from services.dynamic_service_catalog import initialize_dynamic_service_catalog
+from services.synonym_learner import initialize_synonym_learner
 
 # Templates
 from templates.prompts import (
@@ -159,6 +160,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # ============================================================================
 # 4. CLIENTES EXTERNOS
 # ============================================================================
@@ -246,6 +248,7 @@ media_service = MediaService(
 initialize_query_interpreter(openai_client)      # Inicializa QueryInterpreterService
 initialize_provider_repository(supabase)         # Inicializa ProviderRepository
 initialize_dynamic_service_catalog(supabase)     # Inicializa catálogo dinámico de servicios
+initialize_synonym_learner(supabase)             # Inicializa SynonymLearner (aprendizaje automático)
 initialize_openai_semaphore()                    # Inicializa semáforo para búsquedas
 
 # Servicio de búsqueda en segundo plano
@@ -460,6 +463,41 @@ async def startup_event():
     logger.info("🚀 Iniciando AI Service Clientes...")
     await redis_client.connect()
     await availability_coordinator.start_listener()
+
+    # FASE 7: Auto-Generated Synonyms (si está activo)
+    from core.feature_flags import USE_AUTO_SYNONYM_GENERATION
+    if USE_AUTO_SYNONYM_GENERATION:
+        try:
+            from services.provider_synonym_optimizer import ProviderSynonymOptimizer
+            from services.auto_profession_generator import AutoProfessionGenerator
+            from services.dynamic_service_catalog import dynamic_service_catalog
+
+            # Inicializar generador automático
+            auto_generator = AutoProfessionGenerator(
+                supabase_client=supabase,
+                dynamic_service_catalog=dynamic_service_catalog,
+                use_openai=True
+            )
+
+            # Inicializar optimizador (crea su propia conexión MQTT)
+            synonym_optimizer = ProviderSynonymOptimizer(
+                auto_profession_generator=auto_generator,
+                enabled=True
+            )
+
+            # Iniciar listener MQTT
+            await synonym_optimizer.start()
+
+            logger.info("✅ AutoProfessionGenerator activado (sinónimos proactivos)")
+
+        except Exception as e:
+            logger.error(
+                f"❌ Error inicializando AutoProfessionGenerator: {e}. "
+                "Continuando sin generación automática de sinónimos."
+            )
+    else:
+        logger.info("⏸️ AutoProfessionGenerator desactivado (feature flag)")
+
     logger.info("✅ AI Service Clientes listo")
 
 

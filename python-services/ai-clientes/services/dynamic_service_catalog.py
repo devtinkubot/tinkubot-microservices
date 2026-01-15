@@ -70,7 +70,8 @@ class DynamicServiceCatalog:
         try:
             cached_data = await redis_client.get(SERVICE_SYNONYMS_CACHE_KEY)
             if cached_data and not force_refresh:
-                self._cache = json.loads(cached_data)
+                # redis_client.get() ya hace json.loads(), cached_data es dict con listas
+                self._cache = {k: set(v) for k, v in cached_data.items()}
                 self._build_reverse_map()
                 logger.info(
                     f"✅ Catálogo de servicios cargado desde Redis cache "
@@ -112,10 +113,11 @@ class DynamicServiceCatalog:
                     catalog[canonical] = set()
                 catalog[canonical].add(synonym)
 
-            # Guardar en cache Redis
+            # Guardar en cache Redis (convertir sets a lists para JSON)
+            catalog_serializable = {k: list(v) for k, v in catalog.items()}
             await redis_client.set(
                 SERVICE_SYNONYMS_CACHE_KEY,
-                json.dumps(catalog),
+                json.dumps(catalog_serializable),
                 expire=SERVICE_SYNONYMS_CACHE_TTL
             )
 

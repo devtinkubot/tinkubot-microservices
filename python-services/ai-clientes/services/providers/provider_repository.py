@@ -54,7 +54,16 @@ class ProviderRepository(IProviderRepository):
             Lista de proveedores encontrados (vacía si hay error)
         """
         try:
-            # Construir query dinámicamente según parámetros
+            # PASO 1: Buscar profesiones canónicas asociadas al sinónimo
+            canonical_professions = await self._get_canonical_professions(profession)
+
+            if not canonical_professions:
+                # Si no hay sinónimos, usar la profesión tal cual
+                canonical_professions = [profession]
+
+            logger.debug(f"🔍 Sinónimo '{profession}' → profesiones canónicas: {canonical_professions}")
+
+            # PASO 2: Construir query con OR para todas las profesiones canónicas
             query = self.supabase.table("providers").select("*")
 
             # Filtro de verificados (siempre)
@@ -64,9 +73,10 @@ class ProviderRepository(IProviderRepository):
             if city and city.strip():
                 query = query.ilike("city", f"%{city}%")
 
-            # Filtro por profesión si se proporciona
-            if profession and profession.strip():
-                query = query.ilike("profession", f"%{profession}%")
+            # Filtro por profesión usando OR con todas las canónicas
+            if canonical_professions:
+                # Usar OR filter para buscar cualquiera de las profesiones canónicas
+                query = query.or_(" or ".join([f"profession.ilike.%{prof}%" for prof in canonical_professions]))
 
             # Ordenar por rating y limitar
             query = query.order("rating", desc=True).limit(limit)
@@ -79,6 +89,41 @@ class ProviderRepository(IProviderRepository):
 
         except Exception as e:
             logger.error(f"❌ Error buscando providers (city={city}, profession={profession}): {e}")
+            return []
+
+    async def _get_canonical_professions(self, synonym: str) -> List[str]:
+        """Obtiene profesiones canónicas asociadas a un sinónimo.
+
+        Args:
+            synonym: Sinónimo a buscar
+
+        Returns:
+            Lista de profesiones canónicas (vacía si no hay)
+        """
+        try:
+            # Buscar el sinónimo en service_synonyms
+            result = await run_supabase(
+                lambda: self.supabase.table("service_synonyms")
+                .select("canonical_profession")
+                .eq("synonym", synonym.lower())
+                .eq("active", True)
+                .execute(),
+                label="service_synonyms.get_canonical"
+            )
+
+            if result.data:
+                # Extraer profesiones canónicas únicas
+                canonical_professions = list(set([
+                    row["canonical_profession"] for row in result.data
+                ]))
+                logger.debug(f"🔍 Sinónimo '{synonym}' → {canonical_professions}")
+                return canonical_professions
+            else:
+                logger.debug(f"⚠️ Sinónimo '{synonym}' no encontrado en service_synonyms")
+                return []
+
+        except Exception as e:
+            logger.warning(f"⚠️ Error buscando sinónimos para '{synonym}': {e}")
             return []
 
     async def search_by_city(

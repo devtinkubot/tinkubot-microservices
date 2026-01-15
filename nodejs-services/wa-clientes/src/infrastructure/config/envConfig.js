@@ -61,6 +61,16 @@ class EnvConfig {
     };
 
     this.axiosTimeout = 5000;
+
+    // Configuración de MQTT (NUEVO - MQTT Migration Fase 1)
+    this.mqtt = {
+      host: process.env.MQTT_HOST || 'mosquitto',
+      port: parseInt(process.env.MQTT_PORT || '1883', 10),
+      username: process.env.MQTT_USUARIO,
+      password: process.env.MQTT_PASSWORD,
+      // MQTT MIGRATION Fase 1: Topic para enviar mensajes WhatsApp
+      topicWhatsappSend: process.env.MQTT_TEMA_WHATSAPP_SEND || 'whatsapp/clientes/send',
+    };
   }
 
   /**
@@ -108,7 +118,8 @@ class EnvConfig {
     return {
       instanceName: this.instanceName,
       instanceId: this.instanceId,
-      port: this.port
+      port: this.port,
+      mqtt: `host=${this.mqtt.host}:${this.mqtt.port} topic=${this.mqtt.topicWhatsappSend}`
     };
   }
 }

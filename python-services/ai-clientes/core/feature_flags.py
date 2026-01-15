@@ -9,7 +9,10 @@ y solo después de verificar que los tests pasan exitosamente.
 
 Author: Claude Sonnet 4.5
 Created: 2025-01-14
+Updated: 2026-01-15 - Now reads from environment variables
 """
+
+import os
 
 # =============================================================================
 # FEATURE FLAGS - MIGRACIÓN GRADUAL AI-CLIENTES
@@ -52,6 +55,27 @@ ENABLE_PERFORMANCE_OPTIMIZATIONS = True  # ACTIVADO: Optimizaciones habilitadas
 # ESTADO: ✅ ACTIVO (este archivo ya existe)
 ENABLE_FEATURE_FLAGS = True
 
+# FASE 6: Enhanced Search (Mejoras Inmediatas)
+# Activa las mejoras inmediatas al sistema de búsqueda.
+# - Implementa: IntentClassifier, QueryExpander, SynonymLearner
+# - Archivos: services/intent_classifier.py, services/query_expansion.py, services/synonym_learner.py
+# - Objetivo: 40% reducción en falsos negativos + aprendizaje continuo
+# - Timeline: 3 semanas
+# - ENFOQUE: Búsqueda funcional pura (sin fallbacks)
+# ESTADO: ✅ ACTIVO - Leer desde environment variables
+USE_INTENT_CLASSIFICATION = os.getenv("USE_INTENT_CLASSIFICATION", "false") == "true"
+USE_QUERY_EXPANSION = os.getenv("USE_QUERY_EXPANSION", "false") == "true"
+USE_SYNONYM_LEARNING = os.getenv("USE_SYNONYM_LEARNING", "false") == "true"
+
+# FASE 7: Auto-Generated Synonyms (Proactivo)
+# Activa la generación automática de sinónimos cuando se aprueba un proveedor.
+# - Implementa: ProviderSynonymOptimizer, AutoProfessionGenerator
+# - Archivos: services/provider_synonym_optimizer.py, services/auto_profession_generator.py
+# - Objetivo: Sinónimos preparados ANTES de que alguien busque
+# - Trigger: Evento MQTT providers/approved
+# - ESTADO: ⏸️ INACTIVO por defecto (requiere activación manual)
+USE_AUTO_SYNONYM_GENERATION = os.getenv("USE_AUTO_SYNONYM_GENERATION", "false") == "true"
+
 
 # =============================================================================
 # FUNCIONES DE UTILIDAD
@@ -70,6 +94,10 @@ def get_all_flags() -> dict:
         'USE_SAGA_ROLLBACK': USE_SAGA_ROLLBACK,
         'ENABLE_PERFORMANCE_OPTIMIZATIONS': ENABLE_PERFORMANCE_OPTIMIZATIONS,
         'ENABLE_FEATURE_FLAGS': ENABLE_FEATURE_FLAGS,
+        'USE_INTENT_CLASSIFICATION': USE_INTENT_CLASSIFICATION,
+        'USE_QUERY_EXPANSION': USE_QUERY_EXPANSION,
+        'USE_SYNONYM_LEARNING': USE_SYNONYM_LEARNING,
+        'USE_AUTO_SYNONYM_GENERATION': USE_AUTO_SYNONYM_GENERATION,
     }
 
 

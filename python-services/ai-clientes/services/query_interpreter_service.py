@@ -193,6 +193,136 @@ Responde SOLO en JSON formato:
             "details": message
         }
 
+    async def interpret_query_v2(
+        self,
+        user_message: str,
+        city_context: Optional[str] = None,
+        semaphore: Optional[asyncio.Semaphore] = None,
+        timeout_seconds: float = 5.0,
+        expand_query: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Interpreta query V2 con expansión de términos (Enhanced Search).
+
+        MEJORAS (Plan Mejoras Inmediatas - Enero 2026):
+        - Usa QueryExpander para expandir queries con sinónimos
+        - Caché en Redis para expansiones repetidas
+        - Fallback a sinónimos estáticos si OpenAI falla
+
+        ESTRATEGIA BACKWARD COMPATIBLE:
+        - Si expand_query=False, usa flujo V1 original
+        - Si QueryExpander no está inicializado, usa flujo V1
+
+        Args:
+            user_message: Mensaje del usuario
+            city_context: Ciudad conocida del contexto
+            semaphore: Semáforo para limitar concurrencia OpenAI
+            timeout_seconds: Timeout para OpenAI
+            expand_query: Si True, expande query con sinónimos
+
+        Returns:
+            Dict con:
+                - profession: profesión interpretada
+                - city: ciudad interpretada
+                - details: detalles del servicio
+                - expanded_terms: términos expandidos (si expand_query=True)
+                - expansion_method: método usado ("cache", "ai", "static", "none")
+        """
+        from core.feature_flags import USE_QUERY_EXPANSION
+
+        # Si feature flag está desactivado o expand_query=False, usar flujo V1
+        if not USE_QUERY_EXPANSION or not expand_query:
+            logger.debug("⚠️ USE_QUERY_EXPANSION=False o expand_query=False, usando flujo V1")
+            result = await self.interpret_query(
+                user_message,
+                city_context,
+                semaphore,
+                timeout_seconds
+            )
+            return {
+                **result,
+                "expanded_terms": None,
+                "expansion_method": "none"
+            }
+
+        # Flujo V2 con QueryExpander
+        try:
+            from services.query_expansion import get_query_expander
+
+            expander = get_query_expander()
+            if not expander:
+                logger.warning("⚠️ QueryExpander no inicializado, usando flujo V1")
+                result = await self.interpret_query(
+                    user_message,
+                    city_context,
+                    semaphore,
+                    timeout_seconds
+                )
+                return {
+                    **result,
+                    "expanded_terms": None,
+                    "expansion_method": "none"
+                }
+
+            # Paso 1: Interpretar query con IA (flujo V1)
+            interpreted = await self.interpret_query(
+                user_message,
+                city_context,
+                semaphore,
+                timeout_seconds
+            )
+
+            profession = interpreted.get("profession")
+            city = interpreted.get("city")
+
+            # Paso 2: Expandir query con sinónimos
+            expansion_result = await expander.expand_query(
+                query=user_message,
+                profession=profession,
+                use_ai=True,
+                semaphore=semaphore,
+                timeout_seconds=timeout_seconds
+            )
+
+            expanded_terms = expansion_result.get("expanded_terms", [])
+            inferred_profession = expansion_result.get("inferred_profession")
+
+            logger.info(
+                f"✅ [V2] Query expandida: '{user_message[:30]}...' "
+                f"→ {len(expanded_terms)} términos "
+                f"(método: {expansion_result.get('expansion_method')})"
+            )
+
+            # Si se infirió una profesión diferente, usarla
+            if inferred_profession and inferred_profession != profession:
+                logger.info(f"🔮 [V2] Profesión inferida: '{profession}' → '{inferred_profession}'")
+                profession = inferred_profession
+
+            return {
+                "profession": profession or user_message,
+                "city": city or city_context or "",
+                "details": interpreted.get("details", user_message),
+                "expanded_terms": expanded_terms,
+                "expansion_method": expansion_result.get("expansion_method", "unknown"),
+                "inferred_profession": inferred_profession
+            }
+
+        except Exception as e:
+            logger.error(f"❌ [V2] Error en interpretación con expansión: {e}")
+            # Fallback a V1
+            logger.info("🔄 [V2] Fallback a flujo V1 por error")
+            result = await self.interpret_query(
+                user_message,
+                city_context,
+                semaphore,
+                timeout_seconds
+            )
+            return {
+                **result,
+                "expanded_terms": None,
+                "expansion_method": "fallback"
+            }
+
 
 # ============================================================================
 # INSTANCIA GLOBAL (se inicializa en main.py)
@@ -201,17 +331,29 @@ Responde SOLO en JSON formato:
 query_interpreter: Optional[QueryInterpreterService] = None
 
 
-def initialize_query_interpreter(openai_client: Optional[AsyncOpenAI]) -> None:
+def initialize_query_interpreter(
+    openai_client: Optional[AsyncOpenAI],
+    cache_manager: Optional[Any] = None
+) -> None:
     """Inicializa el servicio de interpretación de queries.
 
     Args:
         openai_client: Cliente OpenAI (opcional, si no hay se deshabilita)
+        cache_manager: CacheManager opcional para QueryExpander
     """
     global query_interpreter
 
     if openai_client:
         query_interpreter = QueryInterpreterService(openai_client)
         logger.info("✅ QueryInterpreterService inicializado")
+
+        # Inicializar QueryExpander también
+        try:
+            from services.query_expansion import initialize_query_expander
+            initialize_query_expander(openai_client, cache_manager)
+            logger.info("✅ QueryExpander inicializado")
+        except Exception as e:
+            logger.warning(f"⚠️ Error inicializando QueryExpander: {e}")
     else:
         query_interpreter = None
         logger.warning("⚠️ QueryInterpreterService deshabilitado (sin OpenAI)")

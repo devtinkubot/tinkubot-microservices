@@ -1,13 +1,10 @@
 """
 Catálogo de profesiones y sinónimos para AI Clientes Service.
-Provee utilidades de normalización para búsquedas consistentes.
 """
 
 from __future__ import annotations
 
-import re
-import unicodedata
-from typing import Dict, Optional, Set
+from typing import Dict, Set
 
 # Sinónimos comunes de servicios/profesiones
 COMMON_SERVICE_SYNONYMS: Dict[str, Set[str]] = {
@@ -98,39 +95,4 @@ COMMON_SERVICE_SYNONYMS: Dict[str, Set[str]] = {
 }
 
 COMMON_SERVICES = list(COMMON_SERVICE_SYNONYMS.keys())
-
-
-def _normalize_text_for_lookup(text: Optional[str]) -> str:
-    base = (text or "").lower().strip()
-    normalized = unicodedata.normalize("NFD", base)
-    without_accents = "".join(
-        ch for ch in normalized if unicodedata.category(ch) != "Mn"
-    )
-    cleaned = re.sub(r"[^a-z0-9\s]", " ", without_accents)
-    return re.sub(r"\s+", " ", cleaned).strip()
-
-
-def _build_normalized_profession_map() -> Dict[str, str]:
-    mapping: Dict[str, str] = {}
-    for canonical, synonyms in COMMON_SERVICE_SYNONYMS.items():
-        candidates = set(synonyms)
-        candidates.add(canonical)
-        for candidate in candidates:
-            normalized_candidate = _normalize_text_for_lookup(candidate)
-            if not normalized_candidate:
-                continue
-            mapping.setdefault(normalized_candidate, canonical)
-    return mapping
-
-
-NORMALIZED_PROFESSION_MAP = _build_normalized_profession_map()
-
-
-def normalize_profession_for_search(term: Optional[str]) -> Optional[str]:
-    if not term:
-        return term
-    normalized = _normalize_text_for_lookup(term)
-    if not normalized:
-        return term
-    return NORMALIZED_PROFESSION_MAP.get(normalized, term)
 

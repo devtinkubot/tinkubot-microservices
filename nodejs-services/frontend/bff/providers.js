@@ -566,12 +566,30 @@ async function aprobarProveedor(providerId, payload = {}, requestId = null) {
           ? 'Proveedor aprobado con observaciones.'
           : 'Proveedor aprobado correctamente.';
 
-      // Publicar evento de aprobación por MQTT para que wa-proveedores envíe el WhatsApp
-      publishProviderApproved({
+      // Publicar evento de aprobación por MQTT
+      // FEATURE FLAG: ENHANCED_MQTT_PAYLOAD (default: true)
+      // Incluye profession, city, specialty para ai-clientes synonym generation
+      const useEnhancedPayload = process.env.ENHANCED_MQTT_PAYLOAD !== 'false';
+
+      const mqttPayload = {
         provider_id: providerId,
         phone: registro?.phone,
         full_name: registro?.full_name,
-      });
+        // Campos adicionales para generación automática de sinónimos
+        ...(useEnhancedPayload && {
+          profession: registro?.profession || null,
+          city: registro?.city || null,
+          specialty: registro?.specialty || null,
+          approved_at: new Date().toISOString(),
+        }),
+      };
+
+      // Debug logging
+      if (useEnhancedPayload) {
+        console.log('[DEBUG] MQTT Payload para providers/approved:', JSON.stringify(mqttPayload, null, 2));
+      }
+
+      publishProviderApproved(mqttPayload);
 
       return construirRespuestaAccion(providerId, 'approved', mensaje, registro);
     }
@@ -588,11 +606,29 @@ async function aprobarProveedor(providerId, payload = {}, requestId = null) {
         message: 'Proveedor aprobado correctamente.'
       };
 
-    publishProviderApproved({
+    // Publicar evento de aprobación por MQTT (servicio externo)
+    // FEATURE FLAG: ENHANCED_MQTT_PAYLOAD (default: true)
+    const useEnhancedPayload = process.env.ENHANCED_MQTT_PAYLOAD !== 'false';
+
+    const mqttPayload = {
       provider_id: providerId,
       phone: respData.phone,
       full_name: respData.full_name,
-    });
+      // Campos adicionales para generación automática de sinónimos
+      ...(useEnhancedPayload && {
+        profession: respData?.profession || null,
+        city: respData?.city || null,
+        specialty: respData?.specialty || null,
+        approved_at: new Date().toISOString(),
+      }),
+    };
+
+    // Debug logging
+    if (useEnhancedPayload) {
+      console.log('[DEBUG] MQTT Payload para providers/approved:', JSON.stringify(mqttPayload, null, 2));
+    }
+
+    publishProviderApproved(mqttPayload);
 
     return respData;
   } catch (error) {

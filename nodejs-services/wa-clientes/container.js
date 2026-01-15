@@ -13,6 +13,7 @@ const SupabaseStore = require('./SupabaseStore');
 const config = require('./src/infrastructure/config/envConfig');
 const MessageSenderWithRetry = require('./src/infrastructure/messaging/MessageSenderWithRetry');
 const SocketIOServer = require('./src/infrastructure/websocket/SocketIOServer');
+const MqttClient = require('./src/infrastructure/mqtt/MqttClient');
 const AIServiceClient = require('./src/application/services/AIServiceClient');
 const TextMessageHandler = require('./src/application/handlers/TextMessageHandler');
 const HandlerRegistry = require('./src/application/handlers/HandlerRegistry');
@@ -25,6 +26,7 @@ class ServiceContainer {
     this._aiServiceClient = null;
     this._whatsappClient = null;
     this._messageSender = null;
+    this._mqttClient = null;
     this._handlerRegistry = null;
     this._app = null;
     this._httpServer = null;
@@ -50,6 +52,7 @@ class ServiceContainer {
     this._whatsappClient = null;
 
     this._messageSender = null;
+    this._mqttClient = null;
     this._handlerRegistry = null;
     this._app = null;
     this._httpServer = null;
@@ -63,6 +66,9 @@ class ServiceContainer {
   registerWhatsAppClient(client) {
     this._whatsappClient = client;
     this._messageSender = new MessageSenderWithRetry(client);
+
+    // Inicializar MQTT Client con el cliente de WhatsApp
+    this._mqttClient = new MqttClient(this._config.mqtt, client);
 
     // Inicializar HandlerRegistry y registrar handlers
     this._handlerRegistry = new HandlerRegistry();
@@ -102,6 +108,13 @@ class ServiceContainer {
    */
   get messageSender() {
     return this._messageSender;
+  }
+
+  /**
+   * Obtiene el MQTT Client
+   */
+  get mqttClient() {
+    return this._mqttClient;
   }
 
   /**

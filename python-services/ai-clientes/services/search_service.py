@@ -54,6 +54,12 @@ def _get_provider_repository():
     from services.providers.provider_repository import provider_repository
     return provider_repository
 
+
+def _get_synonym_learner():
+    """Obtener instancia de SynonymLearner (lazy)."""
+    from services.synonym_learner import synonym_learner
+    return synonym_learner
+
 # Config Proveedores service URL
 PROVEEDORES_AI_SERVICE_URL = os.getenv(
     "PROVEEDORES_AI_SERVICE_URL",
@@ -280,6 +286,175 @@ async def intelligent_search_providers(
 
 # Alias para compatibilidad con código existente
 intelligent_search_providers_remote = intelligent_search_providers
+
+
+# ============================================================================
+# BÚSQUEDA V2 - Enhanced Search (BACKWARD COMPATIBLE)
+# ============================================================================
+
+async def intelligent_search_providers_v2(
+    payload: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Búsqueda inteligente de proveedores V2 - Enhanced Search.
+
+    MEJORAS (Plan Mejoras Inmediatas - Enero 2026):
+    1. IntentClassifier: Clasifica intención (DIRECT vs NEED_BASED)
+    2. QueryExpander: Expande queries con sinónimos (cuando USE_QUERY_EXPANSION=True)
+    3. Smart Fallback: Búsqueda multi-etapa si <3 resultados (cuando USE_SMART_FALLBACK=True)
+
+    ESTRATEGIA BACKWARD COMPATIBLE:
+    - Los métodos existentes NO se modifican
+    - Este método V2 solo se usa si el feature flag está activado
+    - Si USE_INTENT_CLASSIFICATION=False, usa el flujo V1 original
+
+    Args:
+        payload: Dict con main_profession, location, actual_need
+
+    Returns:
+        Dict con providers, total, query_interpretation, search_metadata, intent_type
+    """
+    from core.feature_flags import USE_INTENT_CLASSIFICATION
+
+    # Si el feature flag está desactivado, usar flujo V1 (backward compatible)
+    if not USE_INTENT_CLASSIFICATION:
+        logger.debug("⚠️ USE_INTENT_CLASSIFICATION=False, usando flujo V1")
+        return await intelligent_search_providers(payload)
+
+    # Flujo V2 con IntentClassifier
+    profession = payload.get("main_profession", "")
+    location = payload.get("location", "")
+    need_summary = payload.get("actual_need", "")
+
+    # Construir query
+    if need_summary and need_summary != profession:
+        query = f"{need_summary} {profession} en {location}"
+    else:
+        query = f"{profession} en {location}"
+
+    logger.info(f"🔍 [V2] Buscando con IntentClassifier: query='{query}'")
+
+    try:
+        # Paso 1: Clasificar intención
+        from services.intent_classifier import get_intent_classifier
+
+        classifier = get_intent_classifier()
+        intent_type = classifier.classify_intent(query)
+
+        logger.info(f"🎯 [V2] Intent clasificado: {intent_type.value}")
+
+        # Paso 2: Si es NEED_BASED, inferir profesión
+        inferred_profession = profession
+        if intent_type.value == "need_based":
+            inferred_from_need = classifier.infer_profession_from_need(query)
+            if inferred_from_need:
+                inferred_profession = inferred_from_need
+                logger.info(
+                    f"🔮 [V2] Profesión inferida desde necesidad: "
+                    f"'{inferred_profession}'"
+                )
+
+        # Paso 3: Usar QueryInterpreterService para interpretación completa
+        query_interpreter_svc = _get_query_interpreter()
+        provider_repo = _get_provider_repository()
+
+        if not query_interpreter_svc or not provider_repo:
+            error_msg = "QueryInterpreterService o ProviderRepository no disponibles"
+            logger.error(f"❌ {error_msg}")
+            return {"ok": False, "providers": [], "total": 0, "error": error_msg}
+
+        # Interpretar query con IA
+        interpretation = await query_interpreter_svc.interpret_query(
+            user_message=query,
+            city_context=location,
+            semaphore=openai_semaphore,
+            timeout_seconds=OPENAI_TIMEOUT_SECONDS
+        )
+
+        # Usar profesión inferida si IntentClassifier detectó NEED_BASED
+        if intent_type.value == "need_based" and inferred_profession:
+            interpreted_profession = inferred_profession
+        else:
+            interpreted_profession = interpretation["profession"]
+
+        interpreted_city = interpretation["city"] or location
+        details = interpretation["details"]
+
+        # Validar que la profesión no sea un número puro
+        if interpreted_profession and str(interpreted_profession).strip().isdigit():
+            logger.warning(
+                f"⚠️ Profesión es un número puro: '{interpreted_profession}', rechazando búsqueda"
+            )
+            return {
+                "ok": False,
+                "providers": [],
+                "total": 0,
+                "error": "number_not_accepted",
+                "query_interpretation": {
+                    "profession": None,
+                    "city": location,
+                    "details": "Input no válido (número sin contexto)"
+                },
+                "intent_type": intent_type.value
+            }
+
+        logger.info(
+            f"🧠 [V2] Búsqueda final: profession='{interpreted_profession}', "
+            f"city='{interpreted_city}', intent='{intent_type.value}'"
+        )
+
+        # Paso 4: Buscar en Supabase
+        providers = await provider_repo.search_by_city_and_profession(
+            city=interpreted_city,
+            profession=interpreted_profession,
+            limit=10
+        )
+
+        total = len(providers)
+        logger.info(f"✅ [V2] Búsqueda completada: {total} proveedores")
+
+        # Paso 4.5: Aprendizaje automático de sinónimos (si está activado)
+        if total > 0:
+            synonym_learner_svc = _get_synonym_learner()
+            if synonym_learner_svc:
+                try:
+                    await synonym_learner_svc.learn_from_search(
+                        query=query,
+                        matched_profession=interpreted_profession,
+                        num_results=total,
+                        city=interpreted_city,
+                        context={
+                            "intent_type": intent_type.value,
+                            "inferred_profession": inferred_profession,
+                            "search_strategy": "intent_classifier_v2"
+                        }
+                    )
+                except Exception as e:
+                    logger.warning(f"⚠️ Error en aprendizaje automático: {e}")
+
+        return {
+            "ok": True,
+            "providers": providers,
+            "total": total,
+            "query_interpretation": {
+                "profession": interpreted_profession,
+                "city": interpreted_city,
+                "details": details
+            },
+            "search_metadata": {
+                "strategy": "intent_classifier_v2",
+                "version": "2.0",
+                "intent_type": intent_type.value,
+                "inferred_profession": inferred_profession if intent_type.value == "need_based" else None,
+                "ai_enhanced": True,
+            }
+        }
+
+    except Exception as exc:
+        logger.error(f"❌ [V2] Error en búsqueda: {exc}")
+        # Fallback a V1 en caso de error
+        logger.info("🔄 [V2] Fallback a flujo V1 por error")
+        return await intelligent_search_providers(payload)
 
 
 # ============================================================================

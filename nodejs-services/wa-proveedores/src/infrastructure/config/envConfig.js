@@ -73,6 +73,8 @@ class EnvConfig {
       topicResponse: process.env.MQTT_TEMA_RESPUESTA || 'av-proveedores/respuesta',
       topicApproved: process.env.MQTT_TEMA_PROVEEDOR_APROBADO || 'providers/approved',
       topicRejected: process.env.MQTT_TEMA_PROVEEDOR_RECHAZADO || 'providers/rejected',
+      // MQTT MIGRATION Fase 1: Topic para enviar mensajes WhatsApp
+      topicWhatsappSend: process.env.MQTT_TEMA_WHATSAPP_SEND || 'whatsapp/proveedores/send',
       maxResponses: 5
     };
   }

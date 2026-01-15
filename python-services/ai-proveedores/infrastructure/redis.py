@@ -30,8 +30,9 @@ class RedisClient:
                     settings.redis_url,
                     password=settings.redis_password,
                     decode_responses=True,
-                    socket_timeout=10,  # Aumentado timeout
-                    socket_connect_timeout=10,
+                    socket_timeout=30,  # Aumentado timeout para evitar "Connection lost"
+                    socket_connect_timeout=15,  # Timeout de conexión aumentado
+                    health_check_interval=30,  # Health check cada 30 segundos
                 )
                 # Test connection
                 assert self.redis_client is not None

@@ -87,7 +87,7 @@ class MqttClient {
    * @private
    */
   _setupSubscriptions() {
-    const { topicRequest, topicApproved, topicRejected } = this.config;
+    const { topicRequest, topicApproved, topicRejected, topicWhatsappSend } = this.config;
 
     this.client.subscribe(topicRequest, err => {
       if (err) {
@@ -112,6 +112,15 @@ class MqttClient {
         console.warn(`✅ Suscrito a ${topicRejected}`);
       }
     });
+
+    // MQTT MIGRATION Fase 1: Suscribirse a topic de envío de mensajes
+    this.client.subscribe(topicWhatsappSend, err => {
+      if (err) {
+        console.error('❌ No se pudo suscribir a whatsapp/send:', err.message || err);
+      } else {
+        console.warn(`✅ Suscrito a ${topicWhatsappSend} (MQTT Fase 1)`);
+      }
+    });
   }
 
   /**
@@ -121,7 +130,7 @@ class MqttClient {
    * @param {Buffer} message - Contenido del mensaje
    */
   async _handleMessage(topic, message) {
-    const { topicRequest, topicApproved, topicRejected } = this.config;
+    const { topicRequest, topicApproved, topicRejected, topicWhatsappSend } = this.config;
     const data = JSON.parse(message.toString());
 
     if (topic === topicRequest) {
@@ -136,6 +145,12 @@ class MqttClient {
 
     if (topic === topicRejected) {
       await this._handleProviderRejected(data);
+      return;
+    }
+
+    // MQTT MIGRATION Fase 1: Manejar envío de mensajes WhatsApp
+    if (topic === topicWhatsappSend) {
+      await this._handleWhatsappSend(data);
       return;
     }
   }
@@ -488,6 +503,35 @@ class MqttClient {
     const saludo = nombreCorto ? `Hola ${nombreCorto},` : 'Hola,';
     const motivo = notas && String(notas).trim().length > 0 ? ` Motivo: ${notas}` : '';
     return `${saludo} 🚫 tu registro fue revisado y requiere ajustes.${motivo} Puedes actualizar tus datos y volver a enviarlos cuando estés listo.`;
+  }
+
+  /**
+   * Maneja envío de mensajes WhatsApp vía MQTT (Fase 1)
+   * @private
+   * @param {object} mqttMessage - Mensaje MQTT según estándar MQTTMessage
+   */
+  async _handleWhatsappSend(mqttMessage) {
+    // Extraer payload del estándar MQTTMessage
+    // Formato: { message_id, timestamp, source_service, type, payload: { phone/message, message } }
+    const payload = mqttMessage?.payload || mqttMessage; // Fallback por compatibilidad
+
+    const phone = payload?.phone || payload?.to;
+    const message = payload?.message;
+
+    if (!phone || !message) {
+      console.warn('⚠️ Mensaje MQTT whatsapp/send sin phone/message en payload, se ignora:', mqttMessage);
+      return;
+    }
+
+    try {
+      // Normalizar número y enviar
+      const normalizedPhone = this._normalizeWhatsAppNumber(phone);
+      await this._sendText(normalizedPhone, message);
+
+      console.warn(`✅ Mensaje WhatsApp enviado vía MQTT a ${phone} (topic=whatsapp/proveedores/send)`);
+    } catch (err) {
+      console.error(`❌ Error enviando mensaje WhatsApp vía MQTT a ${phone}:`, err.message || err);
+    }
   }
 
   /**

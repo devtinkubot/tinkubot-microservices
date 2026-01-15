@@ -26,25 +26,6 @@ class CustomerFilter:
     has_consent: Optional[bool] = None
 
 
-@dataclass
-class ProviderFilter:
-    """
-    Criterios de filtrado para búsquedas de proveedores.
-
-    Attributes:
-        phone: Filtrar por número de teléfono (exact match)
-        city: Filtrar por ciudad (normalizada)
-        profession: Filtrar por profesión (normalizada)
-        verified: Filtrar por estado de verificación
-        available: Filtrar por disponibilidad
-    """
-    phone: Optional[str] = None
-    city: Optional[str] = None
-    profession: Optional[str] = None
-    verified: Optional[bool] = None
-    available: Optional[bool] = None
-
-
 class ICustomerRepository(IRepository):
     """
     Interfaz para repositorio de clientes.

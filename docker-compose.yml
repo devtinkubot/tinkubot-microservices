@@ -21,6 +21,7 @@ services:
       - ADMIN_USER=${ADMIN_USER}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       - NODE_ENV=production
+      - ENHANCED_MQTT_PAYLOAD=true
     networks:
       - tinkubot-network
     restart: unless-stopped
@@ -131,6 +132,10 @@ services:
       - MQTT_TEMA_SOLICITUD=${MQTT_TEMA_SOLICITUD:-av-proveedores/solicitud}
       - MQTT_TEMA_RESPUESTA=${MQTT_TEMA_RESPUESTA:-av-proveedores/respuesta}
       - NODE_ENV=production
+      - USE_INTENT_CLASSIFICATION=true
+      - USE_QUERY_EXPANSION=true
+      - USE_SYNONYM_LEARNING=true
+      - USE_AUTO_SYNONYM_GENERATION=true
     networks:
       - tinkubot-network
     restart: unless-stopped

@@ -117,16 +117,14 @@ def determinar_estado_registro_proveedor(
         return False
 
     # DEBUG: Log para depurar
-    import logging
-    logger = logging.getLogger(__name__)
-    logger.warning(f"🔍 DEBUG - Estado registro para {provider_profile.get('phone')}:")
-    logger.warning(f"  - id: {bool(provider_profile.get('id'))}")
-    logger.warning(f"  - full_name: {bool(provider_profile.get('full_name'))}")
-    logger.warning(f"  - profession: {bool(provider_profile.get('profession'))}")
-    logger.warning(f"  - verified: {bool(provider_profile.get('verified'))}")
-    logger.warning(f"  - dni_front: {bool(provider_profile.get('dni_front_photo_url'))}")
-    logger.warning(f"  - dni_back: {bool(provider_profile.get('dni_back_photo_url'))}")
-    logger.warning(f"  - face: {bool(provider_profile.get('face_photo_url'))}")
+    logger.debug(f"🔍 DEBUG - Estado registro para {provider_profile.get('phone')}:")
+    logger.debug(f"  - id: {bool(provider_profile.get('id'))}")
+    logger.debug(f"  - full_name: {bool(provider_profile.get('full_name'))}")
+    logger.debug(f"  - profession: {bool(provider_profile.get('profession'))}")
+    logger.debug(f"  - verified: {bool(provider_profile.get('verified'))}")
+    logger.debug(f"  - dni_front: {bool(provider_profile.get('dni_front_photo_url'))}")
+    logger.debug(f"  - dni_back: {bool(provider_profile.get('dni_back_photo_url'))}")
+    logger.debug(f"  - face: {bool(provider_profile.get('face_photo_url'))}")
 
     # Para ser considerado registrado, debe tener las 3 fotos o estar verificado
     has_all_photos = all([
@@ -136,8 +134,8 @@ def determinar_estado_registro_proveedor(
     ])
 
     result = bool(provider_profile.get("verified") or has_all_photos)
-    logger.warning(f"  - has_all_photos: {has_all_photos}")
-    logger.warning(f"  - RESULT: {result}")
+    logger.debug(f"  - has_all_photos: {has_all_photos}")
+    logger.debug(f"  - RESULT: {result}")
 
     # Está verificado o tiene todas las fotos completas
     return result
