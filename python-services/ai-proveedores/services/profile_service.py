@@ -156,10 +156,22 @@ async def actualizar_servicios_proveedor(
         Lista de servicios limpios y sanitizados
 
     Raises:
+        ValueError: Si servicios no es una lista válida
         Exception: Si hay error al actualizar en Supabase
     """
     if not supabase:
         return servicios
+
+    # Validar que servicios sea una lista
+    if not isinstance(servicios, list):
+        logger.error(
+            "❌ actualizar_servicios_proveedor: servicios debe ser una lista, recibido: %s",
+            type(servicios),
+        )
+        raise ValueError("servicios debe ser una lista")
+
+    # Asegurar que no sea None
+    servicios = servicios or []
 
     servicios_limpios = sanitizar_servicios(servicios)
     cadena_servicios = formatear_servicios(servicios_limpios)

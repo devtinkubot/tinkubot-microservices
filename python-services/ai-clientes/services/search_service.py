@@ -24,6 +24,7 @@ from utils.service_catalog import COMMON_SERVICE_SYNONYMS, COMMON_SERVICES
 from utils.services_utils import (
     ECUADOR_CITY_SYNONYMS,
     _normalize_text_for_matching,
+    normalize_profession,
 )
 
 # Nuevos servicios (Sprint 2.4) - Lazy import para evitar import antes de inicialización
@@ -227,7 +228,7 @@ async def intelligent_search_providers(
             timeout_seconds=OPENAI_TIMEOUT_SECONDS
         )
 
-        interpreted_profession = interpretation["profession"]
+        interpreted_profession = _normalize_text_for_matching(interpretation["profession"])
         interpreted_city = interpretation["city"] or location
         details = interpretation["details"]
 
@@ -373,9 +374,9 @@ async def intelligent_search_providers_v2(
 
         # Usar profesión inferida si IntentClassifier detectó NEED_BASED
         if intent_type.value == "need_based" and inferred_profession:
-            interpreted_profession = inferred_profession
+            interpreted_profession = _normalize_text_for_matching(inferred_profession)
         else:
-            interpreted_profession = interpretation["profession"]
+            interpreted_profession = _normalize_text_for_matching(interpretation["profession"])
 
         interpreted_city = interpretation["city"] or location
         details = interpretation["details"]

@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 from utils.db_utils import run_supabase
 from repositories.interfaces import IProviderRepository
 from core.exceptions import RepositoryError
+from utils.services_utils import _normalize_text_for_matching
 
 logger = logging.getLogger(__name__)
 
@@ -69,9 +70,10 @@ class ProviderRepository(IProviderRepository):
             # Filtro de verificados (siempre)
             query = query.eq("verified", True)
 
-            # Filtro por ciudad si se proporciona
+            # Filtro por ciudad si se proporciona (normalizado para quitar tildes)
             if city and city.strip():
-                query = query.ilike("city", f"%{city}%")
+                normalized_city = _normalize_text_for_matching(city)
+                query = query.ilike("city", f"%{normalized_city}%")
 
             # Filtro por profesión usando OR con todas las canónicas
             # Y TAMBIÉN buscar en services (texto de servicios que ofrece el proveedor)
@@ -124,20 +126,21 @@ class ProviderRepository(IProviderRepository):
             Lista de profesiones canónicas (vacía si no hay)
         """
         try:
-            # Buscar el sinónimo en service_synonyms
+            # Buscar el sinónimo en service_synonyms (normalizado para quitar tildes)
+            normalized_synonym = _normalize_text_for_matching(synonym)
             result = await run_supabase(
                 lambda: self.supabase.table("service_synonyms")
                 .select("canonical_profession")
-                .eq("synonym", synonym.lower())
+                .eq("synonym", normalized_synonym)
                 .eq("active", True)
                 .execute(),
                 label="service_synonyms.get_canonical"
             )
 
             if result.data:
-                # Extraer profesiones canónicas únicas
+                # Extraer profesiones canónicas únicas y normalizarlas (quitar tildes)
                 canonical_professions = list(set([
-                    row["canonical_profession"] for row in result.data
+                    _normalize_text_for_matching(row["canonical_profession"]) for row in result.data
                 ]))
                 logger.debug(f"🔍 Sinónimo '{synonym}' → {canonical_professions}")
                 return canonical_professions

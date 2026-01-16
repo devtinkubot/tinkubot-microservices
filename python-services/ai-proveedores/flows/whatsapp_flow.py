@@ -7,7 +7,7 @@ import re
 from typing import Any, Callable, Dict, List, Optional
 
 from services.flow_service import establecer_flujo, reiniciar_flujo
-from services.profile_service import actualizar_servicios_proveedor
+from services.profile_service import actualizar_servicios_proveedor, refrescar_cache_perfil_proveedor
 from services.image_service import subir_medios_identidad
 from services.provider_update_service import (
     actualizar_redes_sociales,
@@ -482,19 +482,28 @@ class WhatsAppFlow:
             servicios_finales = await actualizar_servicios_proveedor(
                 supabase, provider_id, servicios_actualizados
             )
-        except Exception:
+            # Refrescar caché de Redis para que el menú muestre los servicios actualizados
+            phone_limpio = phone.split("@")[0] if "@" in phone else phone
+            await refrescar_cache_perfil_proveedor(supabase, phone_limpio)
+            # Solo actualizar el flow si la actualización fue exitosa
+            flow["services"] = servicios_finales
             flow["state"] = "awaiting_service_action"
             await establecer_flujo(phone, flow)
+        except Exception as exc:
+            # Restaurar estado anterior del flow si falla
+            flow["state"] = "awaiting_service_action"
+            await establecer_flujo(phone, flow)
+            logger.error(
+                "❌ Error agregando servicios para proveedor %s: %s",
+                provider_id,
+                exc,
+            )
             return {
                 "success": False,
                 "response": (
                     "No pude guardar el servicio en este momento. Intenta nuevamente más tarde."
                 ),
             }
-
-        flow["services"] = servicios_finales
-        flow["state"] = "awaiting_service_action"
-        await establecer_flujo(phone, flow)
 
         if len(nuevos_recortados) == 1:
             agregado_msg = f"Servicio agregado: *{nuevos_recortados[0]}*."
@@ -565,6 +574,9 @@ class WhatsAppFlow:
             servicios_finales = await actualizar_servicios_proveedor(
                 supabase, provider_id, servicios_actuales
             )
+            # Refrescar caché de Redis para que el menú muestre los servicios actualizados
+            phone_limpio = phone.split("@")[0] if "@" in phone else phone
+            await refrescar_cache_perfil_proveedor(supabase, phone_limpio)
         except Exception:
             # Restaurar lista local si falla
             servicios_actuales.insert(indice, servicio_eliminado)
