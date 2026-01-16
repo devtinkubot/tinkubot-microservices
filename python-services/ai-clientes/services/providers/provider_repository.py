@@ -339,6 +339,107 @@ class ProviderRepository(IProviderRepository):
             logger.error(f"❌ Error deleting provider {entity_id}: {e}")
         return False
 
+    async def search_by_service_and_city(
+        self,
+        service: str,
+        city: str,
+        professions: Optional[List[str]] = None,
+        limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        Busca providers que ofrecen un servicio específico en una ciudad.
+
+        Este método está diseñado para el servicio de matching servicio→profesión.
+        Busca en el campo services_list (JSONB) usando operadores PostgreSQL.
+
+        Args:
+            service: Servicio específico a buscar (ej: "inyección", "suero")
+            city: Ciudad donde se busca el servicio
+            professions: Lista opcional de profesiones a filtrar
+            limit: Máximo número de resultados (default: 10)
+
+        Returns:
+            Lista de proveedores encontrados (vacía si hay error)
+
+        Example:
+            >>> providers = await repo.search_by_service_and_city(
+            ...     service="inyección",
+            ...     city="cuenca",
+            ...     professions=["enfermero", "médico"]
+            ... )
+        """
+        try:
+            # Normalizar ciudad para búsqueda
+            normalized_city = _normalize_text_for_matching(city)
+            normalized_service = _normalize_text_for_matching(service)
+
+            # Construir query
+            query = self.supabase.table("providers").select("*")
+
+            # Filtro de verificados (siempre)
+            query = query.eq("verified", True)
+
+            # Filtro por ciudad (normalizado)
+            if normalized_city:
+                query = query.ilike("city", f"%{normalized_city}%")
+
+            # Filtro por servicio específico
+            # Buscar en services_list (JSONB array) y services (texto)
+            if normalized_service:
+                # Estrategia 1: Buscar en services_list usando contains (JSONB)
+                # Esto es más preciso para arrays JSON
+                # Nota: Supabase no soporta directamente @> en API, usamos CS (contains)
+                service_filter = f"services_list.cs.{normalized_service}"
+                query = query.filter(service_filter)
+
+                # Estrategia 2: También buscar en services (texto) como fallback
+                # Esto cubre casos donde services_list no está poblado
+                query = query.or_(f"services.ilike.%{normalized_service}%")
+
+            # Filtro opcional por profesiones
+            if professions:
+                # Construir condiciones OR para profesiones
+                prof_conditions = [
+                    f"profession.ilike.%{_normalize_text_for_matching(p)}%"
+                    for p in professions
+                ]
+                if prof_conditions:
+                    query = query.or_(", ".join(prof_conditions))
+
+            # Ordenar por rating y limitar
+            query = query.order("rating", desc=True).limit(limit)
+
+            result = await run_supabase(
+                lambda: query.execute(),
+                label="providers.search_by_service",
+            )
+
+            if result.data:
+                logger.info(
+                    f"✅ Found {len(result.data)} providers for service '{service}' "
+                    f"in city='{city}' (professions={professions})"
+                )
+                # Log individual providers for debugging
+                for p in result.data[:5]:  # Log first 5 only
+                    logger.info(
+                        f"   - {p.get('full_name', 'N/A')} | "
+                        f"profession={p.get('profession', 'N/A')} | "
+                        f"services={p.get('services', 'N/A')[:50]}"
+                    )
+            else:
+                logger.warning(
+                    f"⚠️ No providers found for service '{service}' "
+                    f"in city='{city}' (professions={professions})"
+                )
+
+            return result.data if result.data else []
+
+        except Exception as e:
+            logger.error(
+                f"❌ Error searching providers by service (service={service}, city={city}): {e}"
+            )
+            return []
+
 
 # ============================================================================
 # INSTANCIA GLOBAL (se inicializa en main.py)

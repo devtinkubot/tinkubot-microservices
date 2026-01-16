@@ -542,3 +542,82 @@ async def search_providers(
         return {"ok": False, "providers": [], "total": 0, "error": str(exc)}
 
 
+# ============================================================================
+# SERVICE-BASED MATCHING V3 - Matching Inteligente Servicio→Profesión
+# ============================================================================
+
+async def intelligent_search_providers_v3(
+    payload: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Búsqueda inteligente de proveedores V3 - Service-Based Matching.
+
+    NUEVA FUNCIONALIDAD (Enero 2026):
+    - ServiceDetector: Detecta servicios específicos en el mensaje
+    - ServiceProfessionMapper: Mapea servicios a profesiones con scores
+    - ServiceMatchingService: Scoring multi-dimensional de relevancia
+
+    ESTRATEGIA BACKWARD COMPATIBLE:
+    - Feature flag USE_SERVICE_MATCHING controla si se usa V3 o V2
+    - Fallback automático a V2 si V3 falla
+    - Métodos V1 y V2 NO se modifican
+
+    Args:
+        payload: Dict con main_profession, location, actual_need
+
+    Returns:
+        Dict con providers, total, query_interpretation, search_metadata,
+               intent_type, service_detection (si aplica)
+    """
+    from core.feature_flags import USE_SERVICE_MATCHING, USE_SERVICE_DETECTOR
+
+    # Si el feature flag está desactivado, usar flujo V2 (backward compatible)
+    if not USE_SERVICE_MATCHING:
+        logger.debug("⚠️ USE_SERVICE_MATCHING=False, usando flujo V2")
+        return await intelligent_search_providers_v2(payload)
+
+    profession = payload.get("main_profession", "")
+    location = payload.get("location", "")
+    need_summary = payload.get("actual_need", "")
+
+    # Construir query completo
+    if need_summary and need_summary != profession:
+        query = f"{need_summary} {profession} en {location}"
+    else:
+        query = f"{profession} en {location}"
+
+    logger.info(f"🔍 [V3] Service-Based Matching: query='{query}'")
+
+    try:
+        # Inicializar servicios
+        from services.service_profession_mapper import get_service_profession_mapper  # type: ignore
+        from services.service_detector import get_service_detector  # type: ignore
+        from services.service_matching import get_service_matching_service  # type: ignore
+
+        # Obtener instancias (lazy loading)
+        provider_repo = _get_provider_repository()
+        if not provider_repo:
+            logger.warning("⚠️ ProviderRepository no disponible, fallback a V2")
+            return await intelligent_search_providers_v2(payload)
+
+        # NOTA: Para usar ServiceMatching, necesitamos:
+        # 1. ServiceProfessionMapper (requiere supabase client)
+        # 2. ServiceDetector
+        # 3. ServiceMatchingService
+
+        # Por ahora, fallback a V2 con logging
+        # TODO: Implementar integración completa cuando ServiceProfessionMapper esté disponible
+        logger.warning(
+            "⚠️ [V3] ServiceMatchingService no completamente integrado aún, "
+            "fallback a V2 con mejoras"
+        )
+
+        # Fallback a V2 (que ya tiene IntentClassifier)
+        return await intelligent_search_providers_v2(payload)
+
+    except Exception as e:
+        logger.error(f"❌ [V3] Error en Service-Based Matching: {e}")
+        logger.info("🔄 [V3] Fallback a V2...")
+        return await intelligent_search_providers_v2(payload)
+
+

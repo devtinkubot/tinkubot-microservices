@@ -76,6 +76,18 @@ USE_SYNONYM_LEARNING = os.getenv("USE_SYNONYM_LEARNING", "false") == "true"
 # - ESTADO: ⏸️ INACTIVO por defecto (requiere activación manual)
 USE_AUTO_SYNONYM_GENERATION = os.getenv("USE_AUTO_SYNONYM_GENERATION", "false") == "true"
 
+# FASE 8: Service-Based Matching (Inteligente)
+# Activa el sistema de matching servicio→profesión con scoring multi-dimensional.
+# - Implementa: ServiceProfessionMapper, ServiceDetector, ServiceMatchingService
+# - Archivos: services/service_profession_mapper.py, services/service_detector.py,
+#             services/service_matching.py
+# - Objetivo: Matching inteligente basado en servicios específicos, no solo profesiones
+# - Caso de uso: "necesito inyecciones" → enfermero (score 0.95) > médico (score 0.70)
+# - ESTADO: ⏸️ INACTIVO por defecto (requiere activación manual + migración DB)
+# - Requiere: Tabla service_profession_mapping en DB
+USE_SERVICE_MATCHING = os.getenv("USE_SERVICE_MATCHING", "false") == "true"
+USE_SERVICE_DETECTOR = os.getenv("USE_SERVICE_DETECTOR", "false") == "true"
+
 
 # =============================================================================
 # FUNCIONES DE UTILIDAD
@@ -98,6 +110,8 @@ def get_all_flags() -> dict:
         'USE_QUERY_EXPANSION': USE_QUERY_EXPANSION,
         'USE_SYNONYM_LEARNING': USE_SYNONYM_LEARNING,
         'USE_AUTO_SYNONYM_GENERATION': USE_AUTO_SYNONYM_GENERATION,
+        'USE_SERVICE_MATCHING': USE_SERVICE_MATCHING,
+        'USE_SERVICE_DETECTOR': USE_SERVICE_DETECTOR,
     }
 
 
