@@ -48,7 +48,6 @@ from services.consent.consent_service import ConsentService
 from services.customer.customer_service import CustomerService
 from services.media_service import MediaService
 from services.message_processor_service import MessageProcessorService
-from services.messaging_service import MessagingService
 from services.conversation_orchestrator import ConversationOrchestrator
 from services.search_service import (
     extract_profession_and_location,
@@ -232,8 +231,6 @@ async def reset_flow(phone: str) -> None:
 # ============================================================================
 
 # Servicios base
-messaging_service = MessagingService(supabase_client=supabase) if supabase else None
-
 customer_service = CustomerService(supabase_client=supabase) if supabase else None
 
 consent_service = ConsentService(supabase_client=supabase) if supabase else None
@@ -255,7 +252,6 @@ initialize_openai_semaphore()                    # Inicializa semáforo para bú
 background_search_service = BackgroundSearchService(
     search_service=search_providers,
     availability_coordinator=availability_coordinator,
-    messaging_service=messaging_service,
     session_manager=session_manager,
     templates={
         "mensaje_intro_listado_proveedores": mensaje_intro_listado_proveedores,
@@ -269,7 +265,7 @@ background_search_service = BackgroundSearchService(
         "pie_instrucciones_respuesta_numerica": pie_instrucciones_respuesta_numerica,
         "opciones_confirmar_nueva_busqueda_textos": opciones_confirmar_nueva_busqueda_textos,
     },
-) if (messaging_service and availability_coordinator) else None
+) if availability_coordinator else None
 
 # Servicio de procesamiento de mensajes
 message_processor_service = MessageProcessorService(
@@ -287,7 +283,6 @@ conversation_orchestrator = ConversationOrchestrator(
     consent_service=consent_service,
     search_providers=search_providers,
     availability_coordinator=availability_coordinator,
-    messaging_service=messaging_service,
     background_search_service=background_search_service,
     media_service=media_service,
     session_manager=session_manager,

@@ -54,6 +54,9 @@ WORKDIR /usr/src/app
 COPY package*.json ./
 # Usar npm install y omitir devDependencies para imagen más ligera
 RUN npm install --omit=dev --production
+# Aplicar parche temporal para whatsapp-web.js markedUnread error (PR #5719)
+# Cambia SendSeen.sendSeen por SendSeen.markSeen para arreglar TypeError: Cannot read properties of undefined (reading 'markedUnread')
+RUN sed -i 's/window\.Store\.SendSeen\.sendSeen(chat)/window.Store.SendSeen.markSeen(chat)/g' node_modules/whatsapp-web.js/src/util/Injected/Utils.js
 
 # Copiar el resto del código de la aplicación
 COPY . .

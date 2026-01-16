@@ -24,7 +24,6 @@ class BackgroundSearchService:
         self,
         search_service,  # Función search_providers
         availability_coordinator,
-        messaging_service,
         session_manager,
         templates: Dict[str, Any],
     ):
@@ -33,14 +32,12 @@ class BackgroundSearchService:
 
         Args:
             search_service: Función search_providers para búsqueda de proveedores
-            availability_coordinator: Coordinator para verificar disponibilidad
-            messaging_service: Servicio para envío de mensajes WhatsApp
+            availability_coordinator: Coordinator para verificar disponibilidad y enviar mensajes WhatsApp
             session_manager: Gestor de sesiones de Redis
             templates: Diccionario con templates de mensajes necesarios
         """
         self.search_service = search_service
         self.availability_coordinator = availability_coordinator
-        self.messaging_service = messaging_service
         self.session_manager = session_manager
         self.templates = templates
 
@@ -98,7 +95,7 @@ class BackgroundSearchService:
             # Enviar mensajes por WhatsApp
             for msg in messages_to_send:
                 if msg:
-                    await self.messaging_service.send_whatsapp_text(phone, msg)
+                    await self.availability_coordinator.send_whatsapp_message(phone, msg)
                     try:
                         await self.session_manager.save_session(phone, msg, is_bot=True)
                     except Exception:

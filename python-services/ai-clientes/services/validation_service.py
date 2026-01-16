@@ -148,21 +148,39 @@ async def validate_content_with_ai(
     logger.info(f"🔍 Validando contenido con IA: '{text[:50]}...' (phone: {phone})")
 
     system_prompt = """
-Eres un moderador de contenido experto. Detecta si el texto contiene:
+Eres un moderador de contenido para un bot de búsqueda de servicios. Tu tarea es detectar contenido problemático.
 
-1. CONTENIDO ILEGAL O INAPROPIADO:
-   - Armas, violencia, delitos, actividades criminales
-   - Drogas, sustancias ilegales, narcóticos
-   - Servicios sexuales, prostitución, contenido pornográfico
-   - Tráfico de órganos, compra/venta de órganos (riñón, hígado, corazón, etc.)
-   - Explotación infantil, servicios con niños/menores, pederastia
-   - Tráfico de personas, esclavitud, explotación sexual forzada
-   - Odio, discriminación, acoso
+IMPORTANTE: Si el usuario busca un servicio legítimo, SIEMPRE marca como válido, incluso si el texto es corto o informal.
 
-2. INPUT SIN SENTIDO O FALSO:
-   - "necesito dinero" (cuando NO busca préstamos, es engañoso)
-   - "dinero abeja" (sin sentido, alucinación)
-   - Textos que no expresan una necesidad real de servicio
+=== CONTENIDO VÁLIDO (is_valid: true, category: "valid") ===
+- Búsqueda de servicios profesionales: plomero, electricista, doctor, abogado, etc.
+- Construcción, reparación, mantenimiento
+- Servicios de belleza, salud, educación
+- Textos informales pero claros: "necesito albañil", "quiero página web", "ayuda con mi techo"
+- Mensajes que describen un problema: "mi tubería gotea", "necesito cortar el césped"
+
+=== CONTENIDO ILEGAL O INAPROPIADO (is_valid: false, category: "illegal" o "inappropriate") ===
+- Armas, violencia, delitos, actividades criminales
+- Drogas, sustancias ilegales, narcóticos
+- Servicios sexuales, prostitución, contenido pornográfico
+- Tráfico de órganos, compra/venta de órganos humanos
+- Explotación infantil, servicios con menores
+- Tráfico de personas, esclavitud
+- Odio, discriminación, acoso
+
+=== INPUT SIN SENTIDO (is_valid: false, category: "nonsense") ===
+- Textos completamente incomprensibles: "xyz abc 123", "asdfgh"
+- Palabras aleatorias sin contexto
+- "dinero abeja" o similares (alucinaciones)
+
+=== FALSO/ENGAÑOSO (is_valid: false, category: "false") ===
+- "necesito dinero" (cuando NO menciona préstamo ni servicio financiero)
+- Textos que claramente no buscan un servicio
+
+Reglas CLAVE:
+1. Cuando haya DUDA, marca como VÁLIDO
+2. Las búsquedas de servicios en lenguaje informal son VÁLIDAS
+3. "necesito [servicio]" SIEMPRE es válido si el servicio existe
 
 Responde SOLO con JSON:
 {
@@ -212,7 +230,7 @@ Responde SOLO con JSON:
             content = re.sub(r"^```(?:json)?", "", content, flags=re.IGNORECASE).strip()
             content = re.sub(r"```$", "", content).strip()
 
-        logger.debug(f"🔍 Respuesta validación IA: {content}")
+        logger.info(f"🔍 [DEBUG] Respuesta validación IA cruda: {content}")
 
         parsed = _safe_json_loads(content)
         if not parsed or not isinstance(parsed, dict):
@@ -229,7 +247,17 @@ Responde SOLO con JSON:
             return True, None, None
 
         # Caso 2: Input sin sentido o falso (NO banea, solo rechaza)
+        # PERO: si el reason indica que es legítimo, permitimos
         if category in ("nonsense", "false"):
+            # Verificar si el reason indica que es legítimo (GPT a veces se contradice)
+            reason_lower = reason.lower()
+            positive_indicators = ["legítimo", "legitimo", "válido", "valido", "solicitud", "servicio", "real"]
+            is_legitimate = any(indicator in reason_lower for indicator in positive_indicators)
+
+            if is_legitimate:
+                logger.info(f"✅ Mensaje marcado como '{category}' pero reason indica legítimo: '{text[:30]}...'")
+                return True, None, None
+
             logger.info(f"❌ Input sin sentido detectado: '{text[:30]}...' - {reason}")
             return False, mensaje_error_input, None
 

@@ -101,7 +101,6 @@ class ConversationOrchestrator:
         consent_service,
         search_providers,
         availability_coordinator,
-        messaging_service,
         background_search_service,
         media_service,
         session_manager,
@@ -116,8 +115,7 @@ class ConversationOrchestrator:
             customer_service: Servicio para gestión de clientes
             consent_service: Servicio para validación de consentimientos
             search_providers: Función para búsqueda de proveedores
-            availability_coordinator: Coordinador de disponibilidad
-            messaging_service: Servicio de mensajería WhatsApp
+            availability_coordinator: Coordinador de disponibilidad y mensajería WhatsApp
             background_search_service: Servicio de búsqueda en segundo plano
             media_service: Servicio para gestión de media
             session_manager: Gestor de sesiones Redis
@@ -129,7 +127,6 @@ class ConversationOrchestrator:
         self.consent_service = consent_service
         self.search_providers = search_providers
         self.availability_coordinator = availability_coordinator
-        self.messaging_service = messaging_service
         self.background_search_service = background_search_service
         self.media_service = media_service
         self.session_manager = session_manager

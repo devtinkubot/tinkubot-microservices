@@ -226,31 +226,53 @@ def normalize_profession(value: Optional[str]) -> str:
     """
     Normaliza profesión a formato estándar.
 
+    - Elimina preposiciones comunes (de, en, del, los, la, el, un, una)
     - Convierte a Sentence Case (solo primera letra mayúscula)
     - Preserva acentos
     - Elimina espacios extras
+
+    Esto permite que "ingeniero de sistemas", "ingeniero en sistemas" e
+    "ingeniero sistemas" se normalicen a la misma forma canónica:
+    "Ingeniero sistemas".
 
     Args:
         value: Profesión a normalizar
 
     Returns:
-        Profesión normalizada en Sentence Case
+        Profesión normalizada en Sentence Case sin preposiciones
 
     Examples:
-        >>> normalize_profession("ingeniero civil")
-        "Ingeniero civil"
+        >>> normalize_profession("ingeniero de sistemas")
+        "Ingeniero sistemas"
+        >>> normalize_profession("ingeniero en sistemas")
+        "Ingeniero sistemas"
         >>> normalize_profession("ABOGADO")
         "Abogado"
     """
     if not value:
         return ""
 
+    # Preposiciones y artículos comunes a eliminar (en minúsculas)
+    prepositions = {"de", "en", "del", "los", "la", "el", "un", "una"}
+
+    # Limpiar espacios extras
     cleaned = " ".join(value.strip().split())
 
     if not cleaned:
         return ""
 
-    return cleaned[0].upper() + cleaned[1:].lower() if len(cleaned) > 1 else cleaned.upper()
+    # Eliminar preposiciones (case-insensitive)
+    words = cleaned.lower().split()
+    filtered = [w for w in words if w not in prepositions]
+
+    # Reconstruir string
+    normalized = " ".join(filtered)
+
+    if not normalized:
+        return ""
+
+    # Convertir a Sentence Case
+    return normalized[0].upper() + normalized[1:].lower() if len(normalized) > 1 else normalized.upper()
 
 
 def normalize_email(value: Optional[str]) -> Optional[str]:

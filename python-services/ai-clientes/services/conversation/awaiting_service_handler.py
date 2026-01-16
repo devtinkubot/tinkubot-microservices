@@ -106,7 +106,9 @@ class AwaitingServiceHandler(MessageHandler):
         if not is_valid:
             return await respond(flow, {"response": error_msg})
 
-        # 2. AI content validation
+        # 2. AI content validation - VALIDACIÓN DE CONTENIDO CON IA
+        # Detecta contenido ilegal, inapropiado, o sin sentido
+        # Prompt mejorado para minimizar falsos positivos en búsquedas legítimas
         should_proceed, warning_msg, ban_msg = await validate_content_with_ai(
             text or "",
             phone,

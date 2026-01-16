@@ -74,9 +74,23 @@ class ProviderRepository(IProviderRepository):
                 query = query.ilike("city", f"%{city}%")
 
             # Filtro por profesión usando OR con todas las canónicas
+            # Y TAMBIÉN buscar en services (texto de servicios que ofrece el proveedor)
             if canonical_professions:
-                # Usar OR filter para buscar cualquiera de las profesiones canónicas
-                query = query.or_(" or ".join([f"profession.ilike.%{prof}%" for prof in canonical_professions]))
+                # Construir condiciones OR para profession Y services
+                or_conditions = []
+                for prof in canonical_professions:
+                    # Buscar en profession (texto)
+                    or_conditions.append(f"profession.ilike.%{prof}%")
+                    # Buscar en services (texto con separadores |)
+                    or_conditions.append(f"services.ilike.%{prof}%")
+
+                # TAMBIÉN buscar el sinónimo original en services
+                # Porque "desarrollador" puede estar en services aunque la profesión canónica sea "ingeniero sistemas"
+                or_conditions.append(f"services.ilike.%{profession}%")
+
+                # Usar OR filter para buscar en cualquiera de las condiciones
+                # NOTA: Supabase/PostgREST necesita comas, no " or "
+                query = query.or_(", ".join(or_conditions))
 
             # Ordenar por rating y limitar
             query = query.order("rating", desc=True).limit(limit)
@@ -85,6 +99,15 @@ class ProviderRepository(IProviderRepository):
                 lambda: query.execute(),
                 label="providers.search",
             )
+
+            # TEMPORAL: Log para debug de búsqueda
+            if result.data:
+                logger.info(f"✅ [DEBUG] {len(result.data)} proveedores encontrados (city={city}, profession={profession})")
+                for p in result.data:
+                    logger.info(f"   - {p.get('full_name', 'N/A')} | profession={p.get('profession', 'N/A')} | city={p.get('city', 'N/A')} | available={p.get('available', 'N/A')}")
+            else:
+                logger.warning(f"⚠️ [DEBUG] 0 proveedores encontrados (city={city}, canonical_professions={canonical_professions})")
+
             return result.data if result.data else []
 
         except Exception as e:

@@ -152,6 +152,44 @@ def interpret_yes_no(text: Optional[str]) -> Optional[bool]:
     return None
 
 
+def normalize_profession(text: Optional[str]) -> str:
+    """
+    Normaliza profesión eliminando preposiciones comunes.
+
+    Elimina: de, en, del, los, la, el, un, una
+    Esto permite que "ingeniero de sistemas" e "ingeniero en sistemas"
+    se normalicen a "ingeniero sistemas".
+
+    Args:
+        text: Profesión a normalizar
+
+    Returns:
+        Profesión normalizada sin preposiciones
+
+    Examples:
+        >>> normalize_profession("ingeniero de sistemas")
+        "ingeniero sistemas"
+        >>> normalize_profession("ingeniero en sistemas")
+        "ingeniero sistemas"
+    """
+    if not text:
+        return ""
+
+    # Preposiciones y artículos comunes a eliminar
+    prepositions = {"de", "en", "del", "los", "la", "el", "un", "una"}
+
+    # Limpiar y normalizar
+    cleaned = " ".join(text.strip().split())
+    if not cleaned:
+        return ""
+
+    # Eliminar preposiciones (case-insensitive)
+    words = cleaned.lower().split()
+    filtered = [w for w in words if w not in prepositions]
+
+    return " ".join(filtered)
+
+
 def _safe_json_loads(payload: str) -> Optional[Dict[str, Any]]:
     """Intenta parsear JSON de forma segura, incluso extrayendo de texto."""
     if not payload:

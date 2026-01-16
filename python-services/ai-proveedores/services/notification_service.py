@@ -8,8 +8,10 @@ MQTT MIGRATION (Completado):
 - Usa MQTT para comunicación con wa-proveedores
 - Topic: whatsapp/proveedores/send
 - HTTP fallback eliminado - MQTT es el único transporte
+- asyncio-mqtt usado directamente (sin shared-lib)
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -29,8 +31,20 @@ logger = logging.getLogger(__name__)
 # Topic MQTT para envío de mensajes WhatsApp
 MQTT_WHATSAP_TOPIC = os.getenv("MQTT_WHATSAP_TOPIC_PROVEEDORES", "whatsapp/proveedores/send")
 
-# MQTT client (singleton)
-_mqtt_client = None
+# Configuración MQTT
+MQTT_HOST = os.getenv("MQTT_HOST", "mosquitto")
+MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
+MQTT_USER = os.getenv("MQTT_USUARIO")
+MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
+MQTT_QOS = int(os.getenv("MQTT_QOS", "1"))
+MQTT_TIMEOUT = float(os.getenv("MQTT_TIMEOUT", "5"))
+
+# Try importing asyncio-mqtt
+try:
+    from asyncio_mqtt import Client as MQTTClient, MqttError
+except ImportError:
+    MQTTClient = None
+    MqttError = Exception
 
 
 async def _enviar_mensaje_whatsapp(phone: str, message: str) -> Dict[str, Any]:
@@ -85,39 +99,54 @@ async def _enviar_mensaje_whatsapp(phone: str, message: str) -> Dict[str, Any]:
 
 async def _send_via_mqtt(phone: str, message: str) -> Dict[str, Any]:
     """
-    Envía mensaje vía MQTT.
+    Envía mensaje vía MQTT usando asyncio-mqtt directamente.
 
     Topic: whatsapp/proveedores/send
     QoS: 1 (at least once)
+
+    Args:
+        phone: Número de teléfono del destinatario
+        message: Contenido del mensaje a enviar
+
+    Returns:
+        Dict[str, Any]: Resultado del envío
     """
-    global _mqtt_client
+    if not MQTTClient:
+        logger.error("❌ asyncio-mqtt no está instalado")
+        return {
+            "success": False,
+            "message": "asyncio-mqtt no está instalado",
+            "transport": "mqtt",
+        }
 
     try:
-        # Importar MQTT client (lazy import)
-        import sys
-        sys.path.insert(0, "/home/du/produccion/tinkubot-microservices/python-services")
+        # Configurar parámetros de conexión
+        client_params = {"hostname": MQTT_HOST, "port": MQTT_PORT}
+        if MQTT_USER and MQTT_PASSWORD:
+            client_params.update({"username": MQTT_USER, "password": MQTT_PASSWORD})
 
-        from shared_lib.infrastructure.mqtt_client import MQTTMessage, MQTTClient
-
-        # Crear cliente si no existe
-        if _mqtt_client is None:
-            logger.info("📡 Inicializando MQTT client para notificaciones...")
-            _mqtt_client = MQTTClient(service_name="ai-proveedores")
-            await _mqtt_client.start()
-            logger.info("✅ MQTT client inicializado")
-
-        # Crear mensaje MQTT
-        mqtt_msg = MQTTMessage(
-            source_service="ai-proveedores",
-            type="whatsapp.send",
-            payload={
+        # Crear payload en el formato esperado por wa-proveedores
+        payload = {
+            "message_id": str(asyncio.get_event_loop().time()),
+            "timestamp": datetime.utcnow().isoformat(),
+            "source_service": "ai-proveedores",
+            "type": "whatsapp.send",
+            "payload": {
                 "phone": phone,
                 "message": message,
             },
-        )
+        }
 
-        # Publicar en topic
-        await _mqtt_client.publish(MQTT_WHATSAP_TOPIC, mqtt_msg)
+        # Publicar directamente (conexión efímera por mensaje)
+        async with MQTTClient(**client_params) as client:
+            await asyncio.wait_for(
+                client.publish(
+                    MQTT_WHATSAP_TOPIC,
+                    json.dumps(payload),
+                    qos=MQTT_QOS,
+                ),
+                timeout=MQTT_TIMEOUT,
+            )
 
         logger.info(f"✅ Mensaje enviado a {phone} vía MQTT (topic={MQTT_WHATSAP_TOPIC})")
         return {
@@ -128,6 +157,20 @@ async def _send_via_mqtt(phone: str, message: str) -> Dict[str, Any]:
             "message_preview": (message[:80] + "..."),
         }
 
+    except MqttError as e:
+        logger.error(f"❌ Error MQTT: {e}")
+        return {
+            "success": False,
+            "message": f"Error MQTT: {str(e)}",
+            "transport": "mqtt",
+        }
+    except asyncio.TimeoutError:
+        logger.error("❌ Timeout enviando mensaje MQTT")
+        return {
+            "success": False,
+            "message": "Timeout enviando mensaje MQTT",
+            "transport": "mqtt",
+        }
     except Exception as e:
         logger.error(f"❌ Error enviando vía MQTT: {e}")
         return {
@@ -135,20 +178,6 @@ async def _send_via_mqtt(phone: str, message: str) -> Dict[str, Any]:
             "message": f"Error enviando vía MQTT: {str(e)}",
             "transport": "mqtt",
         }
-
-
-async def cleanup_mqtt_client() -> None:
-    """Limpia el cliente MQTT al cerrar el servicio."""
-    global _mqtt_client
-
-    if _mqtt_client is not None:
-        try:
-            await _mqtt_client.stop()
-            logger.info("✅ MQTT client limpiado")
-        except Exception as e:
-            logger.warning(f"⚠️ Error limpiando MQTT client: {e}")
-        finally:
-            _mqtt_client = None
 
 
 async def notificar_aprobacion_proveedor(

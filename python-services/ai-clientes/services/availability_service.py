@@ -167,7 +167,12 @@ class AvailabilityCoordinator:
         return cast("MQTTClient", self._publisher_client)
 
     async def _publisher_loop(self):
-        """Loop de publicación de solicitudes MQTT (método privado)."""
+        """Loop de publicación de solicitudes MQTT (método privado).
+
+        Soporta dos tipos de mensajes:
+        1. Solicitudes de disponibilidad (con req_id) → av-proveedores/solicitud
+        2. Mensajes WhatsApp (con to, message) → whatsapp/clientes/send
+        """
         if not MQTTClient:
             return
         while True:
@@ -175,17 +180,27 @@ class AvailabilityCoordinator:
             try:
                 client = await self._ensure_publisher_client()
                 message_bytes = json.dumps(payload).encode("utf-8")
+
+                # Determinar topic según tipo de payload
+                if "to" in payload and "message" in payload:
+                    # Mensaje WhatsApp
+                    topic = "whatsapp/clientes/send"
+                    log_msg = f"📤 Mensaje WhatsApp publicado para {payload.get('to')}"
+                else:
+                    # Solicitud de disponibilidad (default)
+                    topic = MQTT_TEMA_SOLICITUD
+                    log_msg = "📤 Solicitud disponibilidad publicada"
+
                 await asyncio.wait_for(
-                    client.publish(MQTT_TEMA_SOLICITUD, message_bytes, qos=MQTT_QOS),
+                    client.publish(topic, message_bytes, qos=MQTT_QOS),
                     timeout=MQTT_PUBLISH_TIMEOUT,
                 )
-                if hash(payload.get("req_id", "")) % LOG_SAMPLING_RATE == 0:
-                    logger.info(
-                        "📤 Solicitud disponibilidad publicada",
-                        extra={"req_id": payload.get("req_id")},
-                    )
+
+                if hash(payload.get("req_id", payload.get("to", ""))) % LOG_SAMPLING_RATE == 0:
+                    logger.info(log_msg)
+
             except Exception as exc:
-                logger.error(f"❌ Error publicando solicitud MQTT: {exc}")
+                logger.error(f"❌ Error publicando mensaje MQTT: {exc}")
                 # Reintento simple
                 await asyncio.sleep(0.5)
                 await self.publish_queue.put(payload)
@@ -288,6 +303,36 @@ class AvailabilityCoordinator:
             return True
         except Exception as exc:  # pragma: no cover - red
             logger.error(f"❌ Error encolando solicitud MQTT: {exc}")
+            return False
+
+    async def send_whatsapp_message(self, phone: str, message: str) -> bool:
+        """Envía mensaje de WhatsApp vía MQTT.
+
+        Publica directamente en el topic whatsapp/clientes/send para que wa-clientes
+        envíe el mensaje al usuario.
+
+        Args:
+            phone: Número de teléfono del destinatario (formato: 593XXXXXXXXX@c.us)
+            message: Contenido del mensaje a enviar
+
+        Returns:
+            True si se publicó correctamente, False en caso contrario
+        """
+        if not MQTTClient:
+            logger.warning("⚠️ MQTT no disponible, no se puede enviar mensaje WhatsApp.")
+            return False
+
+        try:
+            payload = {
+                "to": phone,
+                "message": message,
+            }
+            await self.publish_queue.put(payload)
+            await self.start_publisher()
+            logger.debug(f"📤 Mensaje WhatsApp encolado para {phone}")
+            return True
+        except Exception as exc:
+            logger.error(f"❌ Error encolando mensaje WhatsApp: {exc}")
             return False
 
     async def request_and_wait(

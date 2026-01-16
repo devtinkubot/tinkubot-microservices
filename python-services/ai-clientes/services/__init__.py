@@ -9,7 +9,6 @@ from .search_service import (
     intelligent_search_providers_remote,
     search_providers,
 )
-from .messaging_service import MessagingService
 from .media_service import MediaService
 
 __all__ = [
@@ -18,6 +17,5 @@ __all__ = [
     "extract_profession_and_location",
     "intelligent_search_providers_remote",
     "search_providers",
-    "MessagingService",
     "MediaService",
 ]
