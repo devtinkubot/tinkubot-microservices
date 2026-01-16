@@ -136,6 +136,8 @@ services:
       - USE_QUERY_EXPANSION=true
       - USE_SYNONYM_LEARNING=true
       - USE_AUTO_SYNONYM_GENERATION=true
+      - USE_SERVICE_MATCHING=true
+      - USE_SERVICE_DETECTOR=true
     networks:
       - tinkubot-network
     restart: unless-stopped

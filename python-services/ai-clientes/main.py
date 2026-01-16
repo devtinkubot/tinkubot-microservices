@@ -13,12 +13,12 @@ import os
 from typing import Any, Dict
 
 # FastAPI
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
+from fastapi import FastAPI, HTTPException  # type: ignore
+from fastapi.middleware.cors import CORSMiddleware  # type: ignore
+import uvicorn  # type: ignore
 
 # OpenAI
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI  # type: ignore
 
 # Supabase
 from supabase import create_client
@@ -61,6 +61,9 @@ from services.query_interpreter_service import initialize_query_interpreter
 from services.providers.provider_repository import initialize_provider_repository
 from services.dynamic_service_catalog import initialize_dynamic_service_catalog
 from services.synonym_learner import initialize_synonym_learner
+
+# Service Profession Mapper & Admin API
+from services.service_profession_mapper import get_service_profession_mapper
 
 # Templates
 from templates.prompts import (
@@ -158,6 +161,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Import and include admin API routers
+# Note: The router will be registered in the startup event after mapper initialization
+from api import service_profession_mapping_admin
+_admin_router = service_profession_mapping_admin.router
 
 
 # ============================================================================
@@ -458,6 +466,23 @@ async def startup_event():
     logger.info("🚀 Iniciando AI Service Clientes...")
     await redis_client.connect()
     await availability_coordinator.start_listener()
+
+    # Initialize ServiceProfessionMapper and register admin API
+    try:
+        if supabase:
+            mapper = get_service_profession_mapper(
+                db=supabase,
+                cache=redis_client.redis_client if redis_client.redis_client else None
+            )
+            # Register mapper instance with admin API
+            service_profession_mapping_admin.set_mapper_instance(mapper)
+            # Include the router in the main app
+            app.include_router(_admin_router)
+            logger.info("✅ ServiceProfessionMapper admin API registered")
+        else:
+            logger.warning("⚠️ Supabase not available, ServiceProfessionMapper not initialized")
+    except Exception as e:
+        logger.error(f"❌ Error initializing ServiceProfessionMapper: {e}")
 
     # FASE 7: Auto-Generated Synonyms (si está activo)
     from core.feature_flags import USE_AUTO_SYNONYM_GENERATION
