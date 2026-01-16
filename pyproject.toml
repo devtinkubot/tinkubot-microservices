@@ -1,0 +1,5 @@
+[tool.pyright]
+exclude = [
+    "python-services/**/tests/**",
+    "python-services/**/test_*.py",
+]
