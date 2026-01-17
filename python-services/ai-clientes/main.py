@@ -51,8 +51,8 @@ from services.message_processor_service import MessageProcessorService
 from services.conversation_orchestrator import ConversationOrchestrator
 from services.search_service import (
     extract_profession_and_location,
-    intelligent_search_providers_remote,
-    search_providers,
+    intelligent_search_providers_v3,
+    search_providers_v3_adapter,
     initialize_openai_semaphore,
 )
 
@@ -258,7 +258,7 @@ initialize_openai_semaphore()                    # Inicializa semáforo para bú
 
 # Servicio de búsqueda en segundo plano
 background_search_service = BackgroundSearchService(
-    search_service=search_providers,
+    search_service=search_providers_v3_adapter,
     availability_coordinator=availability_coordinator,
     session_manager=session_manager,
     templates={
@@ -279,8 +279,8 @@ background_search_service = BackgroundSearchService(
 message_processor_service = MessageProcessorService(
     openai_client=openai_client,
     extract_profession_and_location=extract_profession_and_location,
-    intelligent_search_providers_remote=intelligent_search_providers_remote,
-    search_providers=search_providers,
+    intelligent_search_providers_remote=intelligent_search_providers_v3,
+    search_providers=search_providers_v3_adapter,
     session_manager=session_manager,
     supabase=supabase,
 )
@@ -289,7 +289,7 @@ message_processor_service = MessageProcessorService(
 conversation_orchestrator = ConversationOrchestrator(
     customer_service=customer_service,
     consent_service=consent_service,
-    search_providers=search_providers,
+    search_providers=search_providers_v3_adapter,
     availability_coordinator=availability_coordinator,
     background_search_service=background_search_service,
     media_service=media_service,

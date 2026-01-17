@@ -175,8 +175,12 @@ class ServiceDetectorService:
         pattern_services = self._detect_by_patterns(normalized)
         detected_services.update(pattern_services)
 
-        # Estrategia 3: Validación con mapper (si está disponible)
+        # Estrategia 3: Búsqueda desde ServiceProfessionMapper (servicios en DB)
         if use_mapper_validation and self.profession_mapper:
+            mapper_services = await self._detect_from_mapper(normalized)
+            detected_services.update(mapper_services)
+
+            # Validar servicios detectados
             validated_services = await self._validate_with_mapper(detected_services)
             detected_services = validated_services
 
@@ -278,6 +282,45 @@ class ServiceDetectorService:
                 match_lower = match.lower()
                 if match_lower not in self.STOPWORDS:
                     detected.add(match_lower)
+
+        return detected
+
+    async def _detect_from_mapper(
+        self,
+        normalized_message: str
+    ) -> Set[str]:
+        """
+        Detectar servicios buscando directamente en ServiceProfessionMapper.
+
+        Busca cada palabra del mensaje en la lista de servicios de la DB.
+        Esto permite detectar servicios no médicos como electricista, plomero, etc.
+
+        Args:
+            normalized_message: Mensaje normalizado
+
+        Returns:
+            Set de servicios detectados
+        """
+        detected = set()
+
+        if not self.profession_mapper:
+            return detected
+
+        # Palabras del mensaje
+        words = normalized_message.split()
+
+        # Buscar cada palabra en los servicios del mapper
+        for word in words:
+            if word in self.STOPWORDS:
+                continue
+
+            try:
+                mapping = await self.profession_mapper.get_professions_for_service(word)
+                if mapping and mapping.professions:
+                    detected.add(word)
+                    logger.debug(f"Detected service from mapper: '{word}'")
+            except Exception:
+                pass  # Servicio no encontrado en mapper
 
         return detected
 

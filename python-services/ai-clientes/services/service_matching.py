@@ -136,6 +136,9 @@ class DefaultScoringStrategy(ScoringStrategy):
         """
         Calcular score de relevancia usando algoritmo multi-dimensional.
 
+        MEJORA: Verifica si el servicio está explícitamente mencionado en el catálogo.
+        Si no está mencionado, aplica penalización drástica para evitar inferencias incorrectas.
+
         Args:
             provider: Datos del provider
             service: Servicio buscado
@@ -151,6 +154,30 @@ class DefaultScoringStrategy(ScoringStrategy):
         experience_years = int(provider.get("experience_years", 0))
         verified = bool(provider.get("verified", False))
         services_list = provider.get("services_list", [])
+        services_text = provider.get("services", "").lower()
+
+        # Normalizar servicio para búsqueda
+        service_lower = service.lower()
+
+        # VERIFICACIÓN CRÍTICA: ¿Está el servicio explícitamente mencionado?
+        service_explicitly_mentioned = (
+            service_lower in services_text or
+            service_lower in [s.lower() for s in services_list]
+        )
+
+        # Si el servicio NO está mencionado explícitamente, penalizar drásticamente
+        if not service_explicitly_mentioned:
+            # Score mínimo para inferencias (evita falsos positivos)
+            return 0.05, {
+                "profession_score": 0.0,
+                "rating_score": 0.0,
+                "experience_score": 0.0,
+                "specificity_bonus": 0.0,
+                "verification_score": 0.0,
+                "service_mentioned": False,
+                "inferred": True,
+                "total": 0.05
+            }
 
         # 1. Score de profesión apropiada (35%)
         profession_score = profession_scores.get(provider_profession, 0.5)
@@ -167,8 +194,8 @@ class DefaultScoringStrategy(ScoringStrategy):
         experience_weighted = experience_score * 0.20
 
         # 4. Bonus de especificidad del servicio (15%)
-        # Si el servicio está explícitamente en services_list, es un match muy fuerte
-        specificity_bonus = 0.15 if service.lower() in [s.lower() for s in services_list] else 0.0
+        # Si el servicio está explícitamente mencionado, es un match fuerte
+        specificity_bonus = 0.15
 
         # 5. Score de verificación (5%)
         verification_score = 1.0 if verified else 0.5
@@ -190,6 +217,8 @@ class DefaultScoringStrategy(ScoringStrategy):
             "experience_score": experience_score,
             "specificity_bonus": specificity_bonus,
             "verification_score": verification_score,
+            "service_mentioned": True,
+            "inferred": False,
             "total": total_score
         }
 

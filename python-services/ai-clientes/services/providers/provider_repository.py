@@ -383,28 +383,22 @@ class ProviderRepository(IProviderRepository):
             if normalized_city:
                 query = query.ilike("city", f"%{normalized_city}%")
 
-            # Filtro por servicio específico
-            # Buscar en services_list (JSONB array) y services (texto)
+            # Filtro por servicio específico Y profesiones
+            # Combinar todos en un solo OR (Supabase solo mantiene el último OR)
+            or_conditions = []
+
+            # Buscar en services (texto)
             if normalized_service:
-                # Estrategia 1: Buscar en services_list usando contains (JSONB)
-                # Esto es más preciso para arrays JSON
-                # Nota: Supabase no soporta directamente @> en API, usamos CS (contains)
-                service_filter = f"services_list.cs.{normalized_service}"
-                query = query.filter(service_filter)
+                or_conditions.append(f"services.ilike.%{normalized_service}%")
 
-                # Estrategia 2: También buscar en services (texto) como fallback
-                # Esto cubre casos donde services_list no está poblado
-                query = query.or_(f"services.ilike.%{normalized_service}%")
-
-            # Filtro opcional por profesiones
+            # Buscar en profession
             if professions:
-                # Construir condiciones OR para profesiones
-                prof_conditions = [
-                    f"profession.ilike.%{_normalize_text_for_matching(p)}%"
-                    for p in professions
-                ]
-                if prof_conditions:
-                    query = query.or_(", ".join(prof_conditions))
+                for p in professions:
+                    or_conditions.append(f"profession.ilike.%{_normalize_text_for_matching(p)}%")
+
+            # Aplicar todas las condiciones OR juntas
+            if or_conditions:
+                query = query.or_(", ".join(or_conditions))
 
             # Ordenar por rating y limitar
             query = query.order("rating", desc=True).limit(limit)
