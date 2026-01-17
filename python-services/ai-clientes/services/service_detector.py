@@ -1,13 +1,11 @@
 """
-Service Detector Service.
+Service Detector Service - Versión 100% Dinámica.
 
-Detecta servicios específicos en mensajes del usuario.
-Follows SOLID principles:
-- SRP: Solo detecta servicios en texto
-- OCP: Extensible con nuevas estrategias de detección
+Detecta servicios específicos en mensajes del usuario usando SOLO datos de Supabase.
+NO tiene datos hardcoded - todo es dinámico vía ServiceProfessionMapper.
 
 Author: Claude Sonnet 4.5
-Created: 2026-01-16
+Updated: 2026-01-17
 """
 
 from __future__ import annotations
@@ -17,17 +15,17 @@ import re
 from dataclasses import dataclass, field
 from typing import List, Optional, Set, TYPE_CHECKING
 
-logger = logging.getLogger(__name__)
-
 if TYPE_CHECKING:
     from services.service_profession_mapper import ServiceProfessionMapper
+
+logger = logging.getLogger(__name__)
 
 
 # ============================================
 # Data Models
 # ============================================
 
-@dataclass
+@dataclass(frozen=True)
 class ServiceDetectionResult:
     """
     Resultado de la detección de servicios en un mensaje.
@@ -54,7 +52,7 @@ class ServiceDetectionResult:
         """Verifica si se detectaron servicios."""
         return len(self.services) > 0
 
-    def __repr__(self) -> str:
+    def __repr__(self):
         """Representación legible."""
         services_str = ", ".join(self.services) if self.services else "none"
         return f"ServiceDetectionResult(services=[{services_str}], confidence={self.confidence:.2f})"
@@ -68,47 +66,20 @@ class ServiceDetectorService:
     """
     Servicio para detectar servicios específicos en mensajes del usuario.
 
-    Usa múltiples estrategias de detección:
-    1. Búsqueda directa en diccionario de servicios conocidos
-    2. Patrones regex para servicios comunes
-    3. Extracción por contexto
+    100% DINÁMICO - NO usa datos hardcoded.
+    Todo el conocimiento de servicios viene de Supabase vía ServiceProfessionMapper.
+
+    Estrategia:
+    1. Busca cada palabra del mensaje en ServiceProfessionMapper (DB)
+    2. Valida que el servicio tenga mapeos a profesiones
+    3. No hay diccionarios ni patrones estáticos
 
     Example:
-        >>> detector = ServiceDetectorService()
-        >>> result = await detector.detect_services("necesito inyecciones de vitaminas en cuenca")
-        >>> print(result.services)  # ["inyección", "vitamina"]
-        >>> print(result.primary_service)  # "inyección"
+        >>> detector = ServiceDetectorService(mapper=profession_mapper)
+        >>> result = await detector.detect_services("necesito inyecciones en cuenca")
+        >>> print(result.services)  # ["inyecciones"]
+        >>> print(result.primary_service)  # "inyecciones"
     """
-
-    # Servicios médicos conocidos (palabras clave)
-    MEDICAL_SERVICES: Set[str] = {
-        "inyeccion", "inyecciones", "inyectarme", "inyectarse",
-        "inyectable", "inyectables",
-        "colocacion inyecciones", "colocar inyecciones", "poner inyecciones",
-        "suero", "sueros", "colocacion sueros", "poner suero",
-        "vitamina", "vitaminas",
-        "curacion", "curaciones", "curar",
-        "herida", "heridas",
-        "vacunacion", "vacuna", "vacunas", "vacunarse", "vacunarme",
-        "toma de muestras",
-        "analisis", "analisis", "analisis de sangre", "analisis de sangre",
-        "cuidados", "cuidado",
-        "signos vitales",
-        "presion arterial",
-        "intramuscular", "intravenosa",
-    }
-
-    # Patrones regex para servicios complejos
-    SERVICE_PATTERNS = [
-        # Inyecciones de X
-        r"(?:inyección|inyecciones)\s+(?:de|del)?\s*(\w+)",
-        # Sueros de X
-        r"(?:suero|sueros)\s+(?:de|del)?\s*(\w+)",
-        # Vitaminas
-        r"(?:vitamina|vitaminas)\s+(\w+)",
-        # Análisis de X
-        r"(?:análisis|analisis)\s+(?:de|del)?\s*(\w+)",
-    ]
 
     # Stopwords en español que no son servicios
     STOPWORDS: Set[str] = {
@@ -117,6 +88,10 @@ class ServiceDetectorService:
         "que", "quiero", "necesito", "busco", "requiero",
         "cuenca", "quito", "guayaquil",  # Ciudades comunes
         "favor", "por favor", "urgente", "ya",
+        "y", "o", "a", "ante", "bajo", "cabe", "contra",
+        "desde", "durante", "hacia", "hasta", "mediante",
+        "mientras", "ni", "según", "sin", "sobre", "tras",
+        "tu", "yo", "me", "mi", "mis", "sus", "su",
     }
 
     def __init__(
@@ -127,18 +102,12 @@ class ServiceDetectorService:
         Inicializar detector de servicios.
 
         Args:
-            profession_mapper: Opcional, para validar servicios detectados
+            profession_mapper: Requerido para validar servicios detectados
         """
         self.profession_mapper = profession_mapper
-        self._compile_patterns()
-        logger.debug("ServiceDetectorService initialized")
-
-    def _compile_patterns(self):
-        """Compilar patrones regex para mejor rendimiento."""
-        self.compiled_patterns = [
-            re.compile(pattern, re.IGNORECASE)
-            for pattern in self.SERVICE_PATTERNS
-        ]
+        if not profession_mapper:
+            raise ValueError("profession_mapper es REQUERIDO para ServiceDetectorService")
+        logger.debug("ServiceDetectorService initialized (DB-only, no hardcoded data)")
 
     async def detect_services(
         self,
@@ -146,7 +115,9 @@ class ServiceDetectorService:
         use_mapper_validation: bool = True
     ) -> ServiceDetectionResult:
         """
-        Detectar servicios en un mensaje del usuario.
+        Detecta servicios en un mensaje del usuario.
+
+        100% dinámico - Todo viene de Supabase.
 
         Args:
             message: Mensaje del usuario
@@ -165,18 +136,9 @@ class ServiceDetectorService:
         # Normalizar mensaje
         normalized = self._normalize_message(message)
 
-        # Detectar servicios usando múltiples estrategias
+        # Detectar servicios desde ServiceProfessionMapper (DB)
         detected_services = set()
 
-        # Estrategia 1: Búsqueda directa en diccionario
-        direct_services = self._detect_by_dictionary(normalized)
-        detected_services.update(direct_services)
-
-        # Estrategia 2: Patrones regex
-        pattern_services = self._detect_by_patterns(normalized)
-        detected_services.update(pattern_services)
-
-        # Estrategia 3: Búsqueda desde ServiceProfessionMapper (servicios en DB)
         if use_mapper_validation and self.profession_mapper:
             mapper_services = await self._detect_from_mapper(normalized)
             detected_services.update(mapper_services)
@@ -184,6 +146,8 @@ class ServiceDetectorService:
             # Validar servicios detectados
             validated_services = await self._validate_with_mapper(detected_services)
             detected_services = validated_services
+        else:
+            logger.warning("ServiceProfessionMapper no proporcionado, sin validación")
 
         # Convertir a lista ordenada
         services_list = sorted(list(detected_services))
@@ -232,59 +196,11 @@ class ServiceDetectorService:
             if not unicodedata.combining(c)
         )
 
-        # Remover puntuación excesiva (pero mantener espacios)
+        # Remover punctuation excesiva (pero mantener espacios)
         normalized = re.sub(r'[!?;:,\.\']+', ' ', normalized)
         normalized = re.sub(r'\s+', ' ', normalized).strip()
 
         return normalized
-
-    def _detect_by_dictionary(self, normalized_message: str) -> Set[str]:
-        """
-        Detectar servicios usando búsqueda directa en diccionario.
-
-        Args:
-            normalized_message: Mensaje normalizado
-
-        Returns:
-            Set de servicios detectados
-        """
-        detected = set()
-
-        words = normalized_message.split()
-
-        for word in words:
-            if word in self.MEDICAL_SERVICES:
-                detected.add(word)
-
-        # También buscar frases compuestas
-        for service in self.MEDICAL_SERVICES:
-            if " " in service:  # Frases multi-palabra
-                if service in normalized_message:
-                    detected.add(service)
-
-        return detected
-
-    def _detect_by_patterns(self, normalized_message: str) -> Set[str]:
-        """
-        Detectar servicios usando patrones regex.
-
-        Args:
-            normalized_message: Mensaje normalizado
-
-        Returns:
-            Set de servicios detectados
-        """
-        detected = set()
-
-        for pattern in self.compiled_patterns:
-            matches = pattern.findall(normalized_message)
-            for match in matches:
-                # match puede ser el servicio base (inyección) o el modificador (vitaminas)
-                match_lower = match.lower()
-                if match_lower not in self.STOPWORDS:
-                    detected.add(match_lower)
-
-        return detected
 
     async def _detect_from_mapper(
         self,
@@ -412,8 +328,8 @@ class ServiceDetectorService:
 
         Factores:
         - Cantidad de servicios detectados
-        - Presencia de palabras clave claras
-        - Longitud del mensaje
+        - Presencia de palabras clave claras (eliminado - ya no se usa hardcoded)
+        - Especificidad del mensaje
 
         Args:
             services: Lista de servicios detectados
@@ -431,17 +347,13 @@ class ServiceDetectorService:
         service_count_score = min(len(services) * 0.1, 0.3)
         confidence += service_count_score
 
-        # Factor 2: Presencia de palabras clave claras (máximo 0.5)
-        clear_keywords = {"inyección", "inyecciones", "suero", "sueros", "vitamina", "vitaminas"}
-        has_clear_keywords = any(s in clear_keywords for s in services)
-        if has_clear_keywords:
-            confidence += 0.5
-
-        # Factor 3: Especificidad del mensaje (máximo 0.2)
+        # Factor 2: Especificidad del mensaje (máximo 0.7)
         message_words = len(normalized_message.split())
         if message_words >= 4:
-            confidence += 0.2
+            confidence += 0.7
         elif message_words >= 2:
+            confidence += 0.3
+        elif message_words >= 1:
             confidence += 0.1
 
         return min(confidence, 1.0)
@@ -461,13 +373,14 @@ def get_service_detector(
     Retorna instancia global del ServiceDetectorService (singleton).
 
     Args:
-        profession_mapper: Opcional, ServiceProfessionMapper para validación
+        profession_mapper: Requerido, ServiceProfessionMapper para validación
 
     Returns:
         Instancia única de ServiceDetectorService
 
     Example:
         >>> from services.service_detector import get_service_detector
+        >>> mapper = get_service_profession_mapper(supabase, redis)
         >>> detector = get_service_detector(mapper)
         >>> result = await detector.detect_services("necesito inyecciones")
     """

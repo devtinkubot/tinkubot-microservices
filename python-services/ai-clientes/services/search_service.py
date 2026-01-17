@@ -589,35 +589,121 @@ async def intelligent_search_providers_v3(
     logger.info(f"🔍 [V3] Service-Based Matching: query='{query}'")
 
     try:
-        # Inicializar servicios
+        # Importar servicios V3
         from services.service_profession_mapper import get_service_profession_mapper  # type: ignore
         from services.service_detector import get_service_detector  # type: ignore
         from services.service_matching import get_service_matching_service  # type: ignore
 
-        # Obtener instancias (lazy loading)
+        # Obtener instancias
         provider_repo = _get_provider_repository()
         if not provider_repo:
             logger.warning("⚠️ ProviderRepository no disponible, fallback a V2")
             return await intelligent_search_providers_v2(payload)
 
-        # NOTA: Para usar ServiceMatching, necesitamos:
-        # 1. ServiceProfessionMapper (requiere supabase client)
-        # 2. ServiceDetector
-        # 3. ServiceMatchingService
+        # Verificar que ServiceProfessionMapper está disponible
+        # (requiere configuración con supabase client)
+        try:
+            from utils.supabase_client import get_supabase_client
 
-        # Por ahora, fallback a V2 con logging
-        # TODO: Implementar integración completa cuando ServiceProfessionMapper esté disponible
-        logger.warning(
-            "⚠️ [V3] ServiceMatchingService no completamente integrado aún, "
-            "fallback a V2 con mejoras"
+            supabase_client = get_supabase_client()
+            if not supabase_client:
+                logger.warning("⚠️ Supabase client no disponible, fallback a V2")
+                return await intelligent_search_providers_v2(payload)
+
+            # Inicializar mappers y servicios
+            profession_mapper = get_service_profession_mapper(
+                db=supabase_client,
+                cache=None  # Optional
+            )
+            service_detector = get_service_detector(
+                profession_mapper=profession_mapper
+            )
+            service_matching = get_service_matching_service(
+                detector=service_detector,
+                mapper=profession_mapper,
+                repo=provider_repo
+            )
+
+        except Exception as init_error:
+            logger.warning(f"⚠️ No se pudo inicializar ServiceProfessionMapper: {init_error}")
+            return await intelligent_search_providers_v2(payload)
+
+        # Paso 1: Detectar servicio en el query
+        detection_result = await service_detector.detect_services(query)
+
+        service_detection_info = {
+            "services_detected": detection_result.services,
+            "primary_service": detection_result.primary_service,
+            "confidence": detection_result.confidence,
+            "used_service_matching": False
+        }
+
+        # Paso 2: Si se detectó un servicio con confianza, usar ServiceMatching
+        if detection_result.has_services() and detection_result.confidence > 0.5:
+            logger.info(
+                f"🎯 [V3] Servicio detectado: '{detection_result.primary_service}' "
+                f"(confidence: {detection_result.confidence:.2f}), usando ServiceMatching"
+            )
+
+            # Usar ServiceMatching para búsqueda inteligente
+            scored_providers = await service_matching.find_providers_for_service(
+                message=query,
+                city=location,
+                limit=10
+            )
+
+            if scored_providers:
+                # Convertir ScoredProvider a formato estándar
+                providers = [sp.provider_data for sp in scored_providers]
+
+                # Agregar metadata de scoring
+                for sp, p in zip(scored_providers, providers):
+                    p['relevance_score'] = sp.relevance_score
+                    p['match_details'] = sp.match_details
+
+                service_detection_info["used_service_matching"] = True
+                service_detection_info["top_score"] = scored_providers[0].relevance_score
+
+                logger.info(
+                    f"✅ [V3] ServiceMatching encontró {len(providers)} providers, "
+                    f"top score: {scored_providers[0].relevance_score:.2f}"
+                )
+
+                return {
+                    "ok": True,
+                    "providers": providers,
+                    "total": len(providers),
+                    "query_interpretation": {
+                        "profession": detection_result.primary_service,
+                        "city": location,
+                        "details": f"Service-based matching para: {detection_result.primary_service}"
+                    },
+                    "search_metadata": {
+                        "strategy": "service_matching_v3",
+                        "version": "3.0",
+                        "service_detection": service_detection_info,
+                        "ai_enhanced": True,
+                    }
+                }
+
+        # Paso 3: Fallback a V2 si no se detectó servicio o confidence baja
+        logger.info(
+            f"⚠️ [V3] No se detectó servicio con confianza suficiente "
+            f"(confidence: {detection_result.confidence:.2f}), fallback a V2"
         )
 
-        # Fallback a V2 (que ya tiene IntentClassifier)
-        return await intelligent_search_providers_v2(payload)
+        v2_result = await intelligent_search_providers_v2(payload)
+        v2_result["search_metadata"]["service_detection"] = service_detection_info
+        v2_result["search_metadata"]["v3_attempted"] = True
+
+        return v2_result
 
     except Exception as e:
         logger.error(f"❌ [V3] Error en Service-Based Matching: {e}")
         logger.info("🔄 [V3] Fallback a V2...")
-        return await intelligent_search_providers_v2(payload)
+        v2_result = await intelligent_search_providers_v2(payload)
+        if "search_metadata" in v2_result:
+            v2_result["search_metadata"]["v3_error"] = str(e)
+        return v2_result
 
 
