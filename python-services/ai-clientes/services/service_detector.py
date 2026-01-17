@@ -82,18 +82,19 @@ class ServiceDetectorService:
 
     # Servicios médicos conocidos (palabras clave)
     MEDICAL_SERVICES: Set[str] = {
-        "inyección", "inyecciones", "inyectarme", "inyectarse",
-        "suero", "sueros",
-        "vitamina", "vitaminas",
+        "inyeccion", "inyecciones", "inyectarme", "inyectarse",
         "inyectable", "inyectables",
-        "curación", "curaciones", "curar",
+        "colocacion inyecciones", "colocar inyecciones", "poner inyecciones",
+        "suero", "sueros", "colocacion sueros", "poner suero",
+        "vitamina", "vitaminas",
+        "curacion", "curaciones", "curar",
         "herida", "heridas",
-        "vacunación", "vacuna", "vacunas", "vacunarse", "vacunarme",
+        "vacunacion", "vacuna", "vacunas", "vacunarse", "vacunarme",
         "toma de muestras",
-        "análisis", "analisis", "análisis de sangre", "analisis de sangre",
+        "analisis", "analisis", "analisis de sangre", "analisis de sangre",
         "cuidados", "cuidado",
         "signos vitales",
-        "presión arterial",
+        "presion arterial",
         "intramuscular", "intravenosa",
     }
 
