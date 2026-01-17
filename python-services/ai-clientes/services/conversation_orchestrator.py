@@ -28,16 +28,6 @@ except ImportError:
     ClientStateMachine = None
     ClientState = None
 
-# Fase 3: Saga Pattern imports (activado vía feature flag)
-try:
-    from core.saga import ClientSaga, SagaExecutionError
-    from core.commands import UpdateCustomerCityCommand, SaveSearchResultsCommand
-except ImportError:
-    ClientSaga = None
-    SagaExecutionError = None
-    UpdateCustomerCityCommand = None
-    SaveSearchResultsCommand = None
-
 # Fase 4: Performance optimizations imports (activado vía feature flag)
 try:
     from core.cache import CacheManager
@@ -149,7 +139,7 @@ class ConversationOrchestrator:
             logger.info("⏳ State Machine desactivado (feature flag USE_STATE_MACHINE=False)")
 
         # Fase 3: Inicializar Saga para rollback transaccional (solo si USE_SAGA_ROLLBACK=True)
-        self.use_saga = USE_SAGA_ROLLBACK and ClientSaga is not None
+        self.use_saga = USE_SAGA_ROLLBACK
         if self.use_saga:
             logger.info("✅ Saga Pattern inicializado (Fase 3) - Rollback automático activo")
         else:

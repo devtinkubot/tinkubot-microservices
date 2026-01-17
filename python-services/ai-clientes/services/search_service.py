@@ -52,8 +52,8 @@ def _get_query_interpreter():
 
 def _get_provider_repository():
     """Obtener instancia de ProviderRepository (lazy)."""
-    from services.providers.provider_repository import provider_repository
-    return provider_repository
+    from services.providers.provider_repository import get_provider_repository
+    return get_provider_repository()
 
 
 def _get_synonym_learner():
@@ -545,6 +545,44 @@ async def search_providers(
 # ============================================================================
 # SERVICE-BASED MATCHING V3 - Matching Inteligente Servicio→Profesión
 # ============================================================================
+
+async def search_providers_v3_adapter(
+    profession: str, location: str, radius_km: float = 10.0
+) -> Dict[str, Any]:
+    """
+    Adaptador para usar intelligent_search_providers_v3 con firma de search_providers.
+
+    Este adaptador permite usar la V3 (Service-Based Matching) en servicios que
+    esperan la firma simple de search_providers(profession, location, radius_km).
+
+    Args:
+        profession: Profesión a buscar
+        location: Ciudad del usuario
+        radius_km: Radio de búsqueda (no usado en V3, pero mantenido para compatibilidad)
+
+    Returns:
+        Dict con providers, total, search_scope (formato compatible con search_providers)
+    """
+    # Construir payload para V3
+    payload = {
+        "main_profession": profession,
+        "location": location,
+        "actual_need": ""
+    }
+
+    # Llamar a V3
+    result = await intelligent_search_providers_v3(payload)
+
+    # Adaptar respuesta al formato de search_providers
+    return {
+        "ok": result.get("ok", True),
+        "providers": result.get("providers", []),
+        "total": result.get("total", 0),
+        "search_scope": "local",
+        "search_metadata": result.get("search_metadata", {}),
+        "query_interpretation": result.get("query_interpretation", {}),
+    }
+
 
 async def intelligent_search_providers_v3(
     payload: Dict[str, Any],

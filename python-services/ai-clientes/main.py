@@ -27,19 +27,13 @@ from supabase import create_client
 from config import settings
 from infrastructure.redis import redis_client
 from services.session_manager import session_manager
+from utils.supabase_client import initialize_supabase_client
 
 # Feature Flags (Fase 5)
-try:
-    from core.feature_flags import (
-        get_all_flags,
-        validate_activation_order,
-    )
-except ImportError:
-    # Si el módulo no existe, usar funciones dummy
-    def get_all_flags():
-        return {}
-    def validate_activation_order():
-        return {"valid": False, "errors": [], "warnings": []}
+from core.feature_flags import (
+    get_all_flags,
+    validate_activation_order,
+)
 
 # Servicios
 from services.availability_service import availability_coordinator
@@ -190,6 +184,11 @@ supabase = (
     if settings.supabase_url and settings.supabase_service_key
     else None
 )
+
+# Inicializar singleton de Supabase para uso en otros módulos
+if supabase:
+    initialize_supabase_client(supabase)
+    logger.info("✅ Supabase client singleton inicializado")
 
 # ============================================================================
 # 5. FUNCIONES HELPER ESENCIALES
@@ -453,6 +452,86 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
         raise HTTPException(
             status_code=500,
             detail=f"Error handling WhatsApp message: {str(e)}"
+        )
+
+
+@app.post("/debug/service-matching")
+async def debug_service_matching(payload: Dict[str, Any]):
+    """
+    Endpoint para probar el matching de servicios con proveedores.
+
+    Args:
+        message: Mensaje del usuario (ej: "necesito inyecciones de vitaminas")
+        city: Ciudad donde se busca (ej: "cuenca")
+        limit: Máximo de resultados (default: 5)
+
+    Returns:
+        Lista de providers con scores de matching
+    """
+    from core.feature_flags import USE_SERVICE_MATCHING
+    if not USE_SERVICE_MATCHING:
+        raise HTTPException(
+            status_code=503,
+            detail="Service matching feature is disabled"
+        )
+
+    message = payload.get("message", "")
+    city = payload.get("city", "")
+    limit = payload.get("limit", 5)
+
+    if not message or not city:
+        raise HTTPException(
+            status_code=400,
+            detail="Se requieren 'message' y 'city' en el payload"
+        )
+
+    try:
+        from services.service_matching import get_service_matching_service
+        from services.service_detector import get_service_detector
+        from services.service_profession_mapper import get_service_profession_mapper
+        from services.providers.provider_repository import get_provider_repository
+
+        mapper = get_service_profession_mapper(
+            db=supabase,
+            cache=redis_client.redis_client if redis_client.redis_client else None
+        )
+        detector = get_service_detector(profession_mapper=mapper)
+        repo = get_provider_repository()
+
+        matching_service = get_service_matching_service(
+            detector=detector,
+            mapper=mapper,
+            repo=repo
+        )
+
+        results = await matching_service.find_providers_for_service(
+            message=message,
+            city=city,
+            limit=limit
+        )
+
+        return {
+            "message": message,
+            "city": city,
+            "total_results": len(results),
+            "results": [
+                {
+                    "id": p.id,
+                    "name": p.full_name,
+                    "profession": p.profession,
+                    "rating": p.rating,
+                    "service": p.service,
+                    "relevance_score": p.relevance_score,
+                    "match_details": p.match_details
+                }
+                for p in results
+            ]
+        }
+    except Exception as e:
+        logger.error(f"❌ Error en debug service matching: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error en service matching: {str(e)}"
         )
 
 

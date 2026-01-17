@@ -26,6 +26,15 @@ if TYPE_CHECKING:
 
 
 # ============================================
+# Configuration
+# ============================================
+
+# Score mínimo para considerar un provider como relevante
+# Providers con score < este threshold son filtrados
+MIN_RELEVANCE_SCORE = 0.3
+
+
+# ============================================
 # Data Models
 # ============================================
 
@@ -367,15 +376,39 @@ class ServiceMatchingService:
                 f"score={total_score:.2f} | breakdown={score_breakdown}"
             )
 
-        # Step 5: Ordenar por relevancia descendente
-        scored_providers.sort(key=lambda p: p.relevance_score, reverse=True)
+        # Step 5: Filtrar providers con score mínimo aceptable
+        scored_providers_filtered = [
+            sp for sp in scored_providers
+            if sp.relevance_score >= MIN_RELEVANCE_SCORE
+        ]
 
-        logger.info(
-            f"✅ Returning {len(scored_providers)} providers, "
-            f"top score: {scored_providers[0].relevance_score:.2f}"
-        )
+        # Log filtered providers
+        filtered_count = len(scored_providers) - len(scored_providers_filtered)
+        if filtered_count > 0:
+            logger.info(
+                f"🔍 Filtered out {filtered_count} providers with score < {MIN_RELEVANCE_SCORE}"
+            )
+            for sp in scored_providers:
+                if sp.relevance_score < MIN_RELEVANCE_SCORE:
+                    logger.warning(
+                        f"   ❌ {sp.full_name} ({sp.profession}): score={sp.relevance_score:.2f} "
+                        f"(service_mentioned={sp.match_details.get('service_mentioned', False)})"
+                    )
 
-        return scored_providers[:limit]
+        # Step 6: Ordenar por relevancia descendente
+        scored_providers_filtered.sort(key=lambda p: p.relevance_score, reverse=True)
+
+        if scored_providers_filtered:
+            logger.info(
+                f"✅ Returning {len(scored_providers_filtered)} providers, "
+                f"top score: {scored_providers_filtered[0].relevance_score:.2f}"
+            )
+        else:
+            logger.warning(
+                f"⚠️ No providers met the minimum score threshold ({MIN_RELEVANCE_SCORE})"
+            )
+
+        return scored_providers_filtered[:limit]
 
     async def find_providers_for_direct_service(
         self,
@@ -438,10 +471,23 @@ class ServiceMatchingService:
                 match_details=score_breakdown
             ))
 
-        # Step 5: Ordenar
-        scored_providers.sort(key=lambda p: p.relevance_score, reverse=True)
+        # Step 5: Filtrar por score mínimo
+        scored_providers_filtered = [
+            sp for sp in scored_providers
+            if sp.relevance_score >= MIN_RELEVANCE_SCORE
+        ]
 
-        return scored_providers[:limit]
+        # Log filtrado
+        filtered_count = len(scored_providers) - len(scored_providers_filtered)
+        if filtered_count > 0:
+            logger.info(
+                f"🔍 Filtered out {filtered_count} providers with score < {MIN_RELEVANCE_SCORE}"
+            )
+
+        # Step 6: Ordenar
+        scored_providers_filtered.sort(key=lambda p: p.relevance_score, reverse=True)
+
+        return scored_providers_filtered[:limit]
 
 
 # ============================================

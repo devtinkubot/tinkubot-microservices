@@ -456,3 +456,12 @@ def initialize_provider_repository(supabase_client) -> None:
     else:
         provider_repository = None
         logger.warning("⚠️ ProviderRepository deshabilitado (sin Supabase)")
+
+
+def get_provider_repository() -> Optional[ProviderRepository]:
+    """Obtiene el repositorio de proveedores inicializado.
+
+    Returns:
+        ProviderRepository instance o None si no se ha inicializado
+    """
+    return provider_repository
