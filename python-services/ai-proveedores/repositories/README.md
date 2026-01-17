@@ -127,13 +127,6 @@ existe = await repository.exists_by_phone("+593987654321")
 # Returns: bool
 ```
 
-#### Toggle disponibilidad
-
-```python
-actualizado = await repository.toggle_availability("provider-id")
-# Alterna available: True ↔ False
-```
-
 ## 🔌 Integración con Código Existente
 
 El repositorio **reutiliza** funciones de `business_logic.py`:

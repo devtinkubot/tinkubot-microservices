@@ -422,36 +422,6 @@ class SupabaseProviderRepository(IProviderRepository):
         logger.debug(f"🔍 Provider exists by phone {phone}: {exists}")
         return bool(exists)
 
-    async def toggle_availability(self, provider_id: str) -> Dict[str, Any]:
-        """
-        Alterna el estado de disponibilidad de un proveedor.
-
-        Útil para que los proveedores puedan activarse/desactivarse
-        sin necesidad de saber su estado actual.
-
-        Args:
-            provider_id: ID del proveedor
-
-        Returns:
-            Dict con el proveedor actualizado
-
-        Raises:
-            RepositoryError: Si el proveedor no existe
-
-        Note:
-            Invierte el valor actual del campo 'available'.
-            Si es True, lo pone a False, y viceversa.
-        """
-        # Primero obtener el estado actual
-        current = await self.find_by_id(provider_id)
-        if not current:
-            raise RepositoryError(f"Provider {provider_id} not found")
-
-        # Invertir disponibilidad
-        new_availability = not current.get("available", True)
-
-        return await self.update(provider_id, {"available": new_availability})
-
     # ========================================================================
     # Métodos Helper
     # ========================================================================

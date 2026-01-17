@@ -29,29 +29,6 @@ class ProviderCreate(BaseModel):
     phone_verified: Optional[bool] = None  # Si el número fue verificado
 
 
-class ProviderResponse(BaseModel):
-    """Modelo de respuesta para proveedor"""
-    id: str
-    phone: str
-    full_name: str
-    email: Optional[str]
-    city: str
-    profession: str
-    services: str
-    rating: float
-    available: bool
-    verified: bool
-    experience_years: int
-    social_media_url: Optional[str] = None
-    social_media_type: Optional[str] = None
-    dni_front_photo_url: Optional[str] = None
-    dni_back_photo_url: Optional[str] = None
-    face_photo_url: Optional[str] = None
-    has_consent: bool = False
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-
-
 # ============================================================================
 # Modelos existentes de ai-proveedores
 # ============================================================================

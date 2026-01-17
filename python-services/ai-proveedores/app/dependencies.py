@@ -31,14 +31,6 @@ def get_openai() -> Optional[OpenAI]:
             _openai_client = OpenAI(api_key=settings.openai_api_key)
     return _openai_client
 
-
-def reset_clients():
-    """Resetear clientes (para testing)."""
-    global _supabase_client, _openai_client
-    _supabase_client = None
-    _openai_client = None
-
-
 def get_provider_repository(supabase: Client):
     """
     Factory para el repositorio de proveedores.

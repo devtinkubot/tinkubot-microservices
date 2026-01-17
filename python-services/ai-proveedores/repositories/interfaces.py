@@ -200,19 +200,3 @@ class IProviderRepository(ABC):
             True si existe, False en caso contrario
         """
         pass
-
-    @abstractmethod
-    async def toggle_availability(self, provider_id: str) -> Dict[str, Any]:
-        """
-        Alterna el estado de disponibilidad de un proveedor.
-
-        Args:
-            provider_id: ID del proveedor
-
-        Returns:
-            Dict con el proveedor actualizado
-
-        Raises:
-            RepositoryError: Si el proveedor no existe
-        """
-        pass
