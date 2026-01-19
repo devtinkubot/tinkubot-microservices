@@ -36,28 +36,17 @@ from core.feature_flags import (
 )
 
 # Servicios
-from services.availability_service import availability_coordinator
-from services.background_search_service import BackgroundSearchService
 from services.consent.consent_service import ConsentService
 from services.customer.customer_service import CustomerService
 from services.media_service import MediaService
 from services.message_processor_service import MessageProcessorService
 from services.conversation_orchestrator import ConversationOrchestrator
-from services.search_service import (
-    extract_profession_and_location,
-    intelligent_search_providers_v3,
-    search_providers_v3_adapter,
-    initialize_openai_semaphore,
-)
 
-# Nuevos servicios (Sprint 2.4)
-from services.query_interpreter_service import initialize_query_interpreter
-from services.providers.provider_repository import initialize_provider_repository
-from services.dynamic_service_catalog import initialize_dynamic_service_catalog
-from services.synonym_learner import initialize_synonym_learner
+# Simple Search Service (nuevo flujo refactorizado)
+from services.simple_search_service import SimpleSearchService
 
-# Service Profession Mapper & Admin API
-from services.service_profession_mapper import get_service_profession_mapper
+# Availability Coordinator (MQTT para solicitar disponibilidad)
+from services.availability_service import availability_coordinator
 
 # Templates
 from templates.prompts import (
@@ -156,11 +145,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Import and include admin API routers
-# Note: The router will be registered in the startup event after mapper initialization
-from api import service_profession_mapping_admin
-_admin_router = service_profession_mapping_admin.router
-
 
 # ============================================================================
 # 4. CLIENTES EXTERNOS
@@ -248,49 +232,13 @@ media_service = MediaService(
     bucket_name=SUPABASE_PROVIDERS_BUCKET,
 ) if supabase else None
 
-# Nuevos servicios (Sprint 2.4) - Eliminar SPOF ai-search
-initialize_query_interpreter(openai_client)      # Inicializa QueryInterpreterService
-initialize_provider_repository(supabase)         # Inicializa ProviderRepository
-initialize_dynamic_service_catalog(supabase)     # Inicializa catálogo dinámico de servicios
-initialize_synonym_learner(supabase)             # Inicializa SynonymLearner (aprendizaje automático)
-initialize_openai_semaphore()                    # Inicializa semáforo para búsquedas
-
-# Servicio de búsqueda en segundo plano
-background_search_service = BackgroundSearchService(
-    search_service=search_providers_v3_adapter,
-    availability_coordinator=availability_coordinator,
-    session_manager=session_manager,
-    templates={
-        "mensaje_intro_listado_proveedores": mensaje_intro_listado_proveedores,
-        "bloque_listado_proveedores_compacto": bloque_listado_proveedores_compacto,
-        "instruccion_seleccionar_proveedor": instruccion_seleccionar_proveedor,
-        "mensaje_listado_sin_resultados": lambda city: (
-            f"❌ No encontré proveedores en {city.title()}."
-        ),
-        "titulo_confirmacion_repetir_busqueda": titulo_confirmacion_repetir_busqueda,
-        "menu_opciones_confirmacion": menu_opciones_confirmacion,
-        "pie_instrucciones_respuesta_numerica": pie_instrucciones_respuesta_numerica,
-        "opciones_confirmar_nueva_busqueda_textos": opciones_confirmar_nueva_busqueda_textos,
-    },
-) if availability_coordinator else None
-
-# Servicio de procesamiento de mensajes
-message_processor_service = MessageProcessorService(
-    openai_client=openai_client,
-    extract_profession_and_location=extract_profession_and_location,
-    intelligent_search_providers_remote=intelligent_search_providers_v3,
-    search_providers=search_providers_v3_adapter,
-    session_manager=session_manager,
-    supabase=supabase,
-)
-
 # Orquestador de conversación
 conversation_orchestrator = ConversationOrchestrator(
     customer_service=customer_service,
     consent_service=consent_service,
-    search_providers=search_providers_v3_adapter,
+    search_providers=None,  # Usará simple_search_service directamente
     availability_coordinator=availability_coordinator,
-    background_search_service=background_search_service,
+    background_search_service=None,  # Eliminado
     media_service=media_service,
     session_manager=session_manager,
     openai_client=openai_client,
@@ -313,9 +261,11 @@ conversation_orchestrator = ConversationOrchestrator(
 ) if all([
     customer_service,
     consent_service,
-    availability_coordinator,
     media_service,
 ]) else None
+
+# Simple Search Service (nuevo flujo refactorizado)
+simple_search_service = SimpleSearchService()
 
 # ============================================================================
 # 7. ENDPOINTS
@@ -400,14 +350,14 @@ async def debug_metrics():
     """
     try:
         from core.metrics import metrics
-        from core.cache import CacheManager
 
         # Obtener resumen de métricas
         metrics_summary = metrics.get_summary()
 
         # Obtener estadísticas de cache si está disponible
         cache_stats = None
-        if hasattr(conversation_orchestrator, 'cache_manager') and \
+        if conversation_orchestrator is not None and \
+           hasattr(conversation_orchestrator, 'cache_manager') and \
            conversation_orchestrator.cache_manager is not None:
             cache_stats = conversation_orchestrator.cache_manager.get_stats()
 
@@ -455,86 +405,6 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
         )
 
 
-@app.post("/debug/service-matching")
-async def debug_service_matching(payload: Dict[str, Any]):
-    """
-    Endpoint para probar el matching de servicios con proveedores.
-
-    Args:
-        message: Mensaje del usuario (ej: "necesito inyecciones de vitaminas")
-        city: Ciudad donde se busca (ej: "cuenca")
-        limit: Máximo de resultados (default: 5)
-
-    Returns:
-        Lista de providers con scores de matching
-    """
-    from core.feature_flags import USE_SERVICE_MATCHING
-    if not USE_SERVICE_MATCHING:
-        raise HTTPException(
-            status_code=503,
-            detail="Service matching feature is disabled"
-        )
-
-    message = payload.get("message", "")
-    city = payload.get("city", "")
-    limit = payload.get("limit", 5)
-
-    if not message or not city:
-        raise HTTPException(
-            status_code=400,
-            detail="Se requieren 'message' y 'city' en el payload"
-        )
-
-    try:
-        from services.service_matching import get_service_matching_service
-        from services.service_detector import get_service_detector
-        from services.service_profession_mapper import get_service_profession_mapper
-        from services.providers.provider_repository import get_provider_repository
-
-        mapper = get_service_profession_mapper(
-            db=supabase,
-            cache=redis_client.redis_client if redis_client.redis_client else None
-        )
-        detector = get_service_detector(profession_mapper=mapper)
-        repo = get_provider_repository()
-
-        matching_service = get_service_matching_service(
-            detector=detector,
-            mapper=mapper,
-            repo=repo
-        )
-
-        results = await matching_service.find_providers_for_service(
-            message=message,
-            city=city,
-            limit=limit
-        )
-
-        return {
-            "message": message,
-            "city": city,
-            "total_results": len(results),
-            "results": [
-                {
-                    "id": p.id,
-                    "name": p.full_name,
-                    "profession": p.profession,
-                    "rating": p.rating,
-                    "service": p.service,
-                    "relevance_score": p.relevance_score,
-                    "match_details": p.match_details
-                }
-                for p in results
-            ]
-        }
-    except Exception as e:
-        logger.error(f"❌ Error en debug service matching: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error en service matching: {str(e)}"
-        )
-
-
 # ============================================================================
 # 9. EVENTOS
 # ============================================================================
@@ -544,59 +414,6 @@ async def startup_event():
     """Inicializar conexiones al arrancar el servicio."""
     logger.info("🚀 Iniciando AI Service Clientes...")
     await redis_client.connect()
-    await availability_coordinator.start_listener()
-
-    # Initialize ServiceProfessionMapper and register admin API
-    try:
-        if supabase:
-            mapper = get_service_profession_mapper(
-                db=supabase,
-                cache=redis_client.redis_client if redis_client.redis_client else None
-            )
-            # Register mapper instance with admin API
-            service_profession_mapping_admin.set_mapper_instance(mapper)
-            # Include the router in the main app
-            app.include_router(_admin_router)
-            logger.info("✅ ServiceProfessionMapper admin API registered")
-        else:
-            logger.warning("⚠️ Supabase not available, ServiceProfessionMapper not initialized")
-    except Exception as e:
-        logger.error(f"❌ Error initializing ServiceProfessionMapper: {e}")
-
-    # FASE 7: Auto-Generated Synonyms (si está activo)
-    from core.feature_flags import USE_AUTO_SYNONYM_GENERATION
-    if USE_AUTO_SYNONYM_GENERATION:
-        try:
-            from services.provider_synonym_optimizer import ProviderSynonymOptimizer
-            from services.auto_profession_generator import AutoProfessionGenerator
-            from services.dynamic_service_catalog import dynamic_service_catalog
-
-            # Inicializar generador automático
-            auto_generator = AutoProfessionGenerator(
-                supabase_client=supabase,
-                dynamic_service_catalog=dynamic_service_catalog,
-                use_openai=True
-            )
-
-            # Inicializar optimizador (crea su propia conexión MQTT)
-            synonym_optimizer = ProviderSynonymOptimizer(
-                auto_profession_generator=auto_generator,
-                enabled=True
-            )
-
-            # Iniciar listener MQTT
-            await synonym_optimizer.start()
-
-            logger.info("✅ AutoProfessionGenerator activado (sinónimos proactivos)")
-
-        except Exception as e:
-            logger.error(
-                f"❌ Error inicializando AutoProfessionGenerator: {e}. "
-                "Continuando sin generación automática de sinónimos."
-            )
-    else:
-        logger.info("⏸️ AutoProfessionGenerator desactivado (feature flag)")
-
     logger.info("✅ AI Service Clientes listo")
 
 
@@ -608,8 +425,19 @@ async def shutdown_event():
     logger.info("✅ Conexiones cerradas")
 
 
+@app.post("/search")
+async def search_providers(message: str):
+    """Endpoint de búsqueda simple (nuevo flujo refactorizado)."""
+    try:
+        response = simple_search_service.search_and_format(message)
+        return {"response": response}
+    except Exception as e:
+        logger.error(f"Error en búsqueda: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ============================================================================
-# 10. MAIN
+# 11. MAIN
 # ============================================================================
 
 if __name__ == "__main__":

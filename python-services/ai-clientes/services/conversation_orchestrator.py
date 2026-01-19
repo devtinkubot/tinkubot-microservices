@@ -46,14 +46,8 @@ from templates.prompts import (
     pie_instrucciones_respuesta_numerica,
     titulo_confirmacion_repetir_busqueda,
 )
-from services.search_service import extract_profession_and_location
 from services.conversation.awaiting_service_handler import (
     AwaitingServiceHandler,
-)
-from services.conversation.awaiting_city_handler import AwaitingCityHandler
-from services.conversation.searching_handler import SearchingHandler
-from services.conversation.presenting_results_handler import (
-    PresentingResultsHandler,
 )
 from services.conversation.viewing_provider_detail_handler import (
     ViewingProviderDetailHandler,
@@ -179,29 +173,13 @@ class ConversationOrchestrator:
         )
 
         # Register awaiting_city handler
+        from services.conversation.awaiting_city_handler import AwaitingCityHandler
         self.handler_registry.register(
             AwaitingCityHandler(
                 customer_service=self.customer_service,
                 session_manager=self.session_manager,
                 background_search_service=self.background_search_service,
                 templates=self.templates,
-            )
-        )
-
-        # Register searching handler
-        self.handler_registry.register(
-            SearchingHandler(
-                background_search_service=self.background_search_service,
-                templates=self.templates,
-            )
-        )
-
-        # Register presenting_results handler
-        self.handler_registry.register(
-            PresentingResultsHandler(
-                media_service=self.media_service,
-                templates=self.templates,
-                messages_confirmation_search=self._mensajes_confirmacion_busqueda,
             )
         )
 
@@ -215,6 +193,16 @@ class ConversationOrchestrator:
             )
         )
 
+        # Register presenting_results handler
+        from services.conversation.presenting_results_handler import PresentingResultsHandler
+        self.handler_registry.register(
+            PresentingResultsHandler(
+                media_service=self.media_service,
+                templates=self.templates,
+                messages_confirmation_search=self._mensajes_confirmacion_busqueda,
+            )
+        )
+
         # Register confirm_new_search handler
         self.handler_registry.register(
             ConfirmNewSearchHandler(
@@ -222,6 +210,17 @@ class ConversationOrchestrator:
                 templates=self.templates,
                 send_provider_prompt=self._send_provider_prompt,
                 send_confirm_prompt=self._send_confirm_prompt,
+            )
+        )
+
+        # Register awaiting_mqtt handler
+        from services.conversation.awaiting_mqtt_handler import AwaitingMqttHandler
+        self.handler_registry.register(
+            AwaitingMqttHandler(
+                session_manager=self.session_manager,
+                templates=self.templates,
+                media_service=self.media_service,
+                messages_confirmation_search=self._mensajes_confirmacion_busqueda,
             )
         )
 
@@ -354,8 +353,9 @@ class ConversationOrchestrator:
         msg_type = payload.get("message_type")
         location = payload.get("location") or {}
 
-        # Detectar ciudad en el mensaje y actualizar perfil
-        detected_profession, detected_city = await extract_profession_and_location("", text)
+        # Detectar ciudad en el mensaje y actualizar perfil (extracción simple)
+        from services.simple_search_service import SimpleSearchService
+        detected_city = SimpleSearchService.extract_city(text)
         if detected_city:
             normalized_city = detected_city
             current_city = (flow.get("city") or "").strip()
@@ -506,14 +506,14 @@ class ConversationOrchestrator:
         if (not state or selected == opciones_confirmar_nueva_busqueda_textos[0]) and state != "confirm_new_search":
             cleaned = text.strip().lower() if text else ""
             if text and cleaned not in GREETINGS:
-                # Validar: si detected_profession es None (número puro), rechazar
-                if detected_profession is None and cleaned.isdigit():
+                # Validar: si es número puro, rechazar
+                if cleaned.isdigit():
                     return await respond(
                         flow,
                         {"response": "❌ *Input no válido*\n\nPor favor describe el servicio que buscas (ej: plomero, electricista, manicure, doctor)."}
                     )
 
-                service_value = (detected_profession or text).strip()
+                service_value = text.strip()
                 flow.update({"service": service_value, "service_full": text})
 
                 if flow.get("service") and flow.get("city"):

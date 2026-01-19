@@ -68,19 +68,45 @@ class SearchingHandler(MessageHandler):
 
         # If already dispatched, avoid duplicate searches
         if flow.get("searching_dispatched"):
+            # ✅ MEJORA: Si ya hay proveedores, cambiar a presenting_results
+            if flow.get("providers"):
+                flow["state"] = "presenting_results"
+                await set_flow_fn(phone, flow)
+                logger.info("📊 Providers ya existen, cambiando a presenting_results")
             return {"response": mensaje_confirmando_disponibilidad}
 
         # If for some reason it wasn't dispatched, launch it now
+        # REFACTORIZACIÓN: Usar SimpleSearchService directamente
         if flow.get("service") and flow.get("city"):
             flow["searching_dispatched"] = True
             await set_flow_fn(phone, flow)
-            if self.background_search_service:
-                asyncio.create_task(
-                    self.background_search_service.search_and_notify(
-                        phone, flow.copy(), set_flow_fn
-                    )
+
+            # Ejecutar búsqueda con SimpleSearchService
+            from services.simple_search_service import SimpleSearchService
+            try:
+                search_service = SimpleSearchService()
+                service = flow.get("service", "")
+                city = flow.get("city", "")
+
+                search_message = f"{service} en {city}"
+                logger.info(f"🔍 Búsqueda desde searching_handler: {search_message}")
+
+                # Obtener proveedores y guardar en sesión
+                providers = search_service.search(search_message)
+                await self.session_manager.save_session(
+                    phone,
+                    providers,
+                    is_bot=False,
+                    metadata={"search_query": search_message}
                 )
-            return {"response": mensaje_confirmando_disponibilidad}
+
+                logger.info(f"✅ Búsqueda completada: {len(providers)} proveedores guardados en sesión")
+                return {"response": mensaje_confirmando_disponibilidad}
+
+            except Exception as e:
+                logger.error(f"❌ Error en búsqueda: {e}")
+                return {"response": mensaje_confirmando_disponibilidad}
 
         # Otherwise, execute the search
+        # Nota: Los handlers de presentación (PresentingResultsHandler) se encargan
         return await do_search()

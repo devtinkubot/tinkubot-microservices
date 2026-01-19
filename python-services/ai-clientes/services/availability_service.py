@@ -11,16 +11,13 @@ import logging
 import os
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional, TYPE_CHECKING, cast
+from typing import Any, Callable, Dict, List, Optional
 
-if TYPE_CHECKING:
+try:
     from asyncio_mqtt import Client as MQTTClient, MqttError
-else:
-    try:
-        from asyncio_mqtt import Client as MQTTClient, MqttError
-    except Exception:
-        MQTTClient = None  # type: ignore
-        MqttError = Exception
+except Exception:
+    MQTTClient = None
+    MqttError = Exception
 
 from infrastructure.redis import redis_client
 
@@ -35,7 +32,7 @@ MQTT_TEMA_SOLICITUD = os.getenv("MQTT_TEMA_SOLICITUD", "av-proveedores/solicitud
 MQTT_TEMA_RESPUESTA = os.getenv("MQTT_TEMA_RESPUESTA", "av-proveedores/respuesta")
 
 # Configuración de timeouts y polling
-AVAILABILITY_TIMEOUT_SECONDS = int(os.getenv("AVAILABILITY_TIMEOUT_SECONDS", "90"))
+AVAILABILITY_TIMEOUT_SECONDS = int(os.getenv("AVAILABILITY_TIMEOUT_SECONDS", "45"))
 AVAILABILITY_TIMEOUT_SECONDS = max(10, AVAILABILITY_TIMEOUT_SECONDS)
 AVAILABILITY_ACCEPT_GRACE_SECONDS = float(
     os.getenv("AVAILABILITY_ACCEPT_GRACE_SECONDS", "5")
@@ -44,7 +41,7 @@ AVAILABILITY_STATE_TTL_SECONDS = int(os.getenv("AVAILABILITY_STATE_TTL_SECONDS",
 AVAILABILITY_POLL_INTERVAL_SECONDS = float(
     os.getenv("AVAILABILITY_POLL_INTERVAL_SECONDS", "1.5")
 )
-LOG_SAMPLING_RATE = int(os.getenv("LOG_SAMPLING_RATE", "1"))  # Changed to 1 for debugging
+LOG_SAMPLING_RATE = int(os.getenv("LOG_SAMPLING_RATE", "10"))
 
 # Logger del módulo
 logger = logging.getLogger(__name__)
@@ -78,6 +75,7 @@ class AvailabilityCoordinator:
     - Suscripción a respuestas de proveedores
     - Estado temporal en Redis
     - Timeouts y reintentos
+    - Callbacks cuando se reciben respuestas
 
     Patrón: Singleton (instancia global availability_coordinator)
     """
@@ -86,9 +84,19 @@ class AvailabilityCoordinator:
         """Inicializa coordinador sin conectar."""
         self.listener_task: Optional[asyncio.Task] = None
         self.publisher_task: Optional[asyncio.Task] = None
-        self.publish_queue: "asyncio.Queue[Dict[str, Any]]" = asyncio.Queue()  # type: ignore[valid-type]
-        self._publisher_client: Optional["MQTTClient"] = None
+        self.publish_queue: "asyncio.Queue[Dict[str, Any]]" = asyncio.Queue()
+        self._publisher_client: Optional[MQTTClient] = None
         self._publisher_lock = asyncio.Lock()
+        self._on_response_callback: Optional[Callable] = None
+        self._processed_requests: set = set()  # Para evitar duplicados en callbacks
+
+    def set_on_response_callback(self, callback: Callable):
+        """Establece callback para cuando se recibe una respuesta.
+
+        Args:
+            callback: Función async que recibe (req_id, accepted, declined, state)
+        """
+        self._on_response_callback = callback
 
     def _client_params(self) -> Dict[str, Any]:
         """Parámetros de conexión MQTT."""
@@ -103,16 +111,12 @@ class AvailabilityCoordinator:
 
     async def start_listener(self):
         """Inicia tarea de escucha de respuestas MQTT."""
-        logger.info("🔧 [DEBUG] start_listener() called")
         if not MQTTClient:
             logger.warning("⚠️ asyncio-mqtt no instalado; disponibilidad en vivo deshabilitada.")
             return
         if self.listener_task and not self.listener_task.done():
-            logger.info(f"⚠️ Listener task already running: {self.listener_task}")
             return
-        logger.info("🔧 [DEBUG] Creating listener task...")
         self.listener_task = asyncio.create_task(self._listener_loop())
-        logger.info(f"✅ [DEBUG] Listener task created: {self.listener_task}")
 
     async def start_publisher(self):
         """Inicia tarea de publicación de solicitudes MQTT."""
@@ -124,26 +128,17 @@ class AvailabilityCoordinator:
 
     async def _listener_loop(self):
         """Loop de escucha de respuestas MQTT (método privado)."""
-        logger.info("🔧 [DEBUG] _listener_loop() starting...")
         if not MQTTClient:
-            logger.error("❌ [DEBUG] MQTTClient is None!")
             return
-        logger.info("🔧 [DEBUG] Starting listener loop...")
         while True:
             try:
-                logger.info("🔧 [DEBUG] Connecting to MQTT broker...")
                 async with MQTTClient(**self._client_params()) as client:
-                    logger.info("✅ [DEBUG] MQTT client connected")
-                    # CRITICAL: Subscribe to topic first
-                    topic_filter = MQTT_TEMA_RESPUESTA
-                    await client.subscribe(topic_filter, qos=MQTT_QOS)
-                    logger.info(
-                        f"📡 Suscrito a MQTT para respuestas de disponibilidad: {topic_filter}"
-                    )
-                    async with client.filtered_messages(topic_filter) as messages:
-                        logger.info("🔧 [DEBUG] Waiting for messages...")
+                    async with client.unfiltered_messages() as messages:
+                        await client.subscribe(MQTT_TEMA_RESPUESTA)
+                        logger.info(
+                            f"📡 Suscrito a MQTT para respuestas de disponibilidad: {MQTT_TEMA_RESPUESTA}"
+                        )
                         async for message in messages:
-                            logger.info("🔧 [DEBUG] Message received!")
                             await self._handle_response_message(message)
             except asyncio.CancelledError:
                 break
@@ -151,7 +146,7 @@ class AvailabilityCoordinator:
                 logger.warning(f"⚠️ Error en listener MQTT: {exc}")
                 await asyncio.sleep(3)
 
-    async def _ensure_publisher_client(self) -> "MQTTClient":
+    async def _ensure_publisher_client(self) -> MQTTClient:
         """Asegura que existe cliente MQTT conectado (método privado)."""
         if not MQTTClient:
             raise RuntimeError("MQTT client no disponible")
@@ -160,19 +155,13 @@ class AvailabilityCoordinator:
         if self._publisher_client is None:
             async with self._publisher_lock:
                 if self._publisher_client is None:
-                    client = MQTTClient(**self._client_params())
-                    await client.connect()
-                    self._publisher_client = client
+                    self._publisher_client = MQTTClient(**self._client_params())
+                    await self._publisher_client.connect()
                     logger.info("✅ Cliente MQTT (publisher) conectado")
-        return cast("MQTTClient", self._publisher_client)
+        return self._publisher_client
 
     async def _publisher_loop(self):
-        """Loop de publicación de solicitudes MQTT (método privado).
-
-        Soporta dos tipos de mensajes:
-        1. Solicitudes de disponibilidad (con req_id) → av-proveedores/solicitud
-        2. Mensajes WhatsApp (con to, message) → whatsapp/clientes/send
-        """
+        """Loop de publicación de solicitudes MQTT (método privado)."""
         if not MQTTClient:
             return
         while True:
@@ -180,27 +169,17 @@ class AvailabilityCoordinator:
             try:
                 client = await self._ensure_publisher_client()
                 message_bytes = json.dumps(payload).encode("utf-8")
-
-                # Determinar topic según tipo de payload
-                if "to" in payload and "message" in payload:
-                    # Mensaje WhatsApp
-                    topic = "whatsapp/clientes/send"
-                    log_msg = f"📤 Mensaje WhatsApp publicado para {payload.get('to')}"
-                else:
-                    # Solicitud de disponibilidad (default)
-                    topic = MQTT_TEMA_SOLICITUD
-                    log_msg = "📤 Solicitud disponibilidad publicada"
-
                 await asyncio.wait_for(
-                    client.publish(topic, message_bytes, qos=MQTT_QOS),
+                    client.publish(MQTT_TEMA_SOLICITUD, message_bytes, qos=MQTT_QOS),
                     timeout=MQTT_PUBLISH_TIMEOUT,
                 )
-
-                if hash(payload.get("req_id", payload.get("to", ""))) % LOG_SAMPLING_RATE == 0:
-                    logger.info(log_msg)
-
+                if hash(payload.get("req_id", "")) % LOG_SAMPLING_RATE == 0:
+                    logger.info(
+                        "📤 Solicitud disponibilidad publicada",
+                        extra={"req_id": payload.get("req_id")},
+                    )
             except Exception as exc:
-                logger.error(f"❌ Error publicando mensaje MQTT: {exc}")
+                logger.error(f"❌ Error publicando solicitud MQTT: {exc}")
                 # Reintento simple
                 await asyncio.sleep(0.5)
                 await self.publish_queue.put(payload)
@@ -209,21 +188,14 @@ class AvailabilityCoordinator:
 
     async def _handle_response_message(self, message):
         """Procesa mensaje MQTT de respuesta (método privado)."""
-        # DEBUG: Log EVERY received MQTT message
-        logger.info(f"📨 MQTT message received on topic: {message.topic}")
-
         try:
             payload = json.loads(message.payload.decode())
         except Exception as exc:
             logger.warning(f"⚠️ Payload MQTT inválido: {exc}")
             return
 
-        # DEBUG: Log the raw payload
-        logger.info(f"📦 Raw payload: {payload}")
-
         req_id = payload.get("req_id") or payload.get("request_id")
         if not req_id:
-            logger.warning(f"⚠️ MQTT message missing req_id: {payload}")
             return
 
         provider_id = (
@@ -275,6 +247,17 @@ class AvailabilityCoordinator:
         await redis_client.set(
             state_key, state, expire=AVAILABILITY_STATE_TTL_SECONDS
         )
+
+        # Si es la primera respuesta aceptada y hay callback, ejecutarlo en background
+        was_first_accepted = status in accepted_labels and len(accepted) == 1
+        if was_first_accepted and self._on_response_callback and req_id not in self._processed_requests:
+            self._processed_requests.add(req_id)
+            try:
+                # Ejecutar callback en background para no bloquear el listener
+                asyncio.create_task(self._on_response_callback(req_id, accepted, declined, state))
+            except Exception as exc:
+                logger.error(f"❌ Error en callback de respuesta: {exc}")
+
         if hash(req_id) % LOG_SAMPLING_RATE == 0:
             logger.info(
                 "📥 Respuesta disponibilidad",
@@ -305,35 +288,23 @@ class AvailabilityCoordinator:
             logger.error(f"❌ Error encolando solicitud MQTT: {exc}")
             return False
 
-    async def send_whatsapp_message(self, phone: str, message: str) -> bool:
-        """Envía mensaje de WhatsApp vía MQTT.
-
-        Publica directamente en el topic whatsapp/clientes/send para que wa-clientes
-        envíe el mensaje al usuario.
+    async def get_results(self, req_id: str) -> Dict[str, Any]:
+        """Obtiene resultados actuales de una solicitud (sin bloquear).
 
         Args:
-            phone: Número de teléfono del destinatario (formato: 593XXXXXXXXX@c.us)
-            message: Contenido del mensaje a enviar
+            req_id: ID de solicitud
 
         Returns:
-            True si se publicó correctamente, False en caso contrario
+            Diccionario con 'accepted', 'declined', 'req_id'
         """
-        if not MQTTClient:
-            logger.warning("⚠️ MQTT no disponible, no se puede enviar mensaje WhatsApp.")
-            return False
+        state_key = self._state_key(req_id)
+        state = await redis_client.get(state_key) or {}
 
-        try:
-            payload = {
-                "to": phone,
-                "message": message,
-            }
-            await self.publish_queue.put(payload)
-            await self.start_publisher()
-            logger.debug(f"📤 Mensaje WhatsApp encolado para {phone}")
-            return True
-        except Exception as exc:
-            logger.error(f"❌ Error encolando mensaje WhatsApp: {exc}")
-            return False
+        return {
+            "accepted": state.get("accepted", []),
+            "declined": state.get("declined", []),
+            "req_id": req_id,
+        }
 
     async def request_and_wait(
         self,
