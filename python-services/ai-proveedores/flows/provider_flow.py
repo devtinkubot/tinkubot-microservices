@@ -1,320 +1,271 @@
-"""Logica del flujo conversacional para registro de proveedores."""
+"""Fachada del flujo conversacional para registro de proveedores.
+
+Este módulo actúa como una fachada que mantiene la compatibilidad con main.py
+mientras delega la implementación a módulos especializados.
+
+Módulos especializados:
+- validators: Funciones de normalización y validación
+- presentation_builders: Constructores de respuestas y menús
+- state_handlers: Manejadores de cada estado del flujo
+"""
 
 from __future__ import annotations
 
-import re
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
-from pydantic import ValidationError
+# Import de validators (manteniendo nombres originales para compatibilidad)
+from flows.validators.normalizar_texto import (
+    normalizar_texto as normalize_text,
+    parsear_anios_experiencia as parse_experience_years,
+)
+from flows.validators.validaciones_entrada import (
+    parsear_entrada_red_social as parse_social_media_input,
+    parsear_cadena_servicios as parse_services_string,
+)
 
-from shared_lib.models import ProviderCreate
-from templates.prompts import (
-    provider_post_registration_menu_message,
-    provider_under_review_message,
+# Import de presentation_builders
+from flows.presentation_builders.constructor_menu_principal import (
+    construir_menu_principal as _build_main_menu,
+    construir_respuesta_menu_registro as _build_registration_menu_response,
+)
+from flows.presentation_builders.constructor_estados_verificacion import (
+    construir_respuesta_revision as _build_under_review_response,
+    construir_respuesta_verificado as _build_verified_response,
+)
+from flows.presentation_builders.constructor_consentimiento import (
+    construir_notificacion_aprobacion as _build_approval_notification,
+    construir_respuesta_consentimiento_aceptado as _build_consent_acknowledged_response,
+    construir_respuesta_consentimiento_rechazado as _build_consent_declined_response,
+    construir_respuesta_solicitud_consentimiento as _build_consent_prompt_response,
+)
+from flows.presentation_builders.constructor_servicios import (
+    construir_menu_servicios as _build_services_menu,
+)
+from flows.presentation_builders.constructor_resumen import (
+    construir_resumen_confirmacion as _build_confirmation_summary,
+)
+
+# Import de state_handlers
+from flows.state_handlers.manejar_espera_ciudad import (
+    manejar_espera_ciudad as _handle_awaiting_city,
+)
+from flows.state_handlers.manejar_espera_nombre import (
+    manejar_espera_nombre as _handle_awaiting_name,
+)
+from flows.state_handlers.manejar_espera_profesion import (
+    manejar_espera_profesion as _handle_awaiting_profession,
+)
+from flows.state_handlers.manejar_espera_especialidad import (
+    manejar_espera_especialidad as _handle_awaiting_specialty,
+)
+from flows.state_handlers.manejar_espera_experiencia import (
+    manejar_espera_experiencia as _handle_awaiting_experience,
+)
+from flows.state_handlers.manejar_espera_correo import (
+    manejar_espera_correo as _handle_awaiting_email,
+)
+from flows.state_handlers.manejar_espera_red_social import (
+    manejar_espera_red_social as _handle_awaiting_social_media,
+)
+from flows.state_handlers.manejar_confirmacion import (
+    manejar_confirmacion as _handle_confirm,
 )
 
 
-def normalize_text(value: Optional[str]) -> str:
-    return (value or "").strip()
-
-
-def parse_experience_years(text: Optional[str]) -> Optional[int]:
-    normalized = (text or "").strip().lower()
-    if not normalized:
-        return None
-
-    digits = ""
-    for ch in normalized:
-        if ch.isdigit():
-            digits += ch
-        elif digits:
-            break
-
-    if not digits:
-        return None
-
-    try:
-        value = int(digits)
-    except ValueError:
-        return None
-
-    return max(0, min(60, value))
+# Re-export de funciones a nivel de módulo para compatibilidad
+__all__ = [
+    "normalize_text",
+    "parse_experience_years",
+    "ProviderFlow",
+]
 
 
 class ProviderFlow:
-    """Encapsula manejadores de cada estado del flujo de registro."""
+    """Fachada que encapsula toda la lógica del flujo de registro de proveedores.
+
+    Esta clase mantiene la misma interfaz pública que la implementación original,
+    delegando en módulos especializados para cada responsabilidad.
+
+    Responsabilidades de los módulos especializados:
+    - validators: Validación de inputs de usuario
+    - presentation_builders: Construcción de respuestas y mensajes
+    - state_handlers: Manejo de estados del flujo conversacional
+
+    Los métodos estáticos 'build_*' construyen respuestas completas
+    listas para ser retornadas al cliente HTTP.
+    """
+
+    # === Validators (Métodos estáticos directos) ===
 
     @staticmethod
     def parse_services_string(value: Optional[str]) -> List[str]:
-        if not value:
-            return []
+        """Parsea una cadena de servicios separados por delimitadores.
 
-        cleaned = value.strip()
-        if not cleaned:
-            return []
+        Delega a: validators.validaciones_entrada.parsear_cadena_servicios
+        """
+        return parse_services_string(value)
 
-        if re.search(r"[|;,\n]", cleaned):
-            candidates = re.split(r"[|;,\n]+", cleaned)
-        else:
-            candidates = [cleaned]
+    # === Métodos de presentación (Build Methods) ===
 
-        servicios: List[str] = []
-        for item in candidates:
-            servicio = item.strip()
-            if servicio and servicio not in servicios:
-                servicios.append(servicio)
-        return servicios[:5]
+    @staticmethod
+    def build_main_menu(is_registered: bool = False) -> str:
+        """Construye el menú principal según estado de registro.
+
+        Delega a: presentation_builders.constructor_menu_principal.construir_menu_principal
+        """
+        return _build_main_menu(is_registered)
+
+    @staticmethod
+    def build_registration_menu_response() -> Dict[str, Any]:
+        """Construye respuesta completa para menú de registro.
+
+        Delega a: presentation_builders.constructor_menu_principal.construir_respuesta_menu_registro
+        """
+        return _build_registration_menu_response()
+
+    @staticmethod
+    def build_verified_response(has_services: bool) -> Dict[str, Any]:
+        """Construye respuesta para proveedor verificado.
+
+        Delega a: presentation_builders.constructor_estados_verificacion.construir_respuesta_verificado
+        """
+        return _build_verified_response(has_services)
+
+    @staticmethod
+    def build_under_review_response() -> Dict[str, Any]:
+        """Construye respuesta cuando está en revisión.
+
+        Delega a: presentation_builders.constructor_estados_verificacion.construir_respuesta_revision
+        """
+        return _build_under_review_response()
+
+    @staticmethod
+    def build_approval_notification(provider_name: str = "") -> str:
+        """Construye mensaje de notificación de aprobación.
+
+        Delega a: presentation_builders.constructor_consentimiento.construir_notificacion_aprobacion
+        """
+        return _build_approval_notification(provider_name)
+
+    @staticmethod
+    def build_consent_prompt_response() -> Dict[str, Any]:
+        """Construye respuesta completa con solicitud de consentimiento.
+
+        Delega a: presentation_builders.constructor_consentimiento.construir_respuesta_solicitud_consentimiento
+        """
+        return _build_consent_prompt_response()
+
+    @staticmethod
+    def build_consent_acknowledged_response(is_registered: bool = False) -> Dict[str, Any]:
+        """Construye respuesta cuando el consentimiento es aceptado.
+
+        Delega a: presentation_builders.constructor_consentimiento.construir_respuesta_consentimiento_aceptado
+        """
+        return _build_consent_acknowledged_response(is_registered)
+
+    @staticmethod
+    def build_consent_declined_response() -> Dict[str, Any]:
+        """Construye respuesta cuando el consentimiento es rechazado.
+
+        Delega a: presentation_builders.constructor_consentimiento.construir_respuesta_consentimiento_rechazado
+        """
+        return _build_consent_declined_response()
+
+    @staticmethod
+    def build_services_menu(servicios: List[str], max_servicios: int = 5) -> str:
+        """Construye menú de gestión de servicios.
+
+        Delega a: presentation_builders.constructor_servicios.construir_menu_servicios
+        """
+        return _build_services_menu(servicios, max_servicios)
+
+    @staticmethod
+    def build_confirmation_summary(flow: Dict[str, Any]) -> str:
+        """Construye resumen de confirmación del registro.
+
+        Delega a: presentation_builders.constructor_resumen.construir_resumen_confirmacion
+        """
+        return _build_confirmation_summary(flow)
+
+    # === State Handlers (Métodos de manejo de estado) ===
 
     @staticmethod
     def handle_awaiting_city(
         flow: Dict[str, Any], message_text: Optional[str]
     ) -> Dict[str, Any]:
-        city = normalize_text(message_text)
-        if len(city) < 2:
-            return {
-                "success": True,
-                "response": "*Indicame tu ciudad (ej: Quito, Guayaquil, Cuenca).*",
-            }
+        """Procesa la entrada del usuario para el campo ciudad.
 
-        flow["city"] = city
-        flow["state"] = "awaiting_name"
-        return {
-            "success": True,
-            "response": "*¿Cuál es tu nombre completo?*",
-        }
+        Delega a: state_handlers.manejar_espera_ciudad.manejar_espera_ciudad
+        """
+        return _handle_awaiting_city(flow, message_text)
 
     @staticmethod
     def handle_awaiting_name(
         flow: Dict[str, Any], message_text: Optional[str]
     ) -> Dict[str, Any]:
-        name = normalize_text(message_text)
-        if len(name) < 2:
-            return {
-                "success": True,
-                "response": "*Por favor, enviame tu nombre completo.*",
-            }
+        """Procesa la entrada del usuario para el campo nombre.
 
-        flow["name"] = name
-        flow["state"] = "awaiting_profession"
-        return {
-            "success": True,
-            "response": (
-                '*¿Cuál es tu profesión u oficio? Escribe el título, por ejemplo: '
-                '"Carpintero", "Ingeniero Electrico", "Abogado".*'
-            ),
-        }
+        Delega a: state_handlers.manejar_espera_nombre.manejar_espera_nombre
+        """
+        return _handle_awaiting_name(flow, message_text)
 
     @staticmethod
     def handle_awaiting_profession(
         flow: Dict[str, Any], message_text: Optional[str]
     ) -> Dict[str, Any]:
-        profession = normalize_text(message_text)
-        if len(profession) < 2:
-            return {
-                "success": True,
-                "response": (
-                    '*Indica tu profesión u oficio. Ejemplos: "Carpintero", '
-                    '"Ingeniero Electrico", "Abogado".*'
-                ),
-            }
-        if len(profession) > 150:
-            return {
-                "success": True,
-                "response": (
-                    "*Tu profesión debe ser breve (máximo 150 caracteres).* "
-                    "Envía una versión resumida (ej: 'Ingeniera en marketing' o 'Contratación pública')."
-                ),
-            }
+        """Procesa la entrada del usuario para el campo profesión.
 
-        flow["profession"] = profession
-        flow["state"] = "awaiting_specialty"
-        return {
-            "success": True,
-            "response": (
-                "*¿Qué servicios ofreces dentro de tu profesión?* "
-                "Sepáralos con comas (ej: instalación eléctrica, mantenimiento industrial)."
-            ),
-        }
+        Delega a: state_handlers.manejar_espera_profesion.manejar_espera_profesion
+        """
+        return _handle_awaiting_profession(flow, message_text)
 
     @staticmethod
     def handle_awaiting_specialty(
         flow: Dict[str, Any], message_text: Optional[str]
     ) -> Dict[str, Any]:
-        specialty = normalize_text(message_text)
-        lowered = specialty.lower()
-        if lowered in {"omitir", "ninguna", "na", "n/a"}:
-            return {
-                "success": True,
-                "response": (
-                    "*La especialidad es obligatoria. Por favor escríbela tal como la trabajas, separando con comas si hay varias.*"
-                ),
-            }
+        """Procesa la entrada del usuario para el campo especialidad.
 
-        if len(specialty) < 2:
-            return {
-                "success": True,
-                "response": (
-                    "*La especialidad debe tener al menos 2 caracteres. "
-                    "Incluye tus servicios separados por comas (ej: gasfitería, mantenimiento).*"
-                ),
-            }
-
-        if len(specialty) > 300:
-            return {
-                "success": True,
-                "response": (
-                    "*El listado de servicios es muy largo (máx. 300 caracteres).* "
-                    "Envía una versión resumida con tus principales servicios separados por comas."
-                ),
-            }
-
-        services_list = [
-            item.strip()
-            for item in re.split(r"[;,/\n]+", specialty)
-            if item and item.strip()
-        ]
-
-        if len(services_list) > 10:
-            return {
-                "success": True,
-                "response": (
-                    "*Incluye máximo 10 servicios.* Envía nuevamente tus principales servicios separados por comas."
-                ),
-            }
-
-        if any(len(srv) > 120 for srv in services_list):
-            return {
-                "success": True,
-                "response": (
-                    "*Cada servicio debe ser breve (máx. 120 caracteres).* "
-                    "Recorta descripciones muy largas y envía de nuevo la lista."
-                ),
-            }
-
-        flow["specialty"] = ", ".join(services_list) if services_list else specialty
-        flow["state"] = "awaiting_experience"
-        return {
-            "success": True,
-            "response": ("*Cuantos años de experiencia tienes? (escribe un numero)*"),
-        }
+        Delega a: state_handlers.manejar_espera_especialidad.manejar_espera_especialidad
+        """
+        return _handle_awaiting_specialty(flow, message_text)
 
     @staticmethod
     def handle_awaiting_experience(
         flow: Dict[str, Any], message_text: Optional[str]
     ) -> Dict[str, Any]:
-        years = parse_experience_years(message_text)
-        if years is None:
-            return {
-                "success": True,
-                "response": "*Necesito un numero de años de experiencia (ej: 5).*",
-            }
+        """Procesa la entrada del usuario para el campo experiencia.
 
-        flow["experience_years"] = years
-        flow["state"] = "awaiting_email"
-        return {
-            "success": True,
-            "response": "*Escribe tu correo electrónico o escribe \"omitir\" si no deseas agregarlo.*",
-        }
+        Delega a: state_handlers.manejar_espera_experiencia.manejar_espera_experiencia
+        """
+        return _handle_awaiting_experience(flow, message_text)
 
     @staticmethod
     def handle_awaiting_email(
         flow: Dict[str, Any], message_text: Optional[str]
     ) -> Dict[str, Any]:
-        email = normalize_text(message_text)
-        if email.lower() in {"omitir", "na", "n/a", "ninguno", "ninguna"}:
-            email = None
-        elif "@" not in email or "." not in email:
-            return {
-                "success": True,
-                "response": (
-                    "*El correo no parece valido. Envialo nuevamente o escribe 'omitir'.*"
-                ),
-            }
+        """Procesa la entrada del usuario para el campo correo.
 
-        flow["email"] = email
-        flow["state"] = "awaiting_social_media"
-        return {
-            "success": True,
-            "response": (
-                "*Tienes alguna red social (Instagram o Facebook) para mostrar tu trabajo? "
-                "Envia el enlace o escribe 'omitir'.*"
-            ),
-        }
+        Delega a: state_handlers.manejar_espera_correo.manejar_espera_correo
+        """
+        return _handle_awaiting_email(flow, message_text)
 
     @staticmethod
     def parse_social_media_input(message_text: Optional[str]) -> Dict[str, Optional[str]]:
-        """Parsea la entrada de red social y devuelve url + tipo."""
-        social = normalize_text(message_text)
-        if social.lower() in {"omitir", "na", "n/a", "ninguno"}:
-            return {"url": None, "type": None}
-        if "facebook.com" in social or "fb.com" in social:
-            return {"url": social, "type": "facebook"}
-        if "instagram.com" in social or "instagr.am" in social:
-            return {"url": social, "type": "instagram"}
-        return {"url": f"https://instagram.com/{social}", "type": "instagram"}
+        """Parsea la entrada de red social y devuelve url + tipo.
+
+        Delega a: validators.validaciones_entrada.parsear_entrada_red_social
+        """
+        return parse_social_media_input(message_text)
 
     @staticmethod
     def handle_awaiting_social_media(
         flow: Dict[str, Any], message_text: Optional[str]
     ) -> Dict[str, Any]:
-        parsed = ProviderFlow.parse_social_media_input(message_text)
-        flow["social_media_url"] = parsed["url"]
-        flow["social_media_type"] = parsed["type"]
+        """Procesa la entrada del usuario para el campo red social.
 
-        flow["state"] = "awaiting_dni_front_photo"
-        return {
-            "success": True,
-            "response": (
-                "*Perfecto. Ahora necesito la foto de la Cédula (parte frontal). "
-                "Envia la imagen como adjunto.*"
-            ),
-        }
-
-    @staticmethod
-    def build_confirmation_summary(flow: Dict[str, Any]) -> str:
-        email = flow.get("email") or "No especificado"
-        social = flow.get("social_media_url") or "No especificada"
-        social_type = flow.get("social_media_type")
-        if social_type and social and social != "No especificada":
-            social = f"{social} ({social_type})"
-
-        front = "Recibida" if flow.get("dni_front_image") else "Pendiente"
-        back = "Recibida" if flow.get("dni_back_image") else "Pendiente"
-        face = "Recibida" if flow.get("face_image") else "Pendiente"
-
-        experience = flow.get("experience_years")
-        experience_text = (
-            f"{experience} años"
-            if isinstance(experience, int) and experience > 0
-            else "Sin especificar"
-        )
-        specialty = flow.get("specialty") or "No especificada"
-        city = flow.get("city") or "No especificada"
-        profession = flow.get("profession") or "No especificada"
-        name = flow.get("name") or "No especificado"
-
-        lines = [
-            "-----------------------------",
-            "*Por favor confirma tus datos:*",
-            "-----------------------------",
-            f"- Ciudad: {city}",
-            f"- Nombre: {name}",
-            f"- Profesion: {profession}",
-            f"- Especialidad: {specialty}",
-            f"- Experiencia: {experience_text}",
-            f"- Correo: {email}",
-            f"- Red Social: {social}",
-            f"- Foto Cédula (frente): {front}",
-            f"- Foto Cédula (reverso): {back}",
-            f"- Selfie: {face}",
-            "",
-            "-----------------------------",
-            "1. Confirmar datos",
-            "2. Editar información",
-            "-----------------------------",
-            "*Responde con el numero de tu opcion:*",
-        ]
-        return "\n".join(lines)
+        Delega a: state_handlers.manejar_espera_red_social.manejar_espera_red_social
+        """
+        return _handle_awaiting_social_media(flow, message_text)
 
     @staticmethod
     async def handle_confirm(
@@ -328,100 +279,16 @@ class ProviderFlow:
         reset_flow_fn: Callable[[], Awaitable[None]],
         logger: Any,
     ) -> Dict[str, Any]:
-        raw_text = normalize_text(message_text)
-        text = raw_text.lower()
+        """Procesa la confirmación del registro y crea el proveedor.
 
-        if text.startswith("2") or "editar" in text:
-            has_consent = flow.get("has_consent", False)
-            flow.clear()
-            flow["state"] = "awaiting_city"
-            if has_consent:
-                flow["has_consent"] = True
-            return {
-                "success": True,
-                "response": ("Reiniciemos. *En que ciudad trabajas principalmente?*"),
-            }
-
-        if (
-            text.startswith("1")
-            or text.startswith("confirm")
-            or text in {"si", "ok", "listo", "confirmar"}
-        ):
-            specialty = flow.get("specialty")
-            services_list = []
-            if isinstance(specialty, str):
-                services_list = [
-                    item.strip()
-                    for item in re.split(r"[;,/\n]+", specialty)
-                    if item and item.strip()
-                ]
-                if not services_list and specialty.strip():
-                    services_list = [specialty.strip()]
-
-            try:
-                provider_payload = ProviderCreate(
-                    phone=phone,
-                    full_name=flow.get("name") or "",
-                    email=flow.get("email"),
-                    city=flow.get("city") or "",
-                    profession=flow.get("profession") or "",
-                    services_list=services_list,
-                    experience_years=flow.get("experience_years"),
-                    has_consent=flow.get("has_consent", False),
-                    social_media_url=flow.get("social_media_url"),
-                    social_media_type=flow.get("social_media_type"),
-                )
-            except ValidationError as exc:
-                logger.error("Datos de registro invalidos para %s: %s", phone, exc)
-                first_error = exc.errors()[0] if exc.errors() else {}
-                reason = first_error.get("msg") or "Datos inválidos"
-                return {
-                    "success": False,
-                    "response": (
-                        f"*No pude validar tus datos:* {reason}. "
-                        "Revisa que nombre, ciudad y profesión cumplan con el formato y longitud."
-                    ),
-                }
-
-            registered_provider = await register_provider_fn(provider_payload)
-            if registered_provider:
-                logger.info(
-                    "Proveedor registrado exitosamente: %s",
-                    registered_provider.get("id"),
-                )
-                provider_id = registered_provider.get("id")
-                servicios_registrados = ProviderFlow.parse_services_string(
-                    registered_provider.get("services")
-                )
-                flow["services"] = servicios_registrados
-                if provider_id:
-                    await upload_media_fn(provider_id, flow)
-                await reset_flow_fn()
-                return {
-                    "success": True,
-                    "messages": [{"response": provider_under_review_message()}],
-                    "reset_flow": True,
-                    "new_flow": {
-                        "state": "pending_verification",
-                        "has_consent": True,
-                        "registration_allowed": False,
-                        "provider_id": provider_id,
-                        "services": servicios_registrados,
-                        "awaiting_verification": True,
-                    },
-                }
-
-            logger.error("No se pudo registrar el proveedor")
-            return {
-                "success": False,
-                "response": (
-                    "*Hubo un error al guardar tu informacion. Por favor intenta de nuevo.*"
-                ),
-            }
-
-        return {
-            "success": True,
-            "response": (
-                "*Por favor selecciona 1 para confirmar o 2 para editar tu informacion.*"
-            ),
-        }
+        Delega a: state_handlers.manejar_confirmacion.manejar_confirmacion
+        """
+        return await _handle_confirm(
+            flow,
+            message_text,
+            phone,
+            register_provider_fn,
+            upload_media_fn,
+            reset_flow_fn,
+            logger,
+        )
