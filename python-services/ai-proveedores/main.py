@@ -17,22 +17,35 @@ import httpx
 import uvicorn
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from flows.provider_flow import ProviderFlow
+# Import de módulos especializados del flujo de proveedores
+from flows.presentation_builders import (
+    construir_menu_principal,
+    construir_respuesta_menu_registro,
+    construir_respuesta_verificado,
+    construir_respuesta_revision,
+    construir_respuesta_solicitud_consentimiento,
+    construir_respuesta_consentimiento_aceptado,
+    construir_respuesta_consentimiento_rechazado,
+    construir_notificacion_aprobacion,
+    construir_menu_servicios,
+    construir_resumen_confirmacion,
+)
+from flows.state_handlers import (
+    manejar_confirmacion,
+    manejar_espera_ciudad,
+    manejar_espera_correo,
+    manejar_espera_especialidad,
+    manejar_espera_experiencia,
+    manejar_espera_nombre,
+    manejar_espera_profesion,
+    manejar_espera_red_social,
+)
+from flows.validators.validaciones_entrada import (
+    parsear_entrada_red_social as parse_social_media_input,
+)
 from openai import OpenAI
 from pydantic import BaseModel
 from supabase import Client, create_client
-from templates.prompts import (
-    consent_acknowledged_message,
-    consent_declined_message,
-    consent_prompt_messages,
-    provider_guidance_message,
-    provider_approved_notification,
-    provider_main_menu_message,
-    provider_post_registration_menu_message,
-    provider_under_review_message,
-    provider_verified_message,
-    provider_services_menu_message,
-)
 
 from shared_lib.config import settings
 from shared_lib.models import (
@@ -61,7 +74,6 @@ from utils.services_utils import (
     formatear_servicios,
     dividir_cadena_servicios,
     extraer_servicios_guardados,
-    construir_mensaje_servicios,
     construir_listado_servicios,
 )
 
@@ -411,9 +423,7 @@ async def obtener_perfil_proveedor_cacheado(phone: str) -> Optional[Dict[str, An
 
 async def solicitar_consentimiento_proveedor(phone: str) -> Dict[str, Any]:
     """Generar mensajes de solicitud de consentimiento para proveedores."""
-    prompts = consent_prompt_messages()
-    messages = [{"response": text} for text in prompts]
-    return {"success": True, "messages": messages}
+    return construir_respuesta_solicitud_consentimiento()
 
 
 def interpretar_respuesta_usuario(
@@ -611,20 +621,8 @@ async def manejar_respuesta_consentimiento(  # noqa: C901
             and provider_profile.get("full_name")  # Verificar que tiene datos completos
             and provider_profile.get("profession")
         )
-        menu_message = (
-            provider_post_registration_menu_message()
-            if is_fully_registered
-            else provider_main_menu_message()
-        )
 
-        messages = [
-            {"response": consent_acknowledged_message()},
-            {"response": menu_message},
-        ]
-        return {
-            "success": True,
-            "messages": messages,
-        }
+        return construir_respuesta_consentimiento_aceptado(is_fully_registered)
 
     # Rechazo de consentimiento
     if supabase and provider_id:
@@ -652,10 +650,7 @@ async def manejar_respuesta_consentimiento(  # noqa: C901
     await reiniciar_flujo(phone)
     logger.info("Consentimiento rechazado por proveedor %s", phone)
 
-    return {
-        "success": True,
-        "messages": [{"response": consent_declined_message()}],
-    }
+    return construir_respuesta_consentimiento_rechazado()
 
 
 # Funciones para manejo de imágenes en Supabase Storage
@@ -1190,7 +1185,7 @@ async def notify_provider_approval(
             return
 
         name = provider.get("full_name") or ""
-        message = provider_approved_notification(name)
+        message = construir_notificacion_aprobacion(name)
         await send_whatsapp_message(
             WhatsAppMessageRequest(phone=phone, message=message)
         )
@@ -1267,7 +1262,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                                     "Gracias por usar TinkuBot Proveedores; escríbeme cuando quieras.**"
                                 )
                             },
-                            {"response": provider_post_registration_menu_message()},
+                            {"response": construir_menu_principal(is_registered=True)},
                         ]
                     }
             except Exception:
@@ -1306,10 +1301,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                 }
             )
             await establecer_flujo(phone, flow)
-            return {
-                "success": True,
-                "messages": [{"response": provider_under_review_message()}],
-            }
+            return construir_respuesta_revision()
 
         # Si el perfil acaba de ser aprobado, notificar y habilitar menú
         if flow.get("state") == "pending_verification" and is_verified:
@@ -1322,13 +1314,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                 }
             )
             await establecer_flujo(phone, flow)
-            return {
-                "success": True,
-                "messages": [
-                    {"response": provider_verified_message()},
-                    {"response": provider_post_registration_menu_message()},
-                ],
-            }
+            return construir_respuesta_verificado(has_services=bool(flow.get("services")))
 
         if not state:
             if not has_consent:
@@ -1344,37 +1330,25 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
             if is_verified and not flow.get("verification_notified"):
                 flow["verification_notified"] = True
                 await establecer_flujo(phone, flow)
-                return {
-                    "success": True,
-                    "messages": [
-                        {"response": provider_verified_message()},
-                        {"response": provider_post_registration_menu_message()},
-                    ],
-                }
-            menu_message = (
-                provider_main_menu_message()
-                if not esta_registrado
-                else provider_post_registration_menu_message()
-            )
-            await establecer_flujo(phone, flow)
-            mensajes = []
+                return construir_respuesta_verificado(has_services=bool(flow.get("services")))
+
             if not esta_registrado:
-                mensajes.append({"response": provider_guidance_message()})
-            mensajes.append({"response": menu_message})
-            return {"success": True, "messages": mensajes}
+                await establecer_flujo(phone, flow)
+                return construir_respuesta_menu_registro()
+
+            await establecer_flujo(phone, flow)
+            return {
+                "success": True,
+                "messages": [{"response": construir_menu_principal(is_registered=True)}],
+            }
 
         if state == "awaiting_consent":
             if has_consent:
                 flow["state"] = "awaiting_menu_option"
                 await establecer_flujo(phone, flow)
-                menu_message = (
-                    provider_main_menu_message()
-                    if not esta_registrado
-                    else provider_post_registration_menu_message()
-                )
                 return {
                     "success": True,
-                    "messages": [{"response": menu_message}],
+                    "messages": [{"response": construir_menu_principal(is_registered=esta_registrado)}],
                 }
             consent_reply = await manejar_respuesta_consentimiento(
                 phone, flow, payload, provider_profile
@@ -1407,7 +1381,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                     "success": True,
                     "messages": [
                         {"response": "No reconoci esa opcion. Por favor elige 1 o 2."},
-                        {"response": provider_main_menu_message()},
+                        {"response": construir_menu_principal(is_registered=False)},
                     ],
                 }
 
@@ -1418,7 +1392,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                 await establecer_flujo(phone, flow)
                 return {
                     "success": True,
-                    "messages": [{"response": construir_mensaje_servicios(servicios_actuales)}],
+                    "messages": [{"response": construir_menu_servicios(servicios_actuales, SERVICIOS_MAXIMOS)}],
                 }
             if choice == "2" or "selfie" in lowered or "foto" in lowered:
                 flow["state"] = "awaiting_face_photo_update"
@@ -1452,7 +1426,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                 "success": True,
                 "messages": [
                     {"response": "No reconoci esa opcion. Por favor elige 1, 2, 3 o 4."},
-                    {"response": provider_post_registration_menu_message()},
+                    {"response": construir_menu_principal(is_registered=True)},
                 ],
             }
 
@@ -1463,10 +1437,10 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                 await establecer_flujo(phone, flow)
                 return {
                     "success": True,
-                    "messages": [{"response": provider_post_registration_menu_message()}],
+                    "messages": [{"response": construir_menu_principal(is_registered=True)}],
                 }
 
-            parsed = ProviderFlow.parse_social_media_input(message_text)
+            parsed = parse_social_media_input(message_text)
             flow["social_media_url"] = parsed["url"]
             flow["social_media_type"] = parsed["type"]
 
@@ -1491,7 +1465,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                     "success": False,
                     "messages": [
                         {"response": "No pude actualizar tus redes sociales en este momento."},
-                        {"response": provider_post_registration_menu_message()},
+                        {"response": construir_menu_principal(is_registered=True)},
                     ],
                 }
 
@@ -1505,7 +1479,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                         if parsed["url"]
                         else "Redes sociales eliminadas."
                     },
-                    {"response": provider_post_registration_menu_message()},
+                    {"response": construir_menu_principal(is_registered=True)},
                 ],
             }
 
@@ -1525,7 +1499,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                                     "Elimina uno antes de agregar otro."
                                 )
                             },
-                            {"response": construir_mensaje_servicios(servicios_actuales)},
+                            {"response": construir_menu_servicios(servicios_actuales, SERVICIOS_MAXIMOS)},
                         ],
                     }
                 flow["state"] = "awaiting_service_add"
@@ -1546,7 +1520,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                         "success": True,
                         "messages": [
                             {"response": "Aún no tienes servicios para eliminar."},
-                            {"response": construir_mensaje_servicios(servicios_actuales)},
+                            {"response": construir_menu_servicios(servicios_actuales, SERVICIOS_MAXIMOS)},
                         ],
                     }
                 flow["state"] = "awaiting_service_remove"
@@ -1565,7 +1539,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                 await establecer_flujo(phone, flow)
                 return {
                     "success": True,
-                    "messages": [{"response": provider_post_registration_menu_message()}],
+                    "messages": [{"response": construir_menu_principal(is_registered=True)}],
                 }
 
             await establecer_flujo(phone, flow)
@@ -1573,7 +1547,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                 "success": True,
                 "messages": [
                     {"response": "No reconoci esa opcion. Elige 1, 2 o 3."},
-                    {"response": construir_mensaje_servicios(servicios_actuales)},
+                    {"response": construir_menu_servicios(servicios_actuales, SERVICIOS_MAXIMOS)},
                 ],
             }
 
@@ -1584,7 +1558,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                 await establecer_flujo(phone, flow)
                 return {
                     "success": True,
-                    "messages": [{"response": provider_post_registration_menu_message()}],
+                    "messages": [{"response": construir_menu_principal(is_registered=True)}],
                 }
 
             servicios_actuales = flow.get("services") or []
@@ -1599,7 +1573,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                                 "Elimina uno antes de agregar otro."
                             )
                         },
-                        {"response": construir_mensaje_servicios(servicios_actuales)},
+                        {"response": construir_menu_servicios(servicios_actuales, SERVICIOS_MAXIMOS)},
                     ],
                 }
 
@@ -1613,7 +1587,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                                 "No pude interpretar ese servicio. Usa una descripción corta y separa con comas si son varios (ej: 'gasfitería, mantenimiento')."
                             )
                         },
-                        {"response": construir_mensaje_servicios(servicios_actuales)},
+                        {"response": construir_menu_servicios(servicios_actuales, SERVICIOS_MAXIMOS)},
                     ],
                 }
 
@@ -1638,7 +1612,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                                 "Recuerda separarlos con comas y usar descripciones cortas."
                             )
                         },
-                        {"response": construir_mensaje_servicios(servicios_actuales)},
+                        {"response": construir_menu_servicios(servicios_actuales, SERVICIOS_MAXIMOS)},
                     ],
                 }
 
@@ -1675,7 +1649,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
 
             response_messages = [
                 {"response": agregado_msg},
-                {"response": construir_mensaje_servicios(servicios_finales)},
+                {"response": construir_menu_servicios(servicios_finales, SERVICIOS_MAXIMOS)},
             ]
             if aviso_limite:
                 response_messages.insert(
@@ -1700,7 +1674,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                 await establecer_flujo(phone, flow)
                 return {
                     "success": True,
-                    "messages": [{"response": provider_post_registration_menu_message()}],
+                    "messages": [{"response": construir_menu_principal(is_registered=True)}],
                 }
 
             texto = (message_text or "").strip()
@@ -1748,7 +1722,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                 "success": True,
                 "messages": [
                     {"response": f"Servicio eliminado: *{servicio_eliminado}*."},
-                    {"response": construir_mensaje_servicios(servicios_finales)},
+                    {"response": construir_menu_servicios(servicios_finales, SERVICIOS_MAXIMOS)},
                 ],
             }
 
@@ -1759,7 +1733,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                 await establecer_flujo(phone, flow)
                 return {
                     "success": True,
-                    "messages": [{"response": provider_post_registration_menu_message()}],
+                    "messages": [{"response": construir_menu_principal(is_registered=True)}],
                 }
 
             image_b64 = extract_first_image_base64(payload)
@@ -1792,7 +1766,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                 "success": True,
                 "messages": [
                     {"response": "Selfie actualizada correctamente."},
-                    {"response": provider_post_registration_menu_message()},
+                    {"response": construir_menu_principal(is_registered=True)},
                 ],
             }
 
@@ -1812,37 +1786,37 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
             }
 
         if state == "awaiting_city":
-            reply = ProviderFlow.handle_awaiting_city(flow, message_text)
+            reply = manejar_espera_ciudad(flow, message_text)
             await establecer_flujo(phone, flow)
             return reply
 
         if state == "awaiting_name":
-            reply = ProviderFlow.handle_awaiting_name(flow, message_text)
+            reply = manejar_espera_nombre(flow, message_text)
             await establecer_flujo(phone, flow)
             return reply
 
         if state == "awaiting_profession":
-            reply = ProviderFlow.handle_awaiting_profession(flow, message_text)
+            reply = manejar_espera_profesion(flow, message_text)
             await establecer_flujo(phone, flow)
             return reply
 
         if state == "awaiting_specialty":
-            reply = ProviderFlow.handle_awaiting_specialty(flow, message_text)
+            reply = manejar_espera_especialidad(flow, message_text)
             await establecer_flujo(phone, flow)
             return reply
 
         if state == "awaiting_experience":
-            reply = ProviderFlow.handle_awaiting_experience(flow, message_text)
+            reply = manejar_espera_experiencia(flow, message_text)
             await establecer_flujo(phone, flow)
             return reply
 
         if state == "awaiting_email":
-            reply = ProviderFlow.handle_awaiting_email(flow, message_text)
+            reply = manejar_espera_correo(flow, message_text)
             await establecer_flujo(phone, flow)
             return reply
 
         if state == "awaiting_social_media":
-            reply = ProviderFlow.handle_awaiting_social_media(flow, message_text)
+            reply = manejar_espera_red_social(flow, message_text)
             await establecer_flujo(phone, flow)
             return reply
 
@@ -1888,7 +1862,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                     ),
                 }
             flow["face_image"] = image_b64
-            summary = ProviderFlow.build_confirmation_summary(flow)
+            summary = construir_resumen_confirmacion(flow)
             flow["state"] = "confirm"
             await establecer_flujo(phone, flow)
             return {
@@ -1910,7 +1884,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
             }
 
         if state == "confirm":
-            reply = await ProviderFlow.handle_confirm(
+            reply = await manejar_confirmacion(
                 flow,
                 message_text,
                 phone,
