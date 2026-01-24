@@ -8,11 +8,34 @@ from typing import Any, Awaitable, Callable, Dict, Optional, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
-from templates.prompts import (
-    opciones_consentimiento_textos,
+from templates.consentimiento import (
     mensaje_consentimiento_datos,
-    mensaje_listado_sin_resultados,
-    mensaje_error_input_invalido,
+    opciones_consentimiento_textos,
+)
+from templates.listado_proveedores import mensaje_listado_sin_resultados
+from templates.validacion_entrada import mensaje_error_input_invalido
+
+# Imports de templates para flujo conversacional
+from templates.solicitud_ubicacion import (
+    preguntar_ciudad,
+    preguntar_ciudad_con_servicio,
+    error_ciudad_no_reconocida,
+    solicitar_ciudad_formato,
+    preguntar_ciudad_cambio,
+)
+from templates.estado_sesion import (
+    mensaje_nueva_sesion,
+    mensaje_cuenta_suspendida,
+)
+from templates.cierre_conversacion import mensaje_despedida
+from templates.validacion_entrada import (
+    solicitar_reformulacion,
+    solicitar_descripcion_servicio,
+)
+from templates.listado_proveedores import (
+    instruccion_seleccion_numero,
+    error_proveedor_no_encontrado,
+    preguntar_servicio,
 )
 
 
@@ -40,7 +63,7 @@ def validate_service_input(
 
     # Caso 1: Vacío o saludo
     if not cleaned or cleaned.lower() in greetings:
-        return False, "Por favor describe el servicio.", None
+        return False, solicitar_descripcion_servicio(), None
 
     # Caso 2: Solo números
     if cleaned.isdigit():
@@ -195,13 +218,13 @@ class ClientFlow:
                 return await respond_fn(
                     flow,
                     {
-                        "response": "Perfecto, ¿qué servicio necesitas?",
+                        "response": preguntar_servicio(),
                     },
                 )
             flow["state"] = "awaiting_city"
             return await respond_fn(
                 flow,
-                {"response": "¿En qué ciudad necesitas " + service + "?"},
+                {"response": preguntar_ciudad_con_servicio(service)},
             )
 
         results = await search_providers_fn(service, city)
@@ -308,7 +331,7 @@ class ClientFlow:
 
         if not provider:
             return {
-                "response": "Indica el número (1-5) del proveedor que quieres ver."
+                "response": instruccion_seleccion_numero()
             }
 
         flow["state"] = "viewing_provider_detail"
@@ -385,7 +408,7 @@ class ClientFlow:
 
         if choice_normalized in ("1", "opcion 1", "opción 1", "elegir"):
             if not provider:
-                return {"response": "No encontré ese proveedor, elige otra opción."}
+                return {"response": error_proveedor_no_encontrado()}
             return await ClientFlow._connect_and_confirm(
                 flow,
                 provider,
@@ -508,7 +531,7 @@ class ClientFlow:
             flow.pop("confirm_include_city_option", None)
             return await respond_fn(
                 flow,
-                {"response": "Entendido, ¿en qué ciudad lo necesitas ahora?"},
+                {"response": preguntar_ciudad_cambio()},
             )
 
         confirm_title = flow.get("confirm_title")
@@ -617,6 +640,72 @@ class ClientFlow:
             flow,
             flow.get("confirm_title") or confirm_prompt_title_default,
         )
+
+    @staticmethod
+    def handle_reset_session() -> dict:
+        """Retorna mensaje de nueva sesión iniciada."""
+        from templates.estado_sesion import mensaje_nueva_sesion
+        return {"response": mensaje_nueva_sesion()}
+
+    @staticmethod
+    def handle_banned_user() -> dict:
+        """Retorna mensaje de cuenta suspendida."""
+        from templates.estado_sesion import mensaje_cuenta_suspendida
+        return {"response": mensaje_cuenta_suspendida()}
+
+    @staticmethod
+    def handle_farewell() -> dict:
+        """Retorna mensaje de despedida."""
+        from templates.cierre_conversacion import mensaje_despedida
+        return {"response": mensaje_despedida()}
+
+    @staticmethod
+    def get_initial_prompt() -> str:
+        """Retorna el prompt inicial de solicitud de servicio."""
+        from templates.validacion_entrada import mensaje_inicial_solicitud_servicio
+        return mensaje_inicial_solicitud_servicio
+
+    @staticmethod
+    def handle_fallback() -> dict:
+        """Retorna mensaje solicitando reformulación."""
+        from templates.validacion_entrada import solicitar_reformulacion
+        return {"response": solicitar_reformulacion()}
+
+    @staticmethod
+    def handle_city_not_recognized() -> dict:
+        """Retorna error de ciudad no reconocida."""
+        from templates.solicitud_ubicacion import error_ciudad_no_reconocida
+        return {"response": error_ciudad_no_reconocida()}
+
+    @staticmethod
+    def request_city() -> dict:
+        """Solicita ciudad al usuario."""
+        from templates.solicitud_ubicacion import preguntar_ciudad
+        return {"response": preguntar_ciudad()}
+
+    @staticmethod
+    def request_city_with_service(service: str) -> dict:
+        """Solicita ciudad dado un servicio."""
+        from templates.solicitud_ubicacion import preguntar_ciudad_con_servicio
+        return {"response": preguntar_ciudad_con_servicio(service)}
+
+    @staticmethod
+    def get_searching_message() -> str:
+        """Retorna mensaje de buscando disponibilidad."""
+        from templates.confirmacion_busqueda import mensaje_confirmando_disponibilidad
+        return mensaje_confirmando_disponibilidad
+
+    @staticmethod
+    def handle_request_consent() -> list[dict]:
+        """Retorna mensajes de flujo de consentimiento."""
+        from templates.consentimiento import mensajes_flujo_consentimiento
+        return [{"response": msg} for msg in mensajes_flujo_consentimiento()]
+
+    @staticmethod
+    def is_restart_option(selected: str) -> bool:
+        """Verifica si la opción seleccionada es de reinicio."""
+        from templates.confirmacion_busqueda import opciones_confirmar_nueva_busqueda_textos
+        return selected in opciones_confirmar_nueva_busqueda_textos
 
 
 async def check_city_and_proceed(

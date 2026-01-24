@@ -57,6 +57,10 @@ RUN npm install --omit=dev --production
 # Copiar el resto del código de la aplicación
 COPY . .
 
+# Aplicar patch para manejar error de markedUnread en whatsapp-web.js
+COPY patch-sendSeen.js /tmp/patch-sendSeen.js
+RUN node /tmp/patch-sendSeen.js && rm /tmp/patch-sendSeen.js
+
 # Exponer el puerto (dinámico mediante variable de entorno)
 EXPOSE 5002
 

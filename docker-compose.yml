@@ -123,6 +123,20 @@ services:
       - AI_SERVICE_CLIENTES_PORT=${AI_SERVICE_CLIENTES_PORT}
       - SERVER_HOST=${SERVER_HOST}
       - NODE_ENV=production
+      # MQTT Configuration
+      - MQTT_HOST=mosquitto
+      - MQTT_PORT=1883
+      - MQTT_USUARIO=${MQTT_USUARIO:-}
+      - MQTT_PASSWORD=${MQTT_PASSWORD:-}
+      - MQTT_PUBLISH_TIMEOUT=5
+      - MQTT_QOS=1
+      - MQTT_TEMA_SOLICITUD=av-proveedores/solicitud
+      - MQTT_TEMA_RESPUESTA=av-proveedores/respuesta
+      - AVAILABILITY_TIMEOUT_SECONDS=45
+      - AVAILABILITY_ACCEPT_GRACE_SECONDS=2.0
+      - LOG_SAMPLING_RATE=10
+      - AVAILABILITY_STATE_TTL_SECONDS=300
+      - AVAILABILITY_POLL_INTERVAL_SECONDS=1.5
     networks:
       - tinkubot-network
     restart: unless-stopped

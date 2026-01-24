@@ -149,13 +149,6 @@ def extraer_servicios_guardados(valor: Optional[str]) -> List[str]:
     return resultado
 
 
-def construir_mensaje_servicios(servicios: List[str]) -> str:
-    """Genera mensaje para mostrar servicios y opciones."""
-    from templates.prompts import provider_services_menu_message
-
-    return provider_services_menu_message(servicios, SERVICIOS_MAXIMOS)
-
-
 def construir_listado_servicios(servicios: List[str]) -> str:
     """Genera listado numerado de servicios actuales."""
     if not servicios:
