@@ -18,9 +18,6 @@ RUN pip3 install --no-cache-dir -r requirements.txt
 # Copiar código fuente del servicio
 COPY ai-proveedores/ .
 
-# Copiar librería compartida si se requiere en el futuro
-COPY shared-lib ./shared_lib
-
 # Asegurar que /app esté en PYTHONPATH para resolver main.py
 ENV PYTHONPATH="/app"
 

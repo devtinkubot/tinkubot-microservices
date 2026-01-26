@@ -1,7 +1,6 @@
 """Módulo de constructores de presentaciones para el flujo de proveedores."""
 
 from .construidor_consentimiento import (
-    construir_notificacion_aprobacion,
     construir_respuesta_consentimiento_aceptado,
     construir_respuesta_consentimiento_rechazado,
     construir_respuesta_solicitud_consentimiento,
@@ -25,7 +24,6 @@ __all__ = [
     "construir_respuesta_solicitud_consentimiento",
     "construir_respuesta_consentimiento_aceptado",
     "construir_respuesta_consentimiento_rechazado",
-    "construir_notificacion_aprobacion",
     "construir_menu_servicios",
     "construir_resumen_confirmacion",
 ]

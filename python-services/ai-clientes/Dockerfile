@@ -17,8 +17,6 @@ RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Copiar código fuente
 COPY ai-clientes/ .
-# Copiar librería compartida (módulo shared_lib)
-COPY shared-lib ./shared_lib
 
 # Asegurar que /app esté siempre en PYTHONPATH
 ENV PYTHONPATH="/app"

@@ -27,7 +27,7 @@ from services.cache_service import cache_service
 from services.search_service import search_service
 from utils.text_processor import analyze_query
 
-from shared_lib.config import settings
+from app.config import settings
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

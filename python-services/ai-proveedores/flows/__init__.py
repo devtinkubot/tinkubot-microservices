@@ -29,8 +29,6 @@ from .interpretacion import interpretar_respuesta
 
 # WhatsApp
 from .whatsapp import (
-    enviar_mensaje_whatsapp,
-    notificar_aprobacion_proveedor,
     procesar_con_openai,
 )
 
@@ -63,6 +61,4 @@ __all__ = [
     "interpretar_respuesta",
     # WhatsApp
     "procesar_con_openai",
-    "enviar_mensaje_whatsapp",
-    "notificar_aprobacion_proveedor",
 ]

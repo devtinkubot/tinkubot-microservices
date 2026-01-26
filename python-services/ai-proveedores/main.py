@@ -31,7 +31,6 @@ from flows.constructores import (
     construir_respuesta_solicitud_consentimiento,
     construir_respuesta_consentimiento_aceptado,
     construir_respuesta_consentimiento_rechazado,
-    construir_notificacion_aprobacion,
     construir_menu_servicios,
     construir_resumen_confirmacion,
 )
@@ -163,8 +162,6 @@ from flows.interpretacion import interpretar_respuesta
 # Importar servicios de WhatsApp
 from flows.whatsapp import (
     procesar_con_openai,
-    enviar_mensaje_whatsapp,
-    notificar_aprobacion_proveedor,
 )
 
 # Importar templates de sesión
@@ -193,10 +190,6 @@ SUPABASE_PROVIDERS_BUCKET = (
     or "tinkubot-providers"
 )
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-ENABLE_DIRECT_WHATSAPP_SEND = (
-    os.getenv("AI_PROV_SEND_DIRECT", "false").lower() == "true"
-)
-WA_PROVEEDORES_URL = os.getenv("WA_PROVEEDORES_URL", "http://wa-proveedores:5002/send")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 SUPABASE_TIMEOUT_SECONDS = float(os.getenv("SUPABASE_TIMEOUT_SECONDS", "5"))
@@ -333,105 +326,6 @@ async def health_check() -> RespuestaSalud:
             service="ai-service-proveedores-mejorado",
             timestamp=datetime.now().isoformat(),
         )
-
-
-@app.post("/send-whatsapp")
-async def send_whatsapp_message(
-    request: SolicitudMensajeWhatsApp,
-) -> Dict[str, Any]:
-    """
-    Enviar mensaje de WhatsApp usando el servicio de WhatsApp
-    """
-    try:
-        logger.info(
-            f"📱 Enviando mensaje WhatsApp a {request.phone}: "
-            f"{request.message[:80]}..."
-        )
-
-        if not ENABLE_DIRECT_WHATSAPP_SEND:
-            logger.info(
-                "📨 Envío simulado (AI_PROV_SEND_DIRECT=false). No se llamó a wa-proveedores."
-            )
-            return {
-                "success": True,
-                "message": (
-                    "Mensaje enviado exitosamente (simulado - AI_PROV_SEND_DIRECT=false)"
-                ),
-                "simulated": True,
-                "phone": request.phone,
-                "message_preview": (request.message[:80] + "..."),
-            }
-
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.post(
-                WA_PROVEEDORES_URL,
-                json={"phone": request.phone, "message": request.message},
-            )
-            resp.raise_for_status()
-        logger.info(f"✅ Mensaje enviado a {request.phone} via wa-proveedores")
-        return {
-            "success": True,
-            "simulated": False,
-            "phone": request.phone,
-            "message_preview": (request.message[:80] + "..."),
-        }
-
-    except Exception as e:
-        logger.error(f"❌ Error enviando WhatsApp: {e}")
-        return {"success": False, "message": f"Error enviando WhatsApp: {str(e)}"}
-
-
-@app.post("/api/v1/providers/{provider_id}/notify-approval")
-async def notify_provider_approval(
-    provider_id: str, background_tasks: BackgroundTasks
-) -> Dict[str, Any]:
-    """Notifica por WhatsApp que un proveedor fue aprobado."""
-    if not supabase:
-        raise HTTPException(status_code=503, detail="Supabase no configurado")
-
-    async def _notify():
-        try:
-            resp = await run_supabase(
-                lambda: supabase.table("providers")
-                .select("id, phone, full_name, verified")
-                .eq("id", provider_id)
-                .limit(1)
-                .execute(),
-                label="providers.by_id_notify",
-            )
-        except Exception as exc:
-            logger.error(f"No se pudo obtener proveedor {provider_id}: {exc}")
-            return
-
-        if not resp.data:
-            logger.warning("Proveedor %s no encontrado para notificar", provider_id)
-            return
-
-        provider = resp.data[0]
-        phone = provider.get("phone")
-        if not phone:
-            logger.warning("Proveedor %s sin teléfono, no se notifica", provider_id)
-            return
-
-        name = provider.get("full_name") or ""
-        message = construir_notificacion_aprobacion(name)
-        await send_whatsapp_message(
-            SolicitudMensajeWhatsApp(phone=phone, message=message)
-        )
-
-        try:
-            await run_supabase(
-                lambda: supabase.table("providers")
-                .update({"approved_notified_at": datetime.utcnow().isoformat()})
-                .eq("id", provider_id)
-                .execute(),
-                label="providers.mark_notified",
-            )
-        except Exception as exc:  # pragma: no cover - tolerante a esquema
-            logger.warning(f"No se pudo registrar approved_notified_at: {exc}")
-
-    background_tasks.add_task(asyncio.create_task, _notify())
-    return {"success": True, "queued": True}
 
 
 @app.post("/handle-whatsapp-message")

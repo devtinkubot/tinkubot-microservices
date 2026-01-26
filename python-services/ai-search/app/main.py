@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 from services.cache_service import cache_service
 from services.search_service import search_service
 
-from shared_lib.config import settings
+from app.config import settings
 
 # Configurar logging
 logging.basicConfig(

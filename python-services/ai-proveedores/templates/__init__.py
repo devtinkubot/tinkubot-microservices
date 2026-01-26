@@ -73,7 +73,6 @@ from templates.sesion import (
 
 # ==================== DOMINIO: VERIFICACIÓN ====================
 from templates.verificacion import (
-    provider_approved_notification,
     provider_under_review_message,
     provider_verified_message,
 )
@@ -142,7 +141,6 @@ __all__ = [
     # Verificación
     "provider_under_review_message",
     "provider_verified_message",
-    "provider_approved_notification",
     # Sesión
     "session_timeout_warning_message",
     "session_expired_message",

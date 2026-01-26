@@ -6,7 +6,6 @@ from templates import (
     consent_acknowledged_message,
     consent_declined_message,
     consent_prompt_messages,
-    provider_approved_notification,
     provider_main_menu_message,
     provider_post_registration_menu_message,
 )
@@ -56,15 +55,3 @@ def construir_respuesta_consentimiento_rechazado() -> Dict[str, Any]:
         "success": True,
         "messages": [{"response": consent_declined_message()}],
     }
-
-
-def construir_notificacion_aprobacion(provider_name: str = "") -> str:
-    """Construye mensaje de notificación de aprobación.
-
-    Args:
-        provider_name: Nombre del proveedor (opcional).
-
-    Returns:
-        Mensaje de notificación personalizado con el nombre.
-    """
-    return provider_approved_notification(provider_name)
