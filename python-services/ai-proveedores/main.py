@@ -8,17 +8,22 @@ import json
 import logging
 import os
 import re
+import sys
 import unicodedata
+from pathlib import Path
 from time import perf_counter
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set, cast
+
+# Agregar el directorio raíz al sys.path para imports absolutos
+sys.path.insert(0, str(Path(__file__).parent))
 
 import httpx
 import uvicorn
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 # Import de módulos especializados del flujo de proveedores
-from flows.presentation_builders import (
+from flows.constructores import (
     construir_menu_principal,
     construir_respuesta_menu_registro,
     construir_respuesta_verificado,
@@ -30,7 +35,7 @@ from flows.presentation_builders import (
     construir_menu_servicios,
     construir_resumen_confirmacion,
 )
-from flows.state_handlers import (
+from flows.gestores_estados import (
     manejar_confirmacion,
     manejar_espera_ciudad,
     manejar_espera_correo,
@@ -40,64 +45,139 @@ from flows.state_handlers import (
     manejar_espera_profesion,
     manejar_espera_red_social,
 )
-from flows.validators.validaciones_entrada import (
+from flows.validadores.validador_entrada import (
     parsear_entrada_red_social as parse_social_media_input,
 )
 from openai import OpenAI
 from pydantic import BaseModel
 from supabase import Client, create_client
 
-from shared_lib.config import settings
-from shared_lib.models import (
-    ProviderCreate,
-    ProviderResponse,
+from config import configuracion
+from models import (
+    SolicitudCreacionProveedor,
+    RespuestaProveedor,
 )
-from shared_lib.redis_client import redis_client
+from infrastructure.redis import cliente_redis as redis_client
 
 # Importar modelos Pydantic locales
-from models.schemas import (
-    ProviderSearchRequest,
-    ProviderSearchResponse,
-    IntelligentSearchRequest,
-    WhatsAppMessageRequest,
-    WhatsAppMessageReceive,
-    HealthResponse,
+from models import (
+    SolicitudMensajeWhatsApp,
+    RecepcionMensajeWhatsApp,
+    RespuestaSalud,
 )
 
-# Importar utilidades de servicios
-from utils.services_utils import (
-    SERVICIOS_MAXIMOS,
-    normalizar_texto_para_busqueda,
-    normalizar_profesion_para_storage,
-    limpiar_servicio_texto,
-    sanitizar_servicios,
-    formatear_servicios,
+# Importar constantes y utilidades de servicios
+from services.servicios_proveedor.constantes import SERVICIOS_MAXIMOS
+from services.servicios_proveedor.utilidades import (
+    normalizar_profesion_para_almacenamiento as normalizar_profesion_para_storage,
+    limpiar_texto_servicio as limpiar_servicio_texto,
+    sanitizar_lista_servicios as sanitizar_servicios,
+    formatear_servicios_a_cadena as formatear_servicios,
     dividir_cadena_servicios,
-    extraer_servicios_guardados,
+    extraer_servicios_almacenados as extraer_servicios_guardados,
     construir_listado_servicios,
 )
 
 # Importar utilidades de storage
-from utils.storage_utils import (
-    _coerce_storage_string,
-    _safe_json_loads,
-    extract_first_image_base64,
+from infrastructure.storage.utilidades import (
+    normalizar_respuesta_storage as _coerce_storage_string,
+    extraer_primera_imagen_base64 as extract_first_image_base64,
 )
 
 # Importar utilidades de base de datos
-from utils.db_utils import run_supabase
+from infrastructure.database import run_supabase
 
 # Importar lógica de negocio de proveedores
-from services.business_logic import (
+from services import (
     normalizar_datos_proveedor,
-    aplicar_valores_por_defecto_proveedor,
-    registrar_proveedor,
+    garantizar_campos_obligatorios_proveedor,
+    registrar_proveedor_en_base_datos,
+    actualizar_servicios,
+    actualizar_redes_sociales,
+    actualizar_selfie,
+    eliminar_registro_proveedor,
+)
+
+# Importar flujo de registro
+from flows.registro import determinar_estado_registro
+
+# Importar mensajes de registro
+from templates.registro import (
+    REGISTRATION_START_PROMPT,
+    preguntar_correo_opcional,
+    preguntar_actualizar_ciudad,
+    informar_datos_recibidos,
+    solicitar_foto_dni_frontal,
+    solicitar_foto_dni_trasera,
+    solicitar_foto_dni_trasera_requerida,
+    solicitar_selfie_registro,
+    solicitar_selfie_requerida_registro,
+)
+
+# Importar flujo de consentimiento
+from flows.consentimiento import (
+    solicitar_consentimiento,
+    procesar_respuesta_consentimiento,
+    registrar_consentimiento,
+)
+
+# Importar mensajes de actualización de perfil
+from templates.interfaz import (
+    solicitar_selfie_actualizacion,
+    solicitar_selfie_requerida,
+    confirmar_selfie_actualizada,
+    error_actualizar_selfie,
+    solicitar_red_social_actualizacion,
+    error_actualizar_redes_sociales,
+    confirmar_actualizacion_redes_sociales,
+    error_opcion_no_reconocida,
+    error_limite_servicios_alcanzado,
+    preguntar_nuevo_servicio,
+    error_servicio_no_interpretado,
+    error_servicios_ya_registrados,
+    error_guardar_servicio,
+    confirmar_servicios_agregados,
+    informar_limite_servicios_alcanzado,
+    informar_sin_servicios_eliminar,
+    preguntar_servicio_eliminar,
+    error_eliminar_servicio,
+    confirmar_servicio_eliminado,
+    solicitar_confirmacion_eliminacion,
+    confirmar_eliminacion_exitosa,
+    error_eliminacion_fallida,
+    informar_eliminacion_cancelada,
+)
+
+# Importar interpretación de respuestas
+from flows.interpretacion import interpretar_respuesta
+
+# Importar servicios de WhatsApp
+from flows.whatsapp import (
+    procesar_con_openai,
+    enviar_mensaje_whatsapp,
+    notificar_aprobacion_proveedor,
+)
+
+# Importar templates de sesión
+from templates.sesion import (
+    informar_reinicio_conversacion,
+    informar_timeout_inactividad,
+    informar_reinicio_completo,
+)
+from templates.interfaz import informar_cierre_session
+
+# Importar servicios de almacenamiento de imágenes
+from infrastructure.storage import (
+    actualizar_imagenes_proveedor,
+    procesar_imagen_base64,
+    obtener_urls_imagenes_proveedor,
+    subir_medios_identidad,
 )
 
 # Configuración desde variables de entorno
-SUPABASE_URL = settings.supabase_url or os.getenv("SUPABASE_URL", "")
+SUPABASE_URL = configuracion.supabase_url or os.getenv("SUPABASE_URL", "")
 # settings expone la clave JWT de servicio para Supabase
-SUPABASE_SERVICE_KEY = settings.supabase_service_key
+SUPABASE_SERVICE_KEY = configuracion.supabase_service_key
 SUPABASE_PROVIDERS_BUCKET = (
     os.getenv("SUPABASE_PROVIDERS_BUCKET")
     or os.getenv("SUPABASE_BUCKET_NAME")
@@ -112,7 +192,7 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 SUPABASE_TIMEOUT_SECONDS = float(os.getenv("SUPABASE_TIMEOUT_SECONDS", "5"))
 PROFILE_CACHE_TTL_SECONDS = int(
-    os.getenv("PROFILE_CACHE_TTL_SECONDS", str(settings.cache_ttl_seconds))
+    os.getenv("PROFILE_CACHE_TTL_SECONDS", str(configuracion.cache_ttl_seconds))
 )
 PROFILE_CACHE_KEY = "prov_profile_cache:{}"
 PERF_LOG_ENABLED = os.getenv("PERF_LOG_ENABLED", "true").lower() == "true"
@@ -139,9 +219,6 @@ else:
     logger.warning("⚠️ No se configuró OpenAI")
 
 
-# Flow key para conversaciones de proveedores
-FLOW_KEY = "prov_flow:{}"
-
 # Crear aplicación FastAPI
 app = FastAPI(
     title="AI Service Proveedores - Mejorado",
@@ -155,7 +232,7 @@ app = FastAPI(
 @app.on_event("startup")
 async def startup_event():
     # Timeout simple: habilitado, ver línea ~1525 en manejar_mensaje_whatsapp
-    if settings.session_timeout_enabled:
+    if configuracion.session_timeout_enabled:
         logger.info("✅ Session Timeout simple habilitado (5 minutos de inactividad)")
 
 
@@ -207,17 +284,6 @@ FALLBACK_PROVIDERS = [
 # --- Flujo interactivo de registro de proveedores ---
 FLOW_KEY = "prov_flow:{}"  # phone
 
-TRIGGER_WORDS = [
-    "registro",
-    "registrarme",
-    "registrar",
-    "soy proveedor",
-    "quiero ofrecer",
-    "ofrecer servicios",
-    "unirme",
-    "alta proveedor",
-    "crear perfil",
-]
 RESET_KEYWORDS = {
     "reset",
     "reiniciar",
@@ -237,116 +303,19 @@ async def obtener_flujo(phone: str) -> Dict[str, Any]:
 
 async def establecer_flujo(phone: str, data: Dict[str, Any]) -> None:
     await redis_client.set(
-        FLOW_KEY.format(phone), data, expire=settings.flow_ttl_seconds
+        FLOW_KEY.format(phone), data, expire=configuracion.flow_ttl_seconds
     )
 
 
 async def establecer_flujo_con_estado(phone: str, data: Dict[str, Any], estado: str) -> None:
     data["state"] = estado
     await redis_client.set(
-        FLOW_KEY.format(phone), data, expire=settings.flow_ttl_seconds
+        FLOW_KEY.format(phone), data, expire=configuracion.flow_ttl_seconds
     )
 
 
 async def reiniciar_flujo(phone: str) -> None:
     await redis_client.delete(FLOW_KEY.format(phone))
-
-
-def is_registration_trigger(text: str) -> bool:
-    low = (text or "").lower()
-    return any(t in low for t in TRIGGER_WORDS)
-
-
-# === FUNCIONES SIMPLIFICADAS PARA ESQUEMA UNIFICADO ===
-
-async def actualizar_servicios_proveedor(
-    provider_id: str, servicios: List[str]
-) -> List[str]:
-    """Actualiza los servicios del proveedor en Supabase."""
-    if not supabase:
-        return servicios
-
-    servicios_limpios = sanitizar_servicios(servicios)
-    cadena_servicios = formatear_servicios(servicios_limpios)
-
-    try:
-        await run_supabase(
-            lambda: supabase.table("providers")
-            .update({"services": cadena_servicios})
-            .eq("id", provider_id)
-            .execute(),
-            label="providers.update_services",
-        )
-        logger.info("✅ Servicios actualizados para proveedor %s", provider_id)
-    except Exception as exc:
-        logger.error(
-            "❌ Error actualizando servicios para proveedor %s: %s",
-            provider_id,
-            exc,
-        )
-        raise
-
-    return servicios_limpios
-
-
-async def buscar_proveedores(
-    profesion: str, ubicacion: Optional[str] = None, limite: int = 10
-) -> List[Dict[str, Any]]:
-    """
-    Búsqueda directa sin joins complejos usando el esquema unificado.
-    """
-    if not supabase:
-        return []
-
-    filtros: List[str] = []
-    if profesion:
-        filtros.append(f"profession.ilike.*{profesion}*")
-    if ubicacion:
-        filtros.append(f"city.ilike.*{ubicacion}*")
-
-    try:
-        query = supabase.table("providers").select("*").eq("verified", True)
-        if filtros:
-            query = query.or_(",".join(filtros))
-        consulta = await run_supabase(
-            lambda: query.limit(limite).execute(), label="providers.search"
-        )
-        resultados = consulta.data or []
-        return [aplicar_valores_por_defecto_proveedor(item) for item in resultados]
-
-    except Exception as e:
-        logger.error("❌ Error en búsqueda de proveedores: %s", e)
-        return []
-
-
-# Funciones obsoletas eliminadas - ahora se usa esquema unificado
-
-
-# Función obsoleta eliminada - ahora se usa search_providers_direct_query()
-
-
-# Función expand_query_with_ai eliminada - búsqueda simplificada no requiere expansión
-
-
-# Funciones de búsqueda complejas eliminadas - ahora se usa búsqueda directa con ILIKE
-
-
-# Función obsoleta eliminada - ahora se usa register_provider_unified()
-
-
-def determinar_estado_registro_proveedor(
-    provider_profile: Optional[Dict[str, Any]],
-) -> bool:
-    """
-    Determina si el proveedor está COMPLETAMENTE registrado (True) o es nuevo (False).
-    Un proveedor con solo consentimiento pero sin datos completos no está registrado.
-    """
-    return bool(
-        provider_profile
-        and provider_profile.get("id")
-        and provider_profile.get("full_name")  # Verificar datos completos
-        and provider_profile.get("profession")
-    )
 
 
 async def obtener_perfil_proveedor(phone: str) -> Optional[Dict[str, Any]]:
@@ -364,7 +333,7 @@ async def obtener_perfil_proveedor(phone: str) -> Optional[Dict[str, Any]]:
             label="providers.by_phone",
         )
         if response.data:
-            registro = aplicar_valores_por_defecto_proveedor(
+            registro = garantizar_campos_obligatorios_proveedor(
                 cast(Dict[str, Any], response.data[0])
             )
             registro["services_list"] = extraer_servicios_guardados(
@@ -421,580 +390,8 @@ async def obtener_perfil_proveedor_cacheado(phone: str) -> Optional[Dict[str, An
     return perfil
 
 
-async def solicitar_consentimiento_proveedor(phone: str) -> Dict[str, Any]:
-    """Generar mensajes de solicitud de consentimiento para proveedores."""
-    return construir_respuesta_solicitud_consentimiento()
-
-
-def interpretar_respuesta_usuario(
-    text: Optional[str], modo: str = "menu"
-) -> Optional[object]:
-    """
-    Interpretar respuesta del usuario unificando menú y consentimiento.
-
-    Args:
-        text: Texto a interpretar
-        modo: "menu" para opciones 1-4, "consentimiento" para sí/no
-
-    Returns:
-        - modo="menu": "1", "2", "3", "4" o None
-        - modo="consentimiento": True, False o None
-    """
-    value = (text or "").strip().lower()
-    if not value:
-        return None
-
-    # Normalización unificada
-    normalized_value = unicodedata.normalize("NFKD", value)
-    normalized_value = normalized_value.encode("ascii", "ignore").decode().strip()
-
-    if not normalized_value:
-        return None
-
-    # Modo consentimiento (sí/no)
-    if modo == "consentimiento":
-        affirmative = {
-            "1",
-            "si",
-            "s",
-            "acepto",
-            "autorizo",
-            "confirmo",
-            "claro",
-            "de acuerdo",
-        }
-        negative = {"2", "no", "n", "rechazo", "rechazar", "declino", "no autorizo"}
-
-        if normalized_value in affirmative:
-            return True
-        if normalized_value in negative:
-            return False
-        return None
-
-    # Modo menú (opciones 1-4)
-    if modo == "menu":
-        # Opción 1 - Gestionar servicios
-        if (
-            normalized_value.startswith("1")
-            or normalized_value.startswith("uno")
-            or "servicio" in normalized_value
-            or "servicios" in normalized_value
-            or "gestionar" in normalized_value
-        ):
-            return "1"
-
-        # Opción 2 - Selfie
-        if (
-            normalized_value.startswith("2")
-            or normalized_value.startswith("dos")
-            or "selfie" in normalized_value
-            or "foto" in normalized_value
-            or "selfis" in normalized_value
-            or "photo" in normalized_value
-        ):
-            return "2"
-
-        # Opción 3 - Redes sociales
-        if (
-            normalized_value.startswith("3")
-            or normalized_value.startswith("tres")
-            or "red" in normalized_value
-            or "social" in normalized_value
-            or "instagram" in normalized_value
-            or "facebook" in normalized_value
-        ):
-            return "3"
-
-        # Opción 4 - Salir
-        if (
-            normalized_value.startswith("4")
-            or normalized_value.startswith("cuatro")
-            or "salir" in normalized_value
-            or "terminar" in normalized_value
-            or "menu" in normalized_value
-            or "volver" in normalized_value
-        ):
-            return "4"
-
-        return None
-
-    # Modo no reconocido
-    return None
-
-
-async def registrar_consentimiento_proveedor(
-    provider_id: Optional[str], phone: str, payload: Dict[str, Any], response: str
-) -> None:
-    """Persistir registro de consentimiento en tabla consents."""
-    if not supabase:
-        return
-
-    try:
-        consent_data = {
-            "consent_timestamp": payload.get("timestamp")
-            or datetime.utcnow().isoformat(),
-            "phone": phone,
-            "message_id": payload.get("id") or payload.get("message_id"),
-            "exact_response": payload.get("message") or payload.get("content"),
-            "consent_type": "provider_registration",
-            "platform": payload.get("platform") or "whatsapp",
-        }
-
-        record = {
-            "user_id": provider_id,
-            "user_type": "provider",
-            "response": response,
-            "message_log": json.dumps(consent_data, ensure_ascii=False),
-        }
-        await run_supabase(
-            lambda: supabase.table("consents").insert(record).execute(),
-            label="consents.insert",
-        )
-    except Exception as exc:
-        logger.error(f"No se pudo guardar consentimiento de proveedor {phone}: {exc}")
-
-
-async def manejar_respuesta_consentimiento(  # noqa: C901
-    phone: str,
-    flow: Dict[str, Any],
-    payload: Dict[str, Any],
-    provider_profile: Optional[Dict[str, Any]],
-) -> Dict[str, Any]:
-    """Procesar respuesta de consentimiento para registro de proveedores."""
-    message_text = (payload.get("message") or payload.get("content") or "").strip()
-    lowered = message_text.lower()
-    option = None
-
-    if lowered.startswith("1"):
-        option = "1"
-    elif lowered.startswith("2"):
-        option = "2"
-    else:
-        interpreted = interpretar_respuesta_usuario(lowered, "consentimiento")
-        if interpreted is True:
-            option = "1"
-        elif interpreted is False:
-            option = "2"
-
-    if option not in {"1", "2"}:
-        logger.info("Reenviando solicitud de consentimiento a %s", phone)
-        return await solicitar_consentimiento_proveedor(phone)
-
-    provider_id = provider_profile.get("id") if provider_profile else None
-
-    if option == "1":
-        flow["has_consent"] = True
-        flow["state"] = "awaiting_menu_option"
-        await establecer_flujo(phone, flow)
-
-        if supabase and provider_id:
-            try:
-                await run_supabase(
-                    lambda: supabase.table("providers")
-                    .update(
-                        {
-                            "has_consent": True,
-                            "updated_at": datetime.now().isoformat(),
-                        }
-                    )
-                    .eq("id", provider_id)
-                    .execute(),
-                    label="providers.update_consent_true",
-                )
-            except Exception as exc:
-                logger.error(
-                    "No se pudo actualizar flag de consentimiento para %s: %s",
-                    phone,
-                    exc,
-                )
-
-        await registrar_consentimiento_proveedor(
-            provider_id, phone, payload, "accepted"
-        )
-        logger.info("Consentimiento aceptado por proveedor %s", phone)
-
-        # Determinar si el usuario está COMPLETAMENTE registrado (no solo consentimiento)
-        # Un usuario con solo consentimiento no está completamente registrado
-        is_fully_registered = bool(
-            provider_profile
-            and provider_profile.get("id")
-            and provider_profile.get("full_name")  # Verificar que tiene datos completos
-            and provider_profile.get("profession")
-        )
-
-        return construir_respuesta_consentimiento_aceptado(is_fully_registered)
-
-    # Rechazo de consentimiento
-    if supabase and provider_id:
-        try:
-            await run_supabase(
-                lambda: supabase.table("providers")
-                .update(
-                    {
-                        "has_consent": False,
-                        "updated_at": datetime.now().isoformat(),
-                    }
-                )
-                .eq("id", provider_id)
-                .execute(),
-                label="providers.update_consent_false",
-            )
-        except Exception as exc:
-            logger.error(
-                "No se pudo marcar rechazo de consentimiento para %s: %s", phone, exc
-            )
-
-    await registrar_consentimiento_proveedor(
-        provider_id, phone, payload, "declined"
-    )
-    await reiniciar_flujo(phone)
-    logger.info("Consentimiento rechazado por proveedor %s", phone)
-
-    return construir_respuesta_consentimiento_rechazado()
-
-
-# Funciones para manejo de imágenes en Supabase Storage
-async def subir_imagen_proveedor_almacenamiento(
-    provider_id: str, file_data: bytes, file_type: str, file_extension: str = "jpg"
-) -> Optional[str]:
-    """
-    Subir imagen de proveedor a Supabase Storage
-
-    Args:
-        provider_id: UUID del proveedor
-        file_data: Bytes de la imagen
-        file_type: 'dni-front', 'dni-back', 'face'
-        file_extension: Extensión del archivo
-
-    Returns:
-        URL pública de la imagen o None si hay error
-    """
-    if not supabase:
-        logger.error("❌ Supabase no configurado para upload de imágenes")
-        return None
-
-    try:
-        # Determinar carpeta según tipo
-        folder_map = {
-            "dni-front": "dni-fronts",
-            "dni-back": "dni-backs",
-            "face": "faces",
-        }
-
-        folder = folder_map.get(file_type)
-        if not folder:
-            raise ValueError(f"Tipo de archivo no válido: {file_type}")
-
-        # Construir ruta del archivo
-        file_path = f"{folder}/{provider_id}.{file_extension}"
-
-        logger.info(f"📤 Subiendo imagen a Supabase Storage: {file_path}")
-
-        if not SUPABASE_PROVIDERS_BUCKET:
-            logger.error("❌ Bucket de almacenamiento para proveedores no configurado")
-            return None
-
-        def _upload():
-            storage_bucket = supabase.storage.from_(SUPABASE_PROVIDERS_BUCKET)
-            try:
-                storage_bucket.remove([file_path])
-            except Exception as remove_error:
-                logger.debug(
-                    f"No se pudo eliminar archivo previo {file_path}: {remove_error}"
-                )
-
-            result = storage_bucket.upload(
-                path=file_path,
-                file=file_data,
-                file_options={"content-type": "image/jpeg"},
-            )
-
-            upload_error = None
-            if isinstance(result, dict):
-                upload_error = result.get("error")
-            else:
-                upload_error = getattr(result, "error", None)
-
-            if (
-                upload_error is None
-                and hasattr(result, "status_code")
-                and getattr(result, "status_code") is not None
-            ):
-                status_code = getattr(result, "status_code")
-                if isinstance(status_code, int) and status_code >= 400:
-                    upload_error = f"HTTP_{status_code}"
-
-            if upload_error:
-                logger.error(
-                    "❌ Error reportado por Supabase Storage al subir %s: %s",
-                    file_path,
-                    upload_error,
-                )
-                return None
-
-            raw_public_url = supabase.storage.from_(SUPABASE_PROVIDERS_BUCKET).get_public_url(
-                file_path
-            )
-            return raw_public_url
-
-        raw_public_url = await run_supabase(_upload, label="storage.upload")
-        public_url = _coerce_storage_string(raw_public_url) or file_path
-        if public_url:
-            logger.info(f"✅ Imagen subida exitosamente: {public_url}")
-        return public_url
-
-    except Exception as e:
-        logger.error(f"❌ Error subiendo imagen a Storage: {e}")
-        return None
-
-
-async def actualizar_imagenes_proveedor(
-    provider_id: str,
-    dni_front_url: Optional[str] = None,
-    dni_back_url: Optional[str] = None,
-    face_url: Optional[str] = None,
-) -> bool:
-    """
-    Actualizar URLs de imágenes en la tabla providers
-
-    Args:
-        provider_id: UUID del proveedor
-        dni_front_url: URL de foto frontal del DNI
-        dni_back_url: URL de foto posterior del DNI
-        face_url: URL de foto de rostro
-
-    Returns:
-        True si actualización exitosa
-    """
-    if not supabase:
-        logger.error("❌ Supabase no configurado para actualización de imágenes")
-        return False
-
-    try:
-        update_data = {}
-
-        front_url = _coerce_storage_string(dni_front_url)
-        back_url = _coerce_storage_string(dni_back_url)
-        face_clean_url = _coerce_storage_string(face_url)
-
-        if front_url:
-            update_data["dni_front_photo_url"] = front_url
-        if back_url:
-            update_data["dni_back_photo_url"] = back_url
-        if face_clean_url:
-            update_data["face_photo_url"] = face_clean_url
-
-        if update_data:
-            logger.info(
-                "🗂️ Campos a actualizar para %s: %s",
-                provider_id,
-                {k: bool(v) for k, v in update_data.items()},
-            )
-            update_data["updated_at"] = datetime.now().isoformat()
-
-            result = await run_supabase(
-                lambda: supabase.table("providers")
-                .update(update_data)
-                .eq("id", provider_id)
-                .execute(),
-                label="providers.update_images",
-            )
-
-            if result.data:
-                logger.info(
-                    "✅ Imágenes actualizadas para proveedor %s (filas=%s)",
-                    provider_id,
-                    len(result.data),
-                )
-                return True
-            else:
-                logger.error(
-                    f"❌ Error actualizando imágenes para proveedor {provider_id}"
-                )
-                return False
-
-        logger.warning(
-            "⚠️ No hay datos de documentos para actualizar en %s (todos vacíos)",
-            provider_id,
-        )
-        return True
-
-    except Exception as e:
-        logger.error(f"❌ Error actualizando URLs de imágenes: {e}")
-        return False
-
-
-async def procesar_imagen_base64(base64_data: str, file_type: str) -> Optional[bytes]:
-    """
-    Procesar imagen en formato base64 y convertir a bytes
-
-    Args:
-        base64_data: Datos base64 de la imagen
-        file_type: Tipo de archivo para determinar el formato
-
-    Returns:
-        Bytes de la imagen o None si hay error
-    """
-    try:
-        import base64
-
-        # Limpiar datos base64 (eliminar header si existe)
-        if base64_data.startswith("data:image/"):
-            base64_data = base64_data.split(",")[1]
-
-        # Decodificar a bytes
-        image_bytes = base64.b64decode(base64_data)
-
-        logger.info(f"✅ Imagen procesada ({file_type}): {len(image_bytes)} bytes")
-        return image_bytes
-
-    except Exception as e:
-        logger.error(f"❌ Error procesando imagen base64: {e}")
-        return None
-
-
-async def obtener_urls_imagenes_proveedor(provider_id: str) -> Dict[str, Optional[str]]:
-    """
-    Obtener URLs de todas las imágenes de un proveedor
-
-    Args:
-        provider_id: UUID del proveedor
-
-    Returns:
-        Diccionario con URLs de imágenes
-    """
-    if not supabase:
-        return {}
-
-    try:
-        result = await run_supabase(
-            lambda: supabase.table("providers")
-            .select("dni_front_photo_url, dni_back_photo_url, face_photo_url")
-            .eq("id", provider_id)
-            .limit(1)
-            .execute(),
-            label="providers.images_by_id",
-        )
-
-        if result.data:
-            return {
-                "dni_front": result.data[0].get("dni_front_photo_url"),
-                "dni_back": result.data[0].get("dni_back_photo_url"),
-                "face": result.data[0].get("face_photo_url"),
-            }
-        else:
-            return {}
-
-    except Exception as e:
-        logger.error(f"❌ Error obteniendo URLs de imágenes: {e}")
-        return {}
-
-
-async def subir_medios_identidad(provider_id: str, flow: Dict[str, Any]) -> None:
-    if not supabase:
-        return
-
-    uploads: Dict[str, Optional[str]] = {
-        "front": None,
-        "back": None,
-        "face": None,
-    }
-
-    mapping = [
-        ("dni_front_image", "dni-front", "front"),
-        ("dni_back_image", "dni-back", "back"),
-        ("face_image", "face", "face"),
-    ]
-
-    for key, file_type, dest in mapping:
-        base64_data = flow.get(key)
-        if not base64_data:
-            continue
-        image_bytes = await procesar_imagen_base64(base64_data, file_type)
-        if not image_bytes:
-            continue
-        try:
-            url = await subir_imagen_proveedor_almacenamiento(
-                provider_id, image_bytes, file_type, "jpg"
-            )
-        except Exception as exc:
-            logger.error(
-                "❌ No se pudo subir imagen %s para %s: %s", key, provider_id, exc
-            )
-            url = None
-        if url:
-            uploads[dest] = url
-            logger.info(
-                "📤 Documento %s almacenado para %s -> %s",
-                file_type,
-                provider_id,
-                url,
-            )
-
-    if any(uploads.values()):
-        logger.info(
-            "📝 Actualizando documentos en tabla para %s (frente=%s, reverso=%s, rostro=%s)",
-            provider_id,
-            bool(uploads.get("front")),
-            bool(uploads.get("back")),
-            bool(uploads.get("face")),
-        )
-        await actualizar_imagenes_proveedor(
-            provider_id,
-            uploads.get("front"),
-            uploads.get("back"),
-            uploads.get("face"),
-        )
-    else:
-        logger.warning("⚠️ No se subieron documentos válidos para %s", provider_id)
-
-
-# Función para procesar mensajes con OpenAI
-async def procesar_mensaje_con_openai(message: str, phone: str) -> str:
-    """Procesar mensaje entrante con OpenAI"""
-    if not openai_client:
-        return "Lo siento, el servicio de IA no está disponible en este momento."
-
-    try:
-        # Contexto para el asistente de proveedores
-        system_prompt = """Eres un asistente de TinkuBot Proveedores. Tu función es:
-
-1. Ayudar a los proveedores a registrarse en el sistema
-2. Responder preguntas sobre cómo funciona el servicio
-3. Proporcionar información sobre servicios disponibles
-4. Ser amable y profesional
-
-Si un proveedor quiere registrarse, pregunta:
-- Nombre completo
-- Profesión oficio
-- Número de teléfono
-- Correo electrónico (opcional)
-- Dirección
-- Ciudad
-
-Si es una consulta general, responde amablemente."""
-
-        response = openai_client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": message},
-            ],
-            max_tokens=500,
-            temperature=0.7,
-        )
-
-        return cast(str, response.choices[0].message.content)
-    except Exception as e:
-        logger.error(f"❌ Error procesando mensaje con OpenAI: {e}")
-        return (
-            "Lo siento, tuve un problema al procesar tu mensaje. "
-            "Por favor intenta de nuevo."
-        )
-
-
-@app.get("/health", response_model=HealthResponse)
-async def health_check() -> HealthResponse:
+@app.get("/health", response_model=RespuestaSalud)
+async def health_check() -> RespuestaSalud:
     """Health check endpoint"""
     try:
         # Verificar conexión a Supabase
@@ -1008,7 +405,7 @@ async def health_check() -> HealthResponse:
             except Exception:
                 supabase_status = "error"
 
-        return HealthResponse(
+        return RespuestaSalud(
             status="healthy",
             service="ai-proveedores",
             timestamp=datetime.now().isoformat(),
@@ -1016,99 +413,16 @@ async def health_check() -> HealthResponse:
         )
     except Exception as e:
         logger.error(f"Health check failed: {e}")
-        return HealthResponse(
+        return RespuestaSalud(
             status="unhealthy",
             service="ai-service-proveedores-mejorado",
             timestamp=datetime.now().isoformat(),
         )
 
 
-@app.post("/search-providers", response_model=ProviderSearchResponse)
-async def buscar_proveedores_endpoint(
-    request: ProviderSearchRequest,
-) -> ProviderSearchResponse:
-    """Endpoint simplificado de búsqueda usando query directa"""
-    try:
-        logger.info(f"🔍 Buscando {request.profession}s en {request.location}...")
-
-        # Usar función de búsqueda en español
-        proveedores = await buscar_proveedores(
-            profesion=request.profession,
-            ubicacion=request.location,
-            limite=request.limit or 10,
-        )
-
-        # Convertir a formato de respuesta
-        respuestas_proveedores = [
-            ProviderResponse(**proveedor) for proveedor in proveedores
-        ]
-
-        return ProviderSearchResponse(
-            providers=respuestas_proveedores,
-            count=len(respuestas_proveedores),
-            location=request.location or "Ecuador",
-            profession=request.profession,
-        )
-
-    except Exception as e:
-        logger.error(f"Error en búsqueda: {e}")
-        raise HTTPException(status_code=500, detail=f"Error en búsqueda: {str(e)}")
-
-
-@app.post("/intelligent-search")
-async def busqueda_inteligente(
-    request: IntelligentSearchRequest,
-) -> Dict[str, Any]:
-    """
-    Búsqueda inteligente simplificada usando búsqueda directa.
-    """
-    try:
-        ubicacion = request.ubicacion or ""
-        profesion = request.profesion_principal or (request.necesidad_real or "")
-        if not profesion:
-            raise HTTPException(
-                status_code=400,
-                detail="Se requiere al menos profesión principal para la búsqueda.",
-            )
-
-        # Usar búsqueda directa en español
-        proveedores = await buscar_proveedores(
-            profesion=profesion, ubicacion=ubicacion, limite=20
-        )
-
-        logger.info(
-            "🧠 Búsqueda inteligente simplificada profesion=%s ubicacion=%s "
-            "resultados=%s",
-            profesion,
-            ubicacion,
-            len(proveedores),
-        )
-
-        return {
-            "providers": proveedores,
-            "total": len(proveedores),
-            "query_expansions": [],  # Simplificado - sin expansión IA
-            "metadata": {
-                "specialties_used": request.especialidades or [],
-                "synonyms_used": request.sinonimos or [],
-                "urgency": request.urgencia,
-                "necesidad_real": request.necesidad_real,
-                "simplified": True,
-            },
-        }
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.error("❌ Error en busqueda_inteligente: %s", exc)
-        raise HTTPException(
-            status_code=500,
-            detail="No se pudo realizar la búsqueda inteligente en este momento.",
-        )
-
-
 @app.post("/send-whatsapp")
 async def send_whatsapp_message(
-    request: WhatsAppMessageRequest,
+    request: SolicitudMensajeWhatsApp,
 ) -> Dict[str, Any]:
     """
     Enviar mensaje de WhatsApp usando el servicio de WhatsApp
@@ -1187,7 +501,7 @@ async def notify_provider_approval(
         name = provider.get("full_name") or ""
         message = construir_notificacion_aprobacion(name)
         await send_whatsapp_message(
-            WhatsAppMessageRequest(phone=phone, message=message)
+            SolicitudMensajeWhatsApp(phone=phone, message=message)
         )
 
         try:
@@ -1207,7 +521,7 @@ async def notify_provider_approval(
 
 @app.post("/handle-whatsapp-message")
 async def manejar_mensaje_whatsapp(  # noqa: C901
-    request: WhatsAppMessageReceive,
+    request: RecepcionMensajeWhatsApp,
 ) -> Dict[str, Any]:
     """
     Recibir y procesar mensajes entrantes de WhatsApp
@@ -1217,7 +531,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
         phone = request.phone or request.from_number or "unknown"
         message_text = request.message or request.content or ""
         payload = request.model_dump()
-        menu_choice = interpretar_respuesta_usuario(message_text, "menu")
+        menu_choice = interpretar_respuesta(message_text, "menu")
 
         logger.info(f"📨 Mensaje WhatsApp recibido de {phone}: {message_text[:50]}...")
 
@@ -1225,10 +539,10 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
             await reiniciar_flujo(phone)
             new_flow = {"state": "awaiting_consent", "has_consent": False}
             await establecer_flujo(phone, new_flow)
-            consent_prompt = await solicitar_consentimiento_proveedor(phone)
+            consent_prompt = await solicitar_consentimiento(phone)
             return {
                 "success": True,
-                "messages": [{"response": "Reiniciemos desde el inicio."}]
+                "messages": [{"response": informar_reinicio_conversacion()}]
                 + consent_prompt.get("messages", []),
             }
 
@@ -1257,10 +571,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                         "success": True,
                         "messages": [
                             {
-                                "response": (
-                                    "**No tuve respuesta y reinicié la conversación para ayudarte mejor. "
-                                    "Gracias por usar TinkuBot Proveedores; escríbeme cuando quieras.**"
-                                )
+                                "response": informar_timeout_inactividad()
                             },
                             {"response": construir_menu_principal(is_registered=True)},
                         ]
@@ -1285,7 +596,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
             flow.setdefault("services", [])
 
         has_consent = bool(flow.get("has_consent"))
-        esta_registrado = determinar_estado_registro_proveedor(provider_profile)
+        esta_registrado = determinar_estado_registro(provider_profile)
         flow["esta_registrado"] = esta_registrado
         is_verified = bool(provider_profile and provider_profile.get("verified"))
         is_pending_review = bool(esta_registrado and not is_verified)
@@ -1314,13 +625,13 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                 }
             )
             await establecer_flujo(phone, flow)
-            return construir_respuesta_verificado(has_services=bool(flow.get("services")))
+            return construir_respuesta_verificado()
 
         if not state:
             if not has_consent:
                 nuevo_flujo = {"state": "awaiting_consent", "has_consent": False}
                 await establecer_flujo(phone, nuevo_flujo)
-                return await solicitar_consentimiento_proveedor(phone)
+                return await solicitar_consentimiento(phone)
 
             flow = {
                 **flow,
@@ -1330,7 +641,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
             if is_verified and not flow.get("verification_notified"):
                 flow["verification_notified"] = True
                 await establecer_flujo(phone, flow)
-                return construir_respuesta_verificado(has_services=bool(flow.get("services")))
+                return construir_respuesta_verificado()
 
             if not esta_registrado:
                 await establecer_flujo(phone, flow)
@@ -1350,7 +661,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                     "success": True,
                     "messages": [{"response": construir_menu_principal(is_registered=esta_registrado)}],
                 }
-            consent_reply = await manejar_respuesta_consentimiento(
+            consent_reply = await procesar_respuesta_consentimiento(
                 phone, flow, payload, provider_profile
             )
             return consent_reply
@@ -1366,21 +677,21 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                     await establecer_flujo(phone, flow)
                     return {
                         "success": True,
-                        "response": "*Perfecto. Empecemos. ¿En qué ciudad trabajas principalmente?*",
+                        "response": REGISTRATION_START_PROMPT,
                     }
                 if choice == "2" or "salir" in lowered:
                     await reiniciar_flujo(phone)
                     await establecer_flujo(phone, {"has_consent": True})
                     return {
                     "success": True,
-                    "response": "*Perfecto. Si necesitas algo más, solo escríbeme.*",
+                    "response": informar_cierre_session(),
                     }
 
                 await establecer_flujo(phone, flow)
                 return {
                     "success": True,
                     "messages": [
-                        {"response": "No reconoci esa opcion. Por favor elige 1 o 2."},
+                        {"response": error_opcion_no_reconocida(1, 2)},
                         {"response": construir_menu_principal(is_registered=False)},
                     ],
                 }
@@ -1399,16 +710,25 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                 await establecer_flujo(phone, flow)
                 return {
                     "success": True,
-                    "response": "*Envíame la nueva selfie con tu rostro visible.*",
+                    "response": solicitar_selfie_actualizacion(),
                 }
             if choice == "3" or "red" in lowered or "social" in lowered or "instagram" in lowered:
                 flow["state"] = "awaiting_social_media_update"
                 await establecer_flujo(phone, flow)
                 return {
                     "success": True,
-                    "response": "*Envíame tu enlace de Instagram/Facebook o escribe 'omitir' para quitarlo.*",
+                    "response": solicitar_red_social_actualizacion(),
                 }
-            if choice == "4" or "salir" in lowered or "volver" in lowered:
+            if choice == "4" or "eliminar" in lowered or "borrar" in lowered or "delete" in lowered:
+                flow["state"] = "awaiting_deletion_confirmation"
+                await establecer_flujo(phone, flow)
+                return {
+                    "success": True,
+                    "messages": [
+                        {"response": solicitar_confirmacion_eliminacion()},
+                    ],
+                }
+            if choice == "5" or "salir" in lowered or "volver" in lowered:
                 flujo_base = {
                     "has_consent": True,
                     "esta_registrado": True,
@@ -1418,14 +738,14 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                 await establecer_flujo(phone, flujo_base)
                 return {
                 "success": True,
-                "response": "*Perfecto. Si necesitas algo más, solo escríbeme.*",
+                "response": informar_cierre_session(),
                 }
 
             await establecer_flujo(phone, flow)
             return {
                 "success": True,
                 "messages": [
-                    {"response": "No reconoci esa opcion. Por favor elige 1, 2, 3 o 4."},
+                    {"response": error_opcion_no_reconocida(1, 5)},
                     {"response": construir_menu_principal(is_registered=True)},
                 ],
             }
@@ -1444,27 +764,21 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
             flow["social_media_url"] = parsed["url"]
             flow["social_media_type"] = parsed["type"]
 
-            update_data = {
-                "social_media_url": parsed["url"],
-                "social_media_type": parsed["type"],
-                "updated_at": datetime.now().isoformat(),
-            }
+            # Usar servicio especializado para actualizar redes sociales
+            resultado = await actualizar_redes_sociales(
+                supabase,
+                provider_id,
+                parsed["url"],
+                parsed["type"],
+            )
 
-            try:
-                await run_supabase(
-                    lambda: supabase.table("providers")
-                    .update(update_data)
-                    .eq("id", provider_id)
-                    .execute()
-                )
-            except Exception as exc:
-                logger.error("No se pudo actualizar redes sociales para %s: %s", provider_id, exc)
+            if not resultado.get("success"):
                 flow["state"] = "awaiting_menu_option"
                 await establecer_flujo(phone, flow)
                 return {
                     "success": False,
                     "messages": [
-                        {"response": "No pude actualizar tus redes sociales en este momento."},
+                        {"response": error_actualizar_redes_sociales()},
                         {"response": construir_menu_principal(is_registered=True)},
                     ],
                 }
@@ -1475,9 +789,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                 "success": True,
                 "messages": [
                     {
-                        "response": "Redes sociales actualizadas."
-                        if parsed["url"]
-                        else "Redes sociales eliminadas."
+                        "response": confirmar_actualizacion_redes_sociales(bool(parsed["url"]))
                     },
                     {"response": construir_menu_principal(is_registered=True)},
                 ],
@@ -1495,8 +807,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                         "messages": [
                             {
                                 "response": (
-                                    f"Ya tienes {SERVICIOS_MAXIMOS} servicios registrados. "
-                                    "Elimina uno antes de agregar otro."
+                                    error_limite_servicios_alcanzado(SERVICIOS_MAXIMOS)
                                 )
                             },
                             {"response": construir_menu_servicios(servicios_actuales, SERVICIOS_MAXIMOS)},
@@ -1506,10 +817,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                 await establecer_flujo(phone, flow)
                 return {
                     "success": True,
-                    "response": (
-                        "Escribe el nuevo servicio que deseas agregar. "
-                        "Si son varios, sepáralos con comas (ej: 'gasfitería de emergencia, mantenimiento')."
-                    ),
+                    "response": preguntar_nuevo_servicio(),
                 }
 
             if choice == "2" or "eliminar" in lowered:
@@ -1519,7 +827,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                     return {
                         "success": True,
                         "messages": [
-                            {"response": "Aún no tienes servicios para eliminar."},
+                            {"response": informar_sin_servicios_eliminar()},
                             {"response": construir_menu_servicios(servicios_actuales, SERVICIOS_MAXIMOS)},
                         ],
                     }
@@ -1530,7 +838,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                     "success": True,
                     "messages": [
                         {"response": listado},
-                        {"response": "Responde con el número del servicio que deseas eliminar."},
+                        {"response": preguntar_servicio_eliminar()},
                     ],
                 }
 
@@ -1546,7 +854,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
             return {
                 "success": True,
                 "messages": [
-                    {"response": "No reconoci esa opcion. Elige 1, 2 o 3."},
+                    {"response": error_opcion_no_reconocida(1, 3)},
                     {"response": construir_menu_servicios(servicios_actuales, SERVICIOS_MAXIMOS)},
                 ],
             }
@@ -1569,8 +877,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                     "messages": [
                         {
                             "response": (
-                                f"Ya tienes {SERVICIOS_MAXIMOS} servicios registrados. "
-                                "Elimina uno antes de agregar otro."
+                                error_limite_servicios_alcanzado(SERVICIOS_MAXIMOS)
                             )
                         },
                         {"response": construir_menu_servicios(servicios_actuales, SERVICIOS_MAXIMOS)},
@@ -1584,7 +891,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                     "messages": [
                         {
                             "response": (
-                                "No pude interpretar ese servicio. Usa una descripción corta y separa con comas si son varios (ej: 'gasfitería, mantenimiento')."
+                                error_servicio_no_interpretado()
                             )
                         },
                         {"response": construir_menu_servicios(servicios_actuales, SERVICIOS_MAXIMOS)},
@@ -1624,7 +931,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
 
             servicios_actualizados = servicios_actuales + nuevos_recortados
             try:
-                servicios_finales = await actualizar_servicios_proveedor(
+                servicios_finales = await actualizar_servicios(
                     provider_id, servicios_actualizados
                 )
             except Exception:
@@ -1633,7 +940,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                 return {
                     "success": False,
                     "response": (
-                        "No pude guardar el servicio en este momento. Intenta nuevamente más tarde."
+                        error_guardar_servicio()
                     ),
                 }
 
@@ -1641,14 +948,8 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
             flow["state"] = "awaiting_service_action"
             await establecer_flujo(phone, flow)
 
-            if len(nuevos_recortados) == 1:
-                agregado_msg = f"Servicio agregado: *{nuevos_recortados[0]}*."
-            else:
-                listado = ", ".join(f"*{servicio}*" for servicio in nuevos_recortados)
-                agregado_msg = f"Servicios agregados: {listado}."
-
             response_messages = [
-                {"response": agregado_msg},
+                {"response": confirmar_servicios_agregados(nuevos_recortados)},
                 {"response": construir_menu_servicios(servicios_finales, SERVICIOS_MAXIMOS)},
             ]
             if aviso_limite:
@@ -1656,7 +957,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                     1,
                     {
                         "response": (
-                            f"Solo se agregaron {len(nuevos_recortados)} servicio(s) por alcanzar el máximo de {SERVICIOS_MAXIMOS}."
+                            informar_limite_servicios_alcanzado(len(nuevos_recortados), SERVICIOS_MAXIMOS)
                         )
                     },
                 )
@@ -1693,14 +994,14 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                 return {
                     "success": True,
                     "messages": [
-                        {"response": "No pude identificar esa opción. Indica el número del servicio que deseas eliminar."},
+                        {"response": preguntar_servicio_eliminar()},
                         {"response": listado},
                     ],
                 }
 
             servicio_eliminado = servicios_actuales.pop(indice)
             try:
-                servicios_finales = await actualizar_servicios_proveedor(
+                servicios_finales = await actualizar_servicios(
                     provider_id, servicios_actuales
                 )
             except Exception:
@@ -1711,7 +1012,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                 return {
                     "success": False,
                     "response": (
-                        "No pude eliminar el servicio en este momento. Intenta nuevamente."
+                        error_eliminar_servicio()
                     ),
                 }
 
@@ -1721,7 +1022,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
             return {
                 "success": True,
                 "messages": [
-                    {"response": f"Servicio eliminado: *{servicio_eliminado}*."},
+                    {"response": confirmar_servicio_eliminado(servicio_eliminado)},
                     {"response": construir_menu_servicios(servicios_finales, SERVICIOS_MAXIMOS)},
                 ],
             }
@@ -1740,24 +1041,22 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
             if not image_b64:
                 return {
                     "success": True,
-                    "response": "Necesito la selfie como imagen adjunta para poder actualizarla.",
+                    "response": solicitar_selfie_requerida(),
                 }
 
-            try:
-                await subir_medios_identidad(
-                    provider_id,
-                    {
-                        "face_image": image_b64,
-                    },
-                )
-            except Exception:
+            # Usar servicio especializado para actualizar selfie
+            resultado = await actualizar_selfie(
+                subir_medios_identidad,
+                provider_id,
+                image_b64,
+            )
+
+            if not resultado.get("success"):
                 flow["state"] = "awaiting_menu_option"
                 await establecer_flujo(phone, flow)
                 return {
                     "success": False,
-                    "response": (
-                        "No pude actualizar la selfie en este momento. Intenta nuevamente más tarde."
-                    ),
+                    "response": error_actualizar_selfie(),
                 }
 
             flow["state"] = "awaiting_menu_option"
@@ -1765,24 +1064,79 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
             return {
                 "success": True,
                 "messages": [
-                    {"response": "Selfie actualizada correctamente."},
+                    {"response": confirmar_selfie_actualizada()},
                     {"response": construir_menu_principal(is_registered=True)},
+                ],
+            }
+
+        if state == "awaiting_deletion_confirmation":
+            # Obtener respuesta del usuario
+            raw_text = (message_text or "").strip()
+            text = raw_text.lower()
+
+            # Opción 2: Cancelar
+            if text.startswith("2") or "cancelar" in text or "no" in text:
+                flow["state"] = "awaiting_menu_option"
+                await establecer_flujo(phone, flow)
+                return {
+                    "success": True,
+                    "messages": [
+                        {"response": informar_eliminacion_cancelada()},
+                        {"response": construir_menu_principal(is_registered=True)},
+                    ],
+                }
+
+            # Opción 1: Confirmar eliminación
+            if (
+                text.startswith("1")
+                or text.startswith("confirm")
+                or text in {"si", "ok", "listo", "confirmar", "eliminar"}
+            ):
+                # Ejecutar eliminación
+                resultado = await eliminar_registro_proveedor(supabase, phone)
+
+                if resultado["success"]:
+                    # Eliminación exitosa - limpiar flujo completamente
+                    flow.clear()
+
+                    return {
+                        "success": True,
+                        "messages": [
+                            {"response": confirmar_eliminacion_exitosa()},
+                        ],
+                    }
+                else:
+                    # Error en eliminación - volver al menú
+                    flow["state"] = "awaiting_menu_option"
+                    await establecer_flujo(phone, flow)
+                    return {
+                        "success": True,
+                        "messages": [
+                            {"response": error_eliminacion_fallida(resultado.get("message", ""))},
+                            {"response": construir_menu_principal(is_registered=True)},
+                        ],
+                    }
+
+            # Respuesta no reconocida - reenviar solicitud
+            return {
+                "success": True,
+                "messages": [
+                    {"response": "*No entendí tu respuesta.*"},
+                    {"response": solicitar_confirmacion_eliminacion()},
                 ],
             }
 
         if not has_consent:
             flow = {"state": "awaiting_consent", "has_consent": False}
             await establecer_flujo(phone, flow)
-            return await solicitar_consentimiento_proveedor(phone)
+            return await solicitar_consentimiento(phone)
 
         if state == "awaiting_dni":
             flow["state"] = "awaiting_city"
             await establecer_flujo(phone, flow)
             return {
                 "success": True,
-                "response": (
-                    "*Actualicemos tu registro. ¿En qué ciudad trabajas principalmente?*"
-                ),
+                "response": preguntar_actualizar_ciudad(),
             }
 
         if state == "awaiting_city":
@@ -1825,15 +1179,14 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
             if not image_b64:
                 return {
                     "success": True,
-                    "response": "*Necesito la foto frontal de la Cédula. Envia la imagen como adjunto.*",
+                    "response": solicitar_foto_dni_frontal(),
                 }
             flow["dni_front_image"] = image_b64
             flow["state"] = "awaiting_dni_back_photo"
             await establecer_flujo(phone, flow)
             return {
                 "success": True,
-                "response": "*Excelente. Ahora envia la foto de la parte posterior de la Cédula (parte de atrás)."
-                + " Envía la imagen como adjunto.*",
+                "response": solicitar_foto_dni_trasera(),
             }
 
         if state == "awaiting_dni_back_photo":
@@ -1841,15 +1194,14 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
             if not image_b64:
                 return {
                     "success": True,
-                    "response": "*Necesito la foto de la parte posterior de la Cédula (parte de atrás)."
-                    + " Envía la imagen como adjunto.*",
+                    "response": solicitar_foto_dni_trasera_requerida(),
                 }
             flow["dni_back_image"] = image_b64
             flow["state"] = "awaiting_face_photo"
             await establecer_flujo(phone, flow)
             return {
                 "success": True,
-                "response": "*Gracias. Finalmente envia una selfie (rostro visible).*",
+                "response": solicitar_selfie_registro(),
             }
 
         if state == "awaiting_face_photo":
@@ -1857,9 +1209,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
             if not image_b64:
                 return {
                     "success": True,
-                    "response": (
-                        "Necesito una selfie clara para finalizar. Envía la foto como adjunto."
-                    ),
+                    "response": solicitar_selfie_requerida_registro(),
                 }
             flow["face_image"] = image_b64
             summary = construir_resumen_confirmacion(flow)
@@ -1869,7 +1219,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                 "success": True,
                 "messages": [
                     {
-                        "response": "Informacion recibida. Voy a procesar tu informacion, espera un momento."
+                        "response": informar_datos_recibidos(),
                     },
                     {"response": summary},
                 ],
@@ -1880,7 +1230,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
             await establecer_flujo(phone, flow)
             return {
                 "success": True,
-                "response": "Opcional: tu correo electronico (o escribe 'omitir').",
+                "response": preguntar_correo_opcional(),
             }
 
         if state == "confirm":
@@ -1888,7 +1238,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                 flow,
                 message_text,
                 phone,
-                lambda datos: registrar_proveedor(supabase, datos),
+                lambda datos: registrar_proveedor_en_base_datos(supabase, datos),
                 subir_medios_identidad,
                 lambda: reiniciar_flujo(phone),
                 logger,
@@ -1904,7 +1254,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
         await reiniciar_flujo(phone)
         return {
             "success": True,
-            "response": "Empecemos de nuevo. Escribe 'registro' para crear tu perfil de proveedor.",
+            "response": informar_reinicio_completo(),
         }
 
     except Exception as e:
@@ -1932,10 +1282,25 @@ async def get_providers(
     """Obtener lista de proveedores con filtros desde Supabase"""
     try:
         if supabase:
-            # Reusar lógica de búsqueda principal para mantener consistencia
-            lista_proveedores = await buscar_proveedores(
-                profession or "", city or "", 10
+            # Construir query directamente
+            query = supabase.table("providers").select("*").eq("verified", True)
+
+            if profession:
+                query = query.filter("profession", "ilike", f"%{profession}%")
+            if city:
+                query = query.filter("city", "ilike", f"%{city}%")
+            if available is not None:
+                query = query.eq("available", available)
+
+            response = await run_supabase(
+                lambda: query.limit(10).execute(),
+                label="providers.list"
             )
+
+            lista_proveedores = [
+                garantizar_campos_obligatorios_proveedor(provider)
+                for provider in (response.data or [])
+            ]
         else:
             # Usar datos de fallback
             filtered_providers = FALLBACK_PROVIDERS
@@ -1973,7 +1338,7 @@ if __name__ == "__main__":
     server_port = int(
         os.getenv("PROVEEDORES_SERVER_PORT")
         or os.getenv("AI_SERVICE_PROVEEDORES_PORT")
-        or settings.proveedores_service_port
+        or configuracion.proveedores_service_port
     )
     uvicorn.run(
         "main:app",

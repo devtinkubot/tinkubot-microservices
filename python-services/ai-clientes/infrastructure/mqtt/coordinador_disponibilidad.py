@@ -96,7 +96,7 @@ class CoordinadorDisponibilidad:
     async def _listener_loop(self):
         if not MQTTClient:
             return
-        from shared_lib.redis_client import redis_client
+        from infrastructure.persistencia.cliente_redis import cliente_redis
 
         while True:
             try:
@@ -107,7 +107,7 @@ class CoordinadorDisponibilidad:
                             f"📡 Suscrito a MQTT para respuestas de disponibilidad: {MQTT_TEMA_RESPUESTA}"
                         )
                         async for message in messages:
-                            await self._handle_response_message(message, redis_client)
+                            await self._handle_response_message(message, cliente_redis)
             except asyncio.CancelledError:
                 break
             except Exception as exc:  # pragma: no cover - loop resiliente

@@ -1,0 +1,241 @@
+"""
+Transiciones de estados para el flujo de búsqueda de proveedores.
+
+Este módulo contiene funciones para gestionar las transiciones de estados
+durante el proceso de búsqueda, incluyendo verificación de ciudad y
+inicialización de búsqueda.
+"""
+
+import logging
+from typing import Any, Callable, Dict, Optional
+
+logger = logging.getLogger(__name__)
+
+
+async def verificar_ciudad_y_transicionar(
+    flow: Dict[str, Any],
+    customer_profile: Optional[Dict[str, Any]],
+    set_flow_callback: Optional[Callable[[str, Dict[str, Any]], Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Verifica si el usuario YA tiene ciudad confirmada y procede accordingly.
+
+    Si el usuario YA tiene ciudad confirmada, ir directo a búsqueda.
+    Si NO tiene ciudad, pedir ciudad normalmente.
+
+    Args:
+        flow: Diccionario con el estado del flujo conversacional.
+        customer_profile: Perfil del cliente con datos previos (opcional).
+        set_flow_callback: Función para actualizar el estado del flujo (opcional).
+            Firma: (phone: str, flow: Dict[str, Any]) -> Any
+
+    Returns:
+        Dict con "response" (mensaje para el usuario) y opcionalmente "ui".
+        - Si tiene ciudad: response con confirmación y estado "searching"
+        - Si no tiene ciudad: response solicitando ciudad y estado "awaiting_city"
+
+    Example:
+        >>> profile = {"city": "Madrid", "city_confirmed_at": "2025-01-01"}
+        >>> result = await verificar_ciudad_y_transicionar(
+        ...     flow={"service": "plomero"},
+        ...     customer_profile=profile,
+        ...     set_flow_callback=set_flow
+        ... )
+        >>> result["state"]
+        'searching'
+    """
+    if not customer_profile:
+        logger.info("📍 Sin perfil de cliente, solicitando ciudad")
+        return {"response": "*Perfecto, ¿en qué ciudad lo necesitas?*"}
+
+    existing_city = customer_profile.get("city")
+    city_confirmed_at = customer_profile.get("city_confirmed_at")
+
+    if existing_city and city_confirmed_at:
+        # Tiene ciudad confirmada: usarla automáticamente
+        flow["city"] = existing_city
+        flow["city_confirmed"] = True
+        flow["state"] = "searching"
+        flow["searching_dispatched"] = True
+
+        logger.info(
+            f"✅ Ciudad confirmada encontrada: '{existing_city}', "
+            f"transicionando a searching"
+        )
+
+        return {
+            "response": (
+                f"Perfecto, buscaré {flow.get('service')} en {existing_city}."
+            ),
+            "ui": {"type": "silent"},
+        }
+
+    # No tiene ciudad: pedir normalmente
+    logger.info("📍 Sin ciudad confirmada, solicitando ciudad")
+    return {"response": "*Perfecto, ¿en qué ciudad lo necesitas?*"}
+
+
+async def inicializar_busqueda_con_ciudad_confirmada(
+    phone: str,
+    flow: Dict[str, Any],
+    normalized_city: str,
+    customer_id: Optional[str],
+    update_customer_city_callback: Optional[Callable],
+    set_flow_callback: Callable[[str, Dict[str, Any]], Any],
+) -> Dict[str, Any]:
+    """
+    Inicializa la búsqueda con una ciudad confirmada por el usuario.
+
+    Actualiza la ciudad en el flujo, opcionalmente en la base de datos,
+    y configura el flujo para iniciar la búsqueda.
+
+    Args:
+        phone: Número de teléfono del cliente.
+        flow: Diccionario con el estado del flujo conversacional.
+        normalized_city: Ciudad normalizada ingresada por el usuario.
+        customer_id: ID del cliente (opcional).
+        update_customer_city_callback: Función para actualizar ciudad en BD
+            (opcional). Firma: (customer_id: str, city: str) -> Dict
+        set_flow_callback: Función para actualizar el estado del flujo.
+            Firma: (phone: str, flow: Dict[str, Any]) -> Any
+
+    Returns:
+        Dict con "response" (mensaje de confirmación) y estado actualizado.
+
+    Example:
+        >>> result = await inicializar_busqueda_con_ciudad_confirmada(
+        ...     phone="123456789",
+        ...     flow={"service": "plomero"},
+        ...     normalized_city="Madrid",
+        ...     customer_id="abc123",
+        ...     update_customer_city_callback=update_customer_city,
+        ...     set_flow_callback=set_flow
+        ... )
+        >>> "Madrid" in result["response"]
+        True
+    """
+    try:
+        service = flow.get("service", "").strip()
+
+        if not service:
+            logger.warning("⚠️ inicializar_busqueda llamado sin servicio")
+            return {"response": "¿Qué servicio necesitas?"}
+
+        if not normalized_city:
+            logger.warning("⚠️ inicializar_busqueda llamado sin ciudad")
+            return {"response": "¿En qué ciudad lo necesitas?"}
+
+        # Actualizar flujo con ciudad confirmada
+        flow["city"] = normalized_city
+        flow["city_confirmed"] = True
+        flow["state"] = "searching"
+        await set_flow_callback(phone, flow)
+
+        logger.info(
+            f"✅ Búsqueda inicializada: service='{service}', city='{normalized_city}'"
+        )
+
+        # Actualizar ciudad en perfil del cliente si se proporcionó callback
+        if customer_id and update_customer_city_callback:
+            try:
+                update_result = await update_customer_city_callback(
+                    customer_id, normalized_city
+                )
+                if update_result and update_result.get("city_confirmed_at"):
+                    flow["city_confirmed_at"] = update_result["city_confirmed_at"]
+                    await set_flow_callback(phone, flow)
+                    logger.info(
+                        f"✅ Ciudad actualizada en BD: city='{normalized_city}', "
+                        f"customer_id='{customer_id}'"
+                    )
+            except Exception as exc:
+                logger.warning(
+                    f"⚠️ No se pudo actualizar ciudad en BD: {exc}"
+                )
+
+        return {
+            "response": f"Perfecto, buscaré {service} en {normalized_city}.",
+            "state": "searching",
+        }
+
+    except Exception as exc:
+        logger.error(f"❌ Error en inicializar_busqueda_con_ciudad_confirmada: {exc}")
+        return {
+            "response": "Ocurrió un error inicializando la búsqueda. Intenta nuevamente.",
+            "state": "awaiting_city",
+        }
+
+
+def validar_datos_para_busqueda(flow: Dict[str, Any]) -> tuple[bool, Optional[str]]:
+    """
+    Valida que el flujo tenga los datos mínimos para iniciar una búsqueda.
+
+    Args:
+        flow: Diccionario con el estado del flujo conversacional.
+
+    Returns:
+        Tupla (es_valido, mensaje_error):
+        - es_valido: True si tiene service y city, False en caso contrario
+        - mensaje_error: None si es válido, mensaje descriptivo si no
+
+    Example:
+        >>> flow = {"service": "plomero", "city": "Madrid"}
+        >>> es_valido, error = validar_datos_para_busqueda(flow)
+        >>> es_valido
+        True
+        >>> error is None
+        True
+    """
+    service = (flow.get("service") or "").strip()
+    city = (flow.get("city") or "").strip()
+
+    if not service and not city:
+        return False, "Faltan el servicio y la ciudad"
+    if not service:
+        return False, "Falta el servicio que necesitas"
+    if not city:
+        return False, "Falta la ciudad donde lo necesitas"
+
+    return True, None
+
+
+def limpiar_datos_busqueda(flow: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Limpia los datos de búsqueda del flujo para reiniciar.
+
+    Elimina claves relacionadas con búsquedas anteriores para permitir
+    una nueva búsqueda limpia.
+
+    Args:
+        flow: Diccionario con el estado del flujo conversacional.
+
+    Returns:
+        El mismo flujo modificado (sin claves de búsqueda).
+
+    Example:
+        >>> flow = {
+        ...     "service": "plomero",
+        ...     "city": "Madrid",
+        ...     "providers": [...],
+        ...     "provider_detail_idx": 0
+        ... }
+        >>> limpiar_datos_busqueda(flow)
+        >>> "providers" in flow
+        False
+        >>> "provider_detail_idx" in flow
+        False
+    """
+    keys_to_remove = [
+        "providers",
+        "chosen_provider",
+        "provider_detail_idx",
+        "searching_dispatched",
+        "expanded_terms",
+    ]
+
+    for key in keys_to_remove:
+        flow.pop(key, None)
+
+    logger.info("🧼 Datos de búsqueda limpiados del flujo")
+
+    return flow
