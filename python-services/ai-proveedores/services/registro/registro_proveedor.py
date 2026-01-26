@@ -131,7 +131,7 @@ async def registrar_proveedor_en_base_datos(
 
             perfil_normalizado = garantizar_campos_obligatorios_proveedor(provider_record)
             # Importar localmente para evitar ciclo de importación
-            from services.search_cache import cachear_perfil_proveedor
+            from flows.sesion import cachear_perfil_proveedor
 
             await cachear_perfil_proveedor(
                 perfil_normalizado.get("phone", datos_normalizados["phone"]),

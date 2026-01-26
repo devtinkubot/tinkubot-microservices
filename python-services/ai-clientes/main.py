@@ -69,11 +69,6 @@ OPENAI_TIMEOUT_SECONDS = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "5"))
 MAX_OPENAI_CONCURRENCY = int(os.getenv("MAX_OPENAI_CONCURRENCY", "5"))
 openai_semaphore = asyncio.Semaphore(MAX_OPENAI_CONCURRENCY) if openai_client else None
 
-# Config Proveedores service URL
-PROVEEDORES_AI_SERVICE_URL = os.getenv(
-    "PROVEEDORES_AI_SERVICE_URL",
-    f"http://ai-proveedores:{configuracion.proveedores_service_port}",
-)
 SUPABASE_PROVIDERS_BUCKET = os.getenv(
     "SUPABASE_PROVIDERS_BUCKET", "tinkubot-providers"
 )

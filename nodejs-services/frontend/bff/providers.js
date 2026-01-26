@@ -11,18 +11,6 @@ const requestTimeoutMs =
   toPositiveInt(process.env.PROVIDERS_SERVICE_TIMEOUT_MS) ?? 5000;
 const pendingLimit = toPositiveInt(process.env.PROVIDERS_PENDING_LIMIT) ?? 100;
 
-const providerHost =
-  process.env.PROVIDERS_SERVICE_HOST ||
-  'ai-proveedores' || // fallback a servicio python
-  'providers-service';
-const providerPort =
-  toPositiveInt(process.env.PROVIDERS_SERVICE_PORT) ||
-  toPositiveInt(process.env.PROVEEDORES_SERVER_PORT) ||
-  8002;
-const providerBaseUrl =
-  process.env.PROVIDERS_SERVICE_URL ||
-  `http://${providerHost}:${providerPort}`;
-
 const supabaseUrl = (process.env.SUPABASE_URL || '').trim();
 const supabaseServiceKey = (
   process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_BACKEND_API_KEY || ''
@@ -105,27 +93,15 @@ const supabaseClient =
       })
     : null;
 
-const providerServiceClient =
-  supabaseClient === null
-    ? axios.create({
-        baseURL: providerBaseUrl,
-        timeout: requestTimeoutMs
-      })
-    : null;
-
 const withRequestId = (config, requestId) => {
   if (!config.headers) config.headers = {};
   config.headers['x-request-id'] = requestId;
   return config;
 };
 
-if (supabaseClient) {
-  console.warn(
-    `📦 Provider data source: Supabase REST (${supabaseProvidersTable})`
-  );
-} else {
-  console.warn(`📦 Provider service base URL: ${providerBaseUrl}`);
-}
+console.warn(
+  `📦 Provider data source: Supabase REST (${supabaseProvidersTable})`
+);
 
 const limpiarTexto = valor => {
   if (typeof valor === 'string') {
@@ -500,23 +476,7 @@ const intentarActualizacionSupabase = async (
 
 async function obtenerProveedoresPendientes(requestId = null) {
   try {
-    if (supabaseClient) {
-      return await obtenerProveedoresPendientesSupabase();
-    }
-
-    const response = await providerServiceClient.get(
-      '/providers',
-      withRequestId(
-        {
-          params: {
-            status: 'pending'
-          }
-        },
-        requestId || uuidv4()
-      )
-    );
-
-    return normalizarListaProveedores(response.data);
+    return await obtenerProveedoresPendientesSupabase();
   } catch (error) {
     throw gestionarErrorAxios(error);
   }
@@ -538,65 +498,43 @@ const construirRespuestaAccion = (providerId, estadoFinal, mensaje, registro) =>
 
 async function aprobarProveedor(providerId, payload = {}, requestId = null) {
   try {
-    if (supabaseClient) {
-      const timestamp = new Date().toISOString();
-      const payloadPrincipal = {
-        verified: true,
-        verification_reviewed_at: timestamp,
-        updated_at: timestamp
-      };
-      if (payload.reviewer) {
-        payloadPrincipal.verification_reviewer = payload.reviewer;
-      }
-      if (payload.notes) {
-        payloadPrincipal.verification_notes = payload.notes;
-      }
-
-      const datosActualizados = await intentarActualizacionSupabase(
-        providerId,
-        payloadPrincipal,
-        { verified: true, updated_at: timestamp }
-      );
-
-      const registro =
-        Array.isArray(datosActualizados) && datosActualizados.length > 0
-          ? datosActualizados[0]
-          : null;
-
-      const mensaje =
-        payload.notes && payload.notes.length > 0
-          ? 'Proveedor aprobado con observaciones.'
-          : 'Proveedor aprobado correctamente.';
-
-      // Publicar evento de aprobación por MQTT para que wa-proveedores envíe el WhatsApp
-      publishProviderApproved({
-        provider_id: providerId,
-        phone: registro?.phone,
-        full_name: registro?.full_name,
-      });
-
-      return construirRespuestaAccion(providerId, 'approved', mensaje, registro);
+    const timestamp = new Date().toISOString();
+    const payloadPrincipal = {
+      verified: true,
+      verification_reviewed_at: timestamp,
+      updated_at: timestamp
+    };
+    if (payload.reviewer) {
+      payloadPrincipal.verification_reviewer = payload.reviewer;
+    }
+    if (payload.notes) {
+      payloadPrincipal.verification_notes = payload.notes;
     }
 
-    const response = await providerServiceClient.post(
-      `/providers/${providerId}/approve`,
-      payload,
-      withRequestId({}, requestId || uuidv4())
+    const datosActualizados = await intentarActualizacionSupabase(
+      providerId,
+      payloadPrincipal,
+      { verified: true, updated_at: timestamp }
     );
-    const respData =
-      response.data ?? {
-        providerId,
-        status: 'approved',
-        message: 'Proveedor aprobado correctamente.'
-      };
 
+    const registro =
+      Array.isArray(datosActualizados) && datosActualizados.length > 0
+        ? datosActualizados[0]
+        : null;
+
+    const mensaje =
+      payload.notes && payload.notes.length > 0
+        ? 'Proveedor aprobado con observaciones.'
+        : 'Proveedor aprobado correctamente.';
+
+    // Publicar evento de aprobación por MQTT para que wa-proveedores envíe el WhatsApp
     publishProviderApproved({
       provider_id: providerId,
-      phone: respData.phone,
-      full_name: respData.full_name,
+      phone: registro?.phone,
+      full_name: registro?.full_name,
     });
 
-    return respData;
+    return construirRespuestaAccion(providerId, 'approved', mensaje, registro);
   } catch (error) {
     throw gestionarErrorAxios(error);
   }
@@ -604,66 +542,43 @@ async function aprobarProveedor(providerId, payload = {}, requestId = null) {
 
 async function rechazarProveedor(providerId, payload = {}, requestId = null) {
   try {
-    if (supabaseClient) {
-      const timestamp = new Date().toISOString();
-      const payloadPrincipal = {
-        verified: false,
-        verification_reviewed_at: timestamp,
-        updated_at: timestamp
-      };
-      if (payload.reviewer) {
-        payloadPrincipal.verification_reviewer = payload.reviewer;
-      }
-      if (payload.notes) {
-        payloadPrincipal.verification_notes = payload.notes;
-      }
-
-      const datosActualizados = await intentarActualizacionSupabase(
-        providerId,
-        payloadPrincipal,
-        { verified: false, updated_at: timestamp }
-      );
-
-      const registro =
-        Array.isArray(datosActualizados) && datosActualizados.length > 0
-          ? datosActualizados[0]
-          : null;
-
-      const mensaje =
-        payload.notes && payload.notes.length > 0
-          ? 'Proveedor rechazado con observaciones.'
-          : 'Proveedor rechazado correctamente.';
-
-      publishProviderRejected({
-        provider_id: providerId,
-        phone: registro?.phone,
-        full_name: registro?.full_name,
-        notes: payload.notes
-      });
-
-      return construirRespuestaAccion(providerId, 'rejected', mensaje, registro);
+    const timestamp = new Date().toISOString();
+    const payloadPrincipal = {
+      verified: false,
+      verification_reviewed_at: timestamp,
+      updated_at: timestamp
+    };
+    if (payload.reviewer) {
+      payloadPrincipal.verification_reviewer = payload.reviewer;
+    }
+    if (payload.notes) {
+      payloadPrincipal.verification_notes = payload.notes;
     }
 
-    const response = await providerServiceClient.post(
-      `/providers/${providerId}/reject`,
-      payload,
-      withRequestId({}, requestId || uuidv4())
+    const datosActualizados = await intentarActualizacionSupabase(
+      providerId,
+      payloadPrincipal,
+      { verified: false, updated_at: timestamp }
     );
-    const resp =
-      response.data ?? {
-        providerId,
-        status: 'rejected',
-        message: 'Proveedor rechazado correctamente.'
-      };
+
+    const registro =
+      Array.isArray(datosActualizados) && datosActualizados.length > 0
+        ? datosActualizados[0]
+        : null;
+
+    const mensaje =
+      payload.notes && payload.notes.length > 0
+        ? 'Proveedor rechazado con observaciones.'
+        : 'Proveedor rechazado correctamente.';
 
     publishProviderRejected({
       provider_id: providerId,
-      phone: resp.phone,
-      full_name: resp.full_name,
+      phone: registro?.phone,
+      full_name: registro?.full_name,
       notes: payload.notes
     });
 
-    return resp;
+    return construirRespuestaAccion(providerId, 'rejected', mensaje, registro);
   } catch (error) {
     throw gestionarErrorAxios(error);
   }

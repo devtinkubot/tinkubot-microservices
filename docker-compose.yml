@@ -26,12 +26,26 @@ services:
     restart: unless-stopped
 
   mosquitto:
-    image: eclipse-mosquitto:2
+    build: ./infrastructure-services/messaging-broker
     container_name: tinkubot-mosquitto
     ports:
       - "1883:1883"
+    networks:
+      - tinkubot-network
+    restart: unless-stopped
+
+  redis:
+    build: ./infrastructure-services/message-queue
+    container_name: tinkubot-redis
+    ports:
+      - "6379:6379"
     volumes:
-      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
     networks:
       - tinkubot-network
     restart: unless-stopped
@@ -137,6 +151,11 @@ services:
       - LOG_SAMPLING_RATE=10
       - AVAILABILITY_STATE_TTL_SECONDS=300
       - AVAILABILITY_POLL_INTERVAL_SECONDS=1.5
+    depends_on:
+      mosquitto:
+        condition: service_started
+      redis:
+        condition: service_healthy
     networks:
       - tinkubot-network
     restart: unless-stopped
@@ -161,6 +180,9 @@ services:
       - AI_SERVICE_PROVEEDORES_PORT=${AI_SERVICE_PROVEEDORES_PORT}
       - SERVER_HOST=${SERVER_HOST}
       - NODE_ENV=production
+    depends_on:
+      redis:
+        condition: service_healthy
     networks:
       - tinkubot-network
     restart: unless-stopped
@@ -181,12 +203,18 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - AI_SEARCH_PORT=${AI_SEARCH_PORT}
       - NODE_ENV=production
+    depends_on:
+      redis:
+        condition: service_healthy
     networks:
       - tinkubot-network
     restart: unless-stopped
 
-  
 
 networks:
   tinkubot-network:
     driver: bridge
+
+volumes:
+  redis-data:
+    driver: local

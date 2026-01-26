@@ -252,34 +252,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Datos de fallback para proveedores (solo si Supabase no está disponible)
-FALLBACK_PROVIDERS = [
-    {
-        "id": 1,
-        "name": "Juan Pérez",
-        "profession": "plomero",
-        "phone": "+593999999999",
-        "email": "juan.perez@email.com",
-        "address": "Av. Principal 123",
-        "city": "Cuenca",
-        "rating": 4.5,
-        "distance_km": 2.5,
-        "available": True,
-    },
-    {
-        "id": 2,
-        "name": "María García",
-        "profession": "electricista",
-        "phone": "+593888888888",
-        "email": "maria.garcia@email.com",
-        "address": "Calle Central 456",
-        "city": "Cuenca",
-        "rating": 4.8,
-        "distance_km": 3.2,
-        "available": True,
-    },
-]
-
 # ProviderMatch eliminado - ya no se usa con esquema unificado
 
 
@@ -1080,66 +1052,6 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                         "threshold_ms": SLOW_QUERY_THRESHOLD_MS,
                     },
                 )
-
-
-@app.get("/providers")
-async def get_providers(
-    profession: Optional[str] = Query(None, description="Filtrar por profesión"),
-    city: Optional[str] = Query(None, description="Filtrar por ciudad"),
-    available: Optional[bool] = Query(True, description="Solo disponibles"),
-) -> Dict[str, Any]:
-    """Obtener lista de proveedores con filtros desde Supabase"""
-    try:
-        if supabase:
-            # Construir query directamente
-            query = supabase.table("providers").select("*").eq("verified", True)
-
-            if profession:
-                query = query.filter("profession", "ilike", f"%{profession}%")
-            if city:
-                query = query.filter("city", "ilike", f"%{city}%")
-            if available is not None:
-                query = query.eq("available", available)
-
-            response = await run_supabase(
-                lambda: query.limit(10).execute(),
-                label="providers.list"
-            )
-
-            lista_proveedores = [
-                garantizar_campos_obligatorios_proveedor(provider)
-                for provider in (response.data or [])
-            ]
-        else:
-            # Usar datos de fallback
-            filtered_providers = FALLBACK_PROVIDERS
-
-            if profession:
-                filtered_providers = [
-                    p
-                    for p in filtered_providers
-                    if profession.lower() in str(p["profession"]).lower()
-                ]
-
-            if city:
-                filtered_providers = [
-                    p
-                    for p in filtered_providers
-                    if city.lower() in str(p["city"]).lower()
-                ]
-
-            if available is not None:
-                filtered_providers = [
-                    p for p in filtered_providers if p["available"] == available
-                ]
-
-            lista_proveedores = filtered_providers
-
-        return {"providers": lista_proveedores, "count": len(lista_proveedores)}
-
-    except Exception as e:
-        logger.error(f"Error getting providers: {e}")
-        return {"providers": [], "count": 0}
 
 
 if __name__ == "__main__":
