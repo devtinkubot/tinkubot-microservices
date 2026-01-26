@@ -16,7 +16,6 @@ from typing import Any, Dict, List, Optional
 import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
 from openai import AsyncOpenAI
 from supabase import create_client
 
@@ -52,14 +51,6 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 # Inicializar OpenAI
 openai_client = (
@@ -122,18 +113,6 @@ async def run_supabase(op, label: str = "supabase_op"):
 
 
 # --- Coordinador de disponibilidad en vivo vía MQTT ---
-def _normalize_phone_for_match(value: Optional[str]) -> Optional[str]:
-    if not value:
-        return None
-    raw = str(value).strip()
-    if raw.endswith("@lid"):
-        return raw
-    if raw.endswith("@c.us"):
-        raw = raw.replace("@c.us", "")
-    raw = raw.replace("+", "").replace(" ", "")
-    return raw or None
-
-
 coordinador_disponibilidad = CoordinadorDisponibilidad()
 
 # ============================================================================
@@ -319,88 +298,6 @@ async def feedback_scheduler_loop():
     except Exception as e:
         logger.error(f"Scheduler loop error: {e}")
 
-
-# --- Helpers for detection and providers search ---
-ECUADOR_CITY_SYNONYMS = {
-    "Quito": {"quito"},
-    "Guayaquil": {"guayaquil"},
-    "Cuenca": {"cuenca", "cueca"},
-    "Santo Domingo": {"santo domingo", "santo domingo de los tsachilas"},
-    "Manta": {"manta"},
-    "Portoviejo": {"portoviejo"},
-    "Machala": {"machala"},
-    "Durán": {"duran", "durán"},
-    "Loja": {"loja"},
-    "Ambato": {"ambato"},
-    "Riobamba": {"riobamba"},
-    "Esmeraldas": {"esmeraldas"},
-    "Quevedo": {"quevedo"},
-    "Babahoyo": {"babahoyo", "baba hoyo"},
-    "Milagro": {"milagro"},
-    "Ibarra": {"ibarra"},
-    "Tulcán": {"tulcan", "tulcán"},
-    "Latacunga": {"latacunga"},
-    "Salinas": {"salinas"},
-}
-
-GREETINGS = {
-    "hola",
-    "buenas",
-    "buenas tardes",
-    "buenas noches",
-    "buenos días",
-    "buenos dias",
-    "qué tal",
-    "que tal",
-    "hey",
-    "ola",
-    "hello",
-    "hi",
-    "saludos",
-}
-
-RESET_KEYWORDS = {
-    "reset",
-    "reiniciar",
-    "reinicio",
-    "empezar",
-    "inicio",
-    "comenzar",
-    "start",
-    "nuevo",
-}
-
-MAX_CONFIRM_ATTEMPTS = 2
-
-FAREWELL_MESSAGE = (
-    "*¡Gracias por utilizar nuestros servicios!* Si necesitas otro apoyo, solo escríbeme."
-)
-
-AFFIRMATIVE_WORDS = {
-    "si",
-    "sí",
-    "acepto",
-    "claro",
-    "correcto",
-    "dale",
-    "por supuesto",
-    "asi es",
-    "así es",
-    "ok",
-    "okay",
-    "vale",
-}
-
-NEGATIVE_WORDS = {
-    "no",
-    "nop",
-    "cambio",
-    "cambié",
-    "otra",
-    "otro",
-    "negativo",
-    "prefiero no",
-}
 
 
 def _normalize_token(text: str) -> str:
