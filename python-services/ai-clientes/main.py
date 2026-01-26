@@ -23,7 +23,6 @@ from supabase import create_client
 from templates.mensajes.feedback import mensaje_solicitud_feedback
 from templates.proveedores.conexion import mensaje_notificacion_conexion
 from config.configuracion import configuracion
-from models import SolicitudCreacionSesion, EstadisticasSesion
 from infrastructure.persistencia.cliente_redis import cliente_redis as redis_client
 from infrastructure.clientes.busqueda import ClienteBusqueda
 from services.sesiones.gestor_sesiones import gestor_sesiones as session_manager
@@ -1037,106 +1036,6 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
         )
 
 
-# Endpoints de compatibilidad con el Session Service anterior
-@app.post("/sessions")
-async def create_session(session_request: SolicitudCreacionSesion):
-    """
-    Endpoint compatible con el Session Service anterior
-    Crea/guarda una nueva sesión de conversación
-    """
-    try:
-        phone = session_request.phone
-        message = session_request.message
-        timestamp = session_request.timestamp or datetime.now()
-
-        if not phone or not message:
-            raise HTTPException(
-                status_code=400, detail="phone and message are required"
-            )
-
-        # Guardar en sesión
-        success = await session_manager.save_session(
-            phone=phone,
-            message=message,
-            is_bot=False,
-            metadata={"timestamp": timestamp.isoformat()},
-        )
-
-        if success:
-            return {"status": "saved", "phone": phone}
-        else:
-            raise HTTPException(status_code=500, detail="Failed to save session")
-
-    except Exception as e:
-        logger.error(f"❌ Error creando sesión: {e}")
-        raise HTTPException(status_code=500, detail=f"Error creating session: {str(e)}")
-
-
-@app.get("/sessions/{phone}")
-async def get_sessions(phone: str, limit: int = 10):
-    """
-    Endpoint compatible con el Session Service anterior
-    Obtiene todas las sesiones de un número de teléfono
-    """
-    try:
-        history = await session_manager.get_conversation_history(phone, limit=limit)
-
-        # Formatear respuesta compatible con el formato anterior
-        sessions_data = []
-        for msg in history:
-            session_data = {
-                "phone": phone,
-                "message": msg.message,
-                "timestamp": msg.timestamp.isoformat(),
-                "created_at": msg.timestamp.isoformat(),
-                "is_bot": msg.is_bot,
-            }
-            if msg.metadata:
-                session_data.update(msg.metadata)
-            sessions_data.append(session_data)
-
-        return {"sessions": sessions_data}
-
-    except Exception as e:
-        logger.error(f"❌ Error obteniendo sesiones para {phone}: {e}")
-        raise HTTPException(status_code=500, detail=f"Error getting sessions: {str(e)}")
-
-
-@app.delete("/sessions/{phone}")
-async def delete_sessions(phone: str):
-    """
-    Endpoint compatible con el Session Service anterior
-    Elimina todas las sesiones de un número de teléfono
-    """
-    try:
-        success = await session_manager.delete_sessions(phone)
-
-        if success:
-            return {"status": "deleted", "phone": phone}
-        else:
-            raise HTTPException(status_code=500, detail="Failed to delete sessions")
-
-    except Exception as e:
-        logger.error(f"❌ Error eliminando sesiones para {phone}: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Error deleting sessions: {str(e)}"
-        )
-
-
-@app.get("/sessions/stats", response_model=EstadisticasSesion)
-async def get_session_stats():
-    """
-    Obtiene estadísticas de sesiones
-    """
-    try:
-        stats = await session_manager.get_session_stats()
-        return EstadisticasSesion(**stats)
-
-    except Exception as e:
-        logger.error(f"❌ Error obteniendo estadísticas de sesiones: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Error getting session stats: {str(e)}"
-        )
 
 
 if __name__ == "__main__":

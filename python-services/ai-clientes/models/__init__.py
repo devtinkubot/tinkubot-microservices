@@ -9,12 +9,8 @@ from models.catalogo_servicios import (
     normalize_profession_for_search,
     normalize_text_pair,
 )
-from models.respuesta import EstadisticasSesion
-from models.solicitud import SolicitudCreacionSesion
 
 __all__ = [
-    "SolicitudCreacionSesion",
-    "EstadisticasSesion",
     # From models.catalogo_servicios
     "normalize_profession_for_search",
     "COMMON_SERVICE_SYNONYMS",
