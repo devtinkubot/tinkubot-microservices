@@ -300,27 +300,6 @@ async def feedback_scheduler_loop():
 
 
 
-def _normalize_token(text: str) -> str:
-    stripped = (text or "").strip().lower()
-    normalized = unicodedata.normalize("NFD", stripped)
-    without_accents = "".join(
-        ch for ch in normalized if unicodedata.category(ch) != "Mn"
-    )
-    clean = without_accents.replace("!", "").replace("?", "").replace(",", "")
-    return clean
-
-
-def _normalize_text_for_matching(text: str) -> str:
-    base = (text or "").lower()
-    normalized = unicodedata.normalize("NFD", base)
-    without_accents = "".join(
-        ch for ch in normalized if unicodedata.category(ch) != "Mn"
-    )
-    cleaned = re.sub(r"[^a-z0-9\s]", " ", without_accents)
-    return re.sub(r"\s+", " ", cleaned).strip()
-
-
-
 
 
 
@@ -537,32 +516,6 @@ Responde SOLO con JSON:
         return None, None  # Permitir por defecto si error
 
 
-
-
-def normalize_button(val: Optional[str]) -> Optional[str]:
-    """
-    Normaliza valores de botones/opciones enviados desde WhatsApp.
-
-    - Extrae el número inicial (e.g. "1 Sí, acepto" -> "1")
-    - Compacta espacios adicionales
-    - Devuelve None si la cadena está vacía tras limpiar
-    """
-    if val is None:
-        return None
-
-    text = str(val).strip()
-    if not text:
-        return None
-
-    # Reemplazar espacios múltiples por uno solo
-    text = re.sub(r"\s+", " ", text)
-
-    # Si inicia con un número (1, 2, 10, etc.), devolver solo el número
-    match = re.match(r"^(\d+)", text)
-    if match:
-        return match.group(1)
-
-    return text
 
 
 def _build_whatsapp_link(phone: str) -> Optional[str]:
