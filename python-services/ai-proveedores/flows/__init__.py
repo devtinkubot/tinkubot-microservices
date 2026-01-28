@@ -27,11 +27,6 @@ from .consentimiento import (
 # Interpretación
 from .interpretacion import interpretar_respuesta
 
-# WhatsApp
-from .whatsapp import (
-    procesar_con_openai,
-)
-
 # Constructores (existentes)
 from .constructores import *
 # Gestores de estados (existentes)
@@ -59,6 +54,4 @@ __all__ = [
     "procesar_respuesta_consentimiento",
     # Interpretación
     "interpretar_respuesta",
-    # WhatsApp
-    "procesar_con_openai",
 ]
