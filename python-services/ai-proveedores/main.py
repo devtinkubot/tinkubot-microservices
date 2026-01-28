@@ -9,11 +9,10 @@ import logging
 import os
 import re
 import sys
-import unicodedata
 from pathlib import Path
 from time import perf_counter
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Set, cast
+from typing import Any, Dict, List, Optional
 
 # Agregar el directorio raíz al sys.path para imports absolutos
 sys.path.insert(0, str(Path(__file__).parent))
@@ -28,9 +27,6 @@ from flows.constructores import (
     construir_respuesta_menu_registro,
     construir_respuesta_verificado,
     construir_respuesta_revision,
-    construir_respuesta_solicitud_consentimiento,
-    construir_respuesta_consentimiento_aceptado,
-    construir_respuesta_consentimiento_rechazado,
     construir_menu_servicios,
     construir_resumen_confirmacion,
 )
@@ -56,7 +52,6 @@ from models import (
     SolicitudCreacionProveedor,
     RespuestaProveedor,
 )
-from infrastructure.redis import cliente_redis as redis_client
 
 # Importar modelos Pydantic locales
 from models import (
@@ -68,18 +63,13 @@ from models import (
 # Importar constantes y utilidades de servicios
 from services.servicios_proveedor.constantes import SERVICIOS_MAXIMOS
 from services.servicios_proveedor.utilidades import (
-    normalizar_profesion_para_almacenamiento as normalizar_profesion_para_storage,
     limpiar_texto_servicio as limpiar_servicio_texto,
-    sanitizar_lista_servicios as sanitizar_servicios,
-    formatear_servicios_a_cadena as formatear_servicios,
     dividir_cadena_servicios,
-    extraer_servicios_almacenados as extraer_servicios_guardados,
     construir_listado_servicios,
 )
 
 # Importar utilidades de storage
 from infrastructure.storage.utilidades import (
-    normalizar_respuesta_storage as _coerce_storage_string,
     extraer_primera_imagen_base64 as extract_first_image_base64,
 )
 
@@ -159,11 +149,6 @@ from templates.interfaz import (
 # Importar interpretación de respuestas
 from flows.interpretacion import interpretar_respuesta
 
-# Importar servicios de WhatsApp
-from flows.whatsapp import (
-    procesar_con_openai,
-)
-
 # Importar templates de sesión
 from templates.sesion import (
     informar_reinicio_conversacion,
@@ -184,19 +169,9 @@ from infrastructure.storage import (
 SUPABASE_URL = configuracion.supabase_url or os.getenv("SUPABASE_URL", "")
 # settings expone la clave JWT de servicio para Supabase
 SUPABASE_SERVICE_KEY = configuracion.supabase_service_key
-SUPABASE_PROVIDERS_BUCKET = (
-    os.getenv("SUPABASE_PROVIDERS_BUCKET")
-    or os.getenv("SUPABASE_BUCKET_NAME")
-    or "tinkubot-providers"
-)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 SUPABASE_TIMEOUT_SECONDS = float(os.getenv("SUPABASE_TIMEOUT_SECONDS", "5"))
-PROFILE_CACHE_TTL_SECONDS = int(
-    os.getenv("PROFILE_CACHE_TTL_SECONDS", str(configuracion.cache_ttl_seconds))
-)
-PROFILE_CACHE_KEY = "prov_profile_cache:{}"
 PERF_LOG_ENABLED = os.getenv("PERF_LOG_ENABLED", "true").lower() == "true"
 SLOW_QUERY_THRESHOLD_MS = int(os.getenv("SLOW_QUERY_THRESHOLD_MS", "800"))
 
@@ -233,14 +208,8 @@ app = FastAPI(
 
 @app.on_event("startup")
 async def startup_event():
-    # Timeout simple: habilitado, ver línea ~1525 en manejar_mensaje_whatsapp
     if configuracion.session_timeout_enabled:
         logger.info("✅ Session Timeout simple habilitado (5 minutos de inactividad)")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    pass
 
 
 # Configurar CORS
@@ -251,9 +220,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# ProviderMatch eliminado - ya no se usa con esquema unificado
-
 
 # --- Flujo interactivo de registro de proveedores ---
 FLOW_KEY = "prov_flow:{}"  # phone
