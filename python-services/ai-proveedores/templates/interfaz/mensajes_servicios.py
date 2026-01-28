@@ -61,18 +61,6 @@ def error_servicio_no_interpretado() -> str:
     )
 
 
-def error_servicios_ya_registrados() -> str:
-    """Informa que los servicios ya existen o no se pudieron interpretar.
-
-    Returns:
-        Mensaje indicando que los servicios ya estaban registrados
-    """
-    return (
-        "Todos esos servicios ya estaban registrados o no los pude interpretar. "
-        "Recuerda separarlos con comas y usar descripciones cortas."
-    )
-
-
 def error_guardar_servicio() -> str:
     """Informa que hubo un error al guardar el servicio.
 

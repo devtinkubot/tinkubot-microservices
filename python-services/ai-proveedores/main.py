@@ -94,7 +94,6 @@ from flows.registro import determinar_estado_registro
 from flows.sesion import (
     obtener_flujo,
     establecer_flujo,
-    establecer_flujo_con_estado,
     reiniciar_flujo,
     obtener_perfil_proveedor_cacheado,
 )
@@ -132,7 +131,6 @@ from templates.interfaz import (
     error_limite_servicios_alcanzado,
     preguntar_nuevo_servicio,
     error_servicio_no_interpretado,
-    error_servicios_ya_registrados,
     error_guardar_servicio,
     confirmar_servicios_agregados,
     informar_limite_servicios_alcanzado,

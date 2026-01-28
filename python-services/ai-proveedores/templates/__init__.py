@@ -63,9 +63,6 @@ from templates.registro import (
 
 # ==================== DOMINIO: SESIÓN ====================
 from templates.sesion import (
-    session_expired_message,
-    session_state_expired_mapping,
-    session_timeout_warning_message,
     informar_reinicio_conversacion,
     informar_timeout_inactividad,
     informar_reinicio_completo,
@@ -142,9 +139,6 @@ __all__ = [
     "provider_under_review_message",
     "provider_verified_message",
     # Sesión
-    "session_timeout_warning_message",
-    "session_expired_message",
-    "session_state_expired_mapping",
     "informar_reinicio_conversacion",
     "informar_timeout_inactividad",
     "informar_reinicio_completo",

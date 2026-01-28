@@ -21,57 +21,42 @@ from models.proveedores import SolicitudCreacionProveedor
 logger = logging.getLogger(__name__)
 
 
-def validar_datos_registro_proveedor(
+def validar_y_construir_proveedor(
+    flow: Dict[str, Any],
     phone: str,
-    nombre: Optional[str],
-    email: Optional[str],
-    ciudad: Optional[str],
-    profesion: Optional[str],
-    especialidad: Optional[str],
-    anios_experiencia: Optional[int],
-    tiene_consentimiento: bool,
-    url_red_social: Optional[str] = None,
-    tipo_red_social: Optional[str] = None,
 ) -> Tuple[bool, Optional[str], Optional[SolicitudCreacionProveedor]]:
     """
-    Valida los datos del formulario de registro de proveedor.
+    Función principal que valida y construye un proveedor desde el flujo.
 
-    Realiza validaciones usando Pydantic para garantizar que los datos
-    cumplan con el esquema requerido antes de intentar el registro.
+    Esta función extrae los datos del flujo conversacional y construye
+    un objeto SolicitudCreacionProveedor validado.
 
     Args:
+        flow: Diccionario del flujo conversacional
         phone: Número de teléfono del proveedor
-        nombre: Nombre completo del proveedor
-        email: Correo electrónico (opcional)
-        ciudad: Ciudad donde trabaja el proveedor
-        profesion: Profesión del proveedor
-        especialidad: Cadena de especialidades/servicios (puede estar separada por delimitadores)
-        anios_experiencia: Años de experiencia (opcional)
-        tiene_consentimiento: Si el proveedor dio consentimiento para el tratamiento de datos
-        url_red_social: URL de red social (opcional)
-        tipo_red_social: Tipo de red social (opcional)
 
     Returns:
         Tupla con:
-        - bool: True si la validación fue exitosa
-        - Optional[str]: Mensaje de error si la validación falló, None si fue exitosa
-        - Optional[SolicitudCreacionProveedor]: Objeto SolicitudCreacionProveedor si la validación fue exitosa, None si falló
+        - bool: True si la validación y construcción fueron exitosas
+        - Optional[str]: Mensaje de error si falló, None si fue exitosa
+        - Optional[SolicitudCreacionProveedor]: Objeto construido y validado
     """
     # Procesar lista de servicios desde la especialidad
+    especialidad = flow.get("specialty")
     servicios_lista = _procesar_lista_servicios(especialidad)
 
     try:
         proveedor = SolicitudCreacionProveedor(
             phone=phone,
-            full_name=nombre or "",
-            email=email,
-            city=ciudad or "",
-            profession=profesion or "",
+            full_name=flow.get("name") or "",
+            email=flow.get("email"),
+            city=flow.get("city") or "",
+            profession=flow.get("profession") or "",
             services_list=servicios_lista,
-            experience_years=anios_experiencia,
-            has_consent=tiene_consentimiento,
-            social_media_url=url_red_social,
-            social_media_type=tipo_red_social,
+            experience_years=flow.get("experience_years"),
+            has_consent=flow.get("has_consent", False),
+            social_media_url=flow.get("social_media_url"),
+            social_media_type=flow.get("social_media_type"),
         )
         return True, None, proveedor
 
@@ -84,63 +69,6 @@ def validar_datos_registro_proveedor(
     except Exception as exc:
         logger.error("Error inesperado al validar datos de registro: %s", exc)
         return False, "Error inesperado al validar los datos", None
-
-
-def construir_proveedor_desde_formulario(
-    datos_formulario: Dict[str, Any],
-    phone: str,
-) -> Tuple[bool, Optional[str], Optional[SolicitudCreacionProveedor]]:
-    """
-    Construye un objeto SolicitudCreacionProveedor desde los datos del formulario de flujo.
-
-    Esta función extrae y transforma los datos del flujo conversacional
-    en un objeto de dominio validado.
-
-    Args:
-        datos_formulario: Diccionario con todos los datos del flujo
-        phone: Número de teléfono del proveedor
-
-    Returns:
-        Tupla con:
-        - bool: True si la construcción fue exitosa
-        - Optional[str]: Mensaje de error si falló, None si fue exitosa
-        - Optional[SolicitudCreacionProveedor]: Objeto construido y validado
-    """
-    return validar_datos_registro_proveedor(
-        phone=phone,
-        nombre=datos_formulario.get("name"),
-        email=datos_formulario.get("email"),
-        ciudad=datos_formulario.get("city"),
-        profesion=datos_formulario.get("profession"),
-        especialidad=datos_formulario.get("specialty"),
-        anios_experiencia=datos_formulario.get("experience_years"),
-        tiene_consentimiento=datos_formulario.get("has_consent", False),
-        url_red_social=datos_formulario.get("social_media_url"),
-        tipo_red_social=datos_formulario.get("social_media_type"),
-    )
-
-
-def validar_y_construir_proveedor(
-    flow: Dict[str, Any],
-    phone: str,
-) -> Tuple[bool, Optional[str], Optional[SolicitudCreacionProveedor]]:
-    """
-    Función principal que valida y construye un proveedor desde el flujo.
-
-    Esta es la función de conveniencia principal que combina la extracción
-    de datos del flujo con la validación y construcción del objeto.
-
-    Args:
-        flow: Diccionario del flujo conversacional
-        phone: Número de teléfono del proveedor
-
-    Returns:
-        Tupla con:
-        - bool: True si la validación y construcción fueron exitosas
-        - Optional[str]: Mensaje de error si falló, None si fue exitosa
-        - Optional[SolicitudCreacionProveedor]: Objeto construido y validado
-    """
-    return construir_proveedor_desde_formulario(flow, phone)
 
 
 def _procesar_lista_servicios(especialidad: Optional[str]) -> List[str]:

@@ -8,7 +8,6 @@ Este paquete contiene módulos especializados por dominio:
 
 # Exportar funciones del módulo de registro
 from .registro import (
-    construir_proveedor_desde_formulario,
     garantizar_campos_obligatorios_proveedor,
     normalizar_datos_proveedor,
     registrar_proveedor_en_base_datos,
@@ -29,7 +28,6 @@ __all__ = [
     "garantizar_campos_obligatorios_proveedor",
     "registrar_proveedor_en_base_datos",
     "validar_y_construir_proveedor",
-    "construir_proveedor_desde_formulario",
     "eliminar_registro_proveedor",
     # Módulo servicios de proveedor
     "actualizar_servicios",

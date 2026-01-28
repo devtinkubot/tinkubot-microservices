@@ -38,13 +38,7 @@ __all__ = [
     # Sesión
     "obtener_flujo",
     "establecer_flujo",
-    "establecer_flujo_con_estado",
     "reiniciar_flujo",
-    "es_disparador_registro",
-    "es_comando_reinicio",
-    "obtener_perfil_proveedor",
-    "cachear_perfil_proveedor",
-    "refrescar_cache_perfil_proveedor",
     "obtener_perfil_proveedor_cacheado",
     # Registro
     "determinar_estado_registro",

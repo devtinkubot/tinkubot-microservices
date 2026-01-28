@@ -1,11 +1,6 @@
 # Export centralizado de modelos del servicio ai-proveedores
 # Este módulo proporciona acceso unificado a todos los modelos Pydantic
 
-# Modelos de registro
-from .registro import (
-    SolicitudRegistroProveedor
-)
-
 # Modelos de mensajes
 from .mensajes import (
     SolicitudMensajeWhatsApp,
@@ -24,8 +19,6 @@ from .proveedores import (
 )
 
 __all__ = [
-    # Registro
-    "SolicitudRegistroProveedor",
     # Mensajes
     "SolicitudMensajeWhatsApp",
     "RecepcionMensajeWhatsApp",
