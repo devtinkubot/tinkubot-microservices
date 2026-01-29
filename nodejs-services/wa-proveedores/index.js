@@ -60,14 +60,14 @@ const AI_SERVICE_URL =
 
 // Configuración de Supabase para almacenamiento de sesiones
 const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_BACKEND_API_KEY;
+const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
 const supabaseBucket = process.env.SUPABASE_BUCKET_NAME;
 const supabaseProvidersTable = process.env.SUPABASE_PROVIDERS_TABLE || 'providers';
 
 // Validar configuración de Supabase
 if (!supabaseUrl || !supabaseKey || !supabaseBucket) {
   console.error('❌ Error: Faltan variables de entorno de Supabase');
-  console.error('Requeridas: SUPABASE_URL, SUPABASE_BACKEND_API_KEY, SUPABASE_BUCKET_NAME');
+  console.error('Requeridas: SUPABASE_URL, SUPABASE_SERVICE_KEY, SUPABASE_BUCKET_NAME');
   process.exit(1);
 }
 
@@ -110,6 +110,15 @@ let clientStatus = 'disconnected';
 let isRefreshing = false;
 let lastRemoteSessionLog = 0;
 const SESSION_LOG_INTERVAL_MS = 5 * 60 * 1000;
+
+// Variables para tracking de guardado de sesión RemoteAuth
+let remoteSessionSaved = false;
+const MANUAL_SAVE_DELAY_MS = 90000; // 90 segundos - tiempo para que RemoteAuth haga su trabajo
+
+// Variables para auto-detección de sesión corrupta
+let sessionTimeout = null;
+let sessionRetryCount = 0;
+const MAX_SESSION_RETRIES = 2;
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -469,7 +478,7 @@ async function manejarRechazoProveedor(data) {
   }
 }
 
-async function resetWhatsAppSession(trigger = 'manual', { attemptLogout = true } = {}) {
+async function resetWhatsAppSession(trigger = 'manual', options = {}) {
   if (isRefreshing) {
     console.warn(
       `[${instanceName}] Reinicio (${trigger}) ignorado: ya existe un proceso de regeneración en curso.`
@@ -478,6 +487,7 @@ async function resetWhatsAppSession(trigger = 'manual', { attemptLogout = true }
   }
 
   isRefreshing = true;
+  const { attemptLogout = true, forceDeleteSession = false } = options;
   console.warn(`[${instanceName}] Iniciando reinicio de sesión (${trigger})...`);
 
   try {
@@ -503,14 +513,24 @@ async function resetWhatsAppSession(trigger = 'manual', { attemptLogout = true }
       );
     }
 
-    try {
-      await supabaseStore.delete({ session: instanceId });
-      console.warn(`[${instanceName}] Sesión remota eliminada en Supabase (${trigger}).`);
-    } catch (storeError) {
-      console.warn(
-        `[${instanceName}] No se pudo eliminar la sesión remota (${trigger}):`,
-        storeError?.message || storeError
-      );
+    // Si se fuerza la eliminación de la sesión, eliminar de Supabase inmediatamente
+    if (forceDeleteSession) {
+      try {
+        await supabaseStore.delete({ session: instanceId });
+        console.warn(`[${instanceName}] ✅ Sesión forzada eliminada de Supabase Storage`);
+      } catch (error) {
+        console.error(`[${instanceName}] ❌ Error eliminando sesión de Supabase:`, error.message);
+      }
+    } else {
+      try {
+        await supabaseStore.delete({ session: instanceId });
+        console.warn(`[${instanceName}] Sesión remota eliminada en Supabase (${trigger}).`);
+      } catch (storeError) {
+        console.warn(
+          `[${instanceName}] No se pudo eliminar la sesión remota (${trigger}):`,
+          storeError?.message || storeError
+        );
+      }
     }
 
     qrCodeData = null;
@@ -534,6 +554,44 @@ async function resetWhatsAppSession(trigger = 'manual', { attemptLogout = true }
     throw error;
   } finally {
     isRefreshing = false;
+  }
+}
+
+/**
+ * Guarda la sesión manualmente cuando RemoteAuth falla en hacerlo
+ * Esto es un workaround para el bug donde el evento 'ready' no se dispara
+ */
+async function guardarSesionManualmente() {
+  const sessionName = `RemoteAuth-${instanceId}`;
+  const sessionDir = `/app/.wwebjs_auth/${sessionName}`;
+
+  try {
+    const fs = require('fs-extra');
+    const pathExists = await fs.pathExists(sessionDir);
+
+    if (!pathExists) {
+      console.warn(`[${instanceName}] Directorio de sesión no encontrado: ${sessionDir}`);
+      return false;
+    }
+
+    // Verificar si ya existe una sesión guardada recientemente
+    const sessionExists = await supabaseStore.sessionExists({ session: sessionName });
+    if (sessionExists && remoteSessionSaved) {
+      console.log(`[${instanceName}] Sesión ya existe en Supabase, no es necesario guardar manualmente`);
+      return true;
+    }
+
+    console.warn(`[${instanceName}] Iniciando guardado manual de sesión...`);
+
+    // Guardar usando el store directamente
+    await supabaseStore.save({ session: sessionName, path: sessionDir });
+
+    console.warn(`[${instanceName}] Sesión guardada manualmente en Supabase Storage`);
+    remoteSessionSaved = true;
+    return true;
+  } catch (error) {
+    console.error(`[${instanceName}] Error guardando sesión manualmente:`, error.message);
+    return false;
   }
 }
 
@@ -655,11 +713,23 @@ const client = new Client({
   },
 });
 
+client.on('loading_screen', (percent, message) => {
+  console.log(`[${instanceName}] Cargando WhatsApp: ${percent}% - ${message}`);
+});
+
 client.on('qr', qr => {
   console.warn(`[${instanceName}] QR Code recibido, generándolo en terminal y guardándolo...`);
   qrcode.generate(qr, { small: true });
   qrCodeData = qr; // Guardamos el QR para la API
   clientStatus = 'qr_ready';
+
+  // Cancelar timer de detección (el QR llegó, la sesión está OK)
+  if (sessionTimeout) {
+    clearTimeout(sessionTimeout);
+    sessionTimeout = null;
+    sessionRetryCount = 0;
+    console.log(`[${instanceName}] ✅ Sesión válida detectada - Temporizador cancelado`);
+  }
 
   // Notificar a clientes WebSocket
   io.emit('status', {
@@ -670,10 +740,14 @@ client.on('qr', qr => {
 });
 
 client.on('authenticated', () => {
-  console.warn(`[${instanceName}] Autenticación exitosa (authenticated)`);
-  clientStatus = 'connected';
+  if (clientStatus !== 'connected') {
+    console.warn(`[${instanceName}] Autenticación exitosa (authenticated)`);
+    console.warn(`[${instanceName}] ⏳ Esperando a que el cliente esté completamente listo...`);
+  }
+  // NO establecer clientStatus = 'connected' aquí
+  // Dejamos que el mecanismo de detección de estado lo haga
   qrCodeData = null;
-  io.emit('status', { status: 'connected', timestamp: new Date().toISOString() });
+  io.emit('status', { status: 'authenticated', timestamp: new Date().toISOString() });
 });
 
 client.on('auth_failure', msg => {
@@ -690,9 +764,19 @@ client.on('auth_failure', msg => {
 });
 
 client.on('ready', () => {
-  console.warn(`[${instanceName}] ¡Cliente de WhatsApp está listo con sesión remota!`);
+  if (clientStatus !== 'connected') {
+    console.warn(`[${instanceName}] ¡Cliente de WhatsApp está listo con sesión remota!`);
+  }
   qrCodeData = null; // Ya no necesitamos el QR
   clientStatus = 'connected';
+
+  // Cancelar timer de detección de sesión corrupta
+  if (sessionTimeout) {
+    clearTimeout(sessionTimeout);
+    sessionTimeout = null;
+    sessionRetryCount = 0; // Resetear contador
+    console.log(`[${instanceName}] ✅ Sesión válida detectada - Temporizador cancelado`);
+  }
 
   // Notificar a clientes WebSocket
   io.emit('status', {
@@ -702,6 +786,7 @@ client.on('ready', () => {
 });
 
 client.on('remote_session_saved', () => {
+  remoteSessionSaved = true;  // Marcar que RemoteAuth sí guardó la sesión
   const now = Date.now();
   if (now - lastRemoteSessionLog < SESSION_LOG_INTERVAL_MS) {
     return;
@@ -850,6 +935,154 @@ client.on('disconnected', reason => {
 
 client.initialize();
 
+// Guardado periódico de sesión como fallback (cada 5 minutos)
+setInterval(async () => {
+  if (clientStatus === 'connected' && !remoteSessionSaved) {
+    console.warn(`[${instanceName}] Ejecutando guardado periódico de sesión...`);
+    await guardarSesionManualmente();
+  }
+}, 300000); // 5 minutos
+
+// Verificar estado del cliente independientemente de los eventos (porque ready no se dispara con RemoteAuth)
+let readyManuallyEmitted = false;
+let stateCheckFailures = 0;
+const MAX_STATE_CHECK_FAILURES = 5;
+
+const stateCheckInterval = setInterval(async () => {
+  try {
+    const state = await client.getState();
+
+    // Resetear contador de fallos si tenemos éxito
+    stateCheckFailures = 0;
+
+    // Log de depuración para ver qué estado se está devolviendo
+    if (state && !readyManuallyEmitted && clientStatus !== 'connected') {
+      console.log(`[${instanceName}] 🔍 Estado actual: ${state}`);
+    }
+
+    // Aceptar estados válidos: CONNECTED o AUTHENTICATED (para RemoteAuth)
+    const validStates = ['CONNECTED', 'AUTHENTICATED'];
+    const isValidState = validStates.includes(state);
+
+    if (isValidState && !readyManuallyEmitted && clientStatus !== 'connected') {
+      console.log(`[${instanceName}] Estado detectado: ${state} - Cliente está listo (sin evento ready)`);
+
+      readyManuallyEmitted = true;
+
+      // Cancelar timer de detección de sesión corrupta
+      if (sessionTimeout) {
+        clearTimeout(sessionTimeout);
+        sessionTimeout = null;
+        sessionRetryCount = 0;
+      }
+
+      clientStatus = 'connected';
+      qrCodeData = null;
+
+      // Notificar a clientes WebSocket
+      io.emit('status', {
+        status: 'connected',
+        timestamp: new Date().toISOString(),
+      });
+
+      clearInterval(stateCheckInterval);
+      console.log(`[${instanceName}] Listener de mensajes activado`);
+
+      // Programar guardado manual si RemoteAuth no lo hace
+      if (!remoteSessionSaved) {
+        console.log(`[${instanceName}] Programando guardado manual de sesión en ${MANUAL_SAVE_DELAY_MS / 1000}s...`);
+        setTimeout(async () => {
+          if (!remoteSessionSaved) {
+            console.warn(`[${instanceName}] RemoteAuth no guardó la sesión, ejecutando guardado manual...`);
+            await guardarSesionManualmente();
+          }
+        }, MANUAL_SAVE_DELAY_MS);
+      }
+    }
+  } catch (err) {
+    stateCheckFailures++;
+    const errorMsg = err?.message || err;
+
+    // Si el error es "Cannot read properties of null (reading 'evaluate')"
+    // es un problema conocido de Puppeteer/RemoteAuth - intentar forzar el estado
+    if (errorMsg.includes('evaluate') || errorMsg.includes('null')) {
+      if (!readyManuallyEmitted && clientStatus !== 'connected') {
+        console.log(`[${instanceName}] ⚠️ Error Puppeteer conocido (${stateCheckFailures}/${MAX_STATE_CHECK_FAILURES})`);
+
+        // Si hemos tenido varios fallos consecutivos y estamos en 'authenticated',
+        // asumir que el cliente está listo
+        if (stateCheckFailures >= MAX_STATE_CHECK_FAILURES) {
+          console.warn(`[${instanceName}] ⚠️ Forzando estado 'connected' debido a bug de Puppeteer`);
+
+          readyManuallyEmitted = true;
+
+          if (sessionTimeout) {
+            clearTimeout(sessionTimeout);
+            sessionTimeout = null;
+            sessionRetryCount = 0;
+          }
+
+          clientStatus = 'connected';
+          qrCodeData = null;
+
+          io.emit('status', {
+            status: 'connected',
+            timestamp: new Date().toISOString(),
+          });
+
+          clearInterval(stateCheckInterval);
+          console.log(`[${instanceName}] ✅ Cliente marcado como listo (workaround aplicado)`);
+        }
+      }
+    } else if (!readyManuallyEmitted && clientStatus !== 'connected') {
+      console.log(`[${instanceName}] ⚠️ Error obteniendo estado: ${errorMsg}`);
+    }
+  }
+}, 3000); // Verificar cada 3 segundos
+
+// Detener verificaciones después de 5 minutos (aumentado de 2 minutos)
+setTimeout(() => {
+  if (!readyManuallyEmitted) {
+    console.warn(`[${instanceName}] ⚠️ Timeout de verificación de estado sin detectar conexión. El bot puede no funcionar correctamente.`);
+  }
+  clearInterval(stateCheckInterval);
+}, 300000); // 5 minutos
+
+// Función para detectar sesión corrupta y reiniciar timer
+function iniciarDeteccionSesionCorrupta() {
+  console.log(`[${instanceName}] 🕐 Temporizador de detección de sesión corrupta iniciado (60s)`);
+
+  sessionTimeout = setTimeout(async () => {
+    // Si después de 60s no hay QR ni ready, la sesión está corrupta
+    if (clientStatus === 'disconnected' && !qrCodeData) {
+      console.error(`[${instanceName}] ⚠️ Sesión corrupta detectada - Iniciando auto-limpieza...`);
+
+      if (sessionRetryCount < MAX_SESSION_RETRIES) {
+        sessionRetryCount++;
+        console.log(`[${instanceName}] 🧹 Auto-limpieza de sesión corrupta (intento ${sessionRetryCount}/${MAX_SESSION_RETRIES})`);
+
+        await resetWhatsAppSession('auto-corrupt-session', {
+          attemptLogout: true,
+          forceDeleteSession: true
+        });
+
+        // Reiniciar el cliente después de la limpieza
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        client.initialize();
+
+        // Reiniciar el timer llamando a la función nuevamente
+        iniciarDeteccionSesionCorrupta();
+      } else {
+        console.error(`[${instanceName}] ❌ Máximo de reintentos alcanzado. Sesión permanentemente corrupta.`);
+        clientStatus = 'session_corrupted';
+      }
+    }
+  }, 60000); // 60 segundos
+}
+
+// Iniciar el timer de detección
+iniciarDeteccionSesionCorrupta();
+
 // --- Suscripción MQTT para disponibilidad ---
 conectarMqtt();
 
@@ -866,7 +1099,17 @@ app.get('/qr', (req, res) => {
 
 // Endpoint para obtener el estado
 app.get('/status', (req, res) => {
-  res.json({ status: clientStatus });
+  const statusData = {
+    status: clientStatus,
+    sessionRetryCount,
+    maxRetries: MAX_SESSION_RETRIES
+  };
+
+  if (clientStatus === 'session_corrupted') {
+    statusData.message = 'La sesión está permanentemente corrupta. Elimina manualmente el archivo de Supabase Storage.';
+  }
+
+  res.json(statusData);
 });
 
 app.post('/refresh', async (req, res) => {
