@@ -46,7 +46,7 @@ class EnvConfig {
     // Configuración de Supabase
     this.supabase = {
       url: process.env.SUPABASE_URL,
-      key: process.env.SUPABASE_BACKEND_API_KEY,
+      key: process.env.SUPABASE_SERVICE_KEY,
       bucket: process.env.SUPABASE_BUCKET_NAME
     };
 
@@ -109,7 +109,7 @@ class EnvConfig {
   validate() {
     if (!this.supabase.url || !this.supabase.key || !this.supabase.bucket) {
       console.error('❌ Error: Faltan variables de entorno de Supabase');
-      console.error('Requeridas: SUPABASE_URL, SUPABASE_BACKEND_API_KEY, SUPABASE_BUCKET_NAME');
+      console.error('Requeridas: SUPABASE_URL, SUPABASE_SERVICE_KEY, SUPABASE_BUCKET_NAME');
       throw new Error('Missing required Supabase configuration');
     }
   }

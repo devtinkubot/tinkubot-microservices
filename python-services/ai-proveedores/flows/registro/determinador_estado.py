@@ -19,7 +19,6 @@ def determinar_estado_registro(provider_profile: Optional[Dict[str, Any]]) -> bo
     Se considera que un proveedor está completamente registrado cuando tiene:
     - ID en el sistema
     - Nombre completo
-    - Profesión/oficio
 
     Args:
         provider_profile: Diccionario con el perfil del proveedor
@@ -31,5 +30,5 @@ def determinar_estado_registro(provider_profile: Optional[Dict[str, Any]]) -> bo
         provider_profile
         and provider_profile.get("id")
         and provider_profile.get("full_name")  # Verificar datos completos
-        and provider_profile.get("profession")
+        # Fase 4: Eliminada verificación de profession
     )

@@ -51,7 +51,7 @@ def validar_y_construir_proveedor(
             full_name=flow.get("name") or "",
             email=flow.get("email"),
             city=flow.get("city") or "",
-            profession=flow.get("profession") or "",
+            # Fase 4: Eliminado campo profession - ya no existe en el modelo
             services_list=servicios_lista,
             experience_years=flow.get("experience_years"),
             has_consent=flow.get("has_consent", False),
@@ -120,7 +120,7 @@ def _formatear_mensaje_error_validacion(error: Dict[str, Any]) -> str:
         "full_name": "nombre",
         "email": "correo electrónico",
         "city": "ciudad",
-        "profession": "profesión",
+        # Fase 4: Eliminada referencia a profession del mapeo
         "services_list": "servicios",
         "experience_years": "años de experiencia",
         "has_consent": "consentimiento",

@@ -6,21 +6,38 @@ Modelos compatibles con el esquema unificado de proveedores
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+class ServiceInfo(BaseModel):
+    """
+    Información de un servicio individual de proveedor
+
+    Campos:
+        id: Identificador único del servicio
+        service_name: Nombre del servicio
+        is_primary: Si es el servicio principal del proveedor
+        display_order: Orden de visualización (0-4)
+    """
+    id: str
+    service_name: str
+    is_primary: bool
+    display_order: int
 
 
 class SolicitudCreacionProveedor(BaseModel):
     """
-    Modelo para crear nuevo proveedor (esquema unificado simplificado)
+    Modelo para crear proveedor (Opción C - Sin profession)
+
+    IMPORTANTE: Ya no se usa 'profession', todo se maneja con provider_services.
+    El proveedor debe ingresar entre 1 y 5 servicios.
 
     Campos:
         phone: Número de teléfono del proveedor (10-20 caracteres)
         full_name: Nombre completo del proveedor (2-255 caracteres)
         email: Correo electrónico (opcional)
         city: Ciudad donde opera el proveedor (2-100 caracteres)
-        profession: Profesión ofertada (2-150 caracteres)
-        services: Servicios en formato texto (opcional)
-        services_list: Lista de servicios ofrecidos (opcional)
+        services_list: Lista de 1-5 servicios ofrecidos (REQUERIDO)
         experience_years: Años de experiencia (default: 0)
         social_media_url: URL de red social (opcional)
         social_media_type: Tipo de red social (opcional)
@@ -33,9 +50,8 @@ class SolicitudCreacionProveedor(BaseModel):
     full_name: str = Field(..., min_length=2, max_length=255)
     email: Optional[str] = None
     city: str = Field(..., min_length=2, max_length=100)
-    profession: str = Field(..., min_length=2, max_length=150)
-    services: Optional[str] = ""
-    services_list: Optional[List[str]] = Field(default_factory=list)
+    # profession: ELIMINADO - Ahora se usa provider_services
+    services_list: List[str] = Field(..., min_length=1)  # 1-5 servicios REQUERIDOS, validado en @field_validator
     experience_years: Optional[int] = Field(default=0, ge=0)
     social_media_url: Optional[str] = None
     social_media_type: Optional[str] = None
@@ -44,10 +60,23 @@ class SolicitudCreacionProveedor(BaseModel):
     face_photo_url: Optional[str] = None
     has_consent: bool = False
 
+    @field_validator('services_list')
+    @classmethod
+    def validate_services_list(cls, v: List[str]) -> List[str]:
+        """Valida que la lista de servicios tenga entre 1 y 5 elementos."""
+        if len(v) < 1:
+            raise ValueError('Debe ingresar al menos 1 servicio')
+        if len(v) > 5:
+            raise ValueError('Máximo 5 servicios permitidos')
+        return v
+
 
 class RespuestaProveedor(BaseModel):
     """
-    Modelo de respuesta para proveedor
+    Modelo de respuesta para proveedor (Opción C - Sin profession)
+
+    IMPORTANTE: Ya no se usa 'profession', se usa lista de servicios
+    de provider_services y total_services.
 
     Campos:
         id: Identificador único del proveedor
@@ -55,8 +84,8 @@ class RespuestaProveedor(BaseModel):
         full_name: Nombre completo
         email: Correo electrónico (opcional)
         city: Ciudad de operación
-        profession: Profesión
-        services: Servicios en formato texto
+        services: Lista de servicios del proveedor (nueva estructura)
+        total_services: Total de servicios registrados
         rating: Calificación promedio
         available: Disponibilidad actual
         verified: Estado de verificación
@@ -75,8 +104,9 @@ class RespuestaProveedor(BaseModel):
     full_name: str
     email: Optional[str]
     city: str
-    profession: str
-    services: str
+    # profession: ELIMINADO
+    services: Optional[List[ServiceInfo]] = None  # Nueva estructura con servicios individuales
+    total_services: int  # Contador de servicios
     rating: float
     available: bool
     verified: bool

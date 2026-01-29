@@ -42,8 +42,9 @@ async def obtener_perfil_proveedor(phone: str) -> Optional[Dict[str, Any]]:
     Returns:
         Diccionario con el perfil del proveedor o None si no existe
     """
-    from ....main import supabase  # Import dinámico para evitar circular import
+    from infrastructure.database import get_supabase_client
 
+    supabase = get_supabase_client()
     if not supabase or not phone:
         return None
 

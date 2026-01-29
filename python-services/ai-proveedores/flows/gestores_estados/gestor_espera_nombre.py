@@ -25,11 +25,12 @@ def manejar_espera_nombre(
         }
 
     flow["name"] = name
-    flow["state"] = "awaiting_profession"
+    # Fase 4: Eliminada referencia a awaiting_profession - salto directo a awaiting_specialty
+    flow["state"] = "awaiting_specialty"
     return {
         "success": True,
         "response": (
-            '*¿Cuál es tu profesión u oficio? Escribe el título, por ejemplo: '
-            '"Carpintero", "Ingeniero Electrico", "Abogado".*'
+            "*¿Qué servicios ofreces?* Sepáralos con comas "
+            "(ej: instalación eléctrica, mantenimiento industrial, consultoría)."
         ),
     }

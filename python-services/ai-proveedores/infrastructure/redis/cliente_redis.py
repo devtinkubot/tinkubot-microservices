@@ -217,3 +217,22 @@ class ClienteRedis:
 
 # Instancia global
 cliente_redis = ClienteRedis()
+
+
+async def get_redis_client():
+    """
+    Obtiene el cliente de Redis global.
+
+    Esta función proporciona acceso a la instancia global del cliente de Redis,
+    conectándola si es necesario.
+
+    Returns:
+        ClienteRedis: Instancia del cliente de Redis
+
+    Example:
+        >>> redis = await get_redis_client()
+        >>> await redis.set("key", "value")
+    """
+    if not cliente_redis._connected and not cliente_redis.redis_client:
+        await cliente_redis.connect()
+    return cliente_redis

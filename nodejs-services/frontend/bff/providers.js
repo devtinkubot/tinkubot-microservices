@@ -12,9 +12,7 @@ const requestTimeoutMs =
 const pendingLimit = toPositiveInt(process.env.PROVIDERS_PENDING_LIMIT) ?? 100;
 
 const supabaseUrl = (process.env.SUPABASE_URL || '').trim();
-const supabaseServiceKey = (
-  process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_BACKEND_API_KEY || ''
-).trim();
+const supabaseServiceKey = (process.env.SUPABASE_SERVICE_KEY || '').trim();
 const supabaseProvidersTable =
   (process.env.SUPABASE_PROVIDERS_TABLE || 'providers').trim();
 const supabaseProvidersBucket = (

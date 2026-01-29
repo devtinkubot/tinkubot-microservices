@@ -98,6 +98,17 @@ package-lock.json
 .claude/
 CLAUDE.md
 
+# Skills instaladas (npx skills)
+# Se instalan localmente en cada máquina de desarrollo
+.agents/
+.skills/
+.agent/
+.codex/
+.cursor/
+.gemini/
+.opencode/
+.windsurf/
+
 # Documentación local
 docs/
 

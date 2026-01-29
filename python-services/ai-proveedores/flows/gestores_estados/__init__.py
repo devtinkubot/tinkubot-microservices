@@ -6,7 +6,7 @@ from .gestor_espera_correo import manejar_espera_correo
 from .gestor_espera_especialidad import manejar_espera_especialidad
 from .gestor_espera_experiencia import manejar_espera_experiencia
 from .gestor_espera_nombre import manejar_espera_nombre
-from .gestor_espera_profesion import manejar_espera_profesion
+# Fase 4: Eliminada referencia a awaiting_profession
 from .gestor_espera_red_social import manejar_espera_red_social
 
 __all__ = [
@@ -16,6 +16,6 @@ __all__ = [
     "manejar_espera_especialidad",
     "manejar_espera_experiencia",
     "manejar_espera_nombre",
-    "manejar_espera_profesion",
+    # Fase 4: Eliminada referencia a awaiting_profession
     "manejar_espera_red_social",
 ]

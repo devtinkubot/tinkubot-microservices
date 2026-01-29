@@ -37,13 +37,13 @@ from flows.gestores_estados import (
     manejar_espera_especialidad,
     manejar_espera_experiencia,
     manejar_espera_nombre,
-    manejar_espera_profesion,
+    # Fase 4: Eliminada referencia a awaiting_profession
     manejar_espera_red_social,
 )
 from flows.validadores.validador_entrada import (
     parsear_entrada_red_social as parse_social_media_input,
 )
-from openai import OpenAI
+from openai import AsyncOpenAI
 from pydantic import BaseModel
 from supabase import Client, create_client
 
@@ -179,19 +179,37 @@ logger = logging.getLogger(__name__)
 
 # Inicializar clientes de Supabase y OpenAI
 supabase: Optional[Client] = None
-openai_client: Optional[OpenAI] = None
+openai_client: Optional[AsyncOpenAI] = None
+
+# Fase 6: Inicializar servicio de embeddings
+from infrastructure.embeddings.servicio_embeddings import ServicioEmbeddings
+from infrastructure.database import set_supabase_client
+embeddings_service: Optional[ServicioEmbeddings] = None
 
 if SUPABASE_URL and SUPABASE_SERVICE_KEY:
     supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    set_supabase_client(supabase)  # Establecer cliente global
     logger.info("✅ Conectado a Supabase")
 else:
     logger.warning("⚠️ No se configuró Supabase")
 
 if OPENAI_API_KEY:
-    openai_client = OpenAI(api_key=OPENAI_API_KEY)
-    logger.info("✅ Conectado a OpenAI")
+    openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+    logger.info("✅ Conectado a OpenAI (Async)")
+
+    # Fase 6: Inicializar servicio de embeddings si OpenAI está disponible
+    if configuracion.embeddings_enabled:
+        embeddings_service = ServicioEmbeddings(
+            cliente_openai=openai_client,
+            modelo=configuracion.embeddings_model,
+            cache_ttl=configuracion.embeddings_cache_ttl,
+            timeout=configuracion.embeddings_timeout,
+        )
+        logger.info(f"✅ Servicio de embeddings inicializado (modelo: {configuracion.embeddings_model})")
+    else:
+        logger.info("⚠️ Servicio de embeddings deshabilitado por configuración")
 else:
-    logger.warning("⚠️ No se configuró OpenAI")
+    logger.warning("⚠️ No se configuró OpenAI - embeddings no disponibles")
 
 
 # Crear aplicación FastAPI
@@ -894,10 +912,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
             await establecer_flujo(phone, flow)
             return reply
 
-        if state == "awaiting_profession":
-            reply = manejar_espera_profesion(flow, message_text)
-            await establecer_flujo(phone, flow)
-            return reply
+        # Fase 4: Eliminado caso awaiting_profession - flujo ahora pasa directo a awaiting_specialty
 
         if state == "awaiting_specialty":
             reply = manejar_espera_especialidad(flow, message_text)
@@ -979,11 +994,14 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
             }
 
         if state == "confirm":
+            # Fase 6: Pasar servicio de embeddings al registro
             reply = await manejar_confirmacion(
                 flow,
                 message_text,
                 phone,
-                lambda datos: registrar_proveedor_en_base_datos(supabase, datos),
+                lambda datos: registrar_proveedor_en_base_datos(
+                    supabase, datos, embeddings_service
+                ),
                 subir_medios_identidad,
                 lambda: reiniciar_flujo(phone),
                 logger,
@@ -1003,7 +1021,8 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
         }
 
     except Exception as e:
-        logger.error(f"❌ Error procesando mensaje WhatsApp: {e}")
+        import traceback
+        logger.error(f"❌ Error procesando mensaje WhatsApp: {e}\n{traceback.format_exc()}")
         return {"success": False, "message": f"Error procesando mensaje: {str(e)}"}
     finally:
         if PERF_LOG_ENABLED:

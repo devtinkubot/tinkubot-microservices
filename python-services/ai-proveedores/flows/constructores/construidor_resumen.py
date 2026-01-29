@@ -1,10 +1,12 @@
 """Constructor de resumen de confirmación."""
 
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 
 def construir_resumen_confirmacion(flow: Dict[str, Any]) -> str:
     """Construye resumen de confirmación del registro.
+
+    Fase 7: Actualizada para mostrar lista de servicios numerados en lugar de profession.
 
     Args:
         flow: Diccionario con todos los datos del flujo de registro.
@@ -28,10 +30,21 @@ def construir_resumen_confirmacion(flow: Dict[str, Any]) -> str:
         if isinstance(experience, int) and experience > 0
         else "Sin especificar"
     )
-    specialty = flow.get("specialty") or "No especificada"
+
+    # Fase 7: Obtener servicios como lista
+    servicios: List[str] = flow.get("specialty") or []
+    if isinstance(servicios, str):
+        # Si por alguna razón viene como string, intentar dividirlo
+        servicios = [s.strip() for s in servicios.split(",") if s.strip()]
+
     city = flow.get("city") or "No especificada"
-    profession = flow.get("profession") or "No especificada"
     name = flow.get("name") or "No especificado"
+
+    # Fase 7: Construir lista de servicios numerados
+    if servicios and len(servicios) > 0:
+        servicios_text = "\n".join([f"  {i+1}. {srv}" for i, srv in enumerate(servicios)])
+    else:
+        servicios_text = "  No especificados"
 
     lines = [
         "-----------------------------",
@@ -39,8 +52,9 @@ def construir_resumen_confirmacion(flow: Dict[str, Any]) -> str:
         "-----------------------------",
         f"- Ciudad: {city}",
         f"- Nombre: {name}",
-        f"- Profesion: {profession}",
-        f"- Especialidad: {specialty}",
+        # Fase 7: Mostrar lista de servicios numerados
+        "- Servicios:",
+        servicios_text,
         f"- Experiencia: {experience_text}",
         f"- Correo: {email}",
         f"- Red Social: {social}",

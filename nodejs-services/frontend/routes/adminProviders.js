@@ -4,7 +4,7 @@ const proveedoresBff = require('../bff/providers');
 
 // Configuración de Supabase Storage
 const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_BACKEND_API_KEY;
+const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
 const supabaseStorageUrl = supabaseUrl ? `${supabaseUrl.replace(/\/$/, '')}/storage/v1` : null;
 const supabaseProvidersBucket =
   (process.env.SUPABASE_PROVIDERS_BUCKET || 'tinkubot-providers').trim();

@@ -107,7 +107,7 @@ async def procesar_respuesta_consentimiento(  # noqa: C901
             provider_profile
             and provider_profile.get("id")
             and provider_profile.get("full_name")  # Verificar que tiene datos completos
-            and provider_profile.get("profession")
+            # Fase 4: Eliminada verificación de profession
         )
 
         return construir_respuesta_consentimiento_aceptado(is_fully_registered)

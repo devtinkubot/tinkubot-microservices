@@ -7,8 +7,6 @@ from typing import Any, Dict, Optional
 from models.proveedores import SolicitudCreacionProveedor
 
 from services.servicios_proveedor.utilidades import (
-    formatear_servicios_a_cadena as formatear_servicios,
-    normalizar_profesion_para_almacenamiento as normalizar_profesion_para_storage,
     normalizar_texto_para_busqueda,
     sanitizar_lista_servicios as sanitizar_servicios,
 )
@@ -20,22 +18,41 @@ def normalizar_datos_proveedor(datos_crudos: SolicitudCreacionProveedor) -> Dict
     """
     Normaliza datos del formulario para el esquema unificado.
 
+    Fase 5: Eliminado campo 'profession' y actualizada lógica de servicios.
+    Ahora se retorna una lista de servicios normalizados en lugar de un string formateado.
+
     Args:
         datos_crudos: Datos crudos del proveedor desde el formulario
 
     Returns:
         Dict con datos normalizados según el esquema unificado
+
+    Raises:
+        ValueError: Si no hay servicios o más de 5 servicios
     """
-    servicios_limpios = sanitizar_servicios(datos_crudos.services_list or [])
+    # Fase 5: Validar cantidad de servicios
+    servicios = datos_crudos.services_list or []
+    if len(servicios) == 0:
+        raise ValueError("Debe ingresar al menos 1 servicio")
+    if len(servicios) > 5:
+        raise ValueError("Máximo 5 servicios permitidos")
+
+    # Fase 5: Normalizar servicios (title case, trim)
+    servicios_limpios = sanitizar_servicios(servicios)
+    servicios_normalizados = [s.strip().title() for s in servicios_limpios if s.strip()]
+
+    # Fase 5: Validar que después de la normalización quede al menos 1 servicio
+    if len(servicios_normalizados) == 0:
+        raise ValueError("Debe ingresar al menos 1 servicio válido")
+
     return {
         "phone": datos_crudos.phone.strip(),
         "full_name": datos_crudos.full_name.strip().title(),  # Formato legible
         "email": datos_crudos.email.strip() if datos_crudos.email else None,
         "city": normalizar_texto_para_busqueda(datos_crudos.city),  # minúsculas
-        "profession": normalizar_profesion_para_storage(
-            datos_crudos.profession
-        ),  # minúsculas y abreviaturas expandidas
-        "services": formatear_servicios(servicios_limpios),
+        # Fase 5: Eliminado campo 'profession'
+        "services_normalized": servicios_normalizados,  # Fase 5: Lista, no string
+        "services": "",  # Campo legacy mantenido por compatibilidad con DB, pero vacío
         "experience_years": datos_crudos.experience_years or 0,
         "has_consent": datos_crudos.has_consent,
         "verified": False,
@@ -55,6 +72,8 @@ def garantizar_campos_obligatorios_proveedor(
     Esta función aplica valores por defecto a campos opcionales o faltantes
     para asegurar consistencia en los datos de proveedores.
 
+    Fase 5: Eliminadas referencias a 'profession'.
+
     Args:
         registro: Diccionario con datos del proveedor (puede estar incompleto)
 
@@ -71,6 +90,7 @@ def garantizar_campos_obligatorios_proveedor(
 
     datos["rating"] = float(datos.get("rating") or 5.0)
     datos["experience_years"] = int(datos.get("experience_years") or 0)
+    # Fase 5: Eliminada referencia a 'profession'
     datos["services"] = datos.get("services") or ""
     datos["has_consent"] = bool(datos.get("has_consent"))
     datos["status"] = "approved" if datos.get("verified") else "pending"

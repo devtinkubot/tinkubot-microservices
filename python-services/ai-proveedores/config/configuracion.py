@@ -48,6 +48,12 @@ class ConfiguracionServicio(BaseSettings):
     # Configuración de Redis
     redis_url: str = "redis://localhost:6379"
 
+    # Configuración de Embeddings (OpenAI)
+    embeddings_model: str = "text-embedding-3-small"
+    embeddings_cache_ttl: int = 3600  # 1 hora en segundos
+    embeddings_timeout: int = 5  # segundos para llamadas a OpenAI
+    embeddings_enabled: bool = True  # habilitar/deshabilitar generación de embeddings
+
     class Config:
         """Configuración de pydantic-settings para cargar variables de entorno."""
         env_file = ".env"
