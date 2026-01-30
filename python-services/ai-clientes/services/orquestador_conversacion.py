@@ -8,30 +8,30 @@ otros servicios (disponibilidad, búsqueda, etc.).
 
 import logging
 import os
-import unicodedata
 import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+import unicodedata
 from flows.manejadores_estados import (
     procesar_estado_esperando_servicio,
     procesar_estado_esperando_ciudad,
-    procesar_estado_buscando,
-    procesar_estado_presentando_resultados,
-    procesar_estado_viendo_detalle_proveedor,
-    procesar_estado_confirmar_nueva_busqueda,
 )
+from flows.config import (
+    GREETINGS,
+    RESET_KEYWORDS,
+    MAX_CONFIRM_ATTEMPTS,
+    FAREWELL_MESSAGE,
+)
+from flows.router import handle_message as router_handle_message
+from flows.router import route_state as router_route_state
 from flows.mensajes import (
     mensaje_nueva_sesion_dict,
     mensaje_cuenta_suspendida_dict,
-    mensaje_despedida_dict,
     mensaje_inicial_solicitud,
     mensaje_error_ciudad_no_reconocida,
-    solicitar_ciudad,
     solicitar_ciudad_con_servicio,
-    es_opcion_reinicio,
     verificar_ciudad_y_proceder,
-    mensaje_solicitar_reformulacion,
 )
 from flows.validadores import validar_entrada_servicio
 from flows.busqueda_proveedores.coordinador_busqueda import (
@@ -44,18 +44,15 @@ from templates.mensajes.consentimiento import (
 from templates.mensajes.sesion import (
     mensaje_reinicio_por_inactividad,
 )
-from templates.busqueda.confirmacion import (
-    mensajes_confirmacion_busqueda,
-    mensaje_sin_disponibilidad,
-    titulo_confirmacion_repetir_busqueda,
-)
-from templates.proveedores.detalle import (
-    bloque_detalle_proveedor,
-    menu_opciones_detalle_proveedor,
-)
 from models.catalogo_servicios import (
     COMMON_SERVICE_SYNONYMS,
     COMMON_SERVICES,
+)
+from services.sesion_clientes import (
+    validar_consentimiento,
+    manejar_inactividad,
+    sincronizar_cliente,
+    procesar_comando_reinicio,
 )
 
 
@@ -79,39 +76,6 @@ ECUADOR_CITY_SYNONYMS = {
     "Latacunga": {"latacunga"},
     "Salinas": {"salinas"},
 }
-
-GREETINGS = {
-    "hola",
-    "buenas",
-    "buenas tardes",
-    "buenas noches",
-    "buenos días",
-    "buenos dias",
-    "qué tal",
-    "que tal",
-    "hey",
-    "ola",
-    "hello",
-    "hi",
-    "saludos",
-}
-
-RESET_KEYWORDS = {
-    "reset",
-    "reiniciar",
-    "reinicio",
-    "empezar",
-    "inicio",
-    "comenzar",
-    "start",
-    "nuevo",
-}
-
-MAX_CONFIRM_ATTEMPTS = 2
-
-FAREWELL_MESSAGE = (
-    "*¡Gracias por utilizar nuestros servicios!* Si necesitas otro apoyo, solo escríbeme."
-)
 
 AFFIRMATIVE_WORDS = {
     "si",
@@ -202,7 +166,7 @@ def interpret_yes_no(text: Optional[str]) -> Optional[bool]:
     return None
 
 
-def extract_profession_and_location(
+def extraer_servicio_y_ubicacion(
     history_text: str, last_message: str
 ) -> tuple[Optional[str], Optional[str]]:
     combined_text = f"{history_text}\n{last_message}"
@@ -247,7 +211,7 @@ def extract_profession_and_location(
     return profession, location
 
 
-async def extract_profession_and_location_with_expansion(
+async def extraer_servicio_y_ubicacion_con_expansion(
     history_text: str, last_message: str
 ) -> tuple[Optional[str], Optional[str], Optional[List[str]]]:
     """
@@ -258,7 +222,7 @@ async def extract_profession_and_location_with_expansion(
     # porque el módulo expansion_sinonimos no existe.
     # Esta función retorna solo la extracción básica sin expansión.
 
-    profession, location = extract_profession_and_location(
+    profession, location = extraer_servicio_y_ubicacion(
         history_text, last_message
     )
 
@@ -266,7 +230,6 @@ async def extract_profession_and_location_with_expansion(
     expanded_terms = None
 
     return profession, location, expanded_terms
-
 
 def normalize_button(val: Optional[str]) -> Optional[str]:
     """Normaliza el valor de un botón/quick reply para comparaciones robustas."""
@@ -331,6 +294,17 @@ class OrquestadorConversacional:
         self.repositorio_flujo = repositorio_flujo
         self.repositorio_clientes = repositorio_clientes
 
+        # Constantes/config usadas por el router
+        self.greetings = GREETINGS
+        self.use_ai_expansion = USE_AI_EXPANSION
+        self.farewell_message = FAREWELL_MESSAGE
+        self.max_confirm_attempts = MAX_CONFIRM_ATTEMPTS
+        # Nombres en español para extracción de servicio
+        self.extraer_servicio_y_ubicacion = extraer_servicio_y_ubicacion
+        self.extraer_servicio_y_ubicacion_con_expansion = (
+            extraer_servicio_y_ubicacion_con_expansion
+        )
+
         # Inyectar callbacks necesarios
         self._setup_callbacks()
 
@@ -393,169 +367,23 @@ class OrquestadorConversacional:
         Returns:
             Dict con "response" o "messages" para enviar a WhatsApp
         """
-        phone = (payload.get("from_number") or "").strip()
-        if not phone:
-            raise ValueError("from_number is required")
-
-        # Usar repositorio si está disponible, sino callback
-        if self.repositorio_clientes:
-            customer_profile = await self.repositorio_clientes.obtener_o_crear(phone=phone)
-        else:
-            customer_profile = await self.get_or_create_customer(phone=phone)
-
-        # Validación de consentimiento
-        if not customer_profile:
-            # Usar servicio si está disponible, sino callback
-            if self.servicio_consentimiento:
-                return await self.servicio_consentimiento.solicitar_consentimiento(phone)
-            else:
-                return await self.request_consent(phone)
-
-        # Si no tiene consentimiento, verificar si está respondiendo a la solicitud
-        if not customer_profile.get("has_consent"):
-            return await self._validar_consentimiento(phone, customer_profile, payload)
-
-        # Usar repositorio si está disponible, sino callback
-        if self.repositorio_flujo:
-            flow = await self.repositorio_flujo.obtener(phone)
-        else:
-            flow = await self.get_flow(phone)
-
-        now_utc = datetime.utcnow()
-        now_iso = now_utc.isoformat()
-        flow["last_seen_at"] = now_iso
-
-        # Manejar inactividad: si pasaron >3 minutos desde el último mensaje, reiniciar flujo
-        inactivity_result = await self._manejar_inactividad(phone, flow, now_utc)
-        if inactivity_result:
-            return inactivity_result
-
-        # Guardar referencia anterior para futuras comparaciones
-        flow["last_seen_at_prev"] = now_iso
-
-        # Sincronizar cliente
-        customer_id = await self._sincronizar_cliente(flow, customer_profile)
-
-        # Extraer datos del mensaje
-        text, selected, msg_type, location = self._extraer_datos_mensaje(payload)
-
-        # Detectar y actualizar ciudad si se menciona
-        await self._detectar_y_actualizar_ciudad(flow, text, customer_id, customer_profile)
-
-        self.logger.info(
-            f"📱 WhatsApp [{phone}] tipo={msg_type} selected={selected} text='{text[:60]}'"
-        )
-
-        # Comandos de reinicio de flujo (útil en pruebas)
-        reset_result = await self._procesar_comando_reinicio(phone, flow, text)
-        if reset_result:
-            return reset_result
-
-        # Persistir transcript en historial de sesión
-        if text:
-            await self.session_manager.save_session(
-                phone, text, is_bot=False, metadata={"message_id": payload.get("id")}
-            )
-
-        state = flow.get("state")
-
-        # Logging detallado al inicio del procesamiento
-        self.logger.info(f"🚀 Procesando mensaje para {phone}")
-        self.logger.info(f"📋 Estado actual: {state}")
-        self.logger.info(f"📍 Ubicación recibida: {location is not None}")
-        self.logger.info(f"📝 Texto recibido: '{text[:50]}...' if text else '[sin texto]'")
-        self.logger.info(
-            f"🎯 Opción seleccionada: '{selected}' if selected else '[sin selección]'"
-        )
-        self.logger.info(f"🏷️ Tipo de mensaje: {msg_type}")
-        self.logger.info(f"🔧 Flujo completo: {flow}")
-
-        # Procesar según estado actual
-        return await self._procesar_estado(
-            phone, flow, text, selected, msg_type, location, customer_id
-        )
+        return await router_handle_message(self, payload)
 
     async def _validar_consentimiento(
         self, phone: str, customer_profile: Dict[str, Any], payload: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Maneja el flujo de validación de consentimiento."""
-        selected = normalize_button(payload.get("selected_option"))
-        text_content_raw = (payload.get("content") or "").strip()
-        text_numeric_option = normalize_button(text_content_raw)
-
-        # Normalizar para comparaciones case-insensitive
-        selected_lower = selected.lower() if isinstance(selected, str) else None
-
-        # Priorizar opciones seleccionadas mediante botones o quick replies
-        if selected in {"1", "2"}:
-            # Usar servicio si está disponible, sino callback
-            if self.servicio_consentimiento:
-                return await self.servicio_consentimiento.procesar_respuesta(
-                    phone, customer_profile, selected, payload
-                )
-            else:
-                return await self.handle_consent_response(
-                    phone, customer_profile, selected, payload
-                )
-        if selected_lower in {
-            opciones_consentimiento_textos[0].lower(),
-            opciones_consentimiento_textos[1].lower(),
-        }:
-            option_to_process = (
-                "1" if selected_lower == opciones_consentimiento_textos[0].lower() else "2"
-            )
-            # Usar servicio si está disponible, sino callback
-            if self.servicio_consentimiento:
-                return await self.servicio_consentimiento.procesar_respuesta(
-                    phone, customer_profile, option_to_process, payload
-                )
-            else:
-                return await self.handle_consent_response(
-                    phone, customer_profile, option_to_process, payload
-                )
-
-        # Interpretar texto libre numérico (ej. usuario responde "1" o "2")
-        if text_numeric_option in {"1", "2"}:
-            # Usar servicio si está disponible, sino callback
-            if self.servicio_consentimiento:
-                return await self.servicio_consentimiento.procesar_respuesta(
-                    phone, customer_profile, text_numeric_option, payload
-                )
-            else:
-                return await self.handle_consent_response(
-                    phone, customer_profile, text_numeric_option, payload
-                )
-
-        # Interpretar textos afirmativos/negativos libres
-        is_consent_text = interpret_yes_no(text_content_raw) == True
-        is_declined_text = interpret_yes_no(text_content_raw) == False
-
-        if is_consent_text:
-            # Usar servicio si está disponible, sino callback
-            if self.servicio_consentimiento:
-                return await self.servicio_consentimiento.procesar_respuesta(
-                    phone, customer_profile, "1", payload
-                )
-            else:
-                return await self.handle_consent_response(
-                    phone, customer_profile, "1", payload
-                )
-        if is_declined_text:
-            # Usar servicio si está disponible, sino callback
-            if self.servicio_consentimiento:
-                return await self.servicio_consentimiento.procesar_respuesta(
-                    phone, customer_profile, "2", payload
-                )
-            else:
-                return await self.handle_consent_response(
-                    phone, customer_profile, "2", payload
-                )
-
-        # Usar servicio si está disponible, sino callback
-        if self.servicio_consentimiento:
-            return await self.servicio_consentimiento.solicitar_consentimiento(phone)
-        else:
-            return await self.request_consent(phone)
+        return await validar_consentimiento(
+            phone=phone,
+            customer_profile=customer_profile,
+            payload=payload,
+            servicio_consentimiento=self.servicio_consentimiento,
+            handle_consent_response=self.handle_consent_response,
+            request_consent=self.request_consent,
+            normalize_button_fn=normalize_button,
+            interpret_yes_no_fn=interpret_yes_no,
+            opciones_consentimiento_textos=opciones_consentimiento_textos,
+        )
 
     async def _manejar_inactividad(
         self, phone: str, flow: Dict[str, Any], now_utc: datetime
@@ -564,66 +392,26 @@ class OrquestadorConversacional:
         Reinicia el flujo si hay inactividad > 3 minutos.
         Returns None si no hay inactividad, dict con respuesta si sí.
         """
-        last_seen_raw = flow.get("last_seen_at_prev")
-        try:
-            last_seen_dt = (
-                datetime.fromisoformat(last_seen_raw) if last_seen_raw else None
-            )
-        except Exception:
-            last_seen_dt = None
-
-        if last_seen_dt and (now_utc - last_seen_dt).total_seconds() > 180:
-            # Usar repositorio si está disponible, sino callback
-            if self.repositorio_flujo:
-                await self.repositorio_flujo.resetear(phone)
-                await self.repositorio_flujo.guardar(
-                    phone,
-                    {
-                        "state": "awaiting_service",
-                        "last_seen_at": now_utc.isoformat(),
-                        "last_seen_at_prev": now_utc.isoformat(),
-                    },
-                )
-            else:
-                await self.reset_flow(phone)
-                await self.set_flow(
-                    phone,
-                    {
-                        "state": "awaiting_service",
-                        "last_seen_at": now_utc.isoformat(),
-                        "last_seen_at_prev": now_utc.isoformat(),
-                    },
-                )
-            return {
-                "messages": [
-                    {"response": mensaje_reinicio_por_inactividad()},
-                    {"response": mensaje_inicial_solicitud()},
-                ]
-            }
-        return None
+        return await manejar_inactividad(
+            phone=phone,
+            flow=flow,
+            now_utc=now_utc,
+            repositorio_flujo=self.repositorio_flujo,
+            reset_flow=self.reset_flow,
+            set_flow=self.set_flow,
+            mensaje_reinicio_por_inactividad=mensaje_reinicio_por_inactividad,
+            mensaje_inicial_solicitud=mensaje_inicial_solicitud,
+        )
 
     async def _sincronizar_cliente(
         self, flow: Dict[str, Any], customer_profile: Dict[str, Any]
     ) -> Optional[str]:
         """Sincroniza el perfil del cliente con el flujo."""
-        customer_id = None
-        if customer_profile:
-            customer_id = customer_profile.get("id")
-            if customer_id:
-                flow.setdefault("customer_id", customer_id)
-            profile_city = customer_profile.get("city")
-            if profile_city and not flow.get("city"):
-                flow["city"] = profile_city
-            if flow.get("city") and "city_confirmed" not in flow:
-                flow["city_confirmed"] = True
-            self.logger.debug(
-                "Cliente sincronizado en Supabase",
-                extra={
-                    "customer_id": customer_id,
-                    "customer_city": profile_city,
-                },
-            )
-        return customer_id
+        return await sincronizar_cliente(
+            flow=flow,
+            customer_profile=customer_profile,
+            logger=self.logger,
+        )
 
     def _extraer_datos_mensaje(self, payload: Dict[str, Any]) -> tuple:
         """Extrae y normaliza datos del mensaje."""
@@ -641,9 +429,7 @@ class OrquestadorConversacional:
         customer_profile: Dict[str, Any],
     ):
         """Detecta ciudad en el texto y la actualiza si es necesario."""
-        detected_profession, detected_city = extract_profession_and_location(
-            "", text
-        )
+        detected_profession, detected_city = extraer_servicio_y_ubicacion("", text)
         if detected_city:
             normalized_city = detected_city
             current_city = (flow.get("city") or "").strip()
@@ -676,31 +462,19 @@ class OrquestadorConversacional:
         self, phone: str, flow: Dict[str, Any], text: str
     ) -> Optional[Dict[str, Any]]:
         """Procesa comandos de reinicio de flujo."""
-        if text and text.strip().lower() in RESET_KEYWORDS:
-            # Usar repositorio si está disponible, sino callback
-            if self.repositorio_flujo:
-                await self.repositorio_flujo.resetear(phone)
-            else:
-                await self.reset_flow(phone)
-
-            # Limpiar ciudad registrada para simular primer uso
-            try:
-                customer_id_for_reset = flow.get("customer_id")
-                if self.repositorio_clientes:
-                    await self.repositorio_clientes.limpiar_ciudad(customer_id_for_reset)
-                    await self.repositorio_clientes.limpiar_consentimiento(customer_id_for_reset)
-                else:
-                    self.clear_customer_city(customer_id_for_reset)
-                    self.clear_customer_consent(customer_id_for_reset)
-            except Exception:
-                pass
-            # Prepara nuevo flujo pero no condiciona al usuario con ejemplos
-            if self.repositorio_flujo:
-                await self.repositorio_flujo.guardar(phone, {"state": "awaiting_service"})
-            else:
-                await self.set_flow(phone, {"state": "awaiting_service"})
-            return {"response": mensaje_nueva_sesion_dict()["response"]}
-        return None
+        return await procesar_comando_reinicio(
+            phone=phone,
+            flow=flow,
+            text=text,
+            repositorio_flujo=self.repositorio_flujo,
+            reset_flow=self.reset_flow,
+            set_flow=self.set_flow,
+            repositorio_clientes=self.repositorio_clientes,
+            clear_customer_city=self.clear_customer_city,
+            clear_customer_consent=self.clear_customer_consent,
+            mensaje_nueva_sesion_dict=mensaje_nueva_sesion_dict,
+            reset_keywords=RESET_KEYWORDS,
+        )
 
     async def _procesar_estado(
         self,
@@ -715,250 +489,16 @@ class OrquestadorConversacional:
         """
         Procesa el mensaje según el estado actual de la máquina de estados.
         """
-        # Helper para persistir flujo y responder
-        async def respond(data: Dict[str, Any], reply_obj: Dict[str, Any]):
-            # Usar repositorio si está disponible, sino callback
-            if self.repositorio_flujo:
-                await self.repositorio_flujo.guardar(phone, data)
-            else:
-                await self.set_flow(phone, data)
-            if reply_obj.get("response"):
-                await self.session_manager.save_session(
-                    phone, reply_obj["response"], is_bot=True
-                )
-            return reply_obj
-
-        # Helper para guardar mensaje del bot en sesión
-        async def save_bot_message(message: Optional[Any]):
-            if not message:
-                return
-            text_to_store = (
-                message.get("response") if isinstance(message, dict) else message
-            )
-            if not text_to_store:
-                return
-            try:
-                await self.session_manager.save_session(
-                    phone, text_to_store, is_bot=True
-                )
-            except Exception:
-                pass
-
-        # Helper reusable para búsqueda con disponibilidad
-        async def do_search():
-            async def send_with_availability(city: str):
-                providers_for_check = flow.get("providers", [])
-                service_text = flow.get("service", "")
-                service_full = flow.get("service_full") or service_text
-
-                self.logger.info(
-                    f"🔔 Consultando disponibilidad a av-proveedores: "
-                    f"{len(providers_for_check)} proveedores, "
-                    f"servicio='{service_text}', ciudad='{city}'"
-                )
-
-                # Preparar candidatos para el cliente HTTP
-                candidatos = [
-                    {
-                        "provider_id": p.get("id") or p.get("provider_id"),
-                        "nombre": p.get("name") or p.get("full_name"),
-                    }
-                    for p in providers_for_check
-                ]
-
-                availability_result = await self.coordinador_disponibilidad.check_availability(
-                    req_id=f"search-{phone}",
-                    service=service_text,
-                    city=city,
-                    candidates=candidatos,
-                    redis_client=self.redis_client,
-                )
-                accepted = availability_result.get("accepted") or []
-
-                if accepted:
-                    flow["providers"] = accepted
-                    await self.set_flow(phone, flow)
-                    prompt = await self.send_provider_prompt(phone, flow, city)
-                    if prompt.get("messages"):
-                        return {"messages": prompt["messages"]}
-                    return {"messages": [prompt]}
-
-                # Sin aceptados: ofrecer volver a buscar o cambiar ciudad
-                flow["state"] = "confirm_new_search"
-                flow["confirm_attempts"] = 0
-                flow["confirm_title"] = mensaje_sin_disponibilidad(
-                    service_text, city
-                )
-                flow["confirm_include_city_option"] = True
-                await self.set_flow(phone, flow)
-                confirm_title = flow.get("confirm_title") or titulo_confirmacion_repetir_busqueda
-                confirm_msgs = mensajes_confirmacion_busqueda(
-                    confirm_title, include_city_option=True
-                )
-                for cmsg in confirm_msgs:
-                    await save_bot_message(cmsg.get("response"))
-                return {"messages": confirm_msgs}
-
-            result = await procesar_estado_buscando(
-                flow,
-                phone,
-                respond,
-                # Usar buscador si está disponible, sino callback
-                lambda svc, cty: (
-                    self.buscador.buscar(
-                        profesion=svc,
-                        ciudad=cty,
-                        terminos_expandidos=flow.get("expanded_terms")
-                    ) if self.buscador else self.search_providers(svc, cty)
-                ),
-                send_with_availability,
-                # Usar repositorio si está disponible, sino callback
-                lambda data: (
-                    self.repositorio_flujo.guardar(phone, data) if self.repositorio_flujo
-                    else self.set_flow(phone, data)
-                ),
-                save_bot_message,
-                mensajes_confirmacion_busqueda,
-                mensaje_inicial_solicitud(),
-                titulo_confirmacion_repetir_busqueda,
-                self.logger,
-                self.supabase,
-            )
-            return result
-
-        # Start or restart
-        state = flow.get("state")
-        if not state or es_opcion_reinicio(selected):
-            cleaned = text.strip().lower() if text else ""
-            if text and cleaned not in GREETINGS:
-                # Usar expansor si está disponible, sino funciones globales
-                if USE_AI_EXPANSION:
-                    self.logger.info(f"🤖 Conversación nueva, usando wrapper con IA para: '{cleaned[:50]}...'")
-                    if self.expansor:
-                        profession, location, expanded_terms = await self.expansor.extraer_profesion_y_ubicacion_con_expansion("", cleaned)
-                    else:
-                        profession, location, expanded_terms = await extract_profession_and_location_with_expansion("", cleaned)
-                    service_value = profession or cleaned
-                    if expanded_terms:
-                        flow["expanded_terms"] = expanded_terms
-                        self.logger.info(f"📝 expanded_terms guardados en nueva conversación: {len(expanded_terms)} términos")
-                else:
-                    detected_profession, detected_city = extract_profession_and_location(
-                        "", text
-                    )
-                    service_value = (detected_profession or text).strip()
-
-                flow.update({"service": service_value, "service_full": text})
-
-                if flow.get("service") and flow.get("city"):
-                    confirmation_msg = await coordinar_busqueda_completa(
-                        phone=phone,
-                        flow=flow,
-                        send_message_callback=self.send_whatsapp_text,
-                        set_flow_callback=self.set_flow,
-                    )
-                    # Enviar mensaje de confirmación si existe
-                    if confirmation_msg:
-                        return {"response": confirmation_msg}
-                    return {"response": f"Perfecto, buscaré {flow.get('service')} en {flow.get('city')}."}
-
-                flow["state"] = "awaiting_city"
-                flow["city_confirmed"] = False
-                return await respond(flow, solicitar_ciudad())
-
-            flow.update({"state": "awaiting_service"})
-            return await respond(flow, {"response": mensaje_inicial_solicitud()})
-
-        # Close conversation kindly
-        if selected == "No, por ahora está bien":
-            # Usar repositorio si está disponible, sino callback
-            if self.repositorio_flujo:
-                await self.repositorio_flujo.resetear(phone)
-            else:
-                await self.reset_flow(phone)
-            return {
-                "response": mensaje_despedida_dict()["response"]
-            }
-
-        # State machine
-        if state == "awaiting_service":
-            return await self._procesar_awaiting_service(
-                phone, flow, text, respond, customer_id
-            )
-
-        if state == "awaiting_city":
-            return await self._procesar_awaiting_city(
-                phone, flow, text, respond, save_bot_message
-            )
-
-        if state == "searching":
-            return await self._procesar_searching(phone, flow, do_search)
-
-        if state == "presenting_results":
-            return await procesar_estado_presentando_resultados(
-                flow,
-                text,
-                selected,
-                phone,
-                lambda data: self.set_flow(phone, data),
-                save_bot_message,
-                self.formal_connection_message,
-                mensajes_confirmacion_busqueda,
-                self.schedule_feedback_request,
-                self.logger,
-                "¿Te ayudo con otro servicio?",
-                bloque_detalle_proveedor,
-                menu_opciones_detalle_proveedor,
-                mensaje_inicial_solicitud(),
-                FAREWELL_MESSAGE,
-            )
-
-        if state == "viewing_provider_detail":
-            return await procesar_estado_viendo_detalle_proveedor(
-                flow,
-                text,
-                selected,
-                phone,
-                lambda data: self.set_flow(phone, data),
-                save_bot_message,
-                self.formal_connection_message,
-                mensajes_confirmacion_busqueda,
-                self.schedule_feedback_request,
-                self.logger,
-                "¿Te ayudo con otro servicio?",
-                lambda: self.send_provider_prompt(phone, flow, flow.get("city", "")),
-                mensaje_inicial_solicitud(),
-                FAREWELL_MESSAGE,
-                menu_opciones_detalle_proveedor,
-            )
-
-        if state == "confirm_new_search":
-            return await procesar_estado_confirmar_nueva_busqueda(
-                flow,
-                text,
-                selected,
-                lambda: self.reset_flow(phone),
-                respond,
-                lambda: self.send_provider_prompt(phone, flow, flow.get("city", "")),
-                lambda data, title: self.send_confirm_prompt(phone, data, title),
-                save_bot_message,
-                mensaje_inicial_solicitud(),
-                FAREWELL_MESSAGE,
-                titulo_confirmacion_repetir_busqueda,
-                MAX_CONFIRM_ATTEMPTS,
-            )
-
-        # Fallback: mantener o guiar según progreso
-        helper = flow if isinstance(flow, dict) else {}
-        if not helper.get("service"):
-            return await respond(
-                {"state": "awaiting_service"},
-                {"response": mensaje_inicial_solicitud()},
-            )
-        if not helper.get("city"):
-            helper["state"] = "awaiting_city"
-            return await respond(helper, solicitar_ciudad())
-        return mensaje_solicitar_reformulacion()
+        return await router_route_state(
+            self,
+            phone=phone,
+            flow=flow,
+            text=text,
+            selected=selected,
+            msg_type=msg_type,
+            location=location,
+            customer_id=customer_id,
+        )
 
     async def _procesar_awaiting_service(
         self,
@@ -998,12 +538,12 @@ class OrquestadorConversacional:
         if USE_AI_EXPANSION:
             # Usar expansor si está disponible, sino función global
             extraction_fn = (
-                self.expansor.extraer_profesion_y_ubicacion_con_expansion
+                self.expansor.extraer_servicio_y_ubicacion_con_expansion
                 if self.expansor
-                else extract_profession_and_location_with_expansion
+                else extraer_servicio_y_ubicacion_con_expansion
             )
         else:
-            extraction_fn = extract_profession_and_location
+            extraction_fn = extraer_servicio_y_ubicacion
 
         updated_flow, reply = await procesar_estado_esperando_servicio(
             flow,
@@ -1058,9 +598,7 @@ class OrquestadorConversacional:
 
         # Si no hay servicio previo y el usuario escribe un servicio aquí, reencaminarlo
         if text and not flow.get("service"):
-            detected_profession, detected_city = extract_profession_and_location(
-                "", text
-            )
+            detected_profession, detected_city = extraer_servicio_y_ubicacion("", text)
             current_service_norm = _normalize_text_for_matching(
                 flow.get("service") or ""
             )

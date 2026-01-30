@@ -3,9 +3,8 @@ package ratelimit
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
-
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Config holds rate limiter configuration
@@ -14,14 +13,24 @@ type Config struct {
 	MaxPer24h  int
 }
 
-// Limiter performs rate limiting using Postgres
+// RateLimitEntry tracks rate limit state for a destination
+type RateLimitEntry struct {
+	MessagesLastHour int
+	MessagesLast24H  int
+	LastMessageTime  time.Time
+	HourWindowStart  time.Time
+	DayWindowStart   time.Time
+}
+
+// Limiter performs rate limiting using in-memory storage
 type Limiter struct {
-	db     *pgxpool.Pool
+	mu     sync.RWMutex
+	store  map[string]*RateLimitEntry
 	config Config
 }
 
-// NewLimiter creates a new rate limiter
-func NewLimiter(db *pgxpool.Pool, config Config) *Limiter {
+// NewLimiter creates a new rate limiter with in-memory storage
+func NewLimiter(config Config) *Limiter {
 	if config.MaxPerHour == 0 {
 		config.MaxPerHour = 20
 	}
@@ -30,111 +39,106 @@ func NewLimiter(db *pgxpool.Pool, config Config) *Limiter {
 	}
 
 	return &Limiter{
-		db:     db,
+		store:  make(map[string]*RateLimitEntry),
 		config: config,
 	}
 }
 
+// getKey returns the composite key for rate limiting
+func getKey(accountID, destinationPhone string) string {
+	return accountID + ":" + destinationPhone
+}
+
 // Check checks if a message is allowed under rate limits
-func (rl *Limiter) Check(ctx context.Context, accountID, destinationPhone string) (bool, error) {
-	// Get current counters
-	var countHour, count24h int
-	var windowStart, window24hStart time.Time
-	var isBlocked bool
-	var blockedUntil *time.Time
+func (rl *Limiter) Check(ctx context.Context, accountID, destinationPhone string) (bool, time.Duration, error) {
+	key := getKey(accountID, destinationPhone)
 
-	err := rl.db.QueryRow(ctx, `
-		SELECT messages_last_hour, messages_last_24h,
-		       window_start_timetz, window_24h_start_timetz,
-		       is_blocked, blocked_until
-		FROM wa_rate_limits
-		WHERE account_id = $1 AND destination_phone = $2
-	`, accountID, destinationPhone).Scan(
-		&countHour, &count24h,
-		&windowStart, &window24hStart,
-		&isBlocked, &blockedUntil,
-	)
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
 
-	if err != nil {
-		// No record exists, allow message
-		return true, nil
-	}
-
+	entry, exists := rl.store[key]
 	now := time.Now()
 
-	// Check if blocked
-	if isBlocked && blockedUntil != nil && now.Before(*blockedUntil) {
-		return false, fmt.Errorf("blocked until %s", blockedUntil.Format(time.RFC3339))
+	if !exists {
+		// First message, allow it
+		return true, 0, nil
 	}
 
-	// Reset counters if windows have expired
-	if now.Sub(windowStart) >= time.Hour {
-		countHour = 0
-	}
-	if now.Sub(window24hStart) >= 24*time.Hour {
-		count24h = 0
+	// Reset hour window if needed
+	if now.Sub(entry.HourWindowStart) >= time.Hour {
+		entry.MessagesLastHour = 0
+		entry.HourWindowStart = now
 	}
 
-	// Check limits
-	if countHour >= rl.config.MaxPerHour {
-		return false, fmt.Errorf("hourly limit exceeded: %d/%d", countHour, rl.config.MaxPerHour)
-	}
-	if count24h >= rl.config.MaxPer24h {
-		return false, fmt.Errorf("daily limit exceeded: %d/%d", count24h, rl.config.MaxPer24h)
+	// Reset day window if needed
+	if now.Sub(entry.DayWindowStart) >= 24*time.Hour {
+		entry.MessagesLast24H = 0
+		entry.DayWindowStart = now
 	}
 
-	return true, nil
+	// Check hourly limit
+	if entry.MessagesLastHour >= rl.config.MaxPerHour {
+		retryAfter := time.Hour - now.Sub(entry.HourWindowStart)
+		return false, retryAfter, fmt.Errorf("hourly limit exceeded: %d/%d", entry.MessagesLastHour, rl.config.MaxPerHour)
+	}
+
+	// Check daily limit
+	if entry.MessagesLast24H >= rl.config.MaxPer24h {
+		retryAfter := (24 * time.Hour) - now.Sub(entry.DayWindowStart)
+		return false, retryAfter, fmt.Errorf("daily limit exceeded: %d/%d", entry.MessagesLast24H, rl.config.MaxPer24h)
+	}
+
+	return true, 0, nil
 }
 
 // Increment increments the rate limit counters
 func (rl *Limiter) Increment(ctx context.Context, accountID, destinationPhone string) error {
+	key := getKey(accountID, destinationPhone)
 	now := time.Now()
-	windowStart := now.Truncate(time.Hour)
-	window24hStart := now.Truncate(24 * time.Hour)
 
-	// Upsert rate limit record
-	query := `
-		INSERT INTO wa_rate_limits
-		(account_id, destination_phone, messages_last_hour, messages_last_24h,
-		 window_start_timetz, window_24h_start_timetz)
-		VALUES ($1, $2, 1, 1, $3, $4)
-		ON CONFLICT (account_id, destination_phone) DO UPDATE SET
-			messages_last_hour = CASE
-				WHEN $3 > wa_rate_limits.window_start_timetz
-					THEN 1
-					ELSE wa_rate_limits.messages_last_hour + 1
-			END,
-			messages_last_24h = CASE
-				WHEN $4 > wa_rate_limits.window_24h_start_timetz
-					THEN 1
-					ELSE wa_rate_limits.messages_last_24h + 1
-			END,
-			window_start_timetz = CASE
-				WHEN $3 > wa_rate_limits.window_start_timetz
-					THEN $3
-					ELSE wa_rate_limits.window_start_timetz
-			END,
-			window_24h_start_timetz = CASE
-				WHEN $4 > wa_rate_limits.window_24h_start_timetz
-					THEN $4
-					ELSE wa_rate_limits.window_24h_start_timetz
-			END,
-			updated_at = NOW()
-	`
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
 
-	_, err := rl.db.Exec(ctx, query,
-		accountID, destinationPhone,
-		windowStart, window24hStart,
-	)
+	entry, exists := rl.store[key]
+	if !exists {
+		// Create new entry
+		rl.store[key] = &RateLimitEntry{
+			MessagesLastHour: 1,
+			MessagesLast24H:  1,
+			LastMessageTime:  now,
+			HourWindowStart:  now,
+			DayWindowStart:   now,
+		}
+		return nil
+	}
 
-	return err
+	// Reset hour window if needed
+	if now.Sub(entry.HourWindowStart) >= time.Hour {
+		entry.MessagesLastHour = 0
+		entry.HourWindowStart = now
+	}
+
+	// Reset day window if needed
+	if now.Sub(entry.DayWindowStart) >= 24*time.Hour {
+		entry.MessagesLast24H = 0
+		entry.DayWindowStart = now
+	}
+
+	// Increment counters
+	entry.MessagesLastHour++
+	entry.MessagesLast24H++
+	entry.LastMessageTime = now
+
+	return nil
 }
 
 // Reset resets the rate limit for a specific destination
 func (rl *Limiter) Reset(ctx context.Context, accountID, destinationPhone string) error {
-	_, err := rl.db.Exec(ctx, `
-		DELETE FROM wa_rate_limits
-		WHERE account_id = $1 AND destination_phone = $2
-	`, accountID, destinationPhone)
-	return err
+	key := getKey(accountID, destinationPhone)
+
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	delete(rl.store, key)
+	return nil
 }

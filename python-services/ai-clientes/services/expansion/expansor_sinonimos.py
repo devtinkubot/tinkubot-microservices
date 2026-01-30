@@ -77,20 +77,20 @@ class ExpansorSinonimos:
         cleaned = re.sub(r"[^a-z0-9\s]", " ", without_accents)
         return re.sub(r"\s+", " ", cleaned).strip()
 
-    def extraer_profesion_y_ubicacion(
+    def extraer_servicio_y_ubicacion(
         self,
         historial_texto: str,
         ultimo_mensaje: str,
     ) -> Tuple[Optional[str], Optional[str]]:
         """
-        Extrae profesión y ubicación del texto usando búsqueda estática.
+        Extrae servicio y ubicación del texto usando búsqueda estática.
 
         Args:
             historial_texto: Historial de conversación
             ultimo_mensaje: Último mensaje del usuario
 
         Returns:
-            Tupla (profesion, ubicacion) - puede ser (None, None)
+            Tupla (servicio, ubicacion) - puede ser (None, None)
         """
         combined_text = f"{historial_texto}\n{ultimo_mensaje}"
         normalized_text = self._normalize_text_for_matching(combined_text)
@@ -379,7 +379,7 @@ Responde SOLO con el nombre de la ciudad o "null", sin explicaciones."""
             self.logger.warning(f"⚠️ Error extrayendo ciudad con IA: {exc}")
             return None
 
-    async def extraer_profesion_y_ubicacion_con_expansion(
+    async def extraer_servicio_y_ubicacion_con_expansion(
         self,
         historial_texto: str,
         ultimo_mensaje: str,
@@ -403,7 +403,7 @@ Responde SOLO con el nombre de la ciudad o "null", sin explicaciones."""
             - expanded_terms: Lista de términos expandidos por IA o None
         """
         # Paso 1: Intentar extracción estática primero (rápida)
-        profession, location = self.extraer_profesion_y_ubicacion(
+        profession, location = self.extraer_servicio_y_ubicacion(
             historial_texto, ultimo_mensaje
         )
 

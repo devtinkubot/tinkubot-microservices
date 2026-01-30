@@ -157,27 +157,28 @@
       }
 
       .instance-refresh-btn {
-        border: 1px solid var(--primary-color);
-        background: transparent;
+        border: none;
+        background: none;
         color: var(--primary-color);
-        border-radius: 8px;
-        padding: 0.35rem 0.75rem;
+        border-radius: 0;
+        padding: 0;
         font-size: 0.85rem;
         font-weight: 500;
         display: inline-flex;
         align-items: center;
         gap: 0.4rem;
         transition: all 0.2s ease;
+        text-decoration: underline;
       }
 
       .instance-refresh-btn:hover:not(:disabled) {
-        background-color: var(--primary-color);
-        color: white;
+        color: #5558e3;
       }
 
       .instance-refresh-btn:disabled {
         opacity: 0.6;
         cursor: not-allowed;
+        text-decoration: none;
       }
 
       .instance-refresh-btn .spinner-border {
@@ -347,13 +348,6 @@
               </div>
               <div>
                 <span class="badge bg-primary me-2">Administrador</span>
-                <button class="refresh-btn" onclick="actualizarTodosDatos()">
-                  <i class="fas fa-sync-alt me-1"></i>
-                  Actualizar
-                  <div class="spinner-border spinner-border-sm loading-spinner" role="status">
-                    <span class="visually-hidden">Cargando...</span>
-                  </div>
-                </button>
               </div>
             </div>
           </div>
@@ -365,10 +359,13 @@
               <div class="col-md-6">
                 <div class="status-card">
                   <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h5 class="mb-0">
-                      <i class="fab fa-whatsapp me-2 text-success"></i>
-                      WhatsApp Clientes
-                    </h5>
+                    <div>
+                      <h5 class="mb-0">
+                        <i class="fab fa-whatsapp me-2 text-success"></i>
+                        WhatsApp Clientes
+                      </h5>
+                      <p class="text-muted small mb-0">Número asignado: +593998823053</p>
+                    </div>
                     <div class="instance-actions">
                       <span class="status-indicator loading" id="bot-clientes-status"></span>
                       <button
@@ -379,7 +376,7 @@
                         onclick="regenerarConexionWhatsApp('bot-clientes')"
                       >
                         <i class="fas fa-sync-alt"></i>
-                        <span>Restablecer Conexión</span>
+                        <span>Actualizar QR</span>
                         <span
                           class="spinner-border spinner-border-sm"
                           role="status"
@@ -402,10 +399,13 @@
               <div class="col-md-6">
                 <div class="status-card">
                   <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h5 class="mb-0">
-                      <i class="fab fa-whatsapp me-2 text-success"></i>
-                      WhatsApp Proveedores
-                    </h5>
+                    <div>
+                      <h5 class="mb-0">
+                        <i class="fab fa-whatsapp me-2 text-success"></i>
+                        WhatsApp Proveedores
+                      </h5>
+                      <p class="text-muted small mb-0">Número asignado: +593983455575</p>
+                    </div>
                     <div class="instance-actions">
                       <span class="status-indicator loading" id="bot-proveedores-status"></span>
                       <button
@@ -416,7 +416,7 @@
                         onclick="regenerarConexionWhatsApp('bot-proveedores')"
                       >
                         <i class="fas fa-sync-alt"></i>
-                        <span>Restablecer Conexión</span>
+                        <span>Actualizar QR</span>
                         <span
                           class="spinner-border spinner-border-sm"
                           role="status"
@@ -710,11 +710,29 @@
                   <h6>Información</h6>
                   <p class="text-muted small mb-2">
                     <i class="fas fa-info-circle me-1"></i>
-                    Para actualizar datos, usa el botón "Actualizar" en el header principal
+                    La vista se refresca automáticamente.
                   </p>
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal fade" id="qr-reset-modal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Regenerar QR</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+          </div>
+          <div class="modal-body">
+            Esto cerrará la sesión actual y requerirá volver a escanear el QR. ¿Deseas continuar?
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
+            <button type="button" class="btn btn-primary" id="qr-reset-confirm">Regenerar</button>
           </div>
         </div>
       </div>

@@ -8,7 +8,6 @@ import json
 import logging
 import os
 import re
-import unicodedata
 from datetime import datetime, timedelta
 from time import perf_counter
 from typing import Any, Dict, List, Optional
@@ -362,8 +361,6 @@ async def record_ban(phone: str, reason: str) -> None:
 
     Guarda en ban:{phone} los detalles del ban con expiración automática.
     """
-    from datetime import timedelta
-
     try:
         ban_data = {
             "banned_at": datetime.utcnow().isoformat(),
@@ -486,7 +483,6 @@ Responde SOLO con JSON:
 
         # Caso 3: Contenido ilegal/inapropiado (puede banear)
         from templates.mensajes.validacion import mensaje_advertencia_contenido_ilegal, mensaje_ban_usuario
-        from datetime import timedelta
 
         # Verificar advertencias previas
         warning_count = await get_warning_count(phone)

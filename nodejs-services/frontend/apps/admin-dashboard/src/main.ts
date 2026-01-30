@@ -15,7 +15,6 @@ type TinkuBotGlobal = {
 
 type VentanaDashboard = typeof window & {
   TinkuBot?: TinkuBotGlobal;
-  actualizarTodosDatos?: () => Promise<void>;
   regenerarConexionWhatsApp?: (instanceId: string) => Promise<void>;
   recargarProveedoresPendientes?: () => Promise<void>;
 };
@@ -30,10 +29,6 @@ ventanaGlobal.TinkuBot = {
 };
 
 function enlazarManejadoresGlobales() {
-  ventanaGlobal.actualizarTodosDatos = async () => {
-    await WhatsAppManager.actualizarTodosDatos();
-  };
-
   ventanaGlobal.regenerarConexionWhatsApp = async (instanceId: string) => {
     await WhatsAppManager.regenerarConexionWhatsApp(instanceId);
   };
@@ -46,7 +41,6 @@ function enlazarManejadoresGlobales() {
 document.addEventListener('DOMContentLoaded', () => {
   Navigation.iniciar();
   WhatsAppManager.iniciar();
-  WhatsAppManager.cargarEstadoWhatsApp();
   WhatsAppManager.actualizarHoraUltimaActualizacion();
   ProvidersManager.iniciar();
   enlazarManejadoresGlobales();

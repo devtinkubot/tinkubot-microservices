@@ -4,6 +4,16 @@ import QRCode from 'qrcode';
 
 type TipoMensaje = 'success' | 'error';
 
+type ModalInstance = {
+  show: () => void;
+  hide: () => void;
+};
+
+let instanciaPendiente: string | null = null;
+let modalRegenerarQr: ModalInstance | null = null;
+let intervaloRefresco: number | null = null;
+const REFRESCO_QR_MS = 15000;
+
 function establecerEstadoBotonRecarga(instanciaId: string, estaCargando: boolean) {
   const button = document.querySelector<HTMLButtonElement>(
     `.instance-refresh-btn[data-refresh="${instanciaId}"]`
@@ -38,7 +48,20 @@ function mostrarMensajeDeEstado(
   contenedorMensaje.style.display = 'block';
 }
 
-async function regenerarConexionWhatsApp(instanceId: string) {
+function abrirModalRegenerar(instanceId: string) {
+  instanciaPendiente = instanceId;
+  if (modalRegenerarQr) {
+    modalRegenerarQr.show();
+  }
+}
+
+async function confirmarRegeneracionWhatsApp() {
+  if (!instanciaPendiente) return;
+  const instanceId = instanciaPendiente;
+  instanciaPendiente = null;
+  if (modalRegenerarQr) {
+    modalRegenerarQr.hide();
+  }
   establecerEstadoBotonRecarga(instanceId, true);
   mostrarMensajeDeEstado(instanceId, '');
 
@@ -104,9 +127,13 @@ function actualizarVistaWhatsApp(servicio: string, datos?: WhatsAppInstanceStatu
   `;
   qrDiv.style.display = 'block';
 
-  if (estado?.qr) {
-    const qrImage = document.getElementById(`${servicio}-qr-img`) as HTMLImageElement | null;
-    if (qrImage) {
+  const qrImage = document.getElementById(`${servicio}-qr-img`) as HTMLImageElement | null;
+  if (qrImage) {
+    qrImage.src = '';
+    qrImage.alt = 'QR no disponible';
+  }
+
+  if (estado?.qr && qrImage) {
       // Generar QR code usando la librería qrcode
       QRCode.toDataURL(estado.qr, {
         width: 256,
@@ -118,12 +145,12 @@ function actualizarVistaWhatsApp(servicio: string, datos?: WhatsAppInstanceStatu
       })
         .then((url: string) => {
           qrImage.src = url;
+          qrImage.alt = 'QR listo para escanear';
         })
         .catch((error: Error) => {
           console.error('Error generando QR:', error);
           qrImage.alt = 'Error generando QR';
         });
-    }
   }
 
   if (messageDiv) {
@@ -153,13 +180,6 @@ async function cargarEstadoWhatsApp(): Promise<void> {
   }
 }
 
-async function actualizarTodosDatos() {
-  Utils.alternarSpinner(true);
-  await Promise.all([cargarEstadoWhatsApp()]);
-  Utils.alternarSpinner(false);
-  actualizarHoraUltimaActualizacion();
-}
-
 function actualizarHoraUltimaActualizacion() {
   const timestampElement = document.getElementById('last-update');
   if (timestampElement) {
@@ -168,14 +188,30 @@ function actualizarHoraUltimaActualizacion() {
 }
 
 function inicializar() {
-  // Punto de extensibilidad si agregamos listeners propios en el futuro
+  const modalEl = document.getElementById('qr-reset-modal');
+  if (modalEl && (window as any).bootstrap) {
+    modalRegenerarQr = new (window as any).bootstrap.Modal(modalEl, {
+      backdrop: 'static'
+    });
+  }
+  const confirmBtn = document.getElementById('qr-reset-confirm');
+  if (confirmBtn) {
+    confirmBtn.addEventListener('click', () => {
+      confirmarRegeneracionWhatsApp();
+    });
+  }
+
+  if (intervaloRefresco === null) {
+    intervaloRefresco = window.setInterval(() => {
+      cargarEstadoWhatsApp();
+    }, REFRESCO_QR_MS);
+  }
 }
 
 export const WhatsAppManager = {
   iniciar: inicializar,
-  actualizarTodosDatos,
   cargarEstadoWhatsApp,
-  regenerarConexionWhatsApp,
+  regenerarConexionWhatsApp: abrirModalRegenerar,
   actualizarHoraUltimaActualizacion
 };
 

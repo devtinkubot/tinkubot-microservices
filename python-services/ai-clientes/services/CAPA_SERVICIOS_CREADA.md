@@ -62,14 +62,14 @@ Mover la lógica de negocio desde `main.py` (1959 líneas) a servicios de domini
 - Combinar extracción estática con extracción IA
 
 **Métodos públicos:**
-- `extraer_profesion_y_ubicacion(historial_texto, ultimo_mensaje)`: Extracción estática
+- `extraer_servicio_y_ubicacion(historial_texto, ultimo_mensaje)`: Extracción estática
 - `expandir_necesidad_con_ia(user_need, max_sinonimos)`: Expande términos con IA
-- `extraer_profesion_y_ubicacion_con_expansion(historial_texto, ultimo_mensaje)`: Wrapper completo
+- `extraer_servicio_y_ubicacion_con_expansion(historial_texto, ultimo_mensaje)`: Wrapper completo
 
 **Lógica movida desde main.py:**
-- `extract_profession_and_location()` (líneas 493-534)
+- `extraer_servicio_y_ubicacion()` (líneas 493-534)
 - `expand_need_with_ai()` (líneas 537-648)
-- `extract_profession_and_location_with_expansion()` (líneas 650-697)
+- `extraer_servicio_y_ubicacion_con_expansion()` (líneas 650-697)
 - `_extract_profession_with_ai()` (líneas 699-758)
 - `_extract_location_with_ai()` (líneas 760-826)
 

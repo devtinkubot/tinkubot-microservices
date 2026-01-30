@@ -171,7 +171,7 @@ class ExpansorSinonimos:
     - Ciudades de Ecuador
     """
 
-    def extraer_profesion_y_ubicacion_con_expansion(
+    def extraer_servicio_y_ubicacion_con_expansion(
         historial_texto: str,
         ultimo_mensaje: str
     ) -> Tuple[str, str, List[str]]:

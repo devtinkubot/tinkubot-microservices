@@ -158,27 +158,28 @@
       }
 
       .instance-refresh-btn {
-        border: 1px solid var(--primary-color);
-        background: transparent;
+        border: none;
+        background: none;
         color: var(--primary-color);
-        border-radius: 8px;
-        padding: 0.35rem 0.75rem;
+        border-radius: 0;
+        padding: 0;
         font-size: 0.85rem;
         font-weight: 500;
         display: inline-flex;
         align-items: center;
         gap: 0.4rem;
         transition: all 0.2s ease;
+        text-decoration: underline;
       }
 
       .instance-refresh-btn:hover:not(:disabled) {
-        background-color: var(--primary-color);
-        color: white;
+        color: #5558e3;
       }
 
       .instance-refresh-btn:disabled {
         opacity: 0.6;
         cursor: not-allowed;
+        text-decoration: none;
       }
 
       .instance-refresh-btn .spinner-border {
@@ -269,17 +270,17 @@
                       <i class="fab fa-whatsapp me-2 text-success"></i>
                       WhatsApp Clientes
                     </h5>
-                    <div class="instance-actions">
-                      <span class="status-indicator loading" id="bot-clientes-status"></span>
-                      <button
-                        type="button"
-                        class="instance-refresh-btn"
-                        data-refresh="bot-clientes"
-                        data-loading="false"
-                        onclick="regenerarConexionWhatsApp('bot-clientes')"
-                      >
-                        <i class="fas fa-sync-alt"></i>
-                        <span>Restablecer Conexión</span>
+                <div class="instance-actions">
+                  <span class="status-indicator loading" id="bot-clientes-status"></span>
+                  <button
+                    type="button"
+                    class="instance-refresh-btn"
+                    data-refresh="bot-clientes"
+                    data-loading="false"
+                    onclick="regenerarConexionWhatsApp('bot-clientes')"
+                  >
+                    <i class="fas fa-sync-alt"></i>
+                    <span>Regenerar QR</span>
                         <span
                           class="spinner-border spinner-border-sm"
                           role="status"
@@ -306,17 +307,17 @@
                       <i class="fab fa-whatsapp me-2 text-success"></i>
                       WhatsApp Proveedores
                     </h5>
-                    <div class="instance-actions">
-                      <span class="status-indicator loading" id="bot-proveedores-status"></span>
-                      <button
-                        type="button"
-                        class="instance-refresh-btn"
-                        data-refresh="bot-proveedores"
-                        data-loading="false"
-                        onclick="regenerarConexionWhatsApp('bot-proveedores')"
-                      >
-                        <i class="fas fa-sync-alt"></i>
-                        <span>Restablecer Conexión</span>
+                <div class="instance-actions">
+                  <span class="status-indicator loading" id="bot-proveedores-status"></span>
+                  <button
+                    type="button"
+                    class="instance-refresh-btn"
+                    data-refresh="bot-proveedores"
+                    data-loading="false"
+                    onclick="regenerarConexionWhatsApp('bot-proveedores')"
+                  >
+                    <i class="fas fa-sync-alt"></i>
+                    <span>Regenerar QR</span>
                         <span
                           class="spinner-border spinner-border-sm"
                           role="status"
@@ -362,6 +363,24 @@
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal fade" id="qr-reset-modal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Regenerar QR</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+          </div>
+          <div class="modal-body">
+            Esto cerrará la sesión actual y requerirá volver a escanear el QR. ¿Deseas continuar?
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
+            <button type="button" class="btn btn-primary" id="qr-reset-confirm">Regenerar</button>
           </div>
         </div>
       </div>
@@ -447,6 +466,8 @@
         'use strict';
 
         let eventSource = null;
+        let pendingInstanceId = null;
+        let qrResetModal = null;
 
         /**
          * Establece estado de botón de actualización
@@ -522,6 +543,22 @@
          * Regenera conexión de WhatsApp (genera nuevo QR)
          */
         async function regenerarConexionWhatsApp(instanceId) {
+          pendingInstanceId = instanceId;
+          if (qrResetModal) {
+            qrResetModal.show();
+          }
+          return;
+        }
+
+        async function confirmarRegeneracionWhatsApp() {
+          if (!pendingInstanceId) {
+            return;
+          }
+          const instanceId = pendingInstanceId;
+          pendingInstanceId = null;
+          if (qrResetModal) {
+            qrResetModal.hide();
+          }
           establecerEstadoBotonActualizacion(instanceId, true);
           mostrarMensajeEstado(instanceId, '');
 
@@ -631,9 +668,13 @@
               <p class="text-muted small mb-0">Necesita escanear código QR</p>
             `;
             qrDiv.style.display = 'block';
-            if (statusData.qr) {
+            const qrImg = document.getElementById(`${service}-qr-img`);
+            if (qrImg) {
+              qrImg.src = '';
+              qrImg.alt = 'QR no disponible';
+            }
+            if (statusData.qr && qrImg) {
               // Generar QR code usando la librería qrcode.js
-              const qrImg = document.getElementById(`${service}-qr-img`);
               QRCode.toDataURL(statusData.qr, {
                 width: 256,
                 margin: 2,
@@ -688,8 +729,12 @@
           // Funciones públicas para compatibilidad con HTML
           actualizarTodosDatos: actualizarTodosDatos,
           regenerarConexionWhatsApp: regenerarConexionWhatsApp,
+          confirmarRegeneracionWhatsApp: confirmarRegeneracionWhatsApp,
           cargarEstadoWhatsApp: cargarEstadoWhatsApp,
-          actualizarHoraUltimaActualizacion: actualizarHoraUltimaActualizacion
+          actualizarHoraUltimaActualizacion: actualizarHoraUltimaActualizacion,
+          _setQrResetModal: function(modalInstance) {
+            qrResetModal = modalInstance;
+          }
         };
       })();
 
@@ -697,6 +742,18 @@
        * Punto de entrada principal - Inicialización de la aplicación
        */
       document.addEventListener('DOMContentLoaded', () => {
+        const modalEl = document.getElementById('qr-reset-modal');
+        if (modalEl && window.bootstrap) {
+          TinkuBot.WhatsAppManager._setQrResetModal(
+            new bootstrap.Modal(modalEl, { backdrop: 'static' })
+          );
+        }
+        const confirmBtn = document.getElementById('qr-reset-confirm');
+        if (confirmBtn) {
+          confirmBtn.addEventListener('click', () => {
+            TinkuBot.WhatsAppManager.confirmarRegeneracionWhatsApp();
+          });
+        }
         // Verificar autenticación primero
         verificarAutenticacion().then(authenticated => {
           if (!authenticated) {

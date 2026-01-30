@@ -67,10 +67,10 @@ orquestador.inyectar_callbacks(
 # ============================================================================
 
 # Si orquestador_conversacion.py necesita expand_need_with_ai o
-# extract_profession_and_location_with_expansion, actualizar:
+# extraer_servicio_y_ubicacion_con_expansion, actualizar:
 
 # ANTES:
-# from main import expand_need_with_ai, extract_profession_and_location_with_expansion
+# from main import expand_need_with_ai, extraer_servicio_y_ubicacion_con_expansion
 
 # DESPUÉS:
 # from services.expansion import ExpansorSinonimos
@@ -175,9 +175,9 @@ Función global                    → Servicio de dominio
 search_providers()               → BuscadorProveedores.buscar()
 ai_validate_providers()          → ValidadorProveedoresIA.validar_proveedores()
 expand_need_with_ai()            → ExpansorSinonimos.expandir_necesidad_con_ia()
-extract_profession_and_location() → ExpansorSinonimos.extraer_profesion_y_ubicacion()
-extract_profession_and_location_with_expansion()
-                                → ExpansorSinonimos.extraer_profesion_y_ubicacion_con_expansion()
+extraer_servicio_y_ubicacion()   → ExpansorSinonimos.extraer_servicio_y_ubicacion()
+extraer_servicio_y_ubicacion_con_expansion()
+                                → ExpansorSinonimos.extraer_servicio_y_ubicacion_con_expansion()
 _extract_profession_with_ai()    → ExpansorSinonimos._extraer_profesion_con_ia()
 _extract_location_with_ai()      → ExpansorSinonimos._extraer_ubicacion_con_ia()
 """
@@ -190,8 +190,8 @@ _extract_location_with_ai()      → ExpansorSinonimos._extraer_ubicacion_con_ia
 # - Líneas 1039-1118: search_providers()
 # - Líneas 1120-1283: ai_validate_providers()
 # - Líneas 537-648: expand_need_with_ai()
-# - Líneas 493-534: extract_profession_and_location()
-# - Líneas 650-697: extract_profession_and_location_with_expansion()
+# - Líneas 493-534: extraer_servicio_y_ubicacion()
+# - Líneas 650-697: extraer_servicio_y_ubicacion_con_expansion()
 # - Líneas 699-758: _extract_profession_with_ai()
 # - Líneas 760-826: _extract_location_with_ai()
 

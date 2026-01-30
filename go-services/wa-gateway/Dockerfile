@@ -3,11 +3,8 @@
 # ============================================================================
 FROM golang:1.24-alpine AS builder
 
-# Install build dependencies
+# Install build dependencies (gcc for CGO to build sqlite3)
 RUN apk add --no-cache git ca-certificates tzdata gcc musl-dev
-
-# Create non-root user
-RUN adduser -D -g '' appuser && mkdir -p /appuser && chown appuser /appuser
 
 WORKDIR /build
 
@@ -21,35 +18,34 @@ COPY . .
 # Generate go.sum with all dependencies and update go.mod
 RUN go mod tidy
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
-    -ldflags='-w -s -extldflags "-static"' \
+# Build the application with CGO_ENABLED for SQLite support
+RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build \
+    -ldflags='-w -s' \
     -o wa-gateway \
     ./cmd/wa-gateway/main.go
 
 # ============================================================================
 # Stage 2: Runtime
 # ============================================================================
-FROM scratch
+FROM alpine:latest
 
-# Copy root filesystem from builder
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=builder /etc/passwd /etc/passwd
-COPY --from=builder /etc/group /etc/group
-COPY --from=builder /appuser /appuser
+# Install runtime dependencies
+RUN apk --no-cache add ca-certificates sqlite-libs
 
-# Copy binary
-COPY --from=builder /build/wa-gateway /wa-gateway
+WORKDIR /app
 
-# Use non-root user
-USER appuser
+# Create data directory for SQLite database
+RUN mkdir -p data
+
+# Copy binary from builder
+COPY --from=builder /build/wa-gateway .
 
 # Expose port
 EXPOSE 7000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD ["/wa-gateway", "--healthcheck"] || exit 1
+    CMD ["/app/wa-gateway", "--healthcheck"] || exit 1
 
 # Run the application
-ENTRYPOINT ["/wa-gateway"]
+ENTRYPOINT ["/app/wa-gateway"]

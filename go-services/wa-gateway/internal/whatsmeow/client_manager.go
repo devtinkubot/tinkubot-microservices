@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/mdp/qrterminal/v3"
+	_ "github.com/mattn/go-sqlite3"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
@@ -17,7 +17,6 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"google.golang.org/protobuf/proto"
-	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 // Event represents a WhatsApp event to be broadcasted via SSE
@@ -28,30 +27,41 @@ type Event struct {
 	Timestamp time.Time              `json:"timestamp"`
 }
 
+// StoredQR stores a QR code with its expiration time
+type StoredQR struct {
+	QRCode     string
+	ExpiresAt  time.Time
+}
+
 // ClientManager manages multiple whatsmeow clients
 type ClientManager struct {
 	clients       map[string]*whatsmeow.Client
-	db            *pgxpool.Pool
 	container     *sqlstore.Container
 	eventHandlers []func(Event)
+	qrCodes       map[string]*StoredQR  // Store latest QR codes
 	mu            sync.RWMutex
 }
 
-// NewClientManager creates a new ClientManager
-func NewClientManager(db *pgxpool.Pool, databaseURL string) (*ClientManager, error) {
+// NewClientManager creates a new ClientManager with SQLite
+func NewClientManager(databasePath string) (*ClientManager, error) {
 	// Create logger for sqlstore
 	log := waLog.Stdout("WA-Gateway", "INFO", true)
 
-	// Create sqlstore container with pgx driver (latest API requires context and logger)
-	container, err := sqlstore.New(context.Background(), "pgx", databaseURL, log)
+	// Create data directory if it doesn't exist
+	if err := os.MkdirAll("data", 0755); err != nil {
+		return nil, fmt.Errorf("failed to create data directory: %w", err)
+	}
+
+	// Create sqlstore container with SQLite driver
+	container, err := sqlstore.New(context.Background(), "sqlite3", databasePath, log)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create sqlstore: %w", err)
 	}
 
 	cm := &ClientManager{
 		clients:   make(map[string]*whatsmeow.Client),
-		db:        db,
 		container: container,
+		qrCodes:   make(map[string]*StoredQR),
 	}
 
 	return cm, nil
@@ -95,8 +105,10 @@ func (cm *ClientManager) StartClient(accountID string) error {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
-	if _, exists := cm.clients[accountID]; exists {
-		return fmt.Errorf("client already exists for account: %s", accountID)
+	// If client already exists, disconnect it first
+	if client, exists := cm.clients[accountID]; exists {
+		log.Printf("[%s] Client already exists, disconnecting first", accountID)
+		client.Disconnect()
 	}
 
 	// Get the first device from the container (latest API requires context)
@@ -114,10 +126,7 @@ func (cm *ClientManager) StartClient(accountID string) error {
 
 	cm.clients[accountID] = client
 
-	// Update state to "connecting"
-	if err := cm.updateConnectionStatus(accountID, "connecting", nil); err != nil {
-		log.Printf("[%s] Failed to update connection status to connecting: %v", accountID, err)
-	}
+	log.Printf("[%s] Client starting...", accountID)
 
 	// IMPORTANT: Get QR channel BEFORE connecting (required by whatsmeow API)
 	qrChan, err := client.GetQRChannel(context.Background())
@@ -133,8 +142,8 @@ func (cm *ClientManager) StartClient(accountID string) error {
 
 	// Connect to WhatsApp
 	if err := client.Connect(); err != nil {
-		cm.updateConnectionStatus(accountID, "error", map[string]interface{}{
-			"last_error": err.Error(),
+		cm.broadcastEvent("error", accountID, map[string]interface{}{
+			"error": err.Error(),
 		})
 		return fmt.Errorf("failed to connect client: %w", err)
 	}
@@ -174,14 +183,16 @@ func (cm *ClientManager) processQRChannel(accountID string, qrChan <-chan whatsm
 			// Generate QR code terminal output
 			qrterminal.GenerateHalfBlock(qrCode, qrterminal.L, os.Stdout)
 
-			// Update database with QR code
+			// QR expires in 2 minutes
 			qrExpiresAt := time.Now().Add(2 * time.Minute)
-			if err := cm.updateConnectionStatus(accountID, "qr_ready", map[string]interface{}{
-				"qr_code":      qrCode,
-				"qr_expires_at": qrExpiresAt,
-			}); err != nil {
-				log.Printf("[%s] Failed to update QR code in database: %v", accountID, err)
+
+			// Store QR code for retrieval via GET /accounts/:id/qr
+			cm.mu.Lock()
+			cm.qrCodes[accountID] = &StoredQR{
+				QRCode:    qrCode,
+				ExpiresAt: qrExpiresAt,
 			}
+			cm.mu.Unlock()
 
 			// Broadcast QR event via SSE
 			cm.broadcastEvent("qr_ready", accountID, map[string]interface{}{
@@ -204,26 +215,19 @@ func (cm *ClientManager) handleConnected(accountID string) {
 		return
 	}
 
+	// Clear QR code on successful connection
+	cm.ClearQRCode(accountID)
+
 	// Get phone number from JID
 	phone := client.Store.ID.ToNonAD().String()
 	if len(phone) > 15 {
 		phone = phone[:15] // Limit length
 	}
 
-	// Update database
-	if err := cm.updateConnectionStatus(accountID, "connected", map[string]interface{}{
-		"phone_number":  phone,
-		"connected_at":  time.Now(),
-		"qr_code":       nil,
-		"qr_expires_at": nil,
-		"last_error":    nil,
-	}); err != nil {
-		log.Printf("[%s] Failed to update connection status: %v", accountID, err)
-	}
-
 	// Broadcast connected event
 	cm.broadcastEvent("connected", accountID, map[string]interface{}{
 		"phone_number": phone,
+		"connected_at": time.Now(),
 	})
 }
 
@@ -238,13 +242,6 @@ func (cm *ClientManager) handleDisconnected(accountID string, discEvt interface{
 		if disconnected, ok := discEvt.(*events.Disconnected); ok {
 			reason = fmt.Sprintf("reason: %v", disconnected)
 		}
-	}
-
-	// Update database
-	if err := cm.updateConnectionStatus(accountID, "disconnected", map[string]interface{}{
-		"last_error": reason,
-	}); err != nil {
-		log.Printf("[%s] Failed to update disconnection status: %v", accountID, err)
 	}
 
 	// Broadcast disconnected event
@@ -269,32 +266,6 @@ func (cm *ClientManager) handleMessage(accountID string, msgEvt *events.Message)
 		return
 	}
 
-	// Alternative check using ToNonAD()
-	// chatJID := msgEvt.Info.Chat.ToNonAD()
-	// if chatJID.Server == "g.us" || chatJID.Server == "broadcast" {
-	//     return
-	// }
-
-	// Get account info to determine webhook URL
-	ctx := context.Background()
-	var webhookURL string
-	err := cm.db.QueryRow(ctx, `
-		SELECT webhook_url FROM wa_accounts WHERE account_id = $1
-	`, accountID).Scan(&webhookURL)
-	if err != nil {
-		log.Printf("[%s] Failed to get webhook URL: %v", accountID, err)
-		return
-	}
-
-	// Increment messages received counter
-	if _, err := cm.db.Exec(ctx, `
-		UPDATE wa_account_states
-		SET messages_received = messages_received + 1
-		WHERE account_id = $1
-	`, accountID); err != nil {
-		log.Printf("[%s] Failed to increment message counter: %v", accountID, err)
-	}
-
 	// Get message text using the new API
 	messageText := msgEvt.Message.GetConversation()
 
@@ -311,70 +282,9 @@ func (cm *ClientManager) handleMessage(accountID string, msgEvt *events.Message)
 func (cm *ClientManager) handleLoggedOut(accountID string) {
 	log.Printf("[%s] Logged out", accountID)
 
-	if err := cm.updateConnectionStatus(accountID, "disconnected", map[string]interface{}{
-		"last_error": "logged_out",
-	}); err != nil {
-		log.Printf("[%s] Failed to update status after logout: %v", accountID, err)
-	}
-
 	cm.broadcastEvent("disconnected", accountID, map[string]interface{}{
 		"reason": "logged_out",
 	})
-}
-
-// updateConnectionStatus updates the connection status in the database
-func (cm *ClientManager) updateConnectionStatus(accountID, status string, extraData map[string]interface{}) error {
-	ctx := context.Background()
-
-	// Build dynamic UPDATE query
-	query := `
-		UPDATE wa_account_states
-		SET connection_status = $1, updated_at = NOW()
-	`
-	args := []interface{}{status}
-	argIdx := 2
-
-	if status == "qr_ready" {
-		if qrCode, ok := extraData["qr_code"].(string); ok {
-			query += fmt.Sprintf(", qr_code = $%d", argIdx)
-			args = append(args, qrCode)
-			argIdx++
-		}
-		if expiresAt, ok := extraData["qr_expires_at"].(time.Time); ok {
-			query += fmt.Sprintf(", qr_expires_at = $%d", argIdx)
-			args = append(args, expiresAt)
-			argIdx++
-		}
-	}
-
-	if status == "connected" {
-		if phoneNumber, ok := extraData["phone_number"].(string); ok {
-			query += fmt.Sprintf(", phone_number = $%d", argIdx)
-			args = append(args, phoneNumber)
-			argIdx++
-		}
-		if connectedAt, ok := extraData["connected_at"].(time.Time); ok {
-			query += fmt.Sprintf(", connected_at = $%d", argIdx)
-			args = append(args, connectedAt)
-			argIdx++
-		}
-		query += ", last_seen_at = NOW()"
-		query += ", qr_code = NULL, qr_expires_at = NULL"
-	}
-
-	if status == "disconnected" || status == "error" {
-		if lastError, ok := extraData["last_error"].(string); ok {
-			query += fmt.Sprintf(", last_error = $%d", argIdx)
-			args = append(args, lastError)
-			argIdx++
-		}
-	}
-
-	query += fmt.Sprintf(" WHERE account_id = $%d", argIdx)
-	args = append(args, accountID)
-
-	_, err := cm.db.Exec(ctx, query, args...)
-	return err
 }
 
 // GetClient returns the client for the given account
@@ -389,6 +299,9 @@ func (cm *ClientManager) GetClient(accountID string) (*whatsmeow.Client, bool) {
 func (cm *ClientManager) Logout(accountID string) error {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
+
+	// Clear QR code on logout
+	delete(cm.qrCodes, accountID)
 
 	client, ok := cm.clients[accountID]
 	if !ok {
@@ -429,15 +342,7 @@ func (cm *ClientManager) SendTextMessage(accountID string, to string, message st
 		return fmt.Errorf("failed to send message: %w", err)
 	}
 
-	// Increment counter
-	ctx := context.Background()
-	if _, err := cm.db.Exec(ctx, `
-		UPDATE wa_account_states
-		SET messages_sent = messages_sent + 1
-		WHERE account_id = $1
-	`, accountID); err != nil {
-		log.Printf("[%s] Failed to increment sent counter: %v", accountID, err)
-	}
+	log.Printf("[%s] Message sent to %s", accountID, to)
 
 	return nil
 }
@@ -461,4 +366,29 @@ func parseJID(phone string) (types.JID, error) {
 	}
 
 	return types.NewJID(cleaned, types.DefaultUserServer), nil
+}
+
+// GetQRCode retrieves the stored QR code for an account
+func (cm *ClientManager) GetQRCode(accountID string) (string, *time.Time, bool) {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	storedQR, exists := cm.qrCodes[accountID]
+	if !exists {
+		return "", nil, false
+	}
+
+	// Check if QR has expired
+	if time.Now().After(storedQR.ExpiresAt) {
+		return "", nil, false
+	}
+
+	return storedQR.QRCode, &storedQR.ExpiresAt, true
+}
+
+// ClearQRCode removes the stored QR code for an account
+func (cm *ClientManager) ClearQRCode(accountID string) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	delete(cm.qrCodes, accountID)
 }

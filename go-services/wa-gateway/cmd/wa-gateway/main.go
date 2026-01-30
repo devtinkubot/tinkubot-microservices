@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/tinkubot/wa-gateway/internal/api"
 	"github.com/tinkubot/wa-gateway/internal/ratelimit"
 	"github.com/tinkubot/wa-gateway/internal/whatsmeow"
@@ -23,18 +22,6 @@ func main() {
 	healthcheck := flag.Bool("healthcheck", false, "Run health check and exit")
 	flag.Parse()
 
-	// Load environment variables
-	databaseURL := os.Getenv("DATABASE_URL")
-	if databaseURL == "" {
-		log.Fatal("❌ DATABASE_URL environment variable is required")
-	}
-
-	// If healthcheck flag is set, run healthcheck and exit
-	if *healthcheck {
-		runHealthcheck(databaseURL)
-		return
-	}
-
 	log.Println("🚀 Starting wa-gateway...")
 
 	port := os.Getenv("GATEWAY_PORT")
@@ -42,34 +29,32 @@ func main() {
 		port = "7000"
 	}
 
-	// Connect to Postgres
-	ctx := context.Background()
-	db, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		log.Fatalf("❌ Failed to connect to database: %v", err)
+	// SQLite database path (can be overridden via env var)
+	databasePath := os.Getenv("DATABASE_PATH")
+	if databasePath == "" {
+		databasePath = "file:./data/wa-gateway.db?_foreign_keys=on"
 	}
-	defer db.Close()
 
-	// Verify connection
-	if err := db.Ping(ctx); err != nil {
-		log.Fatalf("❌ Failed to ping database: %v", err)
+	// If healthcheck flag is set, run healthcheck and exit
+	if *healthcheck {
+		runHealthcheck(databasePath)
+		return
 	}
-	log.Println("✅ Connected to Postgres")
 
-	// Create rate limiter
+	// Create rate limiter (in-memory)
 	rateLimitConfig := ratelimit.Config{
 		MaxPerHour: parseIntEnv("RATE_LIMIT_MAX_PER_HOUR", 20),
 		MaxPer24h:  parseIntEnv("RATE_LIMIT_MAX_PER_24H", 100),
 	}
-	rl := ratelimit.NewLimiter(db, rateLimitConfig)
-	log.Println("✅ Rate limiter initialized")
+	rl := ratelimit.NewLimiter(rateLimitConfig)
+	log.Println("✅ Rate limiter initialized (in-memory)")
 
-	// Create client manager
-	cm, err := whatsmeow.NewClientManager(db, databaseURL)
+	// Create client manager with SQLite
+	cm, err := whatsmeow.NewClientManager(databasePath)
 	if err != nil {
 		log.Fatalf("❌ Failed to create client manager: %v", err)
 	}
-	log.Println("✅ Client manager created")
+	log.Println("✅ Client manager created (SQLite)")
 
 	// Create SSE hub
 	sseHub := api.NewSSEHub()
@@ -81,7 +66,7 @@ func main() {
 	})
 
 	// Create API handlers
-	handlers := api.NewHandlers(db, cm, rl, sseHub)
+	handlers := api.NewHandlers(cm, rl, sseHub)
 
 	// Start WhatsApp clients
 	log.Println("📱 Starting WhatsApp clients...")
@@ -171,21 +156,14 @@ func parseIntEnv(key string, defaultValue int) int {
 }
 
 // runHealthcheck performs a health check and exits with appropriate code
-func runHealthcheck(databaseURL string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+func runHealthcheck(databasePath string) {
+	_, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Try to connect to database
-	db, err := pgxpool.New(ctx, databaseURL)
+	// Try to create client manager (will fail if SQLite is broken)
+	_, err := whatsmeow.NewClientManager(databasePath)
 	if err != nil {
-		log.Printf("❌ Health check failed: cannot connect to database: %v", err)
-		os.Exit(1)
-	}
-	defer db.Close()
-
-	// Ping database
-	if err := db.Ping(ctx); err != nil {
-		log.Printf("❌ Health check failed: database ping failed: %v", err)
+		log.Printf("❌ Health check failed: cannot initialize SQLite: %v", err)
 		os.Exit(1)
 	}
 

@@ -12,6 +12,10 @@ const adminProvidersRouter = require('./routes/adminProviders');
 const session = require('express-session');
 const app = express();
 
+// IMPORTANT: Set trust proxy IMMEDIATELY after creating app, before any middleware
+// Use 1 instead of true to avoid rate limiter bypass warning
+app.set('trust proxy', 1);
+
 const ADMIN_USER = process.env.ADMIN_USER || 'hvillalba';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
@@ -144,7 +148,11 @@ app.use(
     windowMs: 60 * 1000,
     max: parseInt(process.env.RATE_LIMIT_MAX || '120', 10),
     standardHeaders: true,
-    legacyHeaders: false
+    legacyHeaders: false,
+    skip: (req) => {
+      // Skip rate limit for health checks
+      return req.path === '/health' || req.path === '/api/health';
+    }
   })
 );
 app.use((req, res, next) => {
