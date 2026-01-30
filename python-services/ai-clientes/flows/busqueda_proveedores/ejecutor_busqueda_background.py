@@ -90,7 +90,8 @@ async def ejecutar_busqueda_y_notificar_background(
         logger.info("✅ Mensaje 1 enviado")
 
         # Ejecutar búsqueda
-        from main import search_providers, coordinador_disponibilidad
+        from main import search_providers
+        from infrastructure.http.cliente_disponibilidad import cliente_disponibilidad
 
         logger.info(
             f"🔍 Ejecutando búsqueda de proveedores: service='{service}', city='{city}', expanded_terms={len(expanded_terms) if expanded_terms else 0} términos"
@@ -123,19 +124,27 @@ async def ejecutar_busqueda_y_notificar_background(
                 extra={"service": service, "city": city, "query": service_full},
             )
         else:
-            # Filtrar por disponibilidad en vivo
+            # Filtrar por disponibilidad en vivo (ahora vía HTTP)
             logger.info(
                 f"🔔 Consultando disponibilidad de {len(providers)} proveedores"
             )
-            from infrastructure.persistencia.cliente_redis import cliente_redis
+            from infrastructure.persistencia.cliente_redis import cliente_redis as redis_client
 
-            availability = await coordinador_disponibilidad.request_and_wait(
-                phone=phone,
+            # Preparar candidatos para el cliente HTTP
+            candidatos = [
+                {
+                    "provider_id": p.get("id") or p.get("provider_id"),
+                    "nombre": p.get("name") or p.get("full_name"),
+                }
+                for p in providers
+            ]
+
+            availability = await cliente_disponibilidad.check_availability(
+                req_id=f"search-{phone}",
                 service=service,
                 city=city,
-                need_summary=service_full,
-                providers=providers,
-                redis_client=cliente_redis,
+                candidates=candidatos,
+                redis_client=redis_client,
             )
             accepted = availability.get("accepted") or []
             logger.info(

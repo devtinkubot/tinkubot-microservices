@@ -1,6 +1,38 @@
  
 
 services:
+  # WA-Gateway Service - Go + whatsmeow (replaces wa-clientes and wa-proveedores)
+  wa-gateway:
+    build:
+      context: ./go-services/wa-gateway
+      dockerfile: Dockerfile
+    container_name: tinkubot-wa-gateway
+    ports:
+      - "${WA_GATEWAY_PORT:-7000}:${WA_GATEWAY_PORT:-7000}"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - GATEWAY_PORT=${WA_GATEWAY_PORT:-7000}
+      - RATE_LIMIT_MAX_PER_HOUR=${WA_RATE_LIMIT_MAX_PER_HOUR:-20}
+      - RATE_LIMIT_MAX_PER_24H=${WA_RATE_LIMIT_MAX_PER24H:-100}
+      - LOG_LEVEL=${WA_GATEWAY_LOG_LEVEL:-info}
+    networks:
+      - tinkubot-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/wa-gateway", "--healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
   # Frontend Service - Interfaz web para el usuario
   frontend:
     build:
@@ -20,15 +52,6 @@ services:
       - ADMIN_USER=${ADMIN_USER}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       - NODE_ENV=production
-    networks:
-      - tinkubot-network
-    restart: unless-stopped
-
-  mosquitto:
-    build: ./infrastructure-services/messaging-broker
-    container_name: tinkubot-mosquitto
-    ports:
-      - "1883:1883"
     networks:
       - tinkubot-network
     restart: unless-stopped
@@ -54,64 +77,10 @@ services:
       context: ./python-services/av-proveedores
       dockerfile: Dockerfile
     container_name: tinkubot-av-proveedores
-    depends_on:
-      - mosquitto
     environment:
-      - MQTT_HOST=mosquitto
-      - MQTT_PORT=1883
-      - MQTT_TEMA_PETICION=av-proveedores/solicitud
-      - MQTT_TEMA_RESPUESTA=av-proveedores/respuesta
       - AV_PROVEEDORES_PUERTO=${AV_PROVEEDORES_PUERTO:-8005}
-      - MQTT_USUARIO
-      - MQTT_PASSWORD
     ports:
       - "${AV_PROVEEDORES_PUERTO:-8005}:${AV_PROVEEDORES_PUERTO:-8005}"
-    networks:
-      - tinkubot-network
-    restart: unless-stopped
-
-  # WhatsApp Service - Bot Clientes (+593 99 882 3053)
-  wa-clientes:
-    build:
-      context: ./nodejs-services/wa-clientes
-      dockerfile: Dockerfile
-    container_name: tinkubot-wa-clientes
-    ports:
-      - "${CLIENTES_WHATSAPP_PORT:-5001}:${CLIENTES_WHATSAPP_PORT:-5001}"
-    environment:
-      # ACTUALIZADO: Usa el AI Service Clientes específico para esta instancia
-      - AI_SERVICE_CLIENTES_URL=${AI_SERVICE_CLIENTES_URL}
-      - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
-      - SUPABASE_BUCKET_NAME=${SUPABASE_BUCKET_NAME}
-      - CLIENTES_WHATSAPP_PORT=${CLIENTES_WHATSAPP_PORT}
-      - WHATSAPP_CLIENTES_PORT=${WHATSAPP_CLIENTES_PORT}
-      - CLIENTES_INSTANCE_ID=${CLIENTES_INSTANCE_ID}
-      - CLIENTES_INSTANCE_NAME=${CLIENTES_INSTANCE_NAME}
-      - NODE_ENV=production
-    networks:
-      - tinkubot-network
-    restart: unless-stopped
-
-  # WhatsApp Service - Bot Proveedores (segundo número)
-  wa-proveedores:
-    build:
-      context: ./nodejs-services/wa-proveedores
-      dockerfile: Dockerfile
-    container_name: tinkubot-wa-proveedores
-    ports:
-      - "${PROVEEDORES_WHATSAPP_PORT:-5002}:${PROVEEDORES_WHATSAPP_PORT:-5002}"
-    environment:
-      # ACTUALIZADO: Usa el AI Service Proveedores específico para esta instancia
-      - PROVEEDORES_AI_SERVICE_URL=${PROVEEDORES_AI_SERVICE_URL}
-      - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
-      - SUPABASE_BUCKET_NAME=${SUPABASE_BUCKET_NAME}
-      - PROVEEDORES_WHATSAPP_PORT=${PROVEEDORES_WHATSAPP_PORT}
-      - WHATSAPP_PROVEEDORES_PORT=${WHATSAPP_PROVEEDORES_PORT}
-      - PROVEEDORES_INSTANCE_ID=${PROVEEDORES_INSTANCE_ID}
-      - PROVEEDORES_INSTANCE_NAME=${PROVEEDORES_INSTANCE_NAME}
-      - NODE_ENV=production
     networks:
       - tinkubot-network
     restart: unless-stopped
@@ -135,23 +104,7 @@ services:
       - AI_SERVICE_CLIENTES_PORT=${AI_SERVICE_CLIENTES_PORT}
       - SERVER_HOST=${SERVER_HOST}
       - NODE_ENV=production
-      # MQTT Configuration
-      - MQTT_HOST=mosquitto
-      - MQTT_PORT=1883
-      - MQTT_USUARIO=${MQTT_USUARIO:-}
-      - MQTT_PASSWORD=${MQTT_PASSWORD:-}
-      - MQTT_PUBLISH_TIMEOUT=5
-      - MQTT_QOS=1
-      - MQTT_TEMA_SOLICITUD=av-proveedores/solicitud
-      - MQTT_TEMA_RESPUESTA=av-proveedores/respuesta
-      - AVAILABILITY_TIMEOUT_SECONDS=45
-      - AVAILABILITY_ACCEPT_GRACE_SECONDS=2.0
-      - LOG_SAMPLING_RATE=10
-      - AVAILABILITY_STATE_TTL_SECONDS=300
-      - AVAILABILITY_POLL_INTERVAL_SECONDS=1.5
     depends_on:
-      mosquitto:
-        condition: service_started
       redis:
         condition: service_healthy
     networks:

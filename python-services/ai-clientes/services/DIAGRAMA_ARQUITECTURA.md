@@ -13,7 +13,7 @@
 │  - Extracción de profesión/ubicación                            │
 │  - Handlers HTTP                                                 │
 │  - Configuración                                                 │
-│  - Coordinación MQTT                                             │
+│  - Coordinación de disponibilidad                                │
 │  - Scheduler                                                     │
 └─────────────────────────────────────────────────────────────────┘
 ```

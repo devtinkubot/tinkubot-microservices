@@ -1,5 +1,4 @@
 const axios = require('axios');
-const mqtt = require('mqtt');
 const { v4: uuidv4 } = require('uuid');
 
 const toPositiveInt = value => {
@@ -22,6 +21,11 @@ const supabaseProvidersBucket = (
 const supabaseRestBaseUrl = supabaseUrl
   ? `${supabaseUrl.replace(/\/$/, '')}/rest/v1`
   : null;
+
+const WA_GATEWAY_URL = process.env.WA_GATEWAY_URL || 'http://wa-gateway:7000';
+const WA_GATEWAY_SEND_PATH = process.env.WA_GATEWAY_SEND_PATH || '/send';
+const PROVEEDORES_ACCOUNT_ID =
+  process.env.PROVEEDORES_INSTANCE_ID || 'bot-proveedores';
 
 const bucketPattern = supabaseProvidersBucket.replace(
   /[.*+?^${}()|[\]\\]/g,
@@ -100,6 +104,7 @@ const withRequestId = (config, requestId) => {
 console.warn(
   `📦 Provider data source: Supabase REST (${supabaseProvidersTable})`
 );
+console.warn(`📡 WA-Gateway URL: ${WA_GATEWAY_URL}`);
 
 const limpiarTexto = valor => {
   if (typeof valor === 'string') {
@@ -147,77 +152,61 @@ const extraerUrlDocumento = valor => {
   return recopilar(valor) || recopilar(valor.data);
 };
 
-// --- MQTT para eventos de aprobación ---
-const mqttHost = process.env.MQTT_HOST || 'mosquitto';
-const mqttPort = toPositiveInt(process.env.MQTT_PORT) || 1883;
-const mqttUser = process.env.MQTT_USUARIO || process.env.MQTT_USER;
-const mqttPassword = process.env.MQTT_PASSWORD || process.env.MQTT_PASS;
-const mqttTopicProviderApproved =
-  process.env.MQTT_TEMA_PROVEEDOR_APROBADO || 'providers/approved';
-const mqttTopicProviderRejected =
-  process.env.MQTT_TEMA_PROVEEDOR_RECHAZADO || 'providers/rejected';
-
-const mqttOptions = {};
-if (mqttUser && mqttPassword) {
-  mqttOptions.username = mqttUser;
-  mqttOptions.password = mqttPassword;
-}
-
-let mqttClient = null;
-const initMqttClient = () => {
-  try {
-    const url = `mqtt://${mqttHost}:${mqttPort}`;
-    mqttClient = mqtt.connect(url, mqttOptions);
-    mqttClient.on('connect', () => {
-      console.warn(
-        `📡 MQTT conectado (${url}) tópico aprobación=${mqttTopicProviderApproved}`
-      );
-    });
-    mqttClient.on('error', err => {
-      console.error('❌ Error MQTT (bff):', err?.message || err);
-    });
-  } catch (err) {
-    console.error('❌ No se pudo inicializar MQTT en BFF:', err?.message || err);
+const construirMensajeAprobacion = nombre => {
+  const safeName = limpiarTexto(nombre);
+  if (safeName) {
+    return `✅ Hola ${safeName}, tu perfil en TinkuBot fue aprobado. Ya puedes responder solicitudes cuando te escribamos.`;
   }
+  return '✅ Tu perfil en TinkuBot fue aprobado. Ya puedes responder solicitudes cuando te escribamos.';
 };
 
-const publishProviderApproved = payload => {
-  if (!mqttClient || !mqttClient.connected) return false;
+const construirMensajeRechazo = (nombre, motivo) => {
+  const safeName = limpiarTexto(nombre);
+  const safeReason = limpiarTexto(motivo);
+  if (safeName && safeReason) {
+    return `❌ Hola ${safeName}, tu perfil en TinkuBot fue rechazado. Motivo: ${safeReason}. Puedes corregir tus datos y volver a postular.`;
+  }
+  if (safeName) {
+    return `❌ Hola ${safeName}, tu perfil en TinkuBot fue rechazado. Puedes corregir tus datos y volver a postular.`;
+  }
+  if (safeReason) {
+    return `❌ Tu perfil en TinkuBot fue rechazado. Motivo: ${safeReason}. Puedes corregir tus datos y volver a postular.`;
+  }
+  return '❌ Tu perfil en TinkuBot fue rechazado. Puedes corregir tus datos y volver a postular.';
+};
+
+const enviarNotificacionWhatsapp = async ({ to, message, requestId }) => {
+  if (!limpiarTexto(to)) {
+    console.warn('⚠️ Notificación WhatsApp omitida: teléfono vacío');
+    return false;
+  }
+  if (!limpiarTexto(message)) {
+    console.warn('⚠️ Notificación WhatsApp omitida: mensaje vacío');
+    return false;
+  }
+
   try {
-    const body = JSON.stringify({
-      approved_at: new Date().toISOString(),
-      ...payload
+    const payload = {
+      account_id: PROVEEDORES_ACCOUNT_ID,
+      to,
+      message
+    };
+    const headers = {};
+    if (requestId) headers['x-request-id'] = requestId;
+    await axios.post(`${WA_GATEWAY_URL}${WA_GATEWAY_SEND_PATH}`, payload, {
+      timeout: requestTimeoutMs,
+      headers
     });
-    mqttClient.publish(mqttTopicProviderApproved, body);
     return true;
   } catch (err) {
     console.error(
-      '❌ No se pudo publicar provider approved via MQTT:',
-      err?.message || err
+      '❌ Error enviando notificación WhatsApp via wa-gateway:',
+      err?.response?.data || err?.message || err
     );
     return false;
   }
 };
 
-const publishProviderRejected = payload => {
-  if (!mqttClient || !mqttClient.connected) return false;
-  try {
-    const body = JSON.stringify({
-      rejected_at: new Date().toISOString(),
-      ...payload
-    });
-    mqttClient.publish(mqttTopicProviderRejected, body);
-    return true;
-  } catch (err) {
-    console.error(
-      '❌ No se pudo publicar provider rejected via MQTT:',
-      err?.message || err
-    );
-    return false;
-  }
-};
-
-initMqttClient();
 
 const prepararUrlDocumento = (...valores) => {
   for (const valor of valores) {
@@ -525,11 +514,11 @@ async function aprobarProveedor(providerId, payload = {}, requestId = null) {
         ? 'Proveedor aprobado con observaciones.'
         : 'Proveedor aprobado correctamente.';
 
-    // Publicar evento de aprobación por MQTT para que wa-proveedores envíe el WhatsApp
-    publishProviderApproved({
-      provider_id: providerId,
-      phone: registro?.phone,
-      full_name: registro?.full_name,
+    const approvalMessage = construirMensajeAprobacion(registro?.full_name);
+    await enviarNotificacionWhatsapp({
+      to: registro?.phone,
+      message: approvalMessage,
+      requestId
     });
 
     return construirRespuestaAccion(providerId, 'approved', mensaje, registro);
@@ -569,11 +558,14 @@ async function rechazarProveedor(providerId, payload = {}, requestId = null) {
         ? 'Proveedor rechazado con observaciones.'
         : 'Proveedor rechazado correctamente.';
 
-    publishProviderRejected({
-      provider_id: providerId,
-      phone: registro?.phone,
-      full_name: registro?.full_name,
-      notes: payload.notes
+    const rejectionMessage = construirMensajeRechazo(
+      registro?.full_name,
+      payload.notes
+    );
+    await enviarNotificacionWhatsapp({
+      to: registro?.phone,
+      message: rejectionMessage,
+      requestId
     });
 
     return construirRespuestaAccion(providerId, 'rejected', mensaje, registro);

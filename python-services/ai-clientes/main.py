@@ -25,7 +25,7 @@ from config.configuracion import configuracion
 from infrastructure.persistencia.cliente_redis import cliente_redis as redis_client
 from infrastructure.clientes.busqueda import ClienteBusqueda
 from services.sesiones.gestor_sesiones import gestor_sesiones as session_manager
-from infrastructure.mqtt.coordinador_disponibilidad import CoordinadorDisponibilidad
+from infrastructure.http.cliente_disponibilidad import cliente_disponibilidad
 from services.orquestador_conversacion import OrquestadorConversacional
 from infrastructure.persistencia.repositorio_clientes import RepositorioClientesSupabase
 from infrastructure.persistencia.repositorio_flujo import RepositorioFlujoRedis
@@ -112,8 +112,8 @@ async def run_supabase(op, label: str = "supabase_op"):
             )
 
 
-# --- Coordinador de disponibilidad en vivo vía MQTT ---
-coordinador_disponibilidad = CoordinadorDisponibilidad()
+# --- Cliente de disponibilidad via HTTP ---
+# Ya no se necesita coordinador legacy; es un singleton importado.
 
 # ============================================================================
 # INICIALIZACIÓN DE SERVICIOS Y REPOSITORIOS
@@ -157,7 +157,7 @@ orquestador = OrquestadorConversacional(
     redis_client=redis_client,
     supabase=supabase,
     session_manager=session_manager,
-    coordinador_disponibilidad=coordinador_disponibilidad,
+    coordinador_disponibilidad=cliente_disponibilidad,
     buscador=buscador,
     validador=validador,
     expansor=expansor,
@@ -799,7 +799,7 @@ async def startup_event():
     """Inicializar conexiones al arrancar el servicio"""
     logger.info("🚀 Iniciando AI Service Clientes...")
     await redis_client.connect()
-    await coordinador_disponibilidad.start_listener()
+    # HTTP puro: no hay listeners adicionales.
 
     # Inyectar callbacks del orquestador
     # NOTA: Los callbacks deben inyectarse desde los servicios y repositorios correspondientes
@@ -822,7 +822,7 @@ async def startup_event():
     #     schedule_feedback_request=schedule_feedback_request,
     #     send_whatsapp_text=send_whatsapp_text,
     # )
-    logger.info("✅ AI Service Clientes listo")
+    logger.info("✅ AI Service Clientes listo (modo HTTP puro)")
 
 
 @app.on_event("shutdown")

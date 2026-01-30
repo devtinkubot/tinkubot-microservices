@@ -1,4 +1,4 @@
-"""Infrastructure layer - adaptadores externos (MQTT, bases de datos, etc.)"""
+"""Infrastructure layer - adaptadores externos (HTTP, bases de datos, etc.)"""
 from .persistencia import ClienteRedis, cliente_redis
 from .clientes import ClienteBusqueda, cliente_busqueda
 

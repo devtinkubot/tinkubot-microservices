@@ -1,5 +1,6 @@
 import { apiWhatsApp, type WhatsAppInstanceStatus } from '@tinkubot/api-client';
 import { Utils } from './utils';
+import QRCode from 'qrcode';
 
 type TipoMensaje = 'success' | 'error';
 
@@ -106,7 +107,22 @@ function actualizarVistaWhatsApp(servicio: string, datos?: WhatsAppInstanceStatu
   if (estado?.qr) {
     const qrImage = document.getElementById(`${servicio}-qr-img`) as HTMLImageElement | null;
     if (qrImage) {
-      qrImage.src = estado.qr;
+      // Generar QR code usando la librería qrcode
+      QRCode.toDataURL(estado.qr, {
+        width: 256,
+        margin: 2,
+        color: {
+          dark: '#000000',
+          light: '#FFFFFF'
+        }
+      })
+        .then((url: string) => {
+          qrImage.src = url;
+        })
+        .catch((error: Error) => {
+          console.error('Error generando QR:', error);
+          qrImage.alt = 'Error generando QR';
+        });
     }
   }
 

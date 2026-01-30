@@ -9,6 +9,7 @@ const fs = require('fs');
 const http = require('http');
 const https = require('https');
 const adminProvidersRouter = require('./routes/adminProviders');
+const session = require('express-session');
 const app = express();
 
 const ADMIN_USER = process.env.ADMIN_USER || 'hvillalba';
@@ -67,6 +68,9 @@ const PROVEEDORES_INSTANCE_ID =
   process.env.PROVEEDORES_INSTANCE_ID || 'bot-proveedores';
 const PROVEEDORES_INSTANCE_NAME =
   process.env.PROVEEDORES_INSTANCE_NAME || 'TinkuBot Proveedores';
+
+// WA-Gateway configuration
+const WA_GATEWAY_URL = process.env.WA_GATEWAY_URL || 'http://wa-gateway:7000';
 
 // Configuración de instancias
 const WHATSAPP_INSTANCES = [
@@ -151,7 +155,38 @@ app.use((req, res, next) => {
   });
   next();
 });
-app.use(basicAuth);
+
+// Configurar sesión
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'tinkubot-secret-key-2024',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: false, // true si usas HTTPS
+    maxAge: 24 * 60 * 60 * 1000, // 24 horas
+    httpOnly: true
+  }
+}));
+
+// Middleware de autenticación con sesiones
+const requireAuth = (req, res, next) => {
+  // Rutas públicas (sin autenticación)
+  const publicPaths = ['/health', '/login', '/api/login', '/api/logout', '/api/auth/status', '/qr'];
+  if (publicPaths.includes(req.path)) return next();
+
+  // Verificar si está autenticado
+  if (req.session && req.session.authenticated) return next();
+
+  // Si no está autenticado y es una ruta de API, retornar 401
+  if (req.path.startsWith('/api/')) {
+    return res.status(401).json({ error: 'Autenticación requerida' });
+  }
+
+  // Para rutas de página, redirigir a login
+  return res.redirect('/login');
+};
+
+app.use(requireAuth);
 if (fs.existsSync(dashboardDistPath)) {
   app.use(
     express.static(dashboardDistPath, {
@@ -184,16 +219,51 @@ app.get('/health', (req, res) => {
   });
 });
 
+// API de login
+app.post('/api/login', express.json(), (req, res) => {
+  const { username, password } = req.body;
+
+  // Verificar credenciales
+  if (username === ADMIN_USER && password === ADMIN_PASSWORD) {
+    req.session.authenticated = true;
+    req.session.username = username;
+    return res.json({ success: true, message: 'Login exitoso' });
+  }
+
+  return res.status(401).json({ success: false, message: 'Credenciales inválidas' });
+});
+
+// API de logout
+app.post('/api/logout', (req, res) => {
+  req.session.destroy((err) => {
+    if (err) {
+      console.error('Error al cerrar sesión:', err);
+      return res.status(500).json({ success: false, message: 'Error al cerrar sesión' });
+    }
+    res.clearCookie('connect.sid');
+    return res.json({ success: true, message: 'Sesión cerrada' });
+  });
+});
+
+// API para verificar autenticación
+app.get('/api/auth/status', (req, res) => {
+  res.json({
+    authenticated: !!(req.session && req.session.authenticated),
+    username: req.session ? req.session.username : null
+  });
+});
+
+// Página de login
+app.get('/login', (req, res) => {
+  res.sendFile(path.join(__dirname, 'login.html'));
+});
+
 // Rutas
 app.get('/', (req, res) => {
   if (existeCompilacionDashboard()) {
     return res.sendFile(path.join(dashboardDistPath, 'index.html'));
   }
   return res.sendFile(path.join(publicPath, 'admin-dashboard.html'));
-});
-
-app.get('/login.html', (req, res) => {
-  res.redirect('/');
 });
 
 // API para obtener estado de WhatsApp por instancia
@@ -360,6 +430,119 @@ app.get('/whatsapp-status', async (req, res) => {
     res.status(500).json({ error: 'Error al obtener estado de WhatsApp' });
   }
 });
+
+// ============================================================================
+// WA-Gateway API Proxy (replaces wa-clientes/wa-proveedores)
+// ============================================================================
+
+// Proxy for GET /accounts
+app.get('/api/accounts', async (req, res) => {
+  try {
+    const response = await axiosClient.get(`${WA_GATEWAY_URL}/accounts`);
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error al obtener cuentas de wa-gateway:', error);
+    res.status(500).json({ error: 'Error al obtener cuentas' });
+  }
+});
+
+// Proxy for GET /accounts/:id
+app.get('/api/accounts/:accountId', async (req, res) => {
+  try {
+    const { accountId } = req.params;
+    const response = await axiosClient.get(`${WA_GATEWAY_URL}/accounts/${accountId}`);
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error al obtener cuenta de wa-gateway:', error);
+    const status = error.response?.status || 500;
+    const payload = error.response?.data || { error: 'Error al obtener cuenta' };
+    res.status(status).json(payload);
+  }
+});
+
+// Proxy for GET /accounts/:id/qr
+app.get('/api/accounts/:accountId/qr', async (req, res) => {
+  try {
+    const { accountId } = req.params;
+    const response = await axiosClient.get(`${WA_GATEWAY_URL}/accounts/${accountId}/qr`);
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error al obtener QR de wa-gateway:', error);
+    const status = error.response?.status || 500;
+    const payload = error.response?.data || { error: 'Error al obtener QR' };
+    res.status(status).json(payload);
+  }
+});
+
+// Proxy for POST /accounts/:id/login
+app.post('/api/accounts/:accountId/login', async (req, res) => {
+  try {
+    const { accountId } = req.params;
+    const response = await axiosClient.post(
+      `${WA_GATEWAY_URL}/accounts/${accountId}/login`,
+      req.body
+    );
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error al iniciar sesión en wa-gateway:', error);
+    const status = error.response?.status || 500;
+    const payload = error.response?.data || { error: 'Error al iniciar sesión' };
+    res.status(status).json(payload);
+  }
+});
+
+// Proxy for POST /accounts/:id/logout
+app.post('/api/accounts/:accountId/logout', async (req, res) => {
+  try {
+    const { accountId } = req.params;
+    const response = await axiosClient.post(`${WA_GATEWAY_URL}/accounts/${accountId}/logout`);
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error al cerrar sesión en wa-gateway:', error);
+    const status = error.response?.status || 500;
+    const payload = error.response?.data || { error: 'Error al cerrar sesión' };
+    res.status(status).json(payload);
+  }
+});
+
+// Proxy for POST /send
+app.post('/api/send', async (req, res) => {
+  try {
+    const response = await axiosClient.post(`${WA_GATEWAY_URL}/send`, req.body);
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error al enviar mensaje via wa-gateway:', error);
+    const status = error.response?.status || 500;
+    const payload = error.response?.data || { error: 'Error al enviar mensaje' };
+    res.status(status).json(payload);
+  }
+});
+
+// Proxy for SSE /events/stream
+app.get('/api/events/stream', async (req, res) => {
+  try {
+    const response = await axiosClient.get(`${WA_GATEWAY_URL}/events/stream`, {
+      responseType: 'stream'
+    });
+
+    // Set SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    // Pipe events to client
+    response.data.pipe(res);
+  } catch (error) {
+    console.error('Error en SSE stream:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Error en stream de eventos' });
+    }
+  }
+});
+
+// ============================================================================
+// Legacy endpoints (deprecated - redirect to wa-gateway)
+// ============================================================================
 
 // Endpoint de health check
 app.get('/health', async (req, res) => {

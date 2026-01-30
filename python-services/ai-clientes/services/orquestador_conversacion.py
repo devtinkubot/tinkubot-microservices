@@ -308,7 +308,7 @@ class OrquestadorConversacional:
             redis_client: Cliente Redis para persistencia de flujo
             supabase: Cliente Supabase para datos de clientes
             session_manager: Gestor de sesiones para historial
-            coordinador_disponibilidad: Coordinador MQTT de disponibilidad
+            coordinador_disponibilidad: Coordinador de disponibilidad (HTTP)
             buscador: Servicio BuscadorProveedores (opcional, para backward compatibility)
             validador: Servicio ValidadorProveedoresIA (opcional, para backward compatibility)
             expansor: Servicio ExpansorSinonimos (opcional, para backward compatibility)
@@ -757,12 +757,20 @@ class OrquestadorConversacional:
                     f"servicio='{service_text}', ciudad='{city}'"
                 )
 
-                availability_result = await self.coordinador_disponibilidad.request_and_wait(
-                    phone=phone,
+                # Preparar candidatos para el cliente HTTP
+                candidatos = [
+                    {
+                        "provider_id": p.get("id") or p.get("provider_id"),
+                        "nombre": p.get("name") or p.get("full_name"),
+                    }
+                    for p in providers_for_check
+                ]
+
+                availability_result = await self.coordinador_disponibilidad.check_availability(
+                    req_id=f"search-{phone}",
                     service=service_text,
                     city=city,
-                    need_summary=service_full,
-                    providers=providers_for_check,
+                    candidates=candidatos,
                     redis_client=self.redis_client,
                 )
                 accepted = availability_result.get("accepted") or []

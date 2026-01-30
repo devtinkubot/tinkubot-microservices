@@ -12,6 +12,7 @@
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
       rel="stylesheet"
     />
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
     <style>
       :root {
         --primary-color: #6366f1;
@@ -238,13 +239,20 @@
                 <p class="text-muted mb-0">Gestiona el estado del sistema TinkuBot</p>
               </div>
               <div>
-                <span class="badge bg-primary me-2">Administrador</span>
-                <button class="refresh-btn" onclick="actualizarTodosDatos()">
+                <span class="badge bg-primary me-2" id="userBadge">
+                  <i class="fas fa-user me-1"></i>
+                  <span id="usernameDisplay">Cargando...</span>
+                </span>
+                <button class="refresh-btn me-2" onclick="actualizarTodosDatos()">
                   <i class="fas fa-sync-alt me-1"></i>
                   Actualizar
                   <div class="spinner-border spinner-border-sm loading-spinner" role="status">
                     <span class="visually-hidden">Cargando...</span>
                   </div>
+                </button>
+                <button class="btn btn-outline-danger btn-sm" onclick="cerrarSesion()">
+                  <i class="fas fa-sign-out-alt me-1"></i>
+                  Salir
                 </button>
               </div>
             </div>
@@ -433,10 +441,12 @@
       })();
 
       /**
-       * Módulo de gestión de WhatsApp
+       * Módulo de gestión de WhatsApp (WA-Gateway)
        */
       TinkuBot.WhatsAppManager = (function() {
         'use strict';
+
+        let eventSource = null;
 
         /**
          * Establece estado de botón de actualización
@@ -472,6 +482,43 @@
         }
 
         /**
+         * Conecta al stream de eventos SSE de wa-gateway
+         */
+        function conectarEventStream() {
+          if (eventSource) {
+            eventSource.close();
+          }
+
+          eventSource = new EventSource('/api/events/stream');
+
+          eventSource.addEventListener('qr_ready', (e) => {
+            const data = JSON.parse(e.data);
+            console.log('QR listo para:', data.account_id);
+            cargarEstadoWhatsApp();
+          });
+
+          eventSource.addEventListener('connected', (e) => {
+            const data = JSON.parse(e.data);
+            console.log('Conectado:', data.account_id);
+            cargarEstadoWhatsApp();
+          });
+
+          eventSource.addEventListener('disconnected', (e) => {
+            const data = JSON.parse(e.data);
+            console.log('Desconectado:', data.account_id, data.reason);
+            cargarEstadoWhatsApp();
+          });
+
+          eventSource.addEventListener('error', (e) => {
+            console.error('Error en SSE:', e);
+            // Reconnect after 5 seconds
+            setTimeout(conectarEventStream, 5000);
+          });
+
+          console.log('SSE conectado');
+        }
+
+        /**
          * Regenera conexión de WhatsApp (genera nuevo QR)
          */
         async function regenerarConexionWhatsApp(instanceId) {
@@ -487,9 +534,11 @@
           }
 
           try {
-            // Usar endpoint del backend para regenerar conexión
-            const response = await fetch(`/api/whatsapp/${instanceId}/refresh`, {
+            // Usar endpoint de wa-gateway para regenerar conexión
+            const response = await fetch(`/api/accounts/${instanceId}/login`, {
               method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ force: true })
             });
             const payload = await response.json().catch(() => ({}));
 
@@ -497,12 +546,12 @@
               throw new Error(payload.error || payload.message || 'No se pudo generar el nuevo QR.');
             }
 
-            await cargarEstadoWhatsApp();
             mostrarMensajeEstado(
               instanceId,
               payload.message || 'Escanea el nuevo código QR generado.',
               'success'
             );
+            // NO hacer polling manual - SSE notificará cuando esté listo
           } catch (error) {
             console.error('Error al generar QR:', error);
             mostrarMensajeEstado(
@@ -516,17 +565,28 @@
         }
 
         /**
-         * Carga estado actual de conexiones WhatsApp
+         * Carga estado actual de conexiones WhatsApp desde wa-gateway
          */
         async function cargarEstadoWhatsApp() {
           try {
-            // Usar API Gateway del backend para obtener estado de ambos servicios
-            const response = await fetch('/whatsapp-status');
-            const data = await response.json();
+            // Usar wa-gateway API para obtener estado de todas las cuentas
+            const response = await fetch('/api/accounts');
+            const accounts = await response.json();
+
+            // Convertir array de cuentas al formato esperado
+            const statusMap = {};
+            accounts.forEach(account => {
+              statusMap[account.account_id] = {
+                connected: account.connection_status === 'connected',
+                qr: account.qr_code ? account.qr_code : null,
+                phone: account.phone_number || null,
+                battery: null
+              };
+            });
 
             // Actualizar visualización con datos del backend
-            actualizarVisualizacionWhatsApp('bot-clientes', data['bot-clientes']);
-            actualizarVisualizacionWhatsApp('bot-proveedores', data['bot-proveedores']);
+            actualizarVisualizacionWhatsApp('bot-clientes', statusMap['bot-clientes']);
+            actualizarVisualizacionWhatsApp('bot-proveedores', statusMap['bot-proveedores']);
           } catch (error) {
             console.error('Error al cargar estado de WhatsApp:', error);
             mostrarMensajeEstado(
@@ -556,7 +616,7 @@
             statusIndicator.className = 'status-indicator connected';
             infoDiv.innerHTML = `
               <p class="text-success mb-0"><strong>Conectado</strong></p>
-              <p class="text-muted small mb-0">Listo para enviar mensajes</p>
+              <p class="text-muted small mb-0">${statusData.phone || 'Listo para enviar mensajes'}</p>
             `;
             qrDiv.style.display = 'none';
             if (messageDiv) {
@@ -572,7 +632,23 @@
             `;
             qrDiv.style.display = 'block';
             if (statusData.qr) {
-              document.getElementById(`${service}-qr-img`).src = statusData.qr;
+              // Generar QR code usando la librería qrcode.js
+              const qrImg = document.getElementById(`${service}-qr-img`);
+              QRCode.toDataURL(statusData.qr, {
+                width: 256,
+                margin: 2,
+                color: {
+                  dark: '#000000',
+                  light: '#FFFFFF'
+                }
+              }, function(error, url) {
+                if (error) {
+                  console.error('Error generando QR:', error);
+                  qrImg.alt = 'Error generando QR';
+                } else {
+                  qrImg.src = url;
+                }
+              });
             }
             if (messageDiv) {
               messageDiv.style.display = 'none';
@@ -606,6 +682,7 @@
         return {
           iniciar: function() {
             // Inicialización del módulo
+            conectarEventStream();
           },
 
           // Funciones públicas para compatibilidad con HTML
@@ -620,14 +697,66 @@
        * Punto de entrada principal - Inicialización de la aplicación
        */
       document.addEventListener('DOMContentLoaded', () => {
-        // Inicializar módulos
-        TinkuBot.Navigation.iniciar();
-        TinkuBot.WhatsAppManager.iniciar();
+        // Verificar autenticación primero
+        verificarAutenticacion().then(authenticated => {
+          if (!authenticated) {
+            window.location.href = '/login';
+            return;
+          }
 
-        // Cargar datos iniciales
-        TinkuBot.WhatsAppManager.cargarEstadoWhatsApp();
-        TinkuBot.WhatsAppManager.actualizarHoraUltimaActualizacion();
+          // Inicializar módulos
+          TinkuBot.Navigation.iniciar();
+          TinkuBot.WhatsAppManager.iniciar();
+
+          // Cargar datos iniciales
+          TinkuBot.WhatsAppManager.cargarEstadoWhatsApp();
+          TinkuBot.WhatsAppManager.actualizarHoraUltimaActualizacion();
+        });
       });
+
+      /**
+       * Verifica si el usuario está autenticado
+       */
+      async function verificarAutenticacion() {
+        try {
+          const response = await fetch('/api/auth/status');
+          const data = await response.json();
+
+          if (data.authenticated && data.username) {
+            document.getElementById('usernameDisplay').textContent = data.username;
+            return true;
+          }
+          return false;
+        } catch (error) {
+          console.error('Error verificando autenticación:', error);
+          return false;
+        }
+      }
+
+      /**
+       * Cierra la sesión del usuario
+       */
+      async function cerrarSesion() {
+        if (!confirm('¿Estás seguro de que deseas cerrar la sesión?')) {
+          return;
+        }
+
+        try {
+          const response = await fetch('/api/logout', {
+            method: 'POST'
+          });
+          const data = await response.json();
+
+          if (data.success) {
+            window.location.href = '/login';
+          } else {
+            alert('Error al cerrar sesión: ' + (data.message || 'Error desconocido'));
+          }
+        } catch (error) {
+          console.error('Error al cerrar sesión:', error);
+          alert('Error de conexión al cerrar sesión');
+        }
+      }
 
       /**
        * Funciones globales para compatibilidad con eventos onclick del HTML
