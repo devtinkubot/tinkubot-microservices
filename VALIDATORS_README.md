@@ -21,7 +21,7 @@ Este directorio contiene scripts de validación de código para asegurar calidad
 ## 📋 Validadores por Servicio
 
 ### 1. Python (`validate_quality.py`)
-**Servicios:** ai-clientes, ai-proveedores, av-proveedores, search-token
+**Servicios:** ai-clientes, ai-proveedores, search-token
 
 **Validaciones:**
 - ✅ Formato de código (Black)

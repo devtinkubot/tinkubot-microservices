@@ -31,16 +31,19 @@ SUPABASE_PROVIDERS_BUCKET = (
 )
 
 async def subir_imagen_proveedor(
-    provider_id: str, file_data: bytes, file_type: str, file_extension: str = "jpg"
+    proveedor_id: str,
+    datos_archivo: bytes,
+    tipo_archivo: str,
+    extension_archivo: str = "jpg",
 ) -> Optional[str]:
     """
     Subir imagen de proveedor a Supabase Storage
 
     Args:
-        provider_id: UUID del proveedor
-        file_data: Bytes de la imagen
-        file_type: 'dni-front', 'dni-back', 'face'
-        file_extension: Extensión del archivo
+        proveedor_id: UUID del proveedor
+        datos_archivo: Bytes de la imagen
+        tipo_archivo: 'dni-front', 'dni-back', 'face'
+        extension_archivo: Extensión del archivo
 
     Returns:
         URL pública de la imagen o None si hay error
@@ -57,14 +60,14 @@ async def subir_imagen_proveedor(
             "face": "faces",
         }
 
-        folder = folder_map.get(file_type)
+        folder = folder_map.get(tipo_archivo)
         if not folder:
-            raise ValueError(f"Tipo de archivo no válido: {file_type}")
+            raise ValueError(f"Tipo de archivo no válido: {tipo_archivo}")
 
         # Construir ruta del archivo
-        file_path = f"{folder}/{provider_id}.{file_extension}"
+        ruta_archivo = f"{folder}/{proveedor_id}.{extension_archivo}"
 
-        logger.info(f"📤 Subiendo imagen a Supabase Storage: {file_path}")
+        logger.info(f"📤 Subiendo imagen a Supabase Storage: {ruta_archivo}")
 
         if not SUPABASE_PROVIDERS_BUCKET:
             logger.error("❌ Bucket de almacenamiento para proveedores no configurado")
@@ -73,51 +76,51 @@ async def subir_imagen_proveedor(
         def _upload():
             storage_bucket = supabase.storage.from_(SUPABASE_PROVIDERS_BUCKET)
             try:
-                storage_bucket.remove([file_path])
+                storage_bucket.remove([ruta_archivo])
             except Exception as remove_error:
                 logger.debug(
-                    f"No se pudo eliminar archivo previo {file_path}: {remove_error}"
+                    f"No se pudo eliminar archivo previo {ruta_archivo}: {remove_error}"
                 )
 
             result = storage_bucket.upload(
-                path=file_path,
-                file=file_data,
+                path=ruta_archivo,
+                file=datos_archivo,
                 file_options={"content-type": "image/jpeg"},
             )
 
-            upload_error = None
+            error_carga = None
             if isinstance(result, dict):
-                upload_error = result.get("error")
+                error_carga = result.get("error")
             else:
-                upload_error = getattr(result, "error", None)
+                error_carga = getattr(result, "error", None)
 
             if (
-                upload_error is None
+                error_carga is None
                 and hasattr(result, "status_code")
                 and getattr(result, "status_code") is not None
             ):
-                status_code = getattr(result, "status_code")
-                if isinstance(status_code, int) and status_code >= 400:
-                    upload_error = f"HTTP_{status_code}"
+                codigo_estado = getattr(result, "status_code")
+                if isinstance(codigo_estado, int) and codigo_estado >= 400:
+                    error_carga = f"HTTP_{codigo_estado}"
 
-            if upload_error:
+            if error_carga:
                 logger.error(
                     "❌ Error reportado por Supabase Storage al subir %s: %s",
-                    file_path,
-                    upload_error,
+                    ruta_archivo,
+                    error_carga,
                 )
                 return None
 
-            raw_public_url = supabase.storage.from_(SUPABASE_PROVIDERS_BUCKET).get_public_url(
-                file_path
+            url_publica_cruda = supabase.storage.from_(SUPABASE_PROVIDERS_BUCKET).get_public_url(
+                ruta_archivo
             )
-            return raw_public_url
+            return url_publica_cruda
 
         raw_public_url = await run_supabase(_upload, label="storage.upload")
-        public_url = _coerce_storage_string(raw_public_url) or file_path
-        if public_url:
-            logger.info(f"✅ Imagen subida exitosamente: {public_url}")
-        return public_url
+        url_publica = _coerce_storage_string(raw_public_url) or ruta_archivo
+        if url_publica:
+            logger.info(f"✅ Imagen subida exitosamente: {url_publica}")
+        return url_publica
 
     except Exception as e:
         logger.error(f"❌ Error subiendo imagen a Storage: {e}")
@@ -125,7 +128,7 @@ async def subir_imagen_proveedor(
 
 
 async def actualizar_imagenes_proveedor(
-    provider_id: str,
+    proveedor_id: str,
     dni_front_url: Optional[str] = None,
     dni_back_url: Optional[str] = None,
     face_url: Optional[str] = None,
@@ -134,7 +137,7 @@ async def actualizar_imagenes_proveedor(
     Actualizar URLs de imágenes en la tabla providers
 
     Args:
-        provider_id: UUID del proveedor
+        proveedor_id: UUID del proveedor
         dni_front_url: URL de foto frontal del DNI
         dni_back_url: URL de foto posterior del DNI
         face_url: URL de foto de rostro
@@ -147,51 +150,51 @@ async def actualizar_imagenes_proveedor(
         return False
 
     try:
-        update_data = {}
+        datos_actualizacion = {}
 
-        front_url = _coerce_storage_string(dni_front_url)
-        back_url = _coerce_storage_string(dni_back_url)
-        face_clean_url = _coerce_storage_string(face_url)
+        url_frontal = _coerce_storage_string(dni_front_url)
+        url_reverso = _coerce_storage_string(dni_back_url)
+        url_rostro = _coerce_storage_string(face_url)
 
-        if front_url:
-            update_data["dni_front_photo_url"] = front_url
-        if back_url:
-            update_data["dni_back_photo_url"] = back_url
-        if face_clean_url:
-            update_data["face_photo_url"] = face_clean_url
+        if url_frontal:
+            datos_actualizacion["dni_front_photo_url"] = url_frontal
+        if url_reverso:
+            datos_actualizacion["dni_back_photo_url"] = url_reverso
+        if url_rostro:
+            datos_actualizacion["face_photo_url"] = url_rostro
 
-        if update_data:
+        if datos_actualizacion:
             logger.info(
                 "🗂️ Campos a actualizar para %s: %s",
-                provider_id,
-                {k: bool(v) for k, v in update_data.items()},
+                proveedor_id,
+                {k: bool(v) for k, v in datos_actualizacion.items()},
             )
-            update_data["updated_at"] = datetime.now().isoformat()
+            datos_actualizacion["updated_at"] = datetime.now().isoformat()
 
-            result = await run_supabase(
+            resultado = await run_supabase(
                 lambda: supabase.table("providers")
-                .update(update_data)
-                .eq("id", provider_id)
+                .update(datos_actualizacion)
+                .eq("id", proveedor_id)
                 .execute(),
                 label="providers.update_images",
             )
 
-            if result.data:
+            if resultado.data:
                 logger.info(
                     "✅ Imágenes actualizadas para proveedor %s (filas=%s)",
-                    provider_id,
-                    len(result.data),
+                    proveedor_id,
+                    len(resultado.data),
                 )
                 return True
             else:
                 logger.error(
-                    f"❌ Error actualizando imágenes para proveedor {provider_id}"
+                    f"❌ Error actualizando imágenes para proveedor {proveedor_id}"
                 )
                 return False
 
         logger.warning(
             "⚠️ No hay datos de documentos para actualizar en %s (todos vacíos)",
-            provider_id,
+            proveedor_id,
         )
         return True
 
@@ -200,13 +203,15 @@ async def actualizar_imagenes_proveedor(
         return False
 
 
-async def procesar_imagen_base64(base64_data: str, file_type: str) -> Optional[bytes]:
+async def procesar_imagen_base64(
+    datos_base64: str, tipo_archivo: str
+) -> Optional[bytes]:
     """
     Procesar imagen en formato base64 y convertir a bytes
 
     Args:
-        base64_data: Datos base64 de la imagen
-        file_type: Tipo de archivo para determinar el formato
+        datos_base64: Datos base64 de la imagen
+        tipo_archivo: Tipo de archivo para determinar el formato
 
     Returns:
         Bytes de la imagen o None si hay error
@@ -215,26 +220,28 @@ async def procesar_imagen_base64(base64_data: str, file_type: str) -> Optional[b
         import base64
 
         # Limpiar datos base64 (eliminar header si existe)
-        if base64_data.startswith("data:image/"):
-            base64_data = base64_data.split(",")[1]
+        if datos_base64.startswith("data:image/"):
+            datos_base64 = datos_base64.split(",")[1]
 
         # Decodificar a bytes
-        image_bytes = base64.b64decode(base64_data)
+        bytes_imagen = base64.b64decode(datos_base64)
 
-        logger.info(f"✅ Imagen procesada ({file_type}): {len(image_bytes)} bytes")
-        return image_bytes
+        logger.info(f"✅ Imagen procesada ({tipo_archivo}): {len(bytes_imagen)} bytes")
+        return bytes_imagen
 
     except Exception as e:
         logger.error(f"❌ Error procesando imagen base64: {e}")
         return None
 
 
-async def obtener_urls_imagenes_proveedor(provider_id: str) -> Dict[str, Optional[str]]:
+async def obtener_urls_imagenes_proveedor(
+    proveedor_id: str,
+) -> Dict[str, Optional[str]]:
     """
     Obtener URLs de todas las imágenes de un proveedor
 
     Args:
-        provider_id: UUID del proveedor
+        proveedor_id: UUID del proveedor
 
     Returns:
         Diccionario con URLs de imágenes
@@ -243,20 +250,20 @@ async def obtener_urls_imagenes_proveedor(provider_id: str) -> Dict[str, Optiona
         return {}
 
     try:
-        result = await run_supabase(
+        resultado = await run_supabase(
             lambda: supabase.table("providers")
             .select("dni_front_photo_url, dni_back_photo_url, face_photo_url")
-            .eq("id", provider_id)
+            .eq("id", proveedor_id)
             .limit(1)
             .execute(),
             label="providers.images_by_id",
         )
 
-        if result.data:
+        if resultado.data:
             return {
-                "dni_front": result.data[0].get("dni_front_photo_url"),
-                "dni_back": result.data[0].get("dni_back_photo_url"),
-                "face": result.data[0].get("face_photo_url"),
+                "dni_front": resultado.data[0].get("dni_front_photo_url"),
+                "dni_back": resultado.data[0].get("dni_back_photo_url"),
+                "face": resultado.data[0].get("face_photo_url"),
             }
         else:
             return {}
@@ -266,62 +273,64 @@ async def obtener_urls_imagenes_proveedor(provider_id: str) -> Dict[str, Optiona
         return {}
 
 
-async def subir_medios_identidad(provider_id: str, flow: Dict[str, Any]) -> None:
+async def subir_medios_identidad(
+    proveedor_id: str,
+    flujo: Dict[str, Any],
+) -> None:
     if not supabase:
         return
 
-    uploads: Dict[str, Optional[str]] = {
+    subidas: Dict[str, Optional[str]] = {
         "front": None,
         "back": None,
         "face": None,
     }
 
-    mapping = [
+    mapeo = [
         ("dni_front_image", "dni-front", "front"),
         ("dni_back_image", "dni-back", "back"),
         ("face_image", "face", "face"),
     ]
 
-    for key, file_type, dest in mapping:
-        base64_data = flow.get(key)
-        if not base64_data:
+    for clave, tipo_archivo, destino in mapeo:
+        datos_base64 = flujo.get(clave)
+        if not datos_base64:
             continue
-        image_bytes = await procesar_imagen_base64(base64_data, file_type)
-        if not image_bytes:
+        bytes_imagen = await procesar_imagen_base64(datos_base64, tipo_archivo)
+        if not bytes_imagen:
             continue
         try:
             url = await subir_imagen_proveedor(
-                provider_id, image_bytes, file_type, "jpg"
+                proveedor_id, bytes_imagen, tipo_archivo, "jpg"
             )
         except Exception as exc:
             logger.error(
-                "❌ No se pudo subir imagen %s para %s: %s", key, provider_id, exc
+                "❌ No se pudo subir imagen %s para %s: %s", clave, proveedor_id, exc
             )
             url = None
         if url:
-            uploads[dest] = url
+            subidas[destino] = url
             logger.info(
                 "📤 Documento %s almacenado para %s -> %s",
-                file_type,
-                provider_id,
+                tipo_archivo,
+                proveedor_id,
                 url,
             )
 
-    if any(uploads.values()):
+    if any(subidas.values()):
         logger.info(
             "📝 Actualizando documentos en tabla para %s (frente=%s, reverso=%s, rostro=%s)",
-            provider_id,
-            bool(uploads.get("front")),
-            bool(uploads.get("back")),
-            bool(uploads.get("face")),
+            proveedor_id,
+            bool(subidas.get("front")),
+            bool(subidas.get("back")),
+            bool(subidas.get("face")),
         )
         await actualizar_imagenes_proveedor(
-            provider_id,
-            uploads.get("front"),
-            uploads.get("back"),
-            uploads.get("face"),
+            proveedor_id,
+            subidas.get("front"),
+            subidas.get("back"),
+            subidas.get("face"),
         )
     else:
-        logger.warning("⚠️ No se subieron documentos válidos para %s", provider_id)
-
+        logger.warning("⚠️ No se subieron documentos válidos para %s", proveedor_id)
 

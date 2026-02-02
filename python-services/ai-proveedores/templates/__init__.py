@@ -8,23 +8,23 @@ from templates.interfaz.componentes import pie_instrucciones_respuesta_numerica
 
 # ==================== DOMINIO: CONSENTIMIENTO ====================
 from templates.consentimiento import (
-    CONSENT_OPTIONS,
-    CONSENT_PROMPT,
-    CONSENT_SCOPE_BLOCK,
-    consent_acknowledged_message,
-    consent_declined_message,
-    consent_options_block,
-    consent_prompt_messages,
+    OPCIONES_CONSENTIMIENTO,
+    PROMPT_CONSENTIMIENTO,
+    BLOQUE_ALCANCE_CONSENTIMIENTO,
+    mensaje_consentimiento_aceptado,
+    mensaje_consentimiento_rechazado,
+    bloque_opciones_consentimiento,
+    mensajes_prompt_consentimiento,
 )
 
 # ==================== DOMINIO: INTERFAZ - MENÚS ====================
 from templates.interfaz import (
-    PROVIDER_MAIN_MENU,
-    PROVIDER_POST_REGISTRATION_MENU,
-    provider_main_menu_message,
-    provider_post_registration_menu_message,
-    provider_services_menu_message,
-    informar_cierre_session,
+    MENU_PRINCIPAL_PROVEEDOR,
+    MENU_POST_REGISTRO_PROVEEDOR,
+    mensaje_menu_principal_proveedor,
+    mensaje_menu_post_registro_proveedor,
+    mensaje_menu_servicios_proveedor,
+    informar_cierre_sesion,
     error_opcion_no_reconocida,
     solicitar_selfie_actualizacion,
     solicitar_selfie_requerida,
@@ -47,9 +47,9 @@ from templates.interfaz import (
 
 # ==================== DOMINIO: REGISTRO ====================
 from templates.registro import (
-    GUIDANCE_MESSAGE,
-    REGISTRATION_START_PROMPT,
-    provider_guidance_message,
+    MENSAJE_GUIA,
+    PROMPT_INICIO_REGISTRO,
+    mensaje_guia_proveedor,
     preguntar_correo_opcional,
     preguntar_actualizar_ciudad,
     solicitar_foto_dni_frontal,
@@ -69,13 +69,13 @@ from templates.sesion import (
 
 # ==================== DOMINIO: VERIFICACIÓN ====================
 from templates.verificacion import (
-    provider_under_review_message,
-    provider_verified_message,
+    mensaje_proveedor_en_revision,
+    mensaje_proveedor_verificado,
 )
 
 # Compatibilidad con prompts.py - re-exportar con nombres originales
-CONSENT_FOOTER = pie_instrucciones_respuesta_numerica
-CONSENT_DECLINED_MESSAGE = (
+PIE_CONSENTIMIENTO = pie_instrucciones_respuesta_numerica
+MENSAJE_CONSENTIMIENTO_RECHAZADO = (
     "Entendido. Sin tu consentimiento no puedo registrar tu perfil ni compartir tus datos.\n\n"
     'Si cambias de opinión más adelante, escribe "registro" y continuamos desde aquí. '
     "Gracias por tu tiempo."
@@ -84,19 +84,19 @@ CONSENT_DECLINED_MESSAGE = (
 __all__ = [
     # Comunes
     "pie_instrucciones_respuesta_numerica",
-    "CONSENT_FOOTER",
+    "PIE_CONSENTIMIENTO",
     # Consentimiento
-    "CONSENT_PROMPT",
-    "CONSENT_SCOPE_BLOCK",
-    "CONSENT_OPTIONS",
-    "consent_options_block",
-    "consent_prompt_messages",
-    "consent_acknowledged_message",
-    "consent_declined_message",
+    "PROMPT_CONSENTIMIENTO",
+    "BLOQUE_ALCANCE_CONSENTIMIENTO",
+    "OPCIONES_CONSENTIMIENTO",
+    "bloque_opciones_consentimiento",
+    "mensajes_prompt_consentimiento",
+    "mensaje_consentimiento_aceptado",
+    "mensaje_consentimiento_rechazado",
     # Registro
-    "REGISTRATION_START_PROMPT",
-    "GUIDANCE_MESSAGE",
-    "provider_guidance_message",
+    "PROMPT_INICIO_REGISTRO",
+    "MENSAJE_GUIA",
+    "mensaje_guia_proveedor",
     "preguntar_correo_opcional",
     "preguntar_actualizar_ciudad",
     "solicitar_foto_dni_frontal",
@@ -106,13 +106,13 @@ __all__ = [
     "solicitar_selfie_requerida_registro",
     "informar_datos_recibidos",
     # Menús
-    "PROVIDER_MAIN_MENU",
-    "PROVIDER_POST_REGISTRATION_MENU",
-    "provider_main_menu_message",
-    "provider_post_registration_menu_message",
-    "provider_services_menu_message",
+    "MENU_PRINCIPAL_PROVEEDOR",
+    "MENU_POST_REGISTRO_PROVEEDOR",
+    "mensaje_menu_principal_proveedor",
+    "mensaje_menu_post_registro_proveedor",
+    "mensaje_menu_servicios_proveedor",
     # Interfaz - mensajes comunes
-    "informar_cierre_session",
+    "informar_cierre_sesion",
     "error_opcion_no_reconocida",
     # Interfaz - actualización de perfil
     "solicitar_selfie_actualizacion",
@@ -134,8 +134,8 @@ __all__ = [
     "error_eliminar_servicio",
     "confirmar_servicio_eliminado",
     # Verificación
-    "provider_under_review_message",
-    "provider_verified_message",
+    "mensaje_proveedor_en_revision",
+    "mensaje_proveedor_verificado",
     # Sesión
     "informar_reinicio_conversacion",
     "informar_timeout_inactividad",

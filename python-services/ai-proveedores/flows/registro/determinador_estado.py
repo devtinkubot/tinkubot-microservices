@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional
 logger = logging.getLogger(__name__)
 
 
-def determinar_estado_registro(provider_profile: Optional[Dict[str, Any]]) -> bool:
+def determinar_estado_registro(perfil_proveedor: Optional[Dict[str, Any]]) -> bool:
     """
     Determinar si el proveedor está COMPLETAMENTE registrado (True) o es nuevo (False).
 
@@ -21,14 +21,14 @@ def determinar_estado_registro(provider_profile: Optional[Dict[str, Any]]) -> bo
     - Nombre completo
 
     Args:
-        provider_profile: Diccionario con el perfil del proveedor
+        perfil_proveedor: Diccionario con el perfil del proveedor
 
     Returns:
         True si el proveedor está completamente registrado, False en caso contrario
     """
     return bool(
-        provider_profile
-        and provider_profile.get("id")
-        and provider_profile.get("full_name")  # Verificar datos completos
+        perfil_proveedor
+        and perfil_proveedor.get("id")
+        and perfil_proveedor.get("full_name")  # Verificar datos completos
         # Fase 4: Eliminada verificación de profession
     )

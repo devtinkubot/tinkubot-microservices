@@ -1,9 +1,9 @@
 """Mensajes relacionados con el flujo de registro de proveedores."""
 
 from .pasos_registro import (
-    REGISTRATION_START_PROMPT,
-    GUIDANCE_MESSAGE,
-    provider_guidance_message,
+    PROMPT_INICIO_REGISTRO,
+    MENSAJE_GUIA,
+    mensaje_guia_proveedor,
     preguntar_correo_opcional,
     preguntar_actualizar_ciudad,
 )
@@ -22,9 +22,9 @@ from .confirmacion import (
 
 __all__ = [
     # Pasos de registro
-    "REGISTRATION_START_PROMPT",
-    "GUIDANCE_MESSAGE",
-    "provider_guidance_message",
+    "PROMPT_INICIO_REGISTRO",
+    "MENSAJE_GUIA",
+    "mensaje_guia_proveedor",
     "preguntar_correo_opcional",
     "preguntar_actualizar_ciudad",
     # Documentación

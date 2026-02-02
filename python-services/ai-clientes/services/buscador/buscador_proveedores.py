@@ -16,20 +16,20 @@ class BuscadorProveedores:
 
     def __init__(
         self,
-        search_client: ClienteBusqueda,
-        ai_validator: 'IValidadorIA',
+        cliente_busqueda: ClienteBusqueda,
+        validador_ia: 'IValidadorIA',
         logger: logging.Logger,
     ):
         """
         Inicializar el servicio de búsqueda.
 
         Args:
-            search_client: Cliente para Search Service
-            ai_validator: Servicio de validación con IA
+            cliente_busqueda: Cliente para Search Service
+            validador_ia: Servicio de validación con IA
             logger: Logger para trazabilidad
         """
-        self.search_client = search_client
-        self.ai_validator = ai_validator
+        self.cliente_busqueda = cliente_busqueda
+        self.validador_ia = validador_ia
         self.logger = logger
 
     async def buscar(
@@ -63,62 +63,62 @@ class BuscadorProveedores:
         # Usar términos expandidos por IA si están disponibles
         if terminos_expandidos and len(terminos_expandidos) > 1:
             # Usar términos expandidos por IA
-            terms_joined = " ".join(terminos_expandidos)
-            query = f"{terms_joined} en {ciudad}"
+            terminos_unidos = " ".join(terminos_expandidos)
+            consulta = f"{terminos_unidos} en {ciudad}"
             self.logger.info(
                 f"🔍 Búsqueda con términos expandidos ({len(terminos_expandidos)} términos): "
                 f"profession='{profesion}', location='{ciudad}'"
             )
         else:
             # Comportamiento original (backward compatible)
-            query = f"{profesion} en {ciudad}"
+            consulta = f"{profesion} en {ciudad}"
             self.logger.info(
                 f"🔍 Búsqueda con validación IA: profession='{profesion}', location='{ciudad}'"
             )
 
         try:
             # Búsqueda token-based (rápida, sin IA-Enhanced)
-            result = await self.search_client.search_providers(
-                query=query,
-                city=ciudad,
-                limit=10,
-                use_ai_enhancement=False,  # ✅ Solo token-based (sin IA)
+            resultado = await self.cliente_busqueda.buscar_proveedores(
+                consulta=consulta,
+                ciudad=ciudad,
+                limite=10,
+                usar_mejora_ia=False,  # ✅ Solo token-based (sin IA)
             )
 
-            if not result.get("ok"):
-                error = result.get("error", "Error desconocido")
+            if not resultado.get("ok"):
+                error = resultado.get("error", "Error desconocido")
                 self.logger.warning(f"⚠️ Search Service falló: {error}")
                 return {"ok": False, "providers": [], "total": 0}
 
-            providers = result.get("providers", [])
-            total = result.get("total", len(providers))
+            proveedores = resultado.get("providers", [])
+            total = resultado.get("total", len(proveedores))
 
-            metadata = result.get("search_metadata", {})
+            metadatos = resultado.get("search_metadata", {})
             self.logger.info(
                 f"✅ Búsqueda local en {ciudad}: {total} proveedores "
-                f"(estrategia: {metadata.get('strategy')}, "
-                f"tiempo: {metadata.get('search_time_ms')}ms)"
+                f"(estrategia: {metadatos.get('strategy')}, "
+                f"tiempo: {metadatos.get('search_time_ms')}ms)"
             )
 
             # Si no hay proveedores, retornar vacío
-            if not providers:
+            if not proveedores:
                 return {"ok": True, "providers": [], "total": 0}
 
             # NUEVO: Validar con IA antes de devolver
-            validated_providers = await self.ai_validator.validar_proveedores(
-                user_need=profesion,
-                providers=providers,
+            proveedores_validados = await self.validador_ia.validar_proveedores(
+                necesidad_usuario=profesion,
+                proveedores=proveedores,
             )
 
             self.logger.info(
-                f"🎯 Validación final: {len(validated_providers)}/{total} "
+                f"🎯 Validación final: {len(proveedores_validados)}/{total} "
                 f"proveedores pasaron validación IA"
             )
 
             return {
                 "ok": True,
-                "providers": validated_providers,
-                "total": len(validated_providers),
+                "providers": proveedores_validados,
+                "total": len(proveedores_validados),
                 "search_scope": "local",
             }
 

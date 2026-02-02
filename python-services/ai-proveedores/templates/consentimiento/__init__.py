@@ -1,21 +1,21 @@
 """Mensajes relacionados con el consentimiento de datos del proveedor."""
 
 from .mensajes import (
-    CONSENT_PROMPT,
-    CONSENT_SCOPE_BLOCK,
-    CONSENT_OPTIONS,
-    consent_options_block,
-    consent_prompt_messages,
-    consent_acknowledged_message,
-    consent_declined_message,
+    PROMPT_CONSENTIMIENTO,
+    BLOQUE_ALCANCE_CONSENTIMIENTO,
+    OPCIONES_CONSENTIMIENTO,
+    bloque_opciones_consentimiento,
+    mensajes_prompt_consentimiento,
+    mensaje_consentimiento_aceptado,
+    mensaje_consentimiento_rechazado,
 )
 
 __all__ = [
-    "CONSENT_PROMPT",
-    "CONSENT_SCOPE_BLOCK",
-    "CONSENT_OPTIONS",
-    "consent_options_block",
-    "consent_prompt_messages",
-    "consent_acknowledged_message",
-    "consent_declined_message",
+    "PROMPT_CONSENTIMIENTO",
+    "BLOQUE_ALCANCE_CONSENTIMIENTO",
+    "OPCIONES_CONSENTIMIENTO",
+    "bloque_opciones_consentimiento",
+    "mensajes_prompt_consentimiento",
+    "mensaje_consentimiento_aceptado",
+    "mensaje_consentimiento_rechazado",
 ]

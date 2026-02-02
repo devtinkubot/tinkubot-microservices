@@ -8,7 +8,7 @@ from infrastructure.persistencia.cliente_redis import cliente_redis as redis_cli
 class RepositorioFlujoRedis:
     """Repositorio para gestionar el flujo de conversación en Redis."""
 
-    FLOW_KEY_TEMPLATE = "flow:{}"  # phone
+    PLANTILLA_CLAVE_FLUJO = "flow:{}"  # telefono
 
     def __init__(self, redis_cliente):
         """
@@ -19,64 +19,64 @@ class RepositorioFlujoRedis:
         """
         self.redis = redis_cliente
         self.logger = __import__("logging").getLogger(__name__)
-        self.flow_ttl = configuracion.flow_ttl_seconds
+        self.ttl_flujo = configuracion.flow_ttl_seconds
 
-    async def obtener(self, phone: str) -> Dict[str, Any]:
+    async def obtener(self, telefono: str) -> Dict[str, Any]:
         """
         Obtiene el flujo de conversación de un teléfono.
 
         Args:
-            phone: Número de teléfono
+            telefono: Número de teléfono
 
         Returns:
             Dict con los datos del flujo o dict vacío si no existe
         """
         try:
-            key = self.FLOW_KEY_TEMPLATE.format(phone)
-            data = await self.redis.get(key)
-            flow_data = data or {}
-            self.logger.info(f"📖 Get flow para {phone}: {flow_data}")
-            return flow_data
+            clave = self.PLANTILLA_CLAVE_FLUJO.format(telefono)
+            datos = await self.redis.get(clave)
+            flujo = datos or {}
+            self.logger.info(f"📖 Get flow para {telefono}: {flujo}")
+            return flujo
         except Exception as e:
-            self.logger.error(f"❌ Error obteniendo flow para {phone}: {e}")
-            self.logger.warning(f"⚠️ Retornando flujo vacío para {phone}")
+            self.logger.error(f"❌ Error obteniendo flow para {telefono}: {e}")
+            self.logger.warning(f"⚠️ Retornando flujo vacío para {telefono}")
             return {}
 
-    async def guardar(self, phone: str, data: Dict[str, Any]) -> None:
+    async def guardar(self, telefono: str, datos: Dict[str, Any]) -> None:
         """
         Guarda el flujo de conversación de un teléfono.
 
         Args:
-            phone: Número de teléfono
-            data: Datos del flujo a guardar
+            telefono: Número de teléfono
+            datos: Datos del flujo a guardar
         """
         try:
-            key = self.FLOW_KEY_TEMPLATE.format(phone)
-            self.logger.info(f"💾 Set flow para {phone}: {data}")
-            await self.redis.set(key, data, expire=self.flow_ttl)
+            clave = self.PLANTILLA_CLAVE_FLUJO.format(telefono)
+            self.logger.info(f"💾 Set flow para {telefono}: {datos}")
+            await self.redis.set(clave, datos, expire=self.ttl_flujo)
         except Exception as e:
-            self.logger.error(f"❌ Error guardando flow para {phone}: {e}")
-            self.logger.warning(f"⚠️ Flujo no guardado para {phone}: {data}")
+            self.logger.error(f"❌ Error guardando flow para {telefono}: {e}")
+            self.logger.warning(f"⚠️ Flujo no guardado para {telefono}: {datos}")
             # No lanzar excepción, permitir que continúe la conversación
 
-    async def resetear(self, phone: str) -> None:
+    async def resetear(self, telefono: str) -> None:
         """
         Elimina el flujo de conversación de un teléfono.
 
         Args:
-            phone: Número de teléfono
+            telefono: Número de teléfono
         """
         try:
-            key = self.FLOW_KEY_TEMPLATE.format(phone)
-            self.logger.info(f"🗑️ Reset flow para {phone}")
-            await self.redis.delete(key)
+            clave = self.PLANTILLA_CLAVE_FLUJO.format(telefono)
+            self.logger.info(f"🗑️ Reset flow para {telefono}")
+            await self.redis.delete(clave)
         except Exception as e:
-            self.logger.error(f"❌ Error reseteando flow para {phone}: {e}")
-            self.logger.warning(f"⚠️ Flujo no reseteado para {phone}")
+            self.logger.error(f"❌ Error reseteando flow para {telefono}: {e}")
+            self.logger.warning(f"⚠️ Flujo no reseteado para {telefono}")
 
     async def actualizar_campo(
         self,
-        phone: str,
+        telefono: str,
         campo: str,
         valor: Any,
     ) -> Dict[str, Any]:
@@ -84,7 +84,7 @@ class RepositorioFlujoRedis:
         Actualiza un campo específico del flujo sin modificar los demás.
 
         Args:
-            phone: Número de teléfono
+            telefono: Número de teléfono
             campo: Nombre del campo a actualizar
             valor: Nuevo valor del campo
 
@@ -92,31 +92,31 @@ class RepositorioFlujoRedis:
             Dict con el flujo actualizado
         """
         try:
-            flow = await self.obtener(phone)
-            flow[campo] = valor
-            await self.guardar(phone, flow)
-            return flow
+            flujo = await self.obtener(telefono)
+            flujo[campo] = valor
+            await self.guardar(telefono, flujo)
+            return flujo
         except Exception as e:
-            self.logger.error(f"❌ Error actualizando campo '{campo}' para {phone}: {e}")
+            self.logger.error(f"❌ Error actualizando campo '{campo}' para {telefono}: {e}")
             return {}
 
-    async def eliminar_campo(self, phone: str, campo: str) -> Dict[str, Any]:
+    async def eliminar_campo(self, telefono: str, campo: str) -> Dict[str, Any]:
         """
         Elimina un campo específico del flujo.
 
         Args:
-            phone: Número de teléfono
+            telefono: Número de teléfono
             campo: Nombre del campo a eliminar
 
         Returns:
             Dict con el flujo actualizado
         """
         try:
-            flow = await self.obtener(phone)
-            if campo in flow:
-                del flow[campo]
-                await self.guardar(phone, flow)
-            return flow
+            flujo = await self.obtener(telefono)
+            if campo in flujo:
+                del flujo[campo]
+                await self.guardar(telefono, flujo)
+            return flujo
         except Exception as e:
-            self.logger.error(f"❌ Error eliminando campo '{campo}' para {phone}: {e}")
+            self.logger.error(f"❌ Error eliminando campo '{campo}' para {telefono}: {e}")
             return {}

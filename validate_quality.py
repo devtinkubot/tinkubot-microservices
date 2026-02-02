@@ -255,7 +255,9 @@ def validate_types(services: List[str]) -> bool:
             continue
 
         main_py = service_path / "main.py"
-        if not main_py.exists():
+        principal_py = service_path / "principal.py"
+        entry_py = principal_py if principal_py.exists() else main_py
+        if not entry_py.exists():
             continue
 
         print(f"\n{Colors.CYAN}Validando tipos en: {service}{Colors.END}")
@@ -267,7 +269,7 @@ def validate_types(services: List[str]) -> bool:
             "--no-strict-optional",
             "--warn-redundant-casts",
             "--warn-unused-ignores",
-            str(main_py)
+            str(entry_py)
         ]
 
         success, _ = run_command(mypy_cmd, f"MyPy - {service}")
@@ -354,7 +356,7 @@ Ejemplos:
 
     parser.add_argument(
         "--service",
-        choices=["ai-clientes", "ai-proveedores", "av-proveedores", "search-token"],
+        choices=["ai-clientes", "ai-proveedores", "search-token"],
         help="Valida solo un servicio específico"
     )
 
@@ -367,7 +369,7 @@ Ejemplos:
         services = [args.service]
         print_info(f"Validando solo el servicio: {args.service}")
     else:
-        services = ["ai-clientes", "ai-proveedores", "av-proveedores", "search-token"]
+        services = ["ai-clientes", "ai-proveedores", "search-token"]
         print_info("Validando todos los servicios Python")
 
     if args.fix:

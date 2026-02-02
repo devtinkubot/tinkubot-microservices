@@ -3,9 +3,9 @@
 from typing import Any, Dict
 
 from templates import (
-    provider_post_registration_menu_message,
-    provider_under_review_message,
-    provider_verified_message,
+    mensaje_menu_post_registro_proveedor,
+    mensaje_proveedor_en_revision,
+    mensaje_proveedor_verificado,
 )
 
 
@@ -15,9 +15,9 @@ def construir_respuesta_verificado() -> Dict[str, Any]:
     Returns:
         Diccionario con mensajes de verificación y menú posterior al registro.
     """
-    messages = [{"response": provider_verified_message()}]
-    messages.append({"response": provider_post_registration_menu_message()})
-    return {"success": True, "messages": messages}
+    mensajes = [{"response": mensaje_proveedor_verificado()}]
+    mensajes.append({"response": mensaje_menu_post_registro_proveedor()})
+    return {"success": True, "messages": mensajes}
 
 
 def construir_respuesta_revision() -> Dict[str, Any]:
@@ -28,5 +28,5 @@ def construir_respuesta_revision() -> Dict[str, Any]:
     """
     return {
         "success": True,
-        "messages": [{"response": provider_under_review_message()}],
+        "messages": [{"response": mensaje_proveedor_en_revision()}],
     }

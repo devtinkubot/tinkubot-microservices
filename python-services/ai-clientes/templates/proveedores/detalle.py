@@ -13,137 +13,143 @@ instruccion_seleccionar_proveedor = (
 
 # ==================== FUNCIONES AUXILIARES ====================
 
-def _bold(text: str) -> str:
-    stripped = (text or "").strip()
-    if not stripped:
+def _negrita(texto: str) -> str:
+    texto_limpio = (texto or "").strip()
+    if not texto_limpio:
         return ""
-    if stripped.startswith("**") and stripped.endswith("**"):
-        return stripped
-    stripped = stripped.strip("*")
-    return f"**{stripped}**"
+    if texto_limpio.startswith("**") and texto_limpio.endswith("**"):
+        return texto_limpio
+    texto_limpio = texto_limpio.strip("*")
+    return f"**{texto_limpio}**"
 
 
-def _parse_services(raw: Any) -> List[str]:
-    if raw is None:
+def _parsear_servicios(valor: Any) -> List[str]:
+    if valor is None:
         return []
-    if isinstance(raw, list):
-        return [str(item).strip() for item in raw if str(item).strip()]
-    text = str(raw).strip()
-    if not text:
+    if isinstance(valor, list):
+        return [str(item).strip() for item in valor if str(item).strip()]
+    texto = str(valor).strip()
+    if not texto:
         return []
-    parts = [
-        part.strip() for part in re.split(r"[;,/|\n]+", text) if part.strip()
+    partes = [
+        parte.strip() for parte in re.split(r"[;,/|\n]+", texto) if parte.strip()
     ]
-    return parts
+    return partes
 
 
-def _prettify(text: Any) -> str:
-    if text is None:
+def _embellecer(texto: Any) -> str:
+    if texto is None:
         return ""
-    val = str(text).strip()
-    if not val:
+    valor = str(texto).strip()
+    if not valor:
         return ""
-    return val[0].upper() + val[1:]
+    return valor[0].upper() + valor[1:]
 
 
-def _format_price(raw: Any) -> str:
-    if raw is None:
+def _formatear_precio(valor: Any) -> str:
+    if valor is None:
         return ""
-    if isinstance(raw, (int, float)) and raw > 0:
-        return f"USD {raw:.2f}".rstrip("0").rstrip(".")
-    return str(raw).strip()
+    if isinstance(valor, (int, float)) and valor > 0:
+        return f"USD {valor:.2f}".rstrip("0").rstrip(".")
+    return str(valor).strip()
 
 
-def _format_line(label: str, value: Any) -> str:
-    if value is None:
+def _formatear_linea(etiqueta: str, valor: Any) -> str:
+    if valor is None:
         return ""
-    text = str(value).strip()
-    return f"{label}: {text}" if text else ""
+    texto = str(valor).strip()
+    return f"{etiqueta}: {texto}" if texto else ""
 
 
 # ==================== FUNCIONES ====================
 
-def bloque_detalle_proveedor(provider: Dict[str, Any]) -> str:
+def bloque_detalle_proveedor(proveedor: Dict[str, Any]) -> str:
     """Ficha detallada del proveedor con submenú numérico."""
-    name = (
-        provider.get("name")
-        or provider.get("provider_name")
-        or provider.get("full_name")
+    nombre = (
+        proveedor.get("name")
+        or proveedor.get("provider_name")
+        or proveedor.get("full_name")
         or "Proveedor"
     )
-    profession = provider.get("profession") or provider.get("service_title") or ""
-    if not profession and isinstance(provider.get("professions"), list):
-        profession = ", ".join(
+    profesion = proveedor.get("profession") or proveedor.get("service_title") or ""
+    if not profesion and isinstance(proveedor.get("professions"), list):
+        profesion = ", ".join(
             [
                 str(item).strip()
-                for item in provider.get("professions")
+                for item in proveedor.get("professions")
                 if str(item).strip()
             ]
         )
-    profession = _prettify(profession)
-    city = _prettify(provider.get("city") or provider.get("location_city") or "")
-    province = _prettify(provider.get("province") or provider.get("state") or "")
-    price = _format_price(
-        provider.get("price_formatted")
-        or provider.get("price_display")
-        or provider.get("price")
+    profesion = _embellecer(profesion)
+    ciudad = _embellecer(proveedor.get("city") or proveedor.get("location_city") or "")
+    provincia = _embellecer(proveedor.get("province") or proveedor.get("state") or "")
+    precio = _formatear_precio(
+        proveedor.get("price_formatted")
+        or proveedor.get("price_display")
+        or proveedor.get("price")
     )
-    experience = (
-        provider.get("experience_years")
-        or provider.get("experienceYears")
-        or provider.get("years_of_experience")
+    experiencia = (
+        proveedor.get("experience_years")
+        or proveedor.get("experienceYears")
+        or proveedor.get("years_of_experience")
     )
-    rating = provider.get("rating")
-    social_url = provider.get("social_media_url") or provider.get("socialMediaUrl")
-    social_type = provider.get("social_media_type") or provider.get("socialMediaType")
-    services = _parse_services(
-        provider.get("services_list")
-        or provider.get("servicesList")
-        or provider.get("services")
-        or provider.get("servicesRaw")
+    calificacion = proveedor.get("rating")
+    url_social = proveedor.get("social_media_url") or proveedor.get("socialMediaUrl")
+    tipo_social = proveedor.get("social_media_type") or proveedor.get("socialMediaType")
+    servicios = _parsear_servicios(
+        proveedor.get("services_list")
+        or proveedor.get("servicesList")
+        or proveedor.get("services")
+        or proveedor.get("servicesRaw")
     )
-    services = [_prettify(svc) for svc in services if _prettify(svc)]
+    servicios = [_embellecer(svc) for svc in servicios if _embellecer(svc)]
 
-    location = ", ".join([val for val in [city, province] if val])
-    lines: List[str] = ["", _bold(name)]
-    for entry in [
-        _format_line("Profesión", profession),
-        _format_line("Ubicación", location),
-        _format_line(
+    ubicacion = ", ".join([valor for valor in [ciudad, provincia] if valor])
+    lineas: List[str] = ["", _negrita(nombre)]
+    for entrada in [
+        _formatear_linea("Profesión", profesion),
+        _formatear_linea("Ubicación", ubicacion),
+        _formatear_linea(
             "Experiencia",
-            f"{int(experience)} año(s)" if isinstance(experience, (int, float)) else experience,
+            f"{int(experiencia)} año(s)"
+            if isinstance(experiencia, (int, float))
+            else experiencia,
         ),
     ]:
-        if entry:
-            lines.append(entry)
+        if entrada:
+            lineas.append(entrada)
 
-    if services:
-        lines.append("Servicios:")
-        lines.extend([f"• {svc}" for svc in services])
+    if servicios:
+        lineas.append("Servicios:")
+        lineas.extend([f"• {svc}" for svc in servicios])
 
-    if price:
-        lines.append(_format_line("Precio", price))
+    if precio:
+        lineas.append(_formatear_linea("Precio", precio))
 
-    social_line = _format_line(
+    linea_social = _formatear_linea(
         "Redes",
-        f"{social_type}: {social_url}" if social_url and social_type else social_url,
+        f"{tipo_social}: {url_social}" if url_social and tipo_social else url_social,
     )
-    if social_line:
-        lines.append(social_line)
+    if linea_social:
+        lineas.append(linea_social)
 
-    rating_line = _format_line(
-        "Calificación", f"{rating:.1f}" if isinstance(rating, (int, float)) else rating
+    linea_calificacion = _formatear_linea(
+        "Calificación",
+        f"{calificacion:.1f}"
+        if isinstance(calificacion, (int, float))
+        else calificacion,
     )
-    if rating_line:
-        lines.append(rating_line)
+    if linea_calificacion:
+        lineas.append(linea_calificacion)
 
-    lines.append("")
-    return "\n".join(lines)
+    lineas.append("")
+    return "\n".join(lineas)
 
 
 def menu_opciones_detalle_proveedor() -> str:
     """Bloque de acciones para detalle de proveedor."""
     from templates.comunes import pie_instrucciones_respuesta_numerica
+
     return "\n".join(
         [
             pie_instrucciones_respuesta_numerica,

@@ -54,48 +54,48 @@ RESET_KEYWORDS = {
 }
 
 
-async def handle_message(
+async def manejar_mensaje(
     *,
-    flow: Dict[str, Any],
-    phone: str,
-    message_text: str,
-    payload: Dict[str, Any],
-    menu_choice: Optional[str],
-    provider_profile: Optional[Dict[str, Any]],
+    flujo: Dict[str, Any],
+    telefono: str,
+    texto_mensaje: str,
+    carga: Dict[str, Any],
+    opcion_menu: Optional[str],
+    perfil_proveedor: Optional[Dict[str, Any]],
     supabase: Any,
-    embeddings_service: Any,
+    servicio_embeddings: Any,
     subir_medios_identidad,
     logger: Any,
 ) -> Dict[str, Any]:
     """Procesa el mensaje y devuelve respuesta + control de persistencia."""
-    normalized = (message_text or "").strip().lower()
-    if normalized in RESET_KEYWORDS:
-        await reiniciar_flujo(phone)
-        flow.clear()
-        flow.update({"state": "awaiting_consent", "has_consent": False})
-        consent_prompt = await solicitar_consentimiento(phone)
-        messages = [{"response": informar_reinicio_conversacion()}]
-        messages.extend(consent_prompt.get("messages", []))
+    texto_normalizado = (texto_mensaje or "").strip().lower()
+    if texto_normalizado in RESET_KEYWORDS:
+        await reiniciar_flujo(telefono)
+        flujo.clear()
+        flujo.update({"state": "awaiting_consent", "has_consent": False})
+        prompt_consentimiento = await solicitar_consentimiento(telefono)
+        mensajes = [{"response": informar_reinicio_conversacion()}]
+        mensajes.extend(prompt_consentimiento.get("messages", []))
         return {
-            "response": {"success": True, "messages": messages},
-            "new_flow": flow,
+            "response": {"success": True, "messages": mensajes},
+            "new_flow": flujo,
             "persist_flow": True,
         }
 
-    now_utc = datetime.utcnow()
-    now_iso = now_utc.isoformat()
-    last_seen_raw = flow.get("last_seen_at_prev")
-    if last_seen_raw:
+    ahora_utc = datetime.utcnow()
+    ahora_iso = ahora_utc.isoformat()
+    ultima_vista_cruda = flujo.get("last_seen_at_prev")
+    if ultima_vista_cruda:
         try:
-            last_seen_dt = datetime.fromisoformat(last_seen_raw)
-            if (now_utc - last_seen_dt).total_seconds() > 300:
-                await reiniciar_flujo(phone)
-                flow.clear()
-                flow.update(
+            ultima_vista_dt = datetime.fromisoformat(ultima_vista_cruda)
+            if (ahora_utc - ultima_vista_dt).total_seconds() > 300:
+                await reiniciar_flujo(telefono)
+                flujo.clear()
+                flujo.update(
                     {
                         "state": "awaiting_menu_option",
-                        "last_seen_at": now_iso,
-                        "last_seen_at_prev": now_iso,
+                        "last_seen_at": ahora_iso,
+                        "last_seen_at_prev": ahora_iso,
                     }
                 )
                 return {
@@ -103,64 +103,64 @@ async def handle_message(
                         "success": True,
                         "messages": [
                             {"response": informar_timeout_inactividad()},
-                            {"response": construir_menu_principal(is_registered=True)},
+                            {"response": construir_menu_principal(esta_registrado=True)},
                         ],
                     },
-                    "new_flow": flow,
+                    "new_flow": flujo,
                     "persist_flow": True,
                 }
         except Exception:
             pass
 
-    flow["last_seen_at"] = now_iso
-    flow["last_seen_at_prev"] = flow.get("last_seen_at", now_iso)
+    flujo["last_seen_at"] = ahora_iso
+    flujo["last_seen_at_prev"] = flujo.get("last_seen_at", ahora_iso)
 
-    flow = sincronizar_flujo_con_perfil(flow, provider_profile)
-    has_consent, esta_registrado, is_verified, is_pending_review = (
-        resolver_estado_registro(flow, provider_profile)
+    flujo = sincronizar_flujo_con_perfil(flujo, perfil_proveedor)
+    tiene_consentimiento, esta_registrado, esta_verificado, esta_pendiente_revision = (
+        resolver_estado_registro(flujo, perfil_proveedor)
     )
 
-    provider_id = provider_profile.get("id") if provider_profile else None
-    pending_response = manejar_pendiente_revision(
-        flow, provider_id, is_pending_review
+    proveedor_id = perfil_proveedor.get("id") if perfil_proveedor else None
+    respuesta_pendiente = manejar_pendiente_revision(
+        flujo, proveedor_id, esta_pendiente_revision
     )
-    if pending_response:
-        return {"response": pending_response, "persist_flow": True}
+    if respuesta_pendiente:
+        return {"response": respuesta_pendiente, "persist_flow": True}
 
-    verified_response = manejar_aprobacion_reciente(flow, is_verified)
-    if verified_response:
-        return {"response": verified_response, "persist_flow": True}
+    respuesta_verificacion = manejar_aprobacion_reciente(flujo, esta_verificado)
+    if respuesta_verificacion:
+        return {"response": respuesta_verificacion, "persist_flow": True}
 
-    initial_response = await manejar_estado_inicial(
-        state=flow.get("state"),
-        flow=flow,
-        has_consent=has_consent,
+    respuesta_inicial = await manejar_estado_inicial(
+        estado=flujo.get("state"),
+        flujo=flujo,
+        tiene_consentimiento=tiene_consentimiento,
         esta_registrado=esta_registrado,
-        is_verified=is_verified,
-        phone=phone,
+        esta_verificado=esta_verificado,
+        telefono=telefono,
     )
-    if initial_response:
-        return {"response": initial_response, "persist_flow": True}
+    if respuesta_inicial:
+        return {"response": respuesta_inicial, "persist_flow": True}
 
-    route_result = await route_state(
-        state=flow.get("state"),
-        flow=flow,
-        message_text=message_text,
-        payload=payload,
-        phone=phone,
-        menu_choice=menu_choice,
-        has_consent=has_consent,
+    resultado_enrutado = await enrutar_estado(
+        estado=flujo.get("state"),
+        flujo=flujo,
+        texto_mensaje=texto_mensaje,
+        carga=carga,
+        telefono=telefono,
+        opcion_menu=opcion_menu,
+        tiene_consentimiento=tiene_consentimiento,
         esta_registrado=esta_registrado,
-        provider_profile=provider_profile,
+        perfil_proveedor=perfil_proveedor,
         supabase=supabase,
-        embeddings_service=embeddings_service,
+        servicio_embeddings=servicio_embeddings,
         subir_medios_identidad=subir_medios_identidad,
         logger=logger,
     )
-    if route_result is not None:
-        return route_result
+    if resultado_enrutado is not None:
+        return resultado_enrutado
 
-    await reiniciar_flujo(phone)
+    await reiniciar_flujo(telefono)
     return {
         "response": {
             "success": True,
@@ -170,167 +170,167 @@ async def handle_message(
     }
 
 
-async def route_state(
+async def enrutar_estado(
     *,
-    state: Optional[str],
-    flow: Dict[str, Any],
-    message_text: str,
-    payload: Dict[str, Any],
-    phone: str,
-    menu_choice: Optional[str],
-    has_consent: bool,
+    estado: Optional[str],
+    flujo: Dict[str, Any],
+    texto_mensaje: str,
+    carga: Dict[str, Any],
+    telefono: str,
+    opcion_menu: Optional[str],
+    tiene_consentimiento: bool,
     esta_registrado: bool,
-    provider_profile: Optional[Dict[str, Any]],
+    perfil_proveedor: Optional[Dict[str, Any]],
     supabase: Any,
-    embeddings_service: Any,
+    servicio_embeddings: Any,
     subir_medios_identidad,
     logger: Any,
 ) -> Optional[Dict[str, Any]]:
     """Enruta el estado actual y devuelve un resultado de ruta."""
-    if not state:
+    if not estado:
         return None
 
-    if state == "awaiting_consent":
-        response = await manejar_estado_consentimiento(
-            flow=flow,
-            has_consent=has_consent,
+    if estado == "awaiting_consent":
+        respuesta = await manejar_estado_consentimiento(
+            flujo=flujo,
+            tiene_consentimiento=tiene_consentimiento,
             esta_registrado=esta_registrado,
-            phone=phone,
-            payload=payload,
-            provider_profile=provider_profile,
+            telefono=telefono,
+            carga=carga,
+            perfil_proveedor=perfil_proveedor,
         )
-        return {"response": response, "persist_flow": True}
+        return {"response": respuesta, "persist_flow": True}
 
-    if state == "awaiting_menu_option":
-        response = await manejar_estado_menu(
-            flow=flow,
-            message_text=message_text,
-            menu_choice=menu_choice,
+    if estado == "awaiting_menu_option":
+        respuesta = await manejar_estado_menu(
+            flujo=flujo,
+            texto_mensaje=texto_mensaje,
+            opcion_menu=opcion_menu,
             esta_registrado=esta_registrado,
         )
-        return {"response": response, "persist_flow": True}
+        return {"response": respuesta, "persist_flow": True}
 
-    if state == "awaiting_deletion_confirmation":
-        response = await manejar_confirmacion_eliminacion(
-            flow=flow,
-            message_text=message_text,
+    if estado == "awaiting_deletion_confirmation":
+        respuesta = await manejar_confirmacion_eliminacion(
+            flujo=flujo,
+            texto_mensaje=texto_mensaje,
             supabase=supabase,
-            phone=phone,
+            telefono=telefono,
         )
-        persist_flow = response.pop("persist_flow", True)
-        return {"response": response, "persist_flow": persist_flow}
+        persistir_flujo = respuesta.pop("persist_flow", True)
+        return {"response": respuesta, "persist_flow": persistir_flujo}
 
-    if not has_consent:
-        flow.clear()
-        flow.update({"state": "awaiting_consent", "has_consent": False})
-        response = await solicitar_consentimiento(phone)
-        return {"response": response, "persist_flow": True}
+    if not tiene_consentimiento:
+        flujo.clear()
+        flujo.update({"state": "awaiting_consent", "has_consent": False})
+        respuesta = await solicitar_consentimiento(telefono)
+        return {"response": respuesta, "persist_flow": True}
 
-    if state == "awaiting_social_media_update":
-        response = await manejar_actualizacion_redes_sociales(
-            flow=flow,
-            message_text=message_text,
+    if estado == "awaiting_social_media_update":
+        respuesta = await manejar_actualizacion_redes_sociales(
+            flujo=flujo,
+            texto_mensaje=texto_mensaje,
             supabase=supabase,
-            provider_id=flow.get("provider_id"),
+            proveedor_id=flujo.get("provider_id"),
         )
-        return {"response": response, "persist_flow": True}
+        return {"response": respuesta, "persist_flow": True}
 
-    if state == "awaiting_service_action":
-        response = await manejar_accion_servicios(
-            flow=flow,
-            message_text=message_text,
-            menu_choice=menu_choice,
+    if estado == "awaiting_service_action":
+        respuesta = await manejar_accion_servicios(
+            flujo=flujo,
+            texto_mensaje=texto_mensaje,
+            opcion_menu=opcion_menu,
         )
-        return {"response": response, "persist_flow": True}
+        return {"response": respuesta, "persist_flow": True}
 
-    if state == "awaiting_service_add":
-        response = await manejar_agregar_servicios(
-            flow=flow,
-            provider_id=flow.get("provider_id"),
-            message_text=message_text,
+    if estado == "awaiting_service_add":
+        respuesta = await manejar_agregar_servicios(
+            flujo=flujo,
+            proveedor_id=flujo.get("provider_id"),
+            texto_mensaje=texto_mensaje,
         )
-        return {"response": response, "persist_flow": True}
+        return {"response": respuesta, "persist_flow": True}
 
-    if state == "awaiting_service_remove":
-        response = await manejar_eliminar_servicio(
-            flow=flow,
-            provider_id=flow.get("provider_id"),
-            message_text=message_text,
+    if estado == "awaiting_service_remove":
+        respuesta = await manejar_eliminar_servicio(
+            flujo=flujo,
+            proveedor_id=flujo.get("provider_id"),
+            texto_mensaje=texto_mensaje,
         )
-        return {"response": response, "persist_flow": True}
+        return {"response": respuesta, "persist_flow": True}
 
-    if state == "awaiting_face_photo_update":
-        response = await manejar_actualizacion_selfie(
-            flow=flow,
-            provider_id=flow.get("provider_id"),
-            payload=payload,
+    if estado == "awaiting_face_photo_update":
+        respuesta = await manejar_actualizacion_selfie(
+            flujo=flujo,
+            proveedor_id=flujo.get("provider_id"),
+            carga=carga,
             subir_medios_identidad=subir_medios_identidad,
         )
-        return {"response": response, "persist_flow": True}
+        return {"response": respuesta, "persist_flow": True}
 
-    if state == "awaiting_dni":
-        response = manejar_inicio_documentos(flow)
-        return {"response": response, "persist_flow": True}
+    if estado == "awaiting_dni":
+        respuesta = manejar_inicio_documentos(flujo)
+        return {"response": respuesta, "persist_flow": True}
 
-    if state == "awaiting_city":
-        response = manejar_espera_ciudad(flow, message_text)
-        return {"response": response, "persist_flow": True}
+    if estado == "awaiting_city":
+        respuesta = manejar_espera_ciudad(flujo, texto_mensaje)
+        return {"response": respuesta, "persist_flow": True}
 
-    if state == "awaiting_name":
-        response = manejar_espera_nombre(flow, message_text)
-        return {"response": response, "persist_flow": True}
+    if estado == "awaiting_name":
+        respuesta = manejar_espera_nombre(flujo, texto_mensaje)
+        return {"response": respuesta, "persist_flow": True}
 
-    if state == "awaiting_specialty":
-        response = manejar_espera_especialidad(flow, message_text)
-        return {"response": response, "persist_flow": True}
+    if estado == "awaiting_specialty":
+        respuesta = manejar_espera_especialidad(flujo, texto_mensaje)
+        return {"response": respuesta, "persist_flow": True}
 
-    if state == "awaiting_experience":
-        response = manejar_espera_experiencia(flow, message_text)
-        return {"response": response, "persist_flow": True}
+    if estado == "awaiting_experience":
+        respuesta = manejar_espera_experiencia(flujo, texto_mensaje)
+        return {"response": respuesta, "persist_flow": True}
 
-    if state == "awaiting_email":
-        response = manejar_espera_correo(flow, message_text)
-        return {"response": response, "persist_flow": True}
+    if estado == "awaiting_email":
+        respuesta = manejar_espera_correo(flujo, texto_mensaje)
+        return {"response": respuesta, "persist_flow": True}
 
-    if state == "awaiting_social_media":
-        response = manejar_espera_red_social(flow, message_text)
-        return {"response": response, "persist_flow": True}
+    if estado == "awaiting_social_media":
+        respuesta = manejar_espera_red_social(flujo, texto_mensaje)
+        return {"response": respuesta, "persist_flow": True}
 
-    if state == "awaiting_dni_front_photo":
-        response = manejar_dni_frontal(flow, payload)
-        return {"response": response, "persist_flow": True}
+    if estado == "awaiting_dni_front_photo":
+        respuesta = manejar_dni_frontal(flujo, carga)
+        return {"response": respuesta, "persist_flow": True}
 
-    if state == "awaiting_dni_back_photo":
-        response = manejar_dni_trasera(flow, payload)
-        return {"response": response, "persist_flow": True}
+    if estado == "awaiting_dni_back_photo":
+        respuesta = manejar_dni_trasera(flujo, carga)
+        return {"response": respuesta, "persist_flow": True}
 
-    if state == "awaiting_face_photo":
-        response = manejar_selfie_registro(flow, payload)
-        return {"response": response, "persist_flow": True}
+    if estado == "awaiting_face_photo":
+        respuesta = manejar_selfie_registro(flujo, carga)
+        return {"response": respuesta, "persist_flow": True}
 
-    if state == "awaiting_address":
-        flow["state"] = "awaiting_email"
-        response = {
+    if estado == "awaiting_address":
+        flujo["state"] = "awaiting_email"
+        respuesta = {
             "success": True,
             "response": preguntar_correo_opcional(),
         }
-        return {"response": response, "persist_flow": True}
+        return {"response": respuesta, "persist_flow": True}
 
-    if state == "confirm":
-        response = await manejar_confirmacion(
-            flow,
-            message_text,
-            phone,
+    if estado == "confirm":
+        respuesta = await manejar_confirmacion(
+            flujo,
+            texto_mensaje,
+            telefono,
             lambda datos: registrar_proveedor_en_base_datos(
-                supabase, datos, embeddings_service
+                supabase, datos, servicio_embeddings
             ),
             subir_medios_identidad,
-            lambda: reiniciar_flujo(phone),
+            lambda: reiniciar_flujo(telefono),
             logger,
         )
-        new_flow = response.pop("new_flow", None)
-        if new_flow is not None:
-            return {"response": response, "new_flow": new_flow}
-        return {"response": response, "persist_flow": True}
+        nuevo_flujo = respuesta.pop("new_flow", None)
+        if nuevo_flujo is not None:
+            return {"response": respuesta, "new_flow": nuevo_flujo}
+        return {"response": respuesta, "persist_flow": True}
 
     return None

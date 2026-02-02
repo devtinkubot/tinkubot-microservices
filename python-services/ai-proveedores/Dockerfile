@@ -18,7 +18,7 @@ RUN pip3 install --no-cache-dir -r requirements.txt
 # Copiar código fuente del servicio
 COPY ai-proveedores/ .
 
-# Asegurar que /app esté en PYTHONPATH para resolver main.py
+# Asegurar que /app esté en PYTHONPATH para resolver principal.py
 ENV PYTHONPATH="/app"
 
 # Crear usuario no root (Debian/Ubuntu)
@@ -33,4 +33,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8002/health || exit 1
 
 # Comando de inicio
-CMD ["python3", "-m", "uvicorn", "main:app", "--app-dir", "/app", "--host", "0.0.0.0", "--port", "8002"]
+CMD ["python3", "-m", "uvicorn", "principal:app", "--app-dir", "/app", "--host", "0.0.0.0", "--port", "8002"]

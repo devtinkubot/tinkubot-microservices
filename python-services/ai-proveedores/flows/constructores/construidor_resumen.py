@@ -3,64 +3,66 @@
 from typing import Any, Dict, List
 
 
-def construir_resumen_confirmacion(flow: Dict[str, Any]) -> str:
+def construir_resumen_confirmacion(flujo: Dict[str, Any]) -> str:
     """Construye resumen de confirmación del registro.
 
     Fase 7: Actualizada para mostrar lista de servicios numerados en lugar de profession.
 
     Args:
-        flow: Diccionario con todos los datos del flujo de registro.
+        flujo: Diccionario con todos los datos del flujo de registro.
 
     Returns:
         Texto formateado con todos los datos a confirmar.
     """
-    email = flow.get("email") or "No especificado"
-    social = flow.get("social_media_url") or "No especificada"
-    social_type = flow.get("social_media_type")
-    if social_type and social and social != "No especificada":
-        social = f"{social} ({social_type})"
+    correo = flujo.get("email") or "No especificado"
+    red_social = flujo.get("social_media_url") or "No especificada"
+    tipo_red_social = flujo.get("social_media_type")
+    if tipo_red_social and red_social and red_social != "No especificada":
+        red_social = f"{red_social} ({tipo_red_social})"
 
-    front = "Recibida" if flow.get("dni_front_image") else "Pendiente"
-    back = "Recibida" if flow.get("dni_back_image") else "Pendiente"
-    face = "Recibida" if flow.get("face_image") else "Pendiente"
+    foto_frente = "Recibida" if flujo.get("dni_front_image") else "Pendiente"
+    foto_reverso = "Recibida" if flujo.get("dni_back_image") else "Pendiente"
+    selfie = "Recibida" if flujo.get("face_image") else "Pendiente"
 
-    experience = flow.get("experience_years")
-    experience_text = (
-        f"{experience} años"
-        if isinstance(experience, int) and experience > 0
+    experiencia = flujo.get("experience_years")
+    texto_experiencia = (
+        f"{experiencia} años"
+        if isinstance(experiencia, int) and experiencia > 0
         else "Sin especificar"
     )
 
     # Fase 7: Obtener servicios como lista
-    servicios: List[str] = flow.get("specialty") or []
+    servicios: List[str] = flujo.get("specialty") or []
     if isinstance(servicios, str):
         # Si por alguna razón viene como string, intentar dividirlo
         servicios = [s.strip() for s in servicios.split(",") if s.strip()]
 
-    city = flow.get("city") or "No especificada"
-    name = flow.get("name") or "No especificado"
+    ciudad = flujo.get("city") or "No especificada"
+    nombre = flujo.get("name") or "No especificado"
 
     # Fase 7: Construir lista de servicios numerados
     if servicios and len(servicios) > 0:
-        servicios_text = "\n".join([f"  {i+1}. {srv}" for i, srv in enumerate(servicios)])
+        texto_servicios = "\n".join(
+            [f"  {i+1}. {srv}" for i, srv in enumerate(servicios)]
+        )
     else:
-        servicios_text = "  No especificados"
+        texto_servicios = "  No especificados"
 
-    lines = [
+    lineas = [
         "-----------------------------",
         "*Por favor confirma tus datos:*",
         "-----------------------------",
-        f"- Ciudad: {city}",
-        f"- Nombre: {name}",
+        f"- Ciudad: {ciudad}",
+        f"- Nombre: {nombre}",
         # Fase 7: Mostrar lista de servicios numerados
         "- Servicios:",
-        servicios_text,
-        f"- Experiencia: {experience_text}",
-        f"- Correo: {email}",
-        f"- Red Social: {social}",
-        f"- Foto Cédula (frente): {front}",
-        f"- Foto Cédula (reverso): {back}",
-        f"- Selfie: {face}",
+        texto_servicios,
+        f"- Experiencia: {texto_experiencia}",
+        f"- Correo: {correo}",
+        f"- Red Social: {red_social}",
+        f"- Foto Cédula (frente): {foto_frente}",
+        f"- Foto Cédula (reverso): {foto_reverso}",
+        f"- Selfie: {selfie}",
         "",
         "-----------------------------",
         "1. Confirmar datos",
@@ -68,4 +70,4 @@ def construir_resumen_confirmacion(flow: Dict[str, Any]) -> str:
         "-----------------------------",
         "*Responde con el numero de tu opcion:*",
     ]
-    return "\n".join(lines)
+    return "\n".join(lineas)

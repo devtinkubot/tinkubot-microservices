@@ -26,18 +26,18 @@ from infrastructure.database import run_supabase
 logger = logging.getLogger(__name__)
 
 # Constantes para caché de perfil
-PROFILE_CACHE_KEY = "prov_profile_cache:{}"
-PROFILE_CACHE_TTL_SECONDS = int(
-    os.getenv("PROFILE_CACHE_TTL_SECONDS", str(configuracion.cache_ttl_seconds))
+CLAVE_CACHE_PERFIL = "prov_profile_cache:{}"
+TTL_CACHE_PERFIL_SEGUNDOS = int(
+    os.getenv("PROFILE_CACHE_TTL_SECONDS", str(configuracion.ttl_cache_segundos))
 )
 
 
-async def obtener_perfil_proveedor(phone: str) -> Optional[Dict[str, Any]]:
+async def obtener_perfil_proveedor(telefono: str) -> Optional[Dict[str, Any]]:
     """
     Obtener perfil de proveedor por teléfono desde Supabase (esquema unificado).
 
     Args:
-        phone: Número de teléfono del proveedor
+        telefono: Número de teléfono del proveedor
 
     Returns:
         Diccionario con el perfil del proveedor o None si no existe
@@ -45,88 +45,90 @@ async def obtener_perfil_proveedor(phone: str) -> Optional[Dict[str, Any]]:
     from infrastructure.database import get_supabase_client
 
     supabase = get_supabase_client()
-    if not supabase or not phone:
+    if not supabase or not telefono:
         return None
 
     try:
-        response = await run_supabase(
+        respuesta = await run_supabase(
             lambda: supabase.table("providers")
             .select("*")
-            .eq("phone", phone)
+            .eq("phone", telefono)
             .limit(1)
             .execute(),
             label="providers.by_phone",
         )
-        if response.data:
+        if respuesta.data:
             registro = garantizar_campos_obligatorios_proveedor(
-                cast(Dict[str, Any], response.data[0])
+                cast(Dict[str, Any], respuesta.data[0])
             )
             registro["services_list"] = extraer_servicios_guardados(
                 registro.get("services")
             )
             return registro
     except Exception as exc:
-        logger.warning(f"No se pudo obtener perfil para {phone}: {exc}")
+        logger.warning(f"No se pudo obtener perfil para {telefono}: {exc}")
 
     return None
 
 
-async def cachear_perfil_proveedor(phone: str, perfil: Dict[str, Any]) -> None:
+async def cachear_perfil_proveedor(
+    telefono: str, perfil: Dict[str, Any]
+) -> None:
     """
     Guardar el perfil de proveedor en caché con TTL definido.
 
     Args:
-        phone: Número de teléfono del proveedor
+        telefono: Número de teléfono del proveedor
         perfil: Diccionario con el perfil a cachear
     """
     try:
         await cliente_redis.set(
-            PROFILE_CACHE_KEY.format(phone),
+            CLAVE_CACHE_PERFIL.format(telefono),
             perfil,
-            expire=PROFILE_CACHE_TTL_SECONDS,
+            expire=TTL_CACHE_PERFIL_SEGUNDOS,
         )
     except Exception as exc:
-        logger.debug(f"No se pudo cachear perfil de {phone}: {exc}")
+        logger.debug(f"No se pudo cachear perfil de {telefono}: {exc}")
 
 
-async def refrescar_cache_perfil_proveedor(phone: str) -> None:
+async def refrescar_cache_perfil_proveedor(telefono: str) -> None:
     """
     Refrescar el caché de perfil en segundo plano.
 
     Args:
-        phone: Número de teléfono del proveedor
+        telefono: Número de teléfono del proveedor
     """
     try:
-        perfil_actual = await obtener_perfil_proveedor(phone)
+        perfil_actual = await obtener_perfil_proveedor(telefono)
         if perfil_actual:
-            await cachear_perfil_proveedor(phone, perfil_actual)
+            await cachear_perfil_proveedor(telefono, perfil_actual)
     except Exception as exc:
-        logger.debug(f"No se pudo refrescar cache de {phone}: {exc}")
+        logger.debug(f"No se pudo refrescar cache de {telefono}: {exc}")
 
 
-async def obtener_perfil_proveedor_cacheado(phone: str) -> Optional[Dict[str, Any]]:
+async def obtener_perfil_proveedor_cacheado(telefono: str) -> Optional[Dict[str, Any]]:
     """
     Obtener perfil de proveedor desde caché; refresca en background si hay hit.
 
     Args:
-        phone: Número de teléfono del proveedor
+        telefono: Número de teléfono del proveedor
 
     Returns:
         Diccionario con el perfil del proveedor o None si no existe
     """
-    cache_key = PROFILE_CACHE_KEY.format(phone)
+    clave_cache = CLAVE_CACHE_PERFIL.format(telefono)
     try:
-        cacheado = await cliente_redis.get(cache_key)
+        cacheado = await cliente_redis.get(clave_cache)
     except Exception as exc:
-        logger.debug(f"No se pudo leer cache de {phone}: {exc}")
+        logger.debug(f"No se pudo leer cache de {telefono}: {exc}")
         cacheado = None
 
     if cacheado:
         # Disparar refresco sin bloquear la respuesta
-        asyncio.create_task(refrescar_cache_perfil_proveedor(phone))
+        asyncio.create_task(refrescar_cache_perfil_proveedor(telefono))
         return cacheado
 
-    perfil = await obtener_perfil_proveedor(phone)
+    perfil = await obtener_perfil_proveedor(telefono)
     if perfil:
-        await cachear_perfil_proveedor(phone, perfil)
+        await cachear_perfil_proveedor(telefono, perfil)
     return perfil

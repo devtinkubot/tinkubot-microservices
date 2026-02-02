@@ -11,7 +11,7 @@ class SolicitudMensajeWhatsApp(BaseModel):
 
 class RecepcionMensajeWhatsApp(BaseModel):
     """Modelo flexible para recepción de mensajes desde servicios Node"""
-    # Campos principales para payload de servicios Node
+    # Campos principales para la carga de servicios Node
     id: Optional[str] = None
     from_number: Optional[str] = None
     content: Optional[str] = None

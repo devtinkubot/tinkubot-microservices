@@ -65,38 +65,31 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
         )
 ```
 
-## 3. Funciones Auxiliares que Permanecen en main.py
+## 3. Funciones Auxiliares Fuera de main.py
 
-Las siguientes funciones NO se movieron al orquestador y deben permanecer en main.py:
+Las funciones auxiliares para callbacks y scheduler viven en módulos dedicados
+para mantener `main.py` como orquestador HTTP.
 
-### Funciones de Manejo de Flujo
-- `reset_flow(phone: str)` - Reinicia el flujo de un usuario
-- `get_flow(phone: str) -> Dict[str, Any]` - Obtiene el flujo actual
-- `set_flow(phone: str, data: Dict[str, Any])` - Guarda el flujo
+### Módulo de callbacks
+Se definen en `services/orquestador_callbacks.py` y se inyectan con:
+`orquestador.inyectar_callbacks(**callbacks.build())`.
 
-### Funciones de Cliente
-- `get_or_create_customer(phone: str) -> Dict[str, Any]` - Obtiene o crea cliente en Supabase
-- `update_customer_city(customer_id: str, city: str) -> Dict[str, Any]` - Actualiza ciudad del cliente
-- `clear_customer_city(customer_id: Optional[str])` - Limpia ciudad del cliente
-- `clear_customer_consent(customer_id: Optional[str])` - Limpia consentimiento del cliente
+Incluye funciones de:
+- manejo de flujo (get/set/reset)
+- cliente/consentimiento
+- búsqueda y mensajes de proveedor
+- validación y baneo
+- utilidades (conexión y feedback)
 
-### Funciones de Consentimiento
-- `request_consent(phone: str) -> Dict[str, Any]` - Solicita consentimiento al usuario
-- `handle_consent_response(phone: str, customer_profile: Dict[str, Any], selected: str, payload: Dict[str, Any])` - Maneja respuesta de consentimiento
+### Scheduler de feedback
+`services/feedback_scheduler.py` contiene:
+- `schedule_feedback_request`
+- `send_whatsapp_text`
 
-### Funciones de Búsqueda
-- `search_providers(service: str, city: str) -> List[Dict[str, Any]]` - Busca proveedores
-- `send_provider_prompt(phone: str, flow: Dict[str, Any], city: str) -> Dict[str, Any]` - Envía mensaje con lista de proveedores
-- `send_confirm_prompt(phone: str, flow: Dict[str, Any], title: str) -> Dict[str, Any]` - Envía mensaje de confirmación
-
-### Funciones de Validación
-- `check_if_banned(phone: str) -> bool` - Verifica si el teléfono está baneado
-- `validate_content_with_ai(text: str, phone: str) -> tuple[Optional[str], Optional[str]]` - Valida contenido con IA
-
-### Funciones de Utilidad
-- `formal_connection_message(provider: Dict[str, Any]) -> Dict[str, Any]` - Genera mensaje de conexión
-- `schedule_feedback_request(phone: str, provider: Dict[str, Any])` - Agenda solicitud de feedback
-- `send_whatsapp_text(phone: str, text: str) -> bool` - Envía mensaje de WhatsApp (scheduler)
+### Moderación de contenido
+`services/seguridad/contenido.py` contiene:
+- `check_if_banned`
+- `validate_content_with_ai`
 
 ### Funciones de Utilidad Normalización
 - `normalize_button(val: Optional[str]) -> Optional[str]` - Normaliza valor de botón
@@ -119,7 +112,7 @@ USE_AI_EXPANSION = os.getenv("USE_AI_EXPANSION", "true").lower() == "true"
 ## 5. Arquitectura de la Solución
 
 ```
-main.py (Capa HTTP + Funciones Auxiliares)
+main.py (Capa HTTP + Orquestador)
     ↓
 OrquestadorConversacional (Capa de Orquestación)
     ↓

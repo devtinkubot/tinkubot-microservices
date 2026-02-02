@@ -40,7 +40,7 @@ class ClienteRedis:
         for attempt in range(self._max_retries):
             try:
                 self.redis_client = redis.from_url(
-                    configuracion.redis_url,
+                    configuracion.url_redis,
                     decode_responses=True,
                     socket_timeout=10,  # Aumentado timeout
                     socket_connect_timeout=10,

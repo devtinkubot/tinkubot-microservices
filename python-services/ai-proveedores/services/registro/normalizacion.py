@@ -83,10 +83,10 @@ def garantizar_campos_obligatorios_proveedor(
     datos = dict(registro or {})
     datos.setdefault("verified", False)
 
-    available_value = datos.get("available")
-    if available_value is None:
-        available_value = datos.get("verified", True)
-    datos["available"] = bool(available_value)
+    valor_disponible = datos.get("available")
+    if valor_disponible is None:
+        valor_disponible = datos.get("verified", True)
+    datos["available"] = bool(valor_disponible)
 
     datos["rating"] = float(datos.get("rating") or 5.0)
     datos["experience_years"] = int(datos.get("experience_years") or 0)

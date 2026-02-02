@@ -5,7 +5,7 @@ from .componentes import pie_instrucciones_respuesta_numerica
 
 # ==================== MENSAJES ====================
 
-PROVIDER_MAIN_MENU = (
+MENU_PRINCIPAL_PROVEEDOR = (
     "**Menú de Proveedores**\n"
     "\n"
     f"{pie_instrucciones_respuesta_numerica}\n"
@@ -14,7 +14,7 @@ PROVIDER_MAIN_MENU = (
     "2) Salir\n"
 )
 
-PROVIDER_POST_REGISTRATION_MENU = (
+MENU_POST_REGISTRO_PROVEEDOR = (
     "**Menú de Proveedor**\n"
     "\n"
     f"{pie_instrucciones_respuesta_numerica}\n"
@@ -29,17 +29,17 @@ PROVIDER_POST_REGISTRATION_MENU = (
 # ==================== FUNCIONES ====================
 
 
-def provider_main_menu_message() -> str:
+def mensaje_menu_principal_proveedor() -> str:
     """Genera el menú principal de proveedores."""
-    return f"{PROVIDER_MAIN_MENU}"
+    return f"{MENU_PRINCIPAL_PROVEEDOR}"
 
 
-def provider_post_registration_menu_message() -> str:
+def mensaje_menu_post_registro_proveedor() -> str:
     """Genera el menú posterior al registro de proveedor."""
-    return f"{PROVIDER_POST_REGISTRATION_MENU}"
+    return f"{MENU_POST_REGISTRO_PROVEEDOR}"
 
 
-def provider_services_menu_message(servicios: List[str], max_servicios: int) -> str:
+def mensaje_menu_servicios_proveedor(servicios: List[str], max_servicios: int) -> str:
     """Genera el menú de gestión de servicios con los servicios registrados."""
     encabezado = ["**Gestión de Servicios**", ""]
 

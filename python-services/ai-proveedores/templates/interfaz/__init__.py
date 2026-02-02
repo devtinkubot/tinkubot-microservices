@@ -1,17 +1,17 @@
 """Mensajes relacionados con menús y componentes de interfaz."""
 
 from .menus import (
-    PROVIDER_MAIN_MENU,
-    PROVIDER_POST_REGISTRATION_MENU,
-    provider_main_menu_message,
-    provider_post_registration_menu_message,
-    provider_services_menu_message,
+    MENU_PRINCIPAL_PROVEEDOR,
+    MENU_POST_REGISTRO_PROVEEDOR,
+    mensaje_menu_principal_proveedor,
+    mensaje_menu_post_registro_proveedor,
+    mensaje_menu_servicios_proveedor,
 )
 
 from .componentes import pie_instrucciones_respuesta_numerica
 
 from .mensajes_comunes import (
-    informar_cierre_session,
+    informar_cierre_sesion,
     error_opcion_no_reconocida,
 )
 
@@ -48,15 +48,15 @@ from .eliminacion_registro import (
 
 __all__ = [
     # Menús
-    "PROVIDER_MAIN_MENU",
-    "PROVIDER_POST_REGISTRATION_MENU",
-    "provider_main_menu_message",
-    "provider_post_registration_menu_message",
-    "provider_services_menu_message",
+    "MENU_PRINCIPAL_PROVEEDOR",
+    "MENU_POST_REGISTRO_PROVEEDOR",
+    "mensaje_menu_principal_proveedor",
+    "mensaje_menu_post_registro_proveedor",
+    "mensaje_menu_servicios_proveedor",
     # Componentes
     "pie_instrucciones_respuesta_numerica",
     # Mensajes comunes
-    "informar_cierre_session",
+    "informar_cierre_sesion",
     "error_opcion_no_reconocida",
     # Actualización de perfil
     "solicitar_selfie_actualizacion",

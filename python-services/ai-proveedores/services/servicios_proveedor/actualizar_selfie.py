@@ -9,17 +9,17 @@ logger = logging.getLogger(__name__)
 
 
 async def actualizar_selfie(
-    storage_service,
-    provider_id: str,
-    face_image_base64: str,
+    servicio_almacenamiento,
+    proveedor_id: str,
+    imagen_selfie_base64: str,
 ) -> Dict[str, Any]:
     """
     Actualiza la foto de selfie de un proveedor.
 
     Args:
-        storage_service: Función de servicio de almacenamiento (subir_medios_identidad)
-        provider_id: ID del proveedor
-        face_image_base64: Imagen en formato base64
+        servicio_almacenamiento: Función de servicio de almacenamiento (subir_medios_identidad)
+        proveedor_id: ID del proveedor
+        imagen_selfie_base64: Imagen en formato base64
 
     Returns:
         Dict con:
@@ -27,12 +27,12 @@ async def actualizar_selfie(
             - message (str): Mensaje descriptivo
 
     Raises:
-        ValueError: Si provider_id no está proporcionado
+        ValueError: Si proveedor_id no está proporcionado
     """
-    if not provider_id:
-        raise ValueError("provider_id es requerido")
+    if not proveedor_id:
+        raise ValueError("proveedor_id es requerido")
 
-    if not face_image_base64:
+    if not imagen_selfie_base64:
         return {
             "success": False,
             "message": "No se proporcionó una imagen válida",
@@ -40,12 +40,12 @@ async def actualizar_selfie(
 
     try:
         # Subir imagen a almacenamiento
-        await storage_service(
-            provider_id,
-            {"face_image": face_image_base64}
+        await servicio_almacenamiento(
+            proveedor_id,
+            {"face_image": imagen_selfie_base64}
         )
 
-        logger.info(f"✅ Selfie actualizada para proveedor {provider_id}")
+        logger.info(f"✅ Selfie actualizada para proveedor {proveedor_id}")
 
         return {
             "success": True,
@@ -53,8 +53,8 @@ async def actualizar_selfie(
         }
 
     except Exception as exc:
-        error_msg = f"Error actualizando selfie para {provider_id}: {exc}"
-        logger.error(f"❌ {error_msg}")
+        mensaje_error = f"Error actualizando selfie para {proveedor_id}: {exc}"
+        logger.error(f"❌ {mensaje_error}")
 
         return {
             "success": False,

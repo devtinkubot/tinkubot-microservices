@@ -4,9 +4,9 @@ from typing import Any, Dict, Optional, Tuple
 
 
 def procesar_estado_esperando_ciudad(
-    flow: Dict[str, Any],
-    text: Optional[str],
-    city_prompt: str,
+    flujo: Dict[str, Any],
+    texto: Optional[str],
+    prompt_ciudad: str,
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """Procesa el estado `awaiting_city`.
 
@@ -14,15 +14,15 @@ def procesar_estado_esperando_ciudad(
     con la ciudad ingresada, cambiando el estado a "searching".
 
     Args:
-        flow: Diccionario con el estado actual del flujo conversacional.
-        text: Texto ingresado por el usuario con el nombre de la ciudad.
-        city_prompt: Mensaje a mostrar si no se proporcionó una ciudad.
+        flujo: Diccionario con el estado actual del flujo conversacional.
+        texto: Texto ingresado por el usuario con el nombre de la ciudad.
+        prompt_ciudad: Mensaje a mostrar si no se proporcionó una ciudad.
 
     Returns:
         Tupla con el flujo actualizado y el payload de respuesta.
     """
-    if not text:
-        return flow, {"response": city_prompt}
+    if not texto:
+        return flujo, {"response": prompt_ciudad}
 
-    flow.update({"city": text, "state": "searching"})
-    return flow, {"response": None}
+    flujo.update({"city": texto, "state": "searching"})
+    return flujo, {"response": None}

@@ -28,16 +28,16 @@ from templates.interfaz import (
 
 async def manejar_accion_servicios(
     *,
-    flow: Dict[str, Any],
-    message_text: str,
-    menu_choice: Optional[str],
+    flujo: Dict[str, Any],
+    texto_mensaje: str,
+    opcion_menu: Optional[str],
 ) -> Dict[str, Any]:
     """Gestiona el menú de servicios del proveedor."""
-    choice = menu_choice
-    lowered = (message_text or "").strip().lower()
-    servicios_actuales = flow.get("services") or []
+    opcion = opcion_menu
+    texto_minusculas = (texto_mensaje or "").strip().lower()
+    servicios_actuales = flujo.get("services") or []
 
-    if choice == "1" or "agregar" in lowered:
+    if opcion == "1" or "agregar" in texto_minusculas:
         if len(servicios_actuales) >= SERVICIOS_MAXIMOS:
             return {
                 "success": True,
@@ -50,15 +50,15 @@ async def manejar_accion_servicios(
                     },
                 ],
             }
-        flow["state"] = "awaiting_service_add"
+        flujo["state"] = "awaiting_service_add"
         return {
             "success": True,
             "response": preguntar_nuevo_servicio(),
         }
 
-    if choice == "2" or "eliminar" in lowered:
+    if opcion == "2" or "eliminar" in texto_minusculas:
         if not servicios_actuales:
-            flow["state"] = "awaiting_service_action"
+            flujo["state"] = "awaiting_service_action"
             return {
                 "success": True,
                 "messages": [
@@ -70,7 +70,7 @@ async def manejar_accion_servicios(
                     },
                 ],
             }
-        flow["state"] = "awaiting_service_remove"
+        flujo["state"] = "awaiting_service_remove"
         listado = construir_listado_servicios(servicios_actuales)
         return {
             "success": True,
@@ -80,11 +80,11 @@ async def manejar_accion_servicios(
             ],
         }
 
-    if choice == "3" or "volver" in lowered or "salir" in lowered:
-        flow["state"] = "awaiting_menu_option"
+    if opcion == "3" or "volver" in texto_minusculas or "salir" in texto_minusculas:
+        flujo["state"] = "awaiting_menu_option"
         return {
             "success": True,
-            "messages": [{"response": construir_menu_principal(is_registered=True)}],
+            "messages": [{"response": construir_menu_principal(esta_registrado=True)}],
         }
 
     return {
@@ -98,19 +98,19 @@ async def manejar_accion_servicios(
 
 async def manejar_agregar_servicios(
     *,
-    flow: Dict[str, Any],
-    provider_id: Optional[str],
-    message_text: str,
+    flujo: Dict[str, Any],
+    proveedor_id: Optional[str],
+    texto_mensaje: str,
 ) -> Dict[str, Any]:
     """Agrega nuevos servicios al proveedor."""
-    if not provider_id:
-        flow["state"] = "awaiting_menu_option"
+    if not proveedor_id:
+        flujo["state"] = "awaiting_menu_option"
         return {
             "success": True,
-            "messages": [{"response": construir_menu_principal(is_registered=True)}],
+            "messages": [{"response": construir_menu_principal(esta_registrado=True)}],
         }
 
-    servicios_actuales = flow.get("services") or []
+    servicios_actuales = flujo.get("services") or []
     espacio_restante = SERVICIOS_MAXIMOS - len(servicios_actuales)
     if espacio_restante <= 0:
         return {
@@ -121,7 +121,7 @@ async def manejar_agregar_servicios(
             ],
         }
 
-    candidatos = dividir_cadena_servicios(message_text or "")
+    candidatos = dividir_cadena_servicios(texto_mensaje or "")
     if not candidatos:
         return {
             "success": True,
@@ -158,24 +158,24 @@ async def manejar_agregar_servicios(
     servicios_actualizados = servicios_actuales + nuevos_recortados
     try:
         servicios_finales = await actualizar_servicios(
-            provider_id, servicios_actualizados
+            proveedor_id, servicios_actualizados
         )
     except Exception:
-        flow["state"] = "awaiting_service_action"
+        flujo["state"] = "awaiting_service_action"
         return {
             "success": False,
             "response": error_guardar_servicio(),
         }
 
-    flow["services"] = servicios_finales
-    flow["state"] = "awaiting_service_action"
+    flujo["services"] = servicios_finales
+    flujo["state"] = "awaiting_service_action"
 
-    response_messages = [
+    mensajes_respuesta = [
         {"response": confirmar_servicios_agregados(nuevos_recortados)},
         {"response": construir_menu_servicios(servicios_finales, SERVICIOS_MAXIMOS)},
     ]
     if aviso_limite:
-        response_messages.insert(
+        mensajes_respuesta.insert(
             1,
             {
                 "response": informar_limite_servicios_alcanzado(
@@ -186,36 +186,40 @@ async def manejar_agregar_servicios(
 
     return {
         "success": True,
-        "messages": response_messages,
+        "messages": mensajes_respuesta,
     }
 
 
 async def manejar_eliminar_servicio(
     *,
-    flow: Dict[str, Any],
-    provider_id: Optional[str],
-    message_text: str,
+    flujo: Dict[str, Any],
+    proveedor_id: Optional[str],
+    texto_mensaje: str,
 ) -> Dict[str, Any]:
     """Elimina un servicio del proveedor."""
-    servicios_actuales = flow.get("services") or []
-    if not provider_id or not servicios_actuales:
-        flow["state"] = "awaiting_menu_option"
+    servicios_actuales = flujo.get("services") or []
+    if not proveedor_id or not servicios_actuales:
+        flujo["state"] = "awaiting_menu_option"
         return {
             "success": True,
-            "messages": [{"response": construir_menu_principal(is_registered=True)}],
+            "messages": [{"response": construir_menu_principal(esta_registrado=True)}],
         }
 
-    texto = (message_text or "").strip()
-    indice = None
-    if texto.isdigit():
-        indice = int(texto) - 1
+    texto_ingresado = (texto_mensaje or "").strip()
+    indice_servicio = None
+    if texto_ingresado.isdigit():
+        indice_servicio = int(texto_ingresado) - 1
     else:
         try:
-            indice = int(re.findall(r"\d+", texto)[0]) - 1
+            indice_servicio = int(re.findall(r"\d+", texto_ingresado)[0]) - 1
         except Exception:
-            indice = None
+            indice_servicio = None
 
-    if indice is None or indice < 0 or indice >= len(servicios_actuales):
+    if (
+        indice_servicio is None
+        or indice_servicio < 0
+        or indice_servicio >= len(servicios_actuales)
+    ):
         listado = construir_listado_servicios(servicios_actuales)
         return {
             "success": True,
@@ -225,21 +229,21 @@ async def manejar_eliminar_servicio(
             ],
         }
 
-    servicio_eliminado = servicios_actuales.pop(indice)
+    servicio_eliminado = servicios_actuales.pop(indice_servicio)
     try:
         servicios_finales = await actualizar_servicios(
-            provider_id, servicios_actuales
+            proveedor_id, servicios_actuales
         )
     except Exception:
-        servicios_actuales.insert(indice, servicio_eliminado)
-        flow["state"] = "awaiting_service_action"
+        servicios_actuales.insert(indice_servicio, servicio_eliminado)
+        flujo["state"] = "awaiting_service_action"
         return {
             "success": False,
             "response": error_eliminar_servicio(),
         }
 
-    flow["services"] = servicios_finales
-    flow["state"] = "awaiting_service_action"
+    flujo["services"] = servicios_finales
+    flujo["state"] = "awaiting_service_action"
     return {
         "success": True,
         "messages": [

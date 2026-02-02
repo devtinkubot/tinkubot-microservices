@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 def construir_mensajes_resultados(
-    providers: List[Dict[str, Any]], city: str
+    proveedores: List[Dict[str, Any]], ciudad: str
 ) -> List[str]:
     """
     Construye mensajes para presentar resultados cuando hay proveedores.
@@ -27,44 +27,46 @@ def construir_mensajes_resultados(
     Genera un listado compacto de proveedores con instrucciones de selección.
 
     Args:
-        providers: Lista de proveedores encontrados (máximo 5).
-        city: Ciudad donde se encontraron los proveedores.
+        proveedores: Lista de proveedores encontrados (máximo 5).
+        ciudad: Ciudad donde se encontraron los proveedores.
 
     Returns:
         Lista con un único mensaje conteniendo el listado de proveedores.
 
     Example:
-        >>> providers = [
+        >>> proveedores = [
         ...     {"name": "Juan Pérez", "profession": "plomero"},
         ...     {"name": "María García", "profession": "plomero"}
         ... ]
-        >>> mensajes = construir_mensajes_resultados(providers, "Madrid")
+        >>> mensajes = construir_mensajes_resultados(proveedores, "Madrid")
         >>> len(mensajes)
         1
         >>> "Juan Pérez" in mensajes[0]
         True
     """
-    if not providers:
+    if not proveedores:
         logger.warning("⚠️ construir_mensajes_resultados llamado sin proveedores")
         return []
 
     try:
-        intro = mensaje_intro_listado_proveedores(city)
-        block = bloque_listado_proveedores_compacto(providers)
-        header_block = f"{intro}\n\n{block}\n{instruccion_seleccionar_proveedor}"
-
-        logger.info(
-            f"✅ Mensaje de resultados construido: {len(providers)} proveedores"
+        intro = mensaje_intro_listado_proveedores(ciudad)
+        bloque = bloque_listado_proveedores_compacto(proveedores)
+        bloque_encabezado = (
+            f"{intro}\n\n{bloque}\n{instruccion_seleccionar_proveedor}"
         )
 
-        return [header_block]
+        logger.info(
+            f"✅ Mensaje de resultados construido: {len(proveedores)} proveedores"
+        )
+
+        return [bloque_encabezado]
 
     except Exception as exc:
         logger.error(f"❌ Error construyendo mensajes de resultados: {exc}")
         return []
 
 
-def construir_mensajes_sin_resultados(city: str) -> List[str]:
+def construir_mensajes_sin_resultados(ciudad: str) -> List[str]:
     """
     Construye mensajes para presentar cuando no hay resultados.
 
@@ -72,7 +74,7 @@ def construir_mensajes_sin_resultados(city: str) -> List[str]:
     en la ciudad especificada.
 
     Args:
-        city: Ciudad donde se buscó proveedores.
+        ciudad: Ciudad donde se buscó proveedores.
 
     Returns:
         Lista con un único mensaje sin resultados.
@@ -85,46 +87,45 @@ def construir_mensajes_sin_resultados(city: str) -> List[str]:
         True
     """
     try:
-        block = mensaje_listado_sin_resultados(city)
+        bloque = mensaje_listado_sin_resultados(ciudad)
 
-        logger.info(f"✅ Mensaje sin resultados construido para city='{city}'")
+        logger.info(f"✅ Mensaje sin resultados construido para city='{ciudad}'")
 
-        return [block]
+        return [bloque]
 
     except Exception as exc:
         logger.error(f"❌ Error construyendo mensaje sin resultados: {exc}")
-        return [mensaje_listado_sin_resultados(city)]
+        return [mensaje_listado_sin_resultados(ciudad)]
 
 
-def construir_resumen_resultados(providers: List[Dict[str, Any]]) -> str:
+def construir_resumen_resultados(proveedores: List[Dict[str, Any]]) -> str:
     """
     Construye un resumen breve de los resultados encontrados.
 
     Args:
-        providers: Lista de proveedores encontrados.
+        proveedores: Lista de proveedores encontrados.
 
     Returns:
         String con resumen de cantidad y nombres de proveedores.
 
     Example:
-        >>> providers = [
+        >>> proveedores = [
         ...     {"name": "Juan Pérez"},
         ...     {"name": "María García"}
         ... ]
-        >>> resumen = construir_resumen_resultados(providers)
+        >>> resumen = construir_resumen_resultados(proveedores)
         >>> "2 proveedores" in resumen
         True
     """
-    if not providers:
+    if not proveedores:
         return "No se encontraron proveedores"
 
-    cantidad = len(providers)
+    cantidad = len(proveedores)
     if cantidad == 1:
-        nombre = providers[0].get("name", "Proveedor")
+        nombre = proveedores[0].get("name", "Proveedor")
         return f"1 proveedor encontrado: {nombre}"
-    else:
-        nombres = [p.get("name", "Proveedor") for p in providers[:3]]
-        nombres_text = ", ".join(nombres)
-        if cantidad > 3:
-            return f"{cantidad} proveedores encontrados: {nombres_text} y otros..."
-        return f"{cantidad} proveedores encontrados: {nombres_text}"
+    nombres = [p.get("name", "Proveedor") for p in proveedores[:3]]
+    nombres_texto = ", ".join(nombres)
+    if cantidad > 3:
+        return f"{cantidad} proveedores encontrados: {nombres_texto} y otros..."
+    return f"{cantidad} proveedores encontrados: {nombres_texto}"

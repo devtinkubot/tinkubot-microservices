@@ -10,8 +10,8 @@ from typing import Dict, List, Optional, Tuple
 from openai import AsyncOpenAI
 
 from models.catalogo_servicios import (
-    COMMON_SERVICE_SYNONYMS,
-    COMMON_SERVICES,
+    SERVICIOS_COMUNES,
+    SINONIMOS_SERVICIOS_COMUNES,
 )
 
 
@@ -24,7 +24,7 @@ class ExpansorSinonimos:
     """
 
     # Sinónimos de ciudades de Ecuador
-    ECUADOR_CITY_SYNONYMS = {
+    SINONIMOS_CIUDADES_ECUADOR = {
         "Quito": {"quito"},
         "Guayaquil": {"guayaquil"},
         "Cuenca": {"cuenca", "cueca"},
@@ -48,34 +48,34 @@ class ExpansorSinonimos:
 
     def __init__(
         self,
-        openai_client: Optional[AsyncOpenAI],
-        openai_semaphore: Optional[asyncio.Semaphore],
-        openai_timeout: float,
+        cliente_openai: Optional[AsyncOpenAI],
+        semaforo_openai: Optional[asyncio.Semaphore],
+        tiempo_espera_openai: float,
         logger: logging.Logger,
     ):
         """
         Inicializar el servicio de expansión.
 
         Args:
-            openai_client: Cliente de OpenAI (opcional)
-            openai_semaphore: Semaphore para limitar concurrencia
-            openai_timeout: Timeout en segundos para llamadas a OpenAI
+            cliente_openai: Cliente de OpenAI (opcional)
+            semaforo_openai: Semaphore para limitar concurrencia
+            tiempo_espera_openai: Timeout en segundos para llamadas a OpenAI
             logger: Logger para trazabilidad
         """
-        self.openai_client = openai_client
-        self.openai_semaphore = openai_semaphore
-        self.openai_timeout = openai_timeout
+        self.cliente_openai = cliente_openai
+        self.semaforo_openai = semaforo_openai
+        self.tiempo_espera_openai = tiempo_espera_openai
         self.logger = logger
 
-    def _normalize_text_for_matching(self, text: str) -> str:
+    def _normalizar_texto_para_coincidencia(self, texto: str) -> str:
         """Normaliza texto para comparación flexible."""
-        base = (text or "").lower()
-        normalized = unicodedata.normalize("NFD", base)
-        without_accents = "".join(
-            ch for ch in normalized if unicodedata.category(ch) != "Mn"
+        base = (texto or "").lower()
+        normalizado = unicodedata.normalize("NFD", base)
+        sin_acentos = "".join(
+            ch for ch in normalizado if unicodedata.category(ch) != "Mn"
         )
-        cleaned = re.sub(r"[^a-z0-9\s]", " ", without_accents)
-        return re.sub(r"\s+", " ", cleaned).strip()
+        limpio = re.sub(r"[^a-z0-9\s]", " ", sin_acentos)
+        return re.sub(r"\s+", " ", limpio).strip()
 
     def extraer_servicio_y_ubicacion(
         self,
@@ -92,49 +92,49 @@ class ExpansorSinonimos:
         Returns:
             Tupla (servicio, ubicacion) - puede ser (None, None)
         """
-        combined_text = f"{historial_texto}\n{ultimo_mensaje}"
-        normalized_text = self._normalize_text_for_matching(combined_text)
-        if not normalized_text:
+        texto_combinado = f"{historial_texto}\n{ultimo_mensaje}"
+        texto_normalizado = self._normalizar_texto_para_coincidencia(texto_combinado)
+        if not texto_normalizado:
             return None, None
 
-        padded_text = f" {normalized_text} "
+        texto_con_padding = f" {texto_normalizado} "
 
-        profession = None
-        for canonical, synonyms in COMMON_SERVICE_SYNONYMS.items():
-            for synonym in synonyms:
-                normalized_synonym = self._normalize_text_for_matching(synonym)
-                if not normalized_synonym:
+        profesion = None
+        for canonico, sinonimos in SINONIMOS_SERVICIOS_COMUNES.items():
+            for sinonimo in sinonimos:
+                sinonimo_normalizado = self._normalizar_texto_para_coincidencia(sinonimo)
+                if not sinonimo_normalizado:
                     continue
-                if f" {normalized_synonym} " in padded_text:
-                    profession = canonical
+                if f" {sinonimo_normalizado} " in texto_con_padding:
+                    profesion = canonico
                     break
-            if profession:
+            if profesion:
                 break
 
-        if not profession:
-            for service in COMMON_SERVICES:
-                normalized_service = self._normalize_text_for_matching(service)
-                if normalized_service and f" {normalized_service} " in padded_text:
-                    profession = service
+        if not profesion:
+            for servicio in SERVICIOS_COMUNES:
+                servicio_normalizado = self._normalizar_texto_para_coincidencia(servicio)
+                if servicio_normalizado and f" {servicio_normalizado} " in texto_con_padding:
+                    profesion = servicio
                     break
 
-        location = None
-        for canonical_city, synonyms in self.ECUADOR_CITY_SYNONYMS.items():
-            for synonym in synonyms:
-                normalized_synonym = self._normalize_text_for_matching(synonym)
-                if not normalized_synonym:
+        ubicacion = None
+        for ciudad_canonica, sinonimos in self.SINONIMOS_CIUDADES_ECUADOR.items():
+            for sinonimo in sinonimos:
+                sinonimo_normalizado = self._normalizar_texto_para_coincidencia(sinonimo)
+                if not sinonimo_normalizado:
                     continue
-                if f" {normalized_synonym} " in padded_text:
-                    location = canonical_city
+                if f" {sinonimo_normalizado} " in texto_con_padding:
+                    ubicacion = ciudad_canonica
                     break
-            if location:
+            if ubicacion:
                 break
 
-        return profession, location
+        return profesion, ubicacion
 
     async def expandir_necesidad_con_ia(
         self,
-        user_need: str,
+        necesidad_usuario: str,
         max_sinonimos: int = 5,
     ) -> List[str]:
         """
@@ -145,26 +145,26 @@ class ExpansorSinonimos:
         terminología diferente.
 
         Args:
-            user_need: La necesidad del usuario (ej: "marketing", "community manager")
+            necesidad_usuario: La necesidad del usuario (ej: "marketing", "community manager")
             max_sinonimos: Número máximo de sinónimos a generar (default: 5)
 
         Returns:
             Lista de términos expandidos incluyendo el término original.
-            Si hay error, retorna [user_need] como fallback.
+            Si hay error, retorna [necesidad_usuario] como fallback.
         """
-        if not self.openai_client:
+        if not self.cliente_openai:
             self.logger.warning("⚠️ expandir_necesidad_con_ia: sin cliente OpenAI")
-            return [user_need]
+            return [necesidad_usuario]
 
-        if not user_need or not user_need.strip():
+        if not necesidad_usuario or not necesidad_usuario.strip():
             return []
 
-        self.logger.info(f"🔄 Expandiendo necesidad con IA: '{user_need}'")
+        self.logger.info(f"🔄 Expandiendo necesidad con IA: '{necesidad_usuario}'")
 
         # Truncar si es muy largo (limitar input tokens)
-        need_truncated = user_need[:200].strip()
+        necesidad_truncada = necesidad_usuario[:200].strip()
 
-        system_prompt = f"""Eres un experto en servicios profesionales. Genera {max_sinonimos} términos de búsqueda que capturen:
+        prompt_sistema = f"""Eres un experto en servicios profesionales. Genera {max_sinonimos} términos de búsqueda que capturen:
 1. La profesión/servicio principal
 2. Sinónimos comunes en español
 3. Términos equivalentes en inglés si aplica
@@ -176,90 +176,98 @@ Ejemplos:
 
 Responde SOLO con un JSON array de strings. Sin explicaciones."""
 
-        user_prompt = f'Genera {max_sinonimos} sinónimos o términos equivalentes para: "{need_truncated}"'
+        prompt_usuario = (
+            f'Genera {max_sinonimos} sinónimos o términos equivalentes para: "{necesidad_truncada}"'
+        )
 
         try:
-            async with self.openai_semaphore:
-                response = await asyncio.wait_for(
-                    self.openai_client.chat.completions.create(
+            async with self.semaforo_openai:
+                respuesta = await asyncio.wait_for(
+                    self.cliente_openai.chat.completions.create(
                         model="gpt-3.5-turbo",
                         messages=[
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_prompt},
+                            {"role": "system", "content": prompt_sistema},
+                            {"role": "user", "content": prompt_usuario},
                         ],
                         temperature=0.5,
                         max_tokens=150,
                     ),
-                    timeout=self.openai_timeout,
+                    timeout=self.tiempo_espera_openai,
                 )
 
-            if not response.choices:
+            if not respuesta.choices:
                 self.logger.warning("⚠️ OpenAI respondió sin choices en expandir_necesidad_con_ia")
-                return [user_need]
+                return [necesidad_usuario]
 
-            content = (response.choices[0].message.content or "").strip()
-            self.logger.debug(f"🤖 Respuesta cruda expansión IA: {content[:200]}")
+            contenido = (respuesta.choices[0].message.content or "").strip()
+            self.logger.debug(f"🤖 Respuesta cruda expansión IA: {contenido[:200]}")
 
             # Limpiar markdown code blocks si existen
-            if content.startswith("```"):
-                content = re.sub(r"^```(?:json)?", "", content, flags=re.IGNORECASE).strip()
-                content = re.sub(r"```$", "", content).strip()
+            if contenido.startswith("```"):
+                contenido = re.sub(
+                    r"^```(?:json)?", "", contenido, flags=re.IGNORECASE
+                ).strip()
+                contenido = re.sub(r"```$", "", contenido).strip()
 
             # Parsear JSON
             try:
-                synonyms_list = json.loads(content)
+                lista_sinonimos = json.loads(contenido)
             except json.JSONDecodeError:
-                self.logger.warning(f"⚠️ No se pudo parsear JSON de expansión: {content[:100]}")
-                return [user_need]
+                self.logger.warning(
+                    f"⚠️ No se pudo parsear JSON de expansión: {contenido[:100]}"
+                )
+                return [necesidad_usuario]
 
             # Validar que sea una lista
-            if not isinstance(synonyms_list, list):
-                self.logger.warning(f"⚠️ Respuesta no es lista: {type(synonyms_list)}")
-                return [user_need]
+            if not isinstance(lista_sinonimos, list):
+                self.logger.warning(
+                    f"⚠️ Respuesta no es lista: {type(lista_sinonimos)}"
+                )
+                return [necesidad_usuario]
 
             # Validar y limpiar elementos
-            valid_synonyms = []
-            for item in synonyms_list:
+            sinonimos_validos = []
+            for item in lista_sinonimos:
                 if isinstance(item, str) and item.strip():
-                    valid_synonyms.append(item.strip())
+                    sinonimos_validos.append(item.strip())
 
-            if not valid_synonyms:
+            if not sinonimos_validos:
                 self.logger.warning("⚠️ Lista de sinónimos vacía después de validación")
-                return [user_need]
+                return [necesidad_usuario]
 
             # Asegurar que el término original esté incluido
-            if user_need not in valid_synonyms:
-                valid_synonyms.insert(0, user_need)
+            if necesidad_usuario not in sinonimos_validos:
+                sinonimos_validos.insert(0, necesidad_usuario)
 
             # Limitar a max_sinonimos
-            final_terms = valid_synonyms[:max_sinonimos]
+            terminos_finales = sinonimos_validos[:max_sinonimos]
 
             self.logger.info(
-                f"✅ Expansión IA completada: '{user_need}' → {final_terms}"
+                f"✅ Expansión IA completada: '{necesidad_usuario}' → {terminos_finales}"
             )
-            return final_terms
+            return terminos_finales
 
         except asyncio.TimeoutError:
             self.logger.warning("⚠️ Timeout en expandir_necesidad_con_ia, usando fallback")
-            return [user_need]
+            return [necesidad_usuario]
         except Exception as exc:
             self.logger.warning(f"⚠️ Error en expandir_necesidad_con_ia: {exc}")
-            return [user_need]
+            return [necesidad_usuario]
 
-    async def _extraer_profesion_con_ia(self, text: str) -> Optional[str]:
+    async def _extraer_profesion_con_ia(self, texto: str) -> Optional[str]:
         """
         Extrae la profesión/servicio del texto usando IA cuando la búsqueda estática falla.
 
-        Esto permite detectar servicios que NO están en COMMON_SERVICE_SYNONYMS,
+        Esto permite detectar servicios que NO están en SINONIMOS_SERVICIOS_COMUNES,
         como "gestor de redes sociales", "community manager", etc.
         """
-        if not text or not text.strip():
+        if not texto or not texto.strip():
             return None
 
-        if not self.openai_client:
+        if not self.cliente_openai:
             return None
 
-        system_prompt = """Eres un experto en identificar servicios profesionales. Tu tarea es extraer EL SERVICIO PRINCIPAL que el usuario necesita.
+        prompt_sistema = """Eres un experto en identificar servicios profesionales. Tu tarea es extraer EL SERVICIO PRINCIPAL que el usuario necesita.
 
 Reglas:
 1. Responde SOLO con el nombre del servicio/profesión en español
@@ -275,32 +283,36 @@ Ejemplos:
 
 Responde SOLO con el nombre del servicio, sin explicaciones."""
 
-        user_prompt = f'¿Cuál es el servicio principal que necesita este usuario: "{text[:200]}"'
+        prompt_usuario = (
+            f'¿Cuál es el servicio principal que necesita este usuario: "{texto[:200]}"'
+        )
 
         try:
-            async with self.openai_semaphore:
-                response = await asyncio.wait_for(
-                    self.openai_client.chat.completions.create(
+            async with self.semaforo_openai:
+                respuesta = await asyncio.wait_for(
+                    self.cliente_openai.chat.completions.create(
                         model="gpt-3.5-turbo",
                         messages=[
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_prompt},
+                            {"role": "system", "content": prompt_sistema},
+                            {"role": "user", "content": prompt_usuario},
                         ],
                         temperature=0.3,
                         max_tokens=50,
                     ),
-                    timeout=self.openai_timeout,
+                    timeout=self.tiempo_espera_openai,
                 )
 
-            if not response.choices:
+            if not respuesta.choices:
                 return None
 
-            profession = (response.choices[0].message.content or "").strip()
+            profesion = (respuesta.choices[0].message.content or "").strip()
             # Limpiar comillas y otros caracteres
-            profession = profession.strip('"').strip("'").strip()
+            profesion = profesion.strip('"').strip("'").strip()
 
-            self.logger.info(f"✅ IA extrajo profesión: '{profession}' del texto: '{text[:50]}...'")
-            return profession if profession else None
+            self.logger.info(
+                f"✅ IA extrajo profesión: '{profesion}' del texto: '{texto[:50]}...'"
+            )
+            return profesion if profesion else None
 
         except asyncio.TimeoutError:
             self.logger.warning("⚠️ Timeout extrayendo profesión con IA")
@@ -309,21 +321,33 @@ Responde SOLO con el nombre del servicio, sin explicaciones."""
             self.logger.warning(f"⚠️ Error extrayendo profesión con IA: {exc}")
             return None
 
-    async def _extraer_ubicacion_con_ia(self, text: str) -> Optional[str]:
+    async def _extraer_ubicacion_con_ia(self, texto: str) -> Optional[str]:
         """
         Extrae la ciudad del texto usando IA cuando la búsqueda estática falla.
         """
-        cities = ["Quito", "Guayaquil", "Cuenca", "Santo Domingo", "Manta", "Portoviejo",
-                  "Machala", "Durán", "Loja", "Ambato", "Riobamba", "Esmeraldas"]
+        ciudades = [
+            "Quito",
+            "Guayaquil",
+            "Cuenca",
+            "Santo Domingo",
+            "Manta",
+            "Portoviejo",
+            "Machala",
+            "Durán",
+            "Loja",
+            "Ambato",
+            "Riobamba",
+            "Esmeraldas",
+        ]
 
-        cities_str = ", ".join(cities)
+        ciudades_str = ", ".join(ciudades)
 
-        if not self.openai_client:
+        if not self.cliente_openai:
             return None
 
-        system_prompt = f"""Eres un experto en identificar ciudades de Ecuador. Tu tarea es extraer LA CIUDAD mencionada en el texto.
+        prompt_sistema = f"""Eres un experto en identificar ciudades de Ecuador. Tu tarea es extraer LA CIUDAD mencionada en el texto.
 
-Ciudades válidas: {cities_str}
+Ciudades válidas: {ciudades_str}
 
 Reglas:
 1. Responde SOLO con el nombre de la ciudad si está en la lista
@@ -338,37 +362,39 @@ Ejemplos:
 
 Responde SOLO con el nombre de la ciudad o "null", sin explicaciones."""
 
-        user_prompt = f'¿Qué ciudad de Ecuador se menciona en: "{text[:200]}"'
+        prompt_usuario = f'¿Qué ciudad de Ecuador se menciona en: "{texto[:200]}"'
 
         try:
-            async with self.openai_semaphore:
-                response = await asyncio.wait_for(
-                    self.openai_client.chat.completions.create(
+            async with self.semaforo_openai:
+                respuesta = await asyncio.wait_for(
+                    self.cliente_openai.chat.completions.create(
                         model="gpt-3.5-turbo",
                         messages=[
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_prompt},
+                            {"role": "system", "content": prompt_sistema},
+                            {"role": "user", "content": prompt_usuario},
                         ],
                         temperature=0.3,
                         max_tokens=30,
                     ),
-                    timeout=self.openai_timeout,
+                    timeout=self.tiempo_espera_openai,
                 )
 
-            if not response.choices:
+            if not respuesta.choices:
                 return None
 
-            location = (response.choices[0].message.content or "").strip()
-            location = location.strip('"').strip("'").strip()
+            ubicacion = (respuesta.choices[0].message.content or "").strip()
+            ubicacion = ubicacion.strip('"').strip("'").strip()
 
-            if location.lower() == "null" or not location:
+            if ubicacion.lower() == "null" or not ubicacion:
                 return None
 
             # Verificar que sea una ciudad válida
-            for city in cities:
-                if city.lower() == location.lower():
-                    self.logger.info(f"✅ IA extrajo ciudad: '{city}' del texto: '{text[:50]}...'")
-                    return city
+            for ciudad in ciudades:
+                if ciudad.lower() == ubicacion.lower():
+                    self.logger.info(
+                        f"✅ IA extrajo ciudad: '{ciudad}' del texto: '{texto[:50]}...'"
+                    )
+                    return ciudad
 
             return None
 
@@ -403,28 +429,30 @@ Responde SOLO con el nombre de la ciudad o "null", sin explicaciones."""
             - expanded_terms: Lista de términos expandidos por IA o None
         """
         # Paso 1: Intentar extracción estática primero (rápida)
-        profession, location = self.extraer_servicio_y_ubicacion(
+        profesion, ubicacion = self.extraer_servicio_y_ubicacion(
             historial_texto, ultimo_mensaje
         )
 
         # Paso 2: Si no hay profesión, usar IA para extraer del texto
-        if not profession and self.openai_client:
+        if not profesion and self.cliente_openai:
             self.logger.info(f"🤖 Extracción estática falló, usando IA para: '{ultimo_mensaje[:100]}...'")
-            profession = await self._extraer_profesion_con_ia(ultimo_mensaje)
+            profesion = await self._extraer_profesion_con_ia(ultimo_mensaje)
 
             # Intentar extraer ubicación también con IA
-            if not location:
-                location = await self._extraer_ubicacion_con_ia(ultimo_mensaje)
+            if not ubicacion:
+                ubicacion = await self._extraer_ubicacion_con_ia(ultimo_mensaje)
 
         # Paso 3: Si aún no hay profesión, retornar None
-        if not profession:
+        if not profesion:
             return None, None, None
 
         # Paso 4: Expandir usando IA (siempre que tengamos profesión)
         try:
-            expanded_terms = await self.expandir_necesidad_con_ia(profession, max_sinonimos=5)
-            return profession, location, expanded_terms
+            terminos_expandidos = await self.expandir_necesidad_con_ia(
+                profesion, max_sinonimos=5
+            )
+            return profesion, ubicacion, terminos_expandidos
         except Exception as exc:
             self.logger.warning(f"⚠️ Error en wrapper con expansión: {exc}")
             # Fallback: retornar solo el término original
-            return profession, location, [profession]
+            return profesion, ubicacion, [profesion]

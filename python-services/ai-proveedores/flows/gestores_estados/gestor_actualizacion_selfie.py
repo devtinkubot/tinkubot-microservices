@@ -14,21 +14,21 @@ from templates.interfaz import (
 
 async def manejar_actualizacion_selfie(
     *,
-    flow: Dict[str, Any],
-    provider_id: Optional[str],
-    payload: Dict[str, Any],
+    flujo: Dict[str, Any],
+    proveedor_id: Optional[str],
+    carga: Dict[str, Any],
     subir_medios_identidad,
 ) -> Dict[str, Any]:
     """Actualiza la selfie del proveedor y devuelve la respuesta."""
-    if not provider_id:
-        flow["state"] = "awaiting_menu_option"
+    if not proveedor_id:
+        flujo["state"] = "awaiting_menu_option"
         return {
             "success": True,
-            "messages": [{"response": construir_menu_principal(is_registered=True)}],
+            "messages": [{"response": construir_menu_principal(esta_registrado=True)}],
         }
 
-    image_b64 = extraer_primera_imagen_base64(payload)
-    if not image_b64:
+    imagen_b64 = extraer_primera_imagen_base64(carga)
+    if not imagen_b64:
         return {
             "success": True,
             "response": solicitar_selfie_requerida(),
@@ -36,22 +36,22 @@ async def manejar_actualizacion_selfie(
 
     resultado = await actualizar_selfie(
         subir_medios_identidad,
-        provider_id,
-        image_b64,
+        proveedor_id,
+        imagen_b64,
     )
 
     if not resultado.get("success"):
-        flow["state"] = "awaiting_menu_option"
+        flujo["state"] = "awaiting_menu_option"
         return {
             "success": False,
             "response": error_actualizar_selfie(),
         }
 
-    flow["state"] = "awaiting_menu_option"
+    flujo["state"] = "awaiting_menu_option"
     return {
         "success": True,
         "messages": [
             {"response": confirmar_selfie_actualizada()},
-            {"response": construir_menu_principal(is_registered=True)},
+            {"response": construir_menu_principal(esta_registrado=True)},
         ],
     }

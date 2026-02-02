@@ -19,9 +19,9 @@ from infrastructure.redis import cliente_redis
 logger = logging.getLogger(__name__)
 
 # Claves y constantes para Redis
-FLOW_KEY = "prov_flow:{}"  # phone
+CLAVE_FLUJO = "prov_flow:{}"  # telefono
 
-TRIGGER_WORDS = [
+PALABRAS_DISPARO = [
     "registro",
     "registrarme",
     "registrar",
@@ -33,7 +33,7 @@ TRIGGER_WORDS = [
     "crear perfil",
 ]
 
-RESET_KEYWORDS = {
+PALABRAS_REINICIO = {
     "reset",
     "reiniciar",
     "reinicio",
@@ -45,83 +45,83 @@ RESET_KEYWORDS = {
 }
 
 
-async def obtener_flujo(phone: str) -> Dict[str, Any]:
+async def obtener_flujo(telefono: str) -> Dict[str, Any]:
     """
     Obtener el flujo de conversación para un teléfono.
 
     Args:
-        phone: Número de teléfono del proveedor
+        telefono: Número de teléfono del proveedor
 
     Returns:
         Diccionario con el estado del flujo o diccionario vacío si no existe
     """
-    data = await cliente_redis.get(FLOW_KEY.format(phone))
-    return data or {}
+    datos = await cliente_redis.get(CLAVE_FLUJO.format(telefono))
+    return datos or {}
 
 
-async def establecer_flujo(phone: str, data: Dict[str, Any]) -> None:
+async def establecer_flujo(telefono: str, datos: Dict[str, Any]) -> None:
     """
     Establecer el flujo de conversación para un teléfono.
 
     Args:
-        phone: Número de teléfono del proveedor
-        data: Diccionario con el estado del flujo a guardar
+        telefono: Número de teléfono del proveedor
+        datos: Diccionario con el estado del flujo a guardar
     """
     await cliente_redis.set(
-        FLOW_KEY.format(phone), data, expire=configuracion.flow_ttl_seconds
+        CLAVE_FLUJO.format(telefono), datos, expire=configuracion.ttl_flujo_segundos
     )
 
 
 async def establecer_flujo_con_estado(
-    phone: str, data: Dict[str, Any], estado: str
+    telefono: str, datos: Dict[str, Any], estado: str
 ) -> None:
     """
     Establecer el flujo de conversación con un estado específico.
 
     Args:
-        phone: Número de teléfono del proveedor
-        data: Diccionario con el estado del flujo
+        telefono: Número de teléfono del proveedor
+        datos: Diccionario con el estado del flujo
         estado: Nuevo estado del flujo
     """
-    data["state"] = estado
+    datos["state"] = estado
     await cliente_redis.set(
-        FLOW_KEY.format(phone), data, expire=configuracion.flow_ttl_seconds
+        CLAVE_FLUJO.format(telefono), datos, expire=configuracion.ttl_flujo_segundos
     )
 
 
-async def reiniciar_flujo(phone: str) -> None:
+async def reiniciar_flujo(telefono: str) -> None:
     """
     Reiniciar (eliminar) el flujo de conversación para un teléfono.
 
     Args:
-        phone: Número de teléfono del proveedor
+        telefono: Número de teléfono del proveedor
     """
-    await cliente_redis.delete(FLOW_KEY.format(phone))
+    await cliente_redis.delete(CLAVE_FLUJO.format(telefono))
 
 
-def es_disparador_registro(text: str) -> bool:
+def es_disparador_registro(texto: str) -> bool:
     """
     Determinar si el texto indica una intención de registro.
 
     Args:
-        text: Texto del mensaje a evaluar
+        texto: Texto del mensaje a evaluar
 
     Returns:
         True si el texto contiene palabras clave de registro
     """
-    low = (text or "").lower()
-    return any(t in low for t in TRIGGER_WORDS)
+    texto_min = (texto or "").lower()
+    return any(t in texto_min for t in PALABRAS_DISPARO)
 
 
-def es_comando_reinicio(text: str) -> bool:
+def es_comando_reinicio(texto: str) -> bool:
     """
     Determinar si el texto es un comando de reinicio.
 
     Args:
-        text: Texto del mensaje a evaluar
+        texto: Texto del mensaje a evaluar
 
     Returns:
         True si el texto contiene palabras clave de reinicio
     """
-    low = (text or "").lower()
-    return any(t in low for t in RESET_KEYWORDS)
+    texto_min = (texto or "").lower()
+    return any(t in texto_min for t in PALABRAS_REINICIO)

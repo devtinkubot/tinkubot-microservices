@@ -3,14 +3,14 @@
 # ==================== FUNCIONES ====================
 
 
-def provider_under_review_message() -> str:
+def mensaje_proveedor_en_revision() -> str:
     """Mensaje cuando el perfil está en revisión."""
     return (
         "**Listo. Estamos revisando tu perfil; si falta algo, te escribimos.**"
     )
 
 
-def provider_verified_message() -> str:
+def mensaje_proveedor_verificado() -> str:
     """Mensaje cuando el perfil ha sido verificado exitosamente."""
     return (
         "✅ Tu perfil ha sido verificado y autorizado para unirte a la comunidad TinkuBot. "

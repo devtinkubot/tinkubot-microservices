@@ -7,25 +7,25 @@ logger = logging.getLogger(__name__)
 
 
 async def procesar_estado_viendo_detalle_proveedor(
-    flow: Dict[str, Any],
-    text: Optional[str],
-    selected: Optional[str],
-    phone: str,
-    set_flow_fn: Callable[[Dict[str, Any]], Awaitable[None]],
-    save_bot_message_fn: Callable[[Optional[str]], Awaitable[None]],
-    formal_connection_message_fn: Callable[
+    flujo: Dict[str, Any],
+    texto: Optional[str],
+    seleccionado: Optional[str],
+    telefono: str,
+    guardar_flujo_fn: Callable[[Dict[str, Any]], Awaitable[None]],
+    guardar_mensaje_bot_fn: Callable[[Optional[str]], Awaitable[None]],
+    mensaje_conexion_formal_fn: Callable[
         [Dict[str, Any]], Awaitable[Union[Dict[str, Any], str]]
     ],
     mensajes_confirmacion_busqueda_fn: Callable[..., list[Dict[str, Any]]],
-    schedule_feedback_fn: Optional[
+    programar_retroalimentacion_fn: Optional[
         Callable[[str, Dict[str, Any]], Awaitable[None]]
     ],
     logger: Any,
-    confirm_title_default: str,
-    send_provider_prompt_fn: Callable[[], Awaitable[Dict[str, Any]]],
-    initial_prompt: str,
-    farewell_message: str,
-    provider_detail_options_prompt_fn: Callable[[], str],
+    titulo_confirmacion_por_defecto: str,
+    enviar_prompt_proveedor_fn: Callable[[], Awaitable[Dict[str, Any]]],
+    prompt_inicial: str,
+    mensaje_despedida: str,
+    prompt_opciones_detalle_proveedor_fn: Callable[[], str],
 ) -> Dict[str, Any]:
     """Procesa el estado `viewing_provider_detail` (submenú de detalle).
 
@@ -35,25 +35,25 @@ async def procesar_estado_viendo_detalle_proveedor(
     - Opción 3: Salir/terminar conversación
     """
 
-    choice = (selected or text or "").strip()
-    choice_lower = choice.lower()
-    choice_normalized = choice_lower.strip().strip("*").rstrip(".)")
+    eleccion = (seleccionado or texto or "").strip()
+    eleccion_minusculas = eleccion.lower()
+    eleccion_normalizada = eleccion_minusculas.strip().strip("*").rstrip(".)")
 
-    providers_list = flow.get("providers", [])
-    idx = flow.get("provider_detail_idx")
-    provider = None
-    if isinstance(idx, int) and 0 <= idx < len(providers_list):
-        provider = providers_list[idx]
+    lista_proveedores = flujo.get("providers", [])
+    indice = flujo.get("provider_detail_idx")
+    proveedor = None
+    if isinstance(indice, int) and 0 <= indice < len(lista_proveedores):
+        proveedor = lista_proveedores[indice]
 
     # Opción 2: Regresar al listado de proveedores
-    if choice_normalized in ("2", "opcion 2", "opción 2", "regresar", "0"):
-        flow["state"] = "presenting_results"
-        flow.pop("provider_detail_idx", None)
-        await set_flow_fn(flow)
-        return await send_provider_prompt_fn()
+    if eleccion_normalizada in ("2", "opcion 2", "opción 2", "regresar", "0"):
+        flujo["state"] = "presenting_results"
+        flujo.pop("provider_detail_idx", None)
+        await guardar_flujo_fn(flujo)
+        return await enviar_prompt_proveedor_fn()
 
     # Opción 3: Salir/terminar conversación
-    if choice_normalized in ("3", "opcion 3", "opción 3"):
+    if eleccion_normalizada in ("3", "opcion 3", "opción 3"):
         for key in [
             "providers",
             "chosen_provider",
@@ -64,54 +64,54 @@ async def procesar_estado_viendo_detalle_proveedor(
             "provider_detail_idx",
             "service",
         ]:
-            flow.pop(key, None)
-        flow["state"] = "awaiting_service"
-        await set_flow_fn(flow)
-        message = {"response": farewell_message}
-        await save_bot_message_fn(message["response"])
-        return message
+            flujo.pop(key, None)
+        flujo["state"] = "awaiting_service"
+        await guardar_flujo_fn(flujo)
+        mensaje = {"response": mensaje_despedida}
+        await guardar_mensaje_bot_fn(mensaje["response"])
+        return mensaje
 
     # Opción 1: Conectar y confirmar selección del proveedor
-    if choice_normalized in ("1", "opcion 1", "opción 1", "elegir"):
-        if not provider:
+    if eleccion_normalizada in ("1", "opcion 1", "opción 1", "elegir"):
+        if not proveedor:
             return {"response": "No se encontró el proveedor seleccionado."}
         return await conectar_y_confirmar_proveedor(
-            flow,
-            provider,
-            providers_list,
-            phone,
-            set_flow_fn,
-            save_bot_message_fn,
-            formal_connection_message_fn,
+            flujo,
+            proveedor,
+            lista_proveedores,
+            telefono,
+            guardar_flujo_fn,
+            guardar_mensaje_bot_fn,
+            mensaje_conexion_formal_fn,
             mensajes_confirmacion_busqueda_fn,
-            schedule_feedback_fn,
+            programar_retroalimentacion_fn,
             logger,
-            confirm_title_default,
+            titulo_confirmacion_por_defecto,
         )
 
     # Si la opción no es reconocida, mostrar prompt de opciones nuevamente
-    if choice:
-        return {"response": provider_detail_options_prompt_fn()}
+    if eleccion:
+        return {"response": prompt_opciones_detalle_proveedor_fn()}
 
-    return {"response": provider_detail_options_prompt_fn()}
+    return {"response": prompt_opciones_detalle_proveedor_fn()}
 
 
 async def conectar_y_confirmar_proveedor(
-    flow: Dict[str, Any],
-    provider: Dict[str, Any],
-    providers_list: list[Dict[str, Any]],
-    phone: str,
-    set_flow_fn: Callable[[Dict[str, Any]], Awaitable[None]],
-    save_bot_message_fn: Callable[[Optional[str]], Awaitable[None]],
-    formal_connection_message_fn: Callable[
+    flujo: Dict[str, Any],
+    proveedor: Dict[str, Any],
+    lista_proveedores: list[Dict[str, Any]],
+    telefono: str,
+    guardar_flujo_fn: Callable[[Dict[str, Any]], Awaitable[None]],
+    guardar_mensaje_bot_fn: Callable[[Optional[str]], Awaitable[None]],
+    mensaje_conexion_formal_fn: Callable[
         [Dict[str, Any]], Awaitable[Union[Dict[str, Any], str]]
     ],
     mensajes_confirmacion_busqueda_fn: Callable[..., list[Dict[str, Any]]],
-    schedule_feedback_fn: Optional[
+    programar_retroalimentacion_fn: Optional[
         Callable[[str, Dict[str, Any]], Awaitable[None]]
     ],
     logger: Any,
-    confirm_title_default: str,
+    titulo_confirmacion_por_defecto: str,
 ) -> Dict[str, Any]:
     """Conecta con proveedor y muestra confirmación posterior.
 
@@ -122,31 +122,31 @@ async def conectar_y_confirmar_proveedor(
     4. Agenda el feedback posterior a la conexión
     """
 
-    flow.pop("provider_detail_idx", None)
-    flow["chosen_provider"] = provider
-    flow["state"] = "confirm_new_search"
-    flow["confirm_attempts"] = 0
-    flow["confirm_title"] = confirm_title_default
-    flow["confirm_include_city_option"] = False
+    flujo.pop("provider_detail_idx", None)
+    flujo["chosen_provider"] = proveedor
+    flujo["state"] = "confirm_new_search"
+    flujo["confirm_attempts"] = 0
+    flujo["confirm_title"] = titulo_confirmacion_por_defecto
+    flujo["confirm_include_city_option"] = False
 
-    message = await formal_connection_message_fn(provider or {})
-    message_obj = message if isinstance(message, dict) else {"response": message}
+    mensaje = await mensaje_conexion_formal_fn(proveedor or {})
+    mensaje_obj = mensaje if isinstance(mensaje, dict) else {"response": mensaje}
 
-    await set_flow_fn(flow)
-    response_text = message_obj.get("response") or ""
-    await save_bot_message_fn(response_text)
+    await guardar_flujo_fn(flujo)
+    texto_respuesta = mensaje_obj.get("response") or ""
+    await guardar_mensaje_bot_fn(texto_respuesta)
 
-    confirm_msgs = mensajes_confirmacion_busqueda_fn(
-        flow.get("confirm_title") or confirm_title_default,
-        include_city_option=flow.get("confirm_include_city_option", False),
+    mensajes_confirmacion = mensajes_confirmacion_busqueda_fn(
+        flujo.get("confirm_title") or titulo_confirmacion_por_defecto,
+        incluir_opcion_ciudad=flujo.get("confirm_include_city_option", False),
     )
-    for cmsg in confirm_msgs:
-        await save_bot_message_fn(cmsg.get("response"))
+    for mensaje_confirmacion in mensajes_confirmacion:
+        await guardar_mensaje_bot_fn(mensaje_confirmacion.get("response"))
 
-    if schedule_feedback_fn:
+    if programar_retroalimentacion_fn:
         try:
-            await schedule_feedback_fn(phone, provider or {})
+            await programar_retroalimentacion_fn(telefono, proveedor or {})
         except Exception as exc:  # pragma: no cover - logging auxiliar
             logger.warning(f"No se pudo agendar feedback: {exc}")
 
-    return {"messages": [message_obj, *confirm_msgs]}
+    return {"messages": [mensaje_obj, *mensajes_confirmacion]}

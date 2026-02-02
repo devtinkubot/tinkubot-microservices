@@ -23,25 +23,29 @@ class GestorSesiones:
         self._fallback_storage = {}  # Almacenamiento en memoria cuando Redis falla
         self._redis_available = True  # Estado de conexión a Redis
 
-    async def save_session(
-        self, phone: str, message: str, is_bot: bool = False, metadata: Dict = None
+    async def guardar_sesion(
+        self,
+        telefono: str,
+        mensaje: str,
+        es_bot: bool = False,
+        metadatos: Dict = None,
     ) -> bool:
         """
         Guarda un mensaje en la sesión del usuario
 
         Args:
-            phone: Número de teléfono del usuario
-            message: Contenido del mensaje
-            is_bot: Si el mensaje es del bot o del usuario
-            metadata: Información adicional del mensaje
+            telefono: Número de teléfono del usuario
+            mensaje: Contenido del mensaje
+            es_bot: Si el mensaje es del bot o del usuario
+            metadatos: Información adicional del mensaje
 
         Returns:
             bool: True si se guardó correctamente
         """
         try:
-            session_key = f"session:{phone}"
-            session_message = MensajeSesion(
-                message, is_bot=is_bot, metadata=metadata or {}
+            clave_sesion = f"session:{telefono}"
+            mensaje_sesion = MensajeSesion(
+                mensaje, is_bot=es_bot, metadata=metadatos or {}
             )
 
             # Verificar si Redis está disponible
@@ -51,72 +55,72 @@ class GestorSesiones:
                 or not self.cliente_redis.redis_client
             ):
                 logger.warning(
-                    f"⚠️ Redis no disponible, usando almacenamiento en memoria para {phone}"
+                    f"⚠️ Redis no disponible, usando almacenamiento en memoria para {telefono}"
                 )
-                return self._save_session_fallback(phone, session_message)
+                return self._guardar_sesion_fallback(telefono, mensaje_sesion)
 
             # Obtener sesiones existentes
-            existing_sessions = await self.get_conversation_history(phone)
+            sesiones_existentes = await self.obtener_historial_conversacion(telefono)
 
             # Agregar nueva sesión al inicio
-            existing_sessions.insert(0, session_message)
+            sesiones_existentes.insert(0, mensaje_sesion)
 
             # Mantener solo las últimas N sesiones
-            if len(existing_sessions) > self.max_sessions_per_user:
-                existing_sessions = existing_sessions[: self.max_sessions_per_user]
+            if len(sesiones_existentes) > self.max_sessions_per_user:
+                sesiones_existentes = sesiones_existentes[: self.max_sessions_per_user]
 
             # Convertir a formato JSON
-            sessions_data = [msg.to_dict() for msg in existing_sessions]
+            sesiones_datos = [msg.to_dict() for msg in sesiones_existentes]
 
             # Guardar en Redis con TTL
             await self.cliente_redis.set(
-                session_key, sessions_data, expire=self.session_ttl
+                clave_sesion, sesiones_datos, expire=self.session_ttl
             )
 
-            logger.debug(f"✅ Sesión guardada para {phone}: {message[:50]}...")
+            logger.debug(f"✅ Sesión guardada para {telefono}: {mensaje[:50]}...")
             return True
 
         except Exception as e:
-            logger.error(f"❌ Error guardando sesión para {phone}: {e}")
+            logger.error(f"❌ Error guardando sesión para {telefono}: {e}")
             # Intentar fallback si Redis falla
             self._redis_available = False
-            session_message = MensajeSesion(
-                message, is_bot=is_bot, metadata=metadata or {}
+            mensaje_sesion = MensajeSesion(
+                mensaje, is_bot=es_bot, metadata=metadatos or {}
             )
-            return self._save_session_fallback(phone, session_message)
+            return self._guardar_sesion_fallback(telefono, mensaje_sesion)
 
-    def _save_session_fallback(
-        self, phone: str, session_message: MensajeSesion
+    def _guardar_sesion_fallback(
+        self, telefono: str, mensaje_sesion: MensajeSesion
     ) -> bool:
         """Guarda sesión en almacenamiento en memoria como fallback"""
         try:
-            if phone not in self._fallback_storage:
-                self._fallback_storage[phone] = []
+            if telefono not in self._fallback_storage:
+                self._fallback_storage[telefono] = []
 
             # Agregar al inicio y mantener límite
-            self._fallback_storage[phone].insert(0, session_message)
-            if len(self._fallback_storage[phone]) > self.max_sessions_per_user:
-                self._fallback_storage[phone] = self._fallback_storage[phone][
+            self._fallback_storage[telefono].insert(0, mensaje_sesion)
+            if len(self._fallback_storage[telefono]) > self.max_sessions_per_user:
+                self._fallback_storage[telefono] = self._fallback_storage[telefono][
                     : self.max_sessions_per_user
                 ]
 
             logger.warning(
-                f"📝 Sesión guardada en memoria para {phone}: {session_message.message[:50]}..."
+                f"📝 Sesión guardada en memoria para {telefono}: {mensaje_sesion.message[:50]}..."
             )
             return True
         except Exception as e:
-            logger.error(f"❌ Error en fallback de sesión para {phone}: {e}")
+            logger.error(f"❌ Error en fallback de sesión para {telefono}: {e}")
             return False
 
-    async def get_conversation_history(
-        self, phone: str, limit: int = None
+    async def obtener_historial_conversacion(
+        self, telefono: str, limite: int = None
     ) -> List[MensajeSesion]:
         """
         Obtiene el historial de conversación de un usuario
 
         Args:
-            phone: Número de teléfono del usuario
-            limit: Límite de mensajes a retornar (None = todos)
+            telefono: Número de teléfono del usuario
+            limite: Límite de mensajes a retornar (None = todos)
 
         Returns:
             List[MensajeSesion]: Lista de mensajes ordenados por tiempo
@@ -129,81 +133,85 @@ class GestorSesiones:
                 or not self.cliente_redis.redis_client
             ):
                 logger.warning(
-                    f"⚠️ Redis no disponible, usando almacenamiento en memoria para {phone}"
+                    f"⚠️ Redis no disponible, usando almacenamiento en memoria para {telefono}"
                 )
-                return self._get_history_fallback(phone, limit)
+                return self._obtener_historial_fallback(telefono, limite)
 
-            session_key = f"session:{phone}"
-            sessions_data = await self.cliente_redis.get(session_key)
+            clave_sesion = f"session:{telefono}"
+            sesiones_datos = await self.cliente_redis.get(clave_sesion)
 
-            if not sessions_data:
+            if not sesiones_datos:
                 # Intentar fallback si no hay datos en Redis
-                return self._get_history_fallback(phone, limit)
+                return self._obtener_historial_fallback(telefono, limite)
 
             # Convertir JSON a objetos MensajeSesion
-            messages = []
-            for msg_data in sessions_data:
+            mensajes = []
+            for msg_data in sesiones_datos:
                 try:
-                    message = MensajeSesion.from_dict(msg_data)
-                    messages.append(message)
+                    mensaje = MensajeSesion.from_dict(msg_data)
+                    mensajes.append(mensaje)
                 except Exception as e:
                     logger.warning(f"⚠️ Error procesando mensaje de sesión: {e}")
                     continue
 
             # Aplicar límite si se especificó
-            if limit:
-                messages = messages[:limit]
+            if limite:
+                mensajes = mensajes[:limite]
 
-            return messages
+            return mensajes
 
         except Exception as e:
-            logger.error(f"❌ Error obteniendo historial para {phone}: {e}")
+            logger.error(f"❌ Error obteniendo historial para {telefono}: {e}")
             # Intentar fallback si Redis falla
             self._redis_available = False
-            return self._get_history_fallback(phone, limit)
+            return self._obtener_historial_fallback(telefono, limite)
 
-    def _get_history_fallback(
-        self, phone: str, limit: int = None
+    def _obtener_historial_fallback(
+        self, telefono: str, limite: int = None
     ) -> List[MensajeSesion]:
         """Obtiene historial desde almacenamiento en memoria como fallback"""
         try:
-            messages = self._fallback_storage.get(phone, [])
-            if limit:
-                messages = messages[:limit]
+            mensajes = self._fallback_storage.get(telefono, [])
+            if limite:
+                mensajes = mensajes[:limite]
             logger.warning(
-                f"📖 Historial obtenido desde memoria para {phone}: {len(messages)} mensajes"
+                f"📖 Historial obtenido desde memoria para {telefono}: {len(mensajes)} mensajes"
             )
-            return messages
+            return mensajes
         except Exception as e:
-            logger.error(f"❌ Error en fallback de historial para {phone}: {e}")
+            logger.error(f"❌ Error en fallback de historial para {telefono}: {e}")
             return []
 
-    async def get_session_context(self, phone: str, context_length: int = 5) -> str:
+    async def obtener_contexto_sesion(
+        self, telefono: str, longitud_contexto: int = 5
+    ) -> str:
         """
         Genera un string de contexto para OpenAI basado en el historial reciente
 
         Args:
-            phone: Número de teléfono del usuario
-            context_length: Número de mensajes recientes a incluir en el contexto
+            telefono: Número de teléfono del usuario
+            longitud_contexto: Número de mensajes recientes a incluir en el contexto
 
         Returns:
             str: Contexto formateado para OpenAI
         """
         try:
-            history = await self.get_conversation_history(phone, limit=context_length)
+            historial = await self.obtener_historial_conversacion(
+                telefono, limite=longitud_contexto
+            )
 
-            if not history:
+            if not historial:
                 return ""
 
-            context_lines = []
-            for msg in history:
-                prefix = "Asistente" if msg.is_bot else "Usuario"
-                context_lines.append(f"{prefix}: {msg.message}")
+            lineas_contexto = []
+            for msg in historial:
+                prefijo = "Asistente" if msg.is_bot else "Usuario"
+                lineas_contexto.append(f"{prefijo}: {msg.message}")
 
-            return "\n".join(context_lines)
+            return "\n".join(lineas_contexto)
 
         except Exception as e:
-            logger.error(f"❌ Error generando contexto para {phone}: {e}")
+            logger.error(f"❌ Error generando contexto para {telefono}: {e}")
             return ""
 
 

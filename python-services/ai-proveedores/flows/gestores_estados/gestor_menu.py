@@ -3,10 +3,10 @@
 from typing import Any, Dict, Optional
 
 from flows.constructores import construir_menu_principal, construir_menu_servicios
-from templates.registro import REGISTRATION_START_PROMPT
+from templates.registro import PROMPT_INICIO_REGISTRO
 from templates.interfaz import (
     error_opcion_no_reconocida,
-    informar_cierre_session,
+    informar_cierre_sesion,
     solicitar_selfie_actualizacion,
     solicitar_red_social_actualizacion,
     solicitar_confirmacion_eliminacion,
@@ -16,86 +16,96 @@ from services.servicios_proveedor.constantes import SERVICIOS_MAXIMOS
 
 async def manejar_estado_menu(
     *,
-    flow: Dict[str, Any],
-    message_text: str,
-    menu_choice: Optional[str],
+    flujo: Dict[str, Any],
+    texto_mensaje: str,
+    opcion_menu: Optional[str],
     esta_registrado: bool,
 ) -> Dict[str, Any]:
     """Procesa el menú principal y devuelve la respuesta."""
-    choice = menu_choice
-    lowered = (message_text or "").strip().lower()
+    opcion = opcion_menu
+    texto_minusculas = (texto_mensaje or "").strip().lower()
 
     if not esta_registrado:
-        if choice == "1" or "registro" in lowered:
-            flow["mode"] = "registration"
-            flow["state"] = "awaiting_city"
+        if opcion == "1" or "registro" in texto_minusculas:
+            flujo["mode"] = "registration"
+            flujo["state"] = "awaiting_city"
             return {
                 "success": True,
-                "response": REGISTRATION_START_PROMPT,
+                "response": PROMPT_INICIO_REGISTRO,
             }
-        if choice == "2" or "salir" in lowered:
-            flow.clear()
-            flow["has_consent"] = True
+        if opcion == "2" or "salir" in texto_minusculas:
+            flujo.clear()
+            flujo["has_consent"] = True
             return {
                 "success": True,
-                "response": informar_cierre_session(),
+                "response": informar_cierre_sesion(),
             }
 
         return {
             "success": True,
             "messages": [
                 {"response": error_opcion_no_reconocida(1, 2)},
-                {"response": construir_menu_principal(is_registered=False)},
+                {"response": construir_menu_principal(esta_registrado=False)},
             ],
         }
 
-    servicios_actuales = flow.get("services") or []
-    if choice == "1" or "servicio" in lowered:
-        flow["state"] = "awaiting_service_action"
+    servicios_actuales = flujo.get("services") or []
+    if opcion == "1" or "servicio" in texto_minusculas:
+        flujo["state"] = "awaiting_service_action"
         return {
             "success": True,
             "messages": [
                 {"response": construir_menu_servicios(servicios_actuales, SERVICIOS_MAXIMOS)}
             ],
         }
-    if choice == "2" or "selfie" in lowered or "foto" in lowered:
-        flow["state"] = "awaiting_face_photo_update"
+    if opcion == "2" or "selfie" in texto_minusculas or "foto" in texto_minusculas:
+        flujo["state"] = "awaiting_face_photo_update"
         return {
             "success": True,
             "response": solicitar_selfie_actualizacion(),
         }
-    if choice == "3" or "red" in lowered or "social" in lowered or "instagram" in lowered:
-        flow["state"] = "awaiting_social_media_update"
+    if (
+        opcion == "3"
+        or "red" in texto_minusculas
+        or "social" in texto_minusculas
+        or "instagram" in texto_minusculas
+    ):
+        flujo["state"] = "awaiting_social_media_update"
         return {
             "success": True,
             "response": solicitar_red_social_actualizacion(),
         }
-    if choice == "4" or "eliminar" in lowered or "borrar" in lowered or "delete" in lowered:
-        flow["state"] = "awaiting_deletion_confirmation"
+    if (
+        opcion == "4"
+        or "eliminar" in texto_minusculas
+        or "borrar" in texto_minusculas
+        or "delete" in texto_minusculas
+    ):
+        flujo["state"] = "awaiting_deletion_confirmation"
         return {
             "success": True,
             "messages": [
                 {"response": solicitar_confirmacion_eliminacion()},
             ],
         }
-    if choice == "5" or "salir" in lowered or "volver" in lowered:
+    if opcion == "5" or "salir" in texto_minusculas or "volver" in texto_minusculas:
         flujo_base = {
             "has_consent": True,
             "esta_registrado": True,
-            "provider_id": flow.get("provider_id"),
+            "provider_id": flujo.get("provider_id"),
             "services": servicios_actuales,
         }
-        flow.clear()
-        flow.update(flujo_base)
+        flujo.clear()
+        flujo.update(flujo_base)
         return {
             "success": True,
-            "response": informar_cierre_session(),
+            "response": informar_cierre_sesion(),
         }
 
     return {
         "success": True,
         "messages": [
             {"response": error_opcion_no_reconocida(1, 5)},
-            {"response": construir_menu_principal(is_registered=True)},
+            {"response": construir_menu_principal(esta_registrado=True)},
         ],
     }

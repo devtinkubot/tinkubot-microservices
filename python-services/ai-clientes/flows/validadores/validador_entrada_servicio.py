@@ -9,9 +9,9 @@ from templates.mensajes.validacion import (
 
 
 def validar_entrada_servicio(
-    text: str,
-    greetings: set[str],
-    service_catalog: dict[str, set[str]]
+    texto: str,
+    saludos: set[str],
+    catalogo_servicios: dict[str, set[str]],
 ) -> tuple[bool, str]:
     """
     Valida que el input sea estructurado y significativo.
@@ -28,33 +28,33 @@ def validar_entrada_servicio(
     - Servicio reconocido del catálogo
     - >= 2 palabras (pasa a extracción)
     """
-    cleaned = (text or "").strip()
+    texto_limpio = (texto or "").strip()
 
     # Caso 1: Vacío o saludo
-    if not cleaned or cleaned.lower() in greetings:
+    if not texto_limpio or texto_limpio.lower() in saludos:
         return False, solicitar_descripcion_servicio()
 
     # Caso 2: Solo números
-    if cleaned.isdigit():
+    if texto_limpio.isdigit():
         return False, mensaje_error_input_invalido
 
     # Caso 3: Letra suelta
-    if re.fullmatch(r"[a-zA-Z]", cleaned):
+    if re.fullmatch(r"[a-zA-Z]", texto_limpio):
         return False, mensaje_error_input_invalido
 
     # Caso 4: Demasiado corto
-    words = cleaned.split()
-    if len(words) < 2 and len(cleaned) < 4:
+    palabras = texto_limpio.split()
+    if len(palabras) < 2 and len(texto_limpio) < 4:
         return False, mensaje_error_input_invalido
 
     # Caso 5: Es servicio reconocido
-    normalized = cleaned.lower()
-    for _, synonyms in service_catalog.items():
-        if normalized in {s.lower() for s in synonyms}:
+    normalizado = texto_limpio.lower()
+    for _, sinonimos in catalogo_servicios.items():
+        if normalizado in {s.lower() for s in sinonimos}:
             return True, ""
 
     # Caso 6: Tiene >= 2 palabras (válido, pasará a extracción)
-    if len(words) >= 2:
+    if len(palabras) >= 2:
         return True, ""
 
     # Caso 7: Inválido por defecto

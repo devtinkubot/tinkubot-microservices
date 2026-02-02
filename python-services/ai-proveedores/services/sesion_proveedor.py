@@ -13,62 +13,67 @@ from flows.constructores import (
 
 
 def sincronizar_flujo_con_perfil(
-    flow: Dict[str, Any],
-    provider_profile: Optional[Dict[str, Any]],
+    flujo: Dict[str, Any],
+    perfil_proveedor: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
-    """Sincroniza datos del flow con el perfil persistido."""
-    if provider_profile:
-        if provider_profile.get("has_consent") and not flow.get("has_consent"):
-            flow["has_consent"] = True
-        provider_id = provider_profile.get("id")
-        if provider_id:
-            flow["provider_id"] = provider_id
-        servicios_guardados = provider_profile.get("services_list") or []
-        flow["services"] = servicios_guardados
+    """Sincroniza datos del flujo con el perfil persistido."""
+    if perfil_proveedor:
+        if perfil_proveedor.get("has_consent") and not flujo.get("has_consent"):
+            flujo["has_consent"] = True
+        proveedor_id = perfil_proveedor.get("id")
+        if proveedor_id:
+            flujo["provider_id"] = proveedor_id
+        servicios_guardados = perfil_proveedor.get("services_list") or []
+        flujo["services"] = servicios_guardados
     else:
-        flow.setdefault("services", [])
-    return flow
+        flujo.setdefault("services", [])
+    return flujo
 
 
 def resolver_estado_registro(
-    flow: Dict[str, Any],
-    provider_profile: Optional[Dict[str, Any]],
+    flujo: Dict[str, Any],
+    perfil_proveedor: Optional[Dict[str, Any]],
 ) -> Tuple[bool, bool, bool, bool]:
     """Calcula flags del estado de registro."""
-    has_consent = bool(flow.get("has_consent"))
-    esta_registrado = determinar_estado_registro(provider_profile)
-    flow["esta_registrado"] = esta_registrado
-    is_verified = bool(provider_profile and provider_profile.get("verified"))
-    is_pending_review = bool(esta_registrado and not is_verified)
-    return has_consent, esta_registrado, is_verified, is_pending_review
+    tiene_consentimiento = bool(flujo.get("has_consent"))
+    esta_registrado = determinar_estado_registro(perfil_proveedor)
+    flujo["esta_registrado"] = esta_registrado
+    esta_verificado = bool(perfil_proveedor and perfil_proveedor.get("verified"))
+    esta_pendiente_revision = bool(esta_registrado and not esta_verificado)
+    return (
+        tiene_consentimiento,
+        esta_registrado,
+        esta_verificado,
+        esta_pendiente_revision,
+    )
 
 
 def manejar_pendiente_revision(
-    flow: Dict[str, Any],
-    provider_id: Optional[str],
-    is_pending_review: bool,
+    flujo: Dict[str, Any],
+    proveedor_id: Optional[str],
+    esta_pendiente_revision: bool,
 ) -> Optional[Dict[str, Any]]:
     """Aplica bloqueo por pendiente de revisión."""
-    if not is_pending_review:
+    if not esta_pendiente_revision:
         return None
-    flow.update(
+    flujo.update(
         {
             "state": "pending_verification",
             "has_consent": True,
-            "provider_id": provider_id,
+            "provider_id": proveedor_id,
         }
     )
     return construir_respuesta_revision()
 
 
 def manejar_aprobacion_reciente(
-    flow: Dict[str, Any],
-    is_verified: bool,
+    flujo: Dict[str, Any],
+    esta_verificado: bool,
 ) -> Optional[Dict[str, Any]]:
     """Notifica cuando un perfil pasa de pendiente a verificado."""
-    if flow.get("state") != "pending_verification" or not is_verified:
+    if flujo.get("state") != "pending_verification" or not esta_verificado:
         return None
-    flow.update(
+    flujo.update(
         {
             "state": "awaiting_menu_option",
             "has_consent": True,
@@ -81,31 +86,31 @@ def manejar_aprobacion_reciente(
 
 async def manejar_estado_inicial(
     *,
-    state: Optional[str],
-    flow: Dict[str, Any],
-    has_consent: bool,
+    estado: Optional[str],
+    flujo: Dict[str, Any],
+    tiene_consentimiento: bool,
     esta_registrado: bool,
-    is_verified: bool,
-    phone: str,
+    esta_verificado: bool,
+    telefono: str,
 ) -> Optional[Dict[str, Any]]:
     """Resuelve la primera interacción cuando no hay estado."""
-    if state:
+    if estado:
         return None
 
-    if not has_consent:
+    if not tiene_consentimiento:
         nuevo_flujo = {"state": "awaiting_consent", "has_consent": False}
-        flow.clear()
-        flow.update(nuevo_flujo)
-        return await solicitar_consentimiento(phone)
+        flujo.clear()
+        flujo.update(nuevo_flujo)
+        return await solicitar_consentimiento(telefono)
 
-    flow.update(
+    flujo.update(
         {
             "state": "awaiting_menu_option",
             "has_consent": True,
         }
     )
-    if is_verified and not flow.get("verification_notified"):
-        flow["verification_notified"] = True
+    if esta_verificado and not flujo.get("verification_notified"):
+        flujo["verification_notified"] = True
         return construir_respuesta_verificado()
 
     if not esta_registrado:
@@ -113,5 +118,5 @@ async def manejar_estado_inicial(
 
     return {
         "success": True,
-        "messages": [{"response": construir_menu_principal(is_registered=True)}],
+        "messages": [{"response": construir_menu_principal(esta_registrado=True)}],
     }

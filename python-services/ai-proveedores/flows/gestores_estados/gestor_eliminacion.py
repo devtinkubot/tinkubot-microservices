@@ -14,46 +14,46 @@ from templates.interfaz import (
 
 async def manejar_confirmacion_eliminacion(
     *,
-    flow: Dict[str, Any],
-    message_text: str,
+    flujo: Dict[str, Any],
+    texto_mensaje: str,
     supabase: Any,
-    phone: str,
+    telefono: str,
 ) -> Dict[str, Any]:
     """Procesa la confirmación de eliminación del registro."""
-    raw_text = (message_text or "").strip()
-    text = raw_text.lower()
+    texto_crudo = (texto_mensaje or "").strip()
+    texto = texto_crudo.lower()
 
-    if text.startswith("2") or "cancelar" in text or "no" in text:
-        flow["state"] = "awaiting_menu_option"
+    if texto.startswith("2") or "cancelar" in texto or "no" in texto:
+        flujo["state"] = "awaiting_menu_option"
         return {
             "success": True,
             "messages": [
                 {"response": informar_eliminacion_cancelada()},
-                {"response": construir_menu_principal(is_registered=True)},
+                {"response": construir_menu_principal(esta_registrado=True)},
             ],
         }
 
     if (
-        text.startswith("1")
-        or text.startswith("confirm")
-        or text in {"si", "ok", "listo", "confirmar", "eliminar"}
+        texto.startswith("1")
+        or texto.startswith("confirm")
+        or texto in {"si", "ok", "listo", "confirmar", "eliminar"}
     ):
-        resultado = await eliminar_registro_proveedor(supabase, phone)
+        resultado = await eliminar_registro_proveedor(supabase, telefono)
 
         if resultado["success"]:
-            flow.clear()
+            flujo.clear()
             return {
                 "success": True,
                 "messages": [{"response": confirmar_eliminacion_exitosa()}],
                 "persist_flow": False,
             }
 
-        flow["state"] = "awaiting_menu_option"
+        flujo["state"] = "awaiting_menu_option"
         return {
             "success": True,
             "messages": [
                 {"response": error_eliminacion_fallida(resultado.get("message", ""))},
-                {"response": construir_menu_principal(is_registered=True)},
+                {"response": construir_menu_principal(esta_registrado=True)},
             ],
         }
 

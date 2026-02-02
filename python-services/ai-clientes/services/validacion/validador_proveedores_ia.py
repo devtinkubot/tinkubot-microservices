@@ -19,29 +19,29 @@ class ValidadorProveedoresIA:
 
     def __init__(
         self,
-        openai_client: AsyncOpenAI,
-        openai_semaphore: asyncio.Semaphore,
-        openai_timeout: float,
+        cliente_openai: AsyncOpenAI,
+        semaforo_openai: asyncio.Semaphore,
+        tiempo_espera_openai: float,
         logger: logging.Logger,
     ):
         """
         Inicializar el servicio de validación.
 
         Args:
-            openai_client: Cliente de OpenAI
-            openai_semaphore: Semaphore para limitar concurrencia
-            openai_timeout: Timeout en segundos para llamadas a OpenAI
+            cliente_openai: Cliente de OpenAI
+            semaforo_openai: Semaphore para limitar concurrencia
+            tiempo_espera_openai: Timeout en segundos para llamadas a OpenAI
             logger: Logger para trazabilidad
         """
-        self.openai_client = openai_client
-        self.openai_semaphore = openai_semaphore
-        self.openai_timeout = openai_timeout
+        self.cliente_openai = cliente_openai
+        self.semaforo_openai = semaforo_openai
+        self.tiempo_espera_openai = tiempo_espera_openai
         self.logger = logger
 
     async def validar_proveedores(
         self,
-        user_need: str,
-        providers: List[Dict[str, Any]],
+        necesidad_usuario: str,
+        proveedores: List[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
         """
         Usa IA para validar que los proveedores encontrados REALMENTE puedan ayudar
@@ -51,61 +51,61 @@ class ValidadorProveedoresIA:
         si tiene la capacidad y experiencia apropiada.
 
         Args:
-            user_need: Necesidad del usuario (ej: "marketing", "community manager")
-            providers: Lista de proveedores a validar
+            necesidad_usuario: Necesidad del usuario (ej: "marketing", "community manager")
+            proveedores: Lista de proveedores a validar
 
         Returns:
             Lista solo con los proveedores validados por la IA.
         """
-        if not providers:
+        if not proveedores:
             return []
 
-        if not self.openai_client:
+        if not self.cliente_openai:
             self.logger.warning("⚠️ validar_proveedores sin cliente OpenAI")
-            return providers
+            return proveedores
 
         self.logger.info(
-            f"🤖 Validando {len(providers)} proveedores con IA para '{user_need}'"
+            f"🤖 Validando {len(proveedores)} proveedores con IA para '{necesidad_usuario}'"
         )
 
         # Construir prompt con información completa de proveedores
-        providers_info = []
-        for i, p in enumerate(providers):
+        proveedores_info = []
+        for i, p in enumerate(proveedores):
             # Extraer información relevante del proveedor
             # Manejar tanto "profession" (singular) como "professions" (plural lista)
-            profession_raw = p.get("profession") or p.get("professions")
-            if isinstance(profession_raw, list):
-                profession = ", ".join(str(prof) for prof in profession_raw[:3])
+            profesion_cruda = p.get("profession") or p.get("professions")
+            if isinstance(profesion_cruda, list):
+                profesion = ", ".join(str(prof) for prof in profesion_cruda[:3])
             else:
-                profession = str(profession_raw) if profession_raw else "N/A"
+                profesion = str(profesion_cruda) if profesion_cruda else "N/A"
 
-            services = p.get("services", "N/A")
-            services_list = p.get("services_list", [])
-            experience = p.get("experience_years") or p.get("years_of_experience", "N/A")
-            rating = p.get("rating", "N/A")
+            servicios = p.get("services", "N/A")
+            lista_servicios = p.get("services_list", [])
+            experiencia = p.get("experience_years") or p.get("years_of_experience", "N/A")
+            calificacion = p.get("rating", "N/A")
 
             # Si services_list está disponible, usarlo, si no, usar services
-            if services_list and isinstance(services_list, list):
-                services_text = ", ".join(str(s) for s in services_list[:5])
+            if lista_servicios and isinstance(lista_servicios, list):
+                texto_servicios = ", ".join(str(s) for s in lista_servicios[:5])
             else:
-                services_text = str(services)
+                texto_servicios = str(servicios)
 
-            provider_text = f"""Proveedor {i+1}:
-- Profesión: {profession}
-- Servicios: {services_text}
-- Experiencia: {experience} años
-- Rating: {rating}"""
-            providers_info.append(provider_text)
+            texto_proveedor = f"""Proveedor {i+1}:
+- Profesión: {profesion}
+- Servicios: {texto_servicios}
+- Experiencia: {experiencia} años
+- Rating: {calificacion}"""
+            proveedores_info.append(texto_proveedor)
 
-        providers_block = "\n".join(providers_info)
+        bloque_proveedores = "\n".join(proveedores_info)
 
-        system_prompt = f"""Eres un experto en servicios profesionales. Tu tarea es analizar si cada proveedor PUEDE ayudar con esta necesidad del usuario.
+        prompt_sistema = f"""Eres un experto en servicios profesionales. Tu tarea es analizar si cada proveedor PUEDE ayudar con esta necesidad del usuario.
 
 IMPORTANTE: Los servicios pueden estar en español o inglés. Términos como "community manager", "social media manager", "community management" son EQUIVALENTES a "gestor de redes sociales", "manejo de redes sociales", "gestión de redes sociales".
 
-NECESIDAD DEL USUARIO: "{user_need}"
+NECESIDAD DEL USUARIO: "{necesidad_usuario}"
 
-{providers_block}
+{bloque_proveedores}
 
 Para CADA proveedor, responde si PUEDE ayudar o NO ayudar.
 
@@ -136,74 +136,74 @@ Responde SOLO con JSON (array de booleanos, en el mismo orden):
 
 NO incluyas explicaciones. Solo el array de booleanos."""
 
-        self.logger.info(f"📋 Prompt enviado a IA de validación:\n{system_prompt[:1000]}...")
+        self.logger.info(f"📋 Prompt enviado a IA de validación:\n{prompt_sistema[:1000]}...")
 
         try:
-            async with self.openai_semaphore:
-                response = await asyncio.wait_for(
-                    self.openai_client.chat.completions.create(
+            async with self.semaforo_openai:
+                respuesta = await asyncio.wait_for(
+                    self.cliente_openai.chat.completions.create(
                         model="gpt-3.5-turbo",
                         messages=[
                             {
                                 "role": "system",
                                 "content": "Eres un experto analista de servicios profesionales. Analizas si un proveedor tiene la capacidad real de ayudar con una necesidad específica basándote en su profesión y servicios.",
                             },
-                            {"role": "user", "content": system_prompt},
+                            {"role": "user", "content": prompt_sistema},
                         ],
                         temperature=0.3,
                         max_tokens=150,
                     ),
-                    timeout=self.openai_timeout,
+                    timeout=self.tiempo_espera_openai,
                 )
 
-            if not response.choices:
+            if not respuesta.choices:
                 self.logger.warning("⚠️ OpenAI respondió sin choices en validar_proveedores")
-                return providers
+                return proveedores
 
-            content = (response.choices[0].message.content or "").strip()
-            if content.startswith("```"):
-                content = re.sub(
-                    r"^```(?:json)?", "", content, flags=re.IGNORECASE
+            contenido = (respuesta.choices[0].message.content or "").strip()
+            if contenido.startswith("```"):
+                contenido = re.sub(
+                    r"^```(?:json)?", "", contenido, flags=re.IGNORECASE
                 ).strip()
-                content = re.sub(r"```$", "", content).strip()
+                contenido = re.sub(r"```$", "", contenido).strip()
 
-            self.logger.debug(f"🤖 Respuesta validación IA: {content[:200]}")
+            self.logger.debug(f"🤖 Respuesta validación IA: {contenido[:200]}")
 
-            validation_list = json.loads(content)
+            lista_validacion = json.loads(contenido)
 
-            if not isinstance(validation_list, list):
+            if not isinstance(lista_validacion, list):
                 self.logger.warning(
-                    f"⚠️ Respuesta de validación no es array: {type(validation_list)}"
+                    f"⚠️ Respuesta de validación no es array: {type(lista_validacion)}"
                 )
-                return providers
+                return proveedores
 
-            if len(validation_list) != len(providers):
+            if len(lista_validacion) != len(proveedores):
                 self.logger.warning(
-                    f"⚠️ Respuesta IA tiene {len(validation_list)} valores, "
-                    f"pero esperaba {len(providers)}"
+                    f"⚠️ Respuesta IA tiene {len(lista_validacion)} valores, "
+                    f"pero esperaba {len(proveedores)}"
                 )
                 # Ajustar longitud si es necesario
-                validation_list = validation_list[: len(providers)]
+                lista_validacion = lista_validacion[: len(proveedores)]
 
             # Filtrar proveedores validados
-            validated_providers = []
-            for provider, is_valid in zip(providers, validation_list):
-                if is_valid and isinstance(is_valid, bool) and is_valid:
-                    validated_providers.append(provider)
+            proveedores_validados = []
+            for proveedor, es_valido in zip(proveedores, lista_validacion):
+                if es_valido and isinstance(es_valido, bool) and es_valido:
+                    proveedores_validados.append(proveedor)
 
             self.logger.info(
-                f"✅ Validación IA: {len(validated_providers)}/{len(providers)} "
-                f"proveedores validados para '{user_need}'"
+                f"✅ Validación IA: {len(proveedores_validados)}/{len(proveedores)} "
+                f"proveedores validados para '{necesidad_usuario}'"
             )
 
-            return validated_providers
+            return proveedores_validados
 
         except asyncio.TimeoutError:
             self.logger.warning("⚠️ Timeout en validar_proveedores, retornando todos")
-            return providers
+            return proveedores
         except json.JSONDecodeError as exc:
             self.logger.warning(f"⚠️ Error parseando JSON validación: {exc}")
-            return providers
+            return proveedores
         except Exception as exc:
             self.logger.warning(f"⚠️ Error en validación IA, retornando todos: {exc}")
-            return providers
+            return proveedores

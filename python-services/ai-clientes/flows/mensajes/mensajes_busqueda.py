@@ -7,18 +7,18 @@ def mensaje_buscando_expertos() -> str:
     return mensaje_buscando_expertos
 
 
-def mensaje_expertos_encontrados(cantidad: int, city: str) -> str:
+def mensaje_expertos_encontrados(cantidad: int, ciudad: str) -> str:
     """Mensaje cuando se encuentran expertos en la búsqueda.
 
     Args:
         cantidad: Número de expertos encontrados.
-        city: Ciudad donde se encontraron.
+        ciudad: Ciudad donde se encontraron.
 
     Returns:
         Mensaje con singular/plural correcto.
     """
     from templates.busqueda.confirmacion import mensaje_expertos_encontrados as fn_expertos
-    return fn_expertos(cantidad, city)
+    return fn_expertos(cantidad, ciudad)
 
 
 def mensajes_consentimiento() -> list[dict]:

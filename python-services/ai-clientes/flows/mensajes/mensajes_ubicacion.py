@@ -25,13 +25,13 @@ def solicitar_ciudad() -> dict:
     return {"response": preguntar_ciudad()}
 
 
-def solicitar_ciudad_con_servicio(service: str) -> dict:
+def solicitar_ciudad_con_servicio(servicio: str) -> dict:
     """Solicita ciudad dado un servicio específico.
 
     Args:
-        service: Nombre del servicio para contextualizar la solicitud.
+        servicio: Nombre del servicio para contextualizar la solicitud.
 
     Returns:
         dict: Respuesta con mensaje solicitando la ciudad para el servicio dado.
     """
-    return {"response": preguntar_ciudad_con_servicio(service)}
+    return {"response": preguntar_ciudad_con_servicio(servicio)}

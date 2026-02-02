@@ -21,42 +21,47 @@ logger = logging.getLogger(__name__)
 
 
 async def registrar_consentimiento(
-    provider_id: Optional[str], phone: str, payload: Dict[str, Any], response: str
+    proveedor_id: Optional[str],
+    telefono: str,
+    carga: Dict[str, Any],
+    respuesta: str,
 ) -> None:
     """
     Persistir registro de consentimiento en tabla consents.
 
     Args:
-        provider_id: UUID del proveedor (opcional si aún no está registrado)
-        phone: Número de teléfono del proveedor
-        payload: Diccionario con los datos del mensaje recibido
-        response: Respuesta del proveedor ("accepted" o "declined")
+        proveedor_id: UUID del proveedor (opcional si aún no está registrado)
+        telefono: Número de teléfono del proveedor
+        carga: Diccionario con los datos del mensaje recibido
+        respuesta: Respuesta del proveedor ("accepted" o "declined")
     """
-    from main import supabase  # Import dinámico para evitar circular import
+    from principal import supabase  # Import dinámico para evitar circular import
 
     if not supabase:
         return
 
     try:
-        consent_data = {
-            "consent_timestamp": payload.get("timestamp")
+        datos_consentimiento = {
+            "consent_timestamp": carga.get("timestamp")
             or datetime.utcnow().isoformat(),
-            "phone": phone,
-            "message_id": payload.get("id") or payload.get("message_id"),
-            "exact_response": payload.get("message") or payload.get("content"),
+            "phone": telefono,
+            "message_id": carga.get("id") or carga.get("message_id"),
+            "exact_response": carga.get("message") or carga.get("content"),
             "consent_type": "provider_registration",
-            "platform": payload.get("platform") or "whatsapp",
+            "platform": carga.get("platform") or "whatsapp",
         }
 
-        record = {
-            "user_id": provider_id,
+        registro = {
+            "user_id": proveedor_id,
             "user_type": "provider",
-            "response": response,
-            "message_log": json.dumps(consent_data, ensure_ascii=False),
+            "response": respuesta,
+            "message_log": json.dumps(datos_consentimiento, ensure_ascii=False),
         }
         await run_supabase(
-            lambda: supabase.table("consents").insert(record).execute(),
+            lambda: supabase.table("consents").insert(registro).execute(),
             label="consents.insert",
         )
     except Exception as exc:
-        logger.error(f"No se pudo guardar consentimiento de proveedor {phone}: {exc}")
+        logger.error(
+            f"No se pudo guardar consentimiento de proveedor {telefono}: {exc}"
+        )

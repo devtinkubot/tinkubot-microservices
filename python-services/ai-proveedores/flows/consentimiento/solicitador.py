@@ -18,12 +18,12 @@ from flows.constructores import construir_respuesta_solicitud_consentimiento
 logger = logging.getLogger(__name__)
 
 
-async def solicitar_consentimiento(phone: str) -> Dict[str, Any]:
+async def solicitar_consentimiento(telefono: str) -> Dict[str, Any]:
     """
     Generar mensajes de solicitud de consentimiento para proveedores.
 
     Args:
-        phone: Número de teléfono del proveedor
+        telefono: Número de teléfono del proveedor
 
     Returns:
         Diccionario con la respuesta de solicitud de consentimiento

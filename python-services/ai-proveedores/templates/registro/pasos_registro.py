@@ -2,11 +2,11 @@
 
 # ==================== CONSTANTES ====================
 
-REGISTRATION_START_PROMPT = (
+PROMPT_INICIO_REGISTRO = (
     "Perfecto. Empecemos. ¿En qué ciudad trabajas principalmente?"
 )
 
-GUIDANCE_MESSAGE = (
+MENSAJE_GUIA = (
     "Hola, soy TinkuBot Proveedores. Puedo ayudarte a crear o actualizar tu perfil.\n"
     "Selecciona una opción del menú para continuar o escribe 'registro' para iniciar de inmediato."
 )
@@ -14,9 +14,9 @@ GUIDANCE_MESSAGE = (
 # ==================== FUNCIONES ====================
 
 
-def provider_guidance_message() -> str:
+def mensaje_guia_proveedor() -> str:
     """Mensaje de bienvenida y guía para proveedores."""
-    return GUIDANCE_MESSAGE
+    return MENSAJE_GUIA
 
 
 def preguntar_correo_opcional() -> str:

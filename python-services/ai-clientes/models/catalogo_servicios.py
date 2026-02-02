@@ -10,7 +10,7 @@ import unicodedata
 from typing import Dict, Optional, Set, Tuple
 
 # Sinónimos comunes de servicios/profesiones
-COMMON_SERVICE_SYNONYMS: Dict[str, Set[str]] = {
+SINONIMOS_SERVICIOS_COMUNES: Dict[str, Set[str]] = {
     "plomero": {"plomero", "plomeria", "plomería"},
     "electricista": {"electricista", "electricistas"},
     "médico": {"médico", "medico", "doctor", "doctora"},
@@ -84,61 +84,61 @@ COMMON_SERVICE_SYNONYMS: Dict[str, Set[str]] = {
     },
 }
 
-COMMON_SERVICES = list(COMMON_SERVICE_SYNONYMS.keys())
+SERVICIOS_COMUNES = list(SINONIMOS_SERVICIOS_COMUNES.keys())
 
 
-def _normalize_text_for_lookup(text: Optional[str]) -> str:
-    base = (text or "").lower().strip()
-    normalized = unicodedata.normalize("NFD", base)
-    without_accents = "".join(
-        ch for ch in normalized if unicodedata.category(ch) != "Mn"
+def _normalizar_texto_para_busqueda(texto: Optional[str]) -> str:
+    base = (texto or "").lower().strip()
+    normalizado = unicodedata.normalize("NFD", base)
+    sin_acentos = "".join(
+        ch for ch in normalizado if unicodedata.category(ch) != "Mn"
     )
-    cleaned = re.sub(r"[^a-z0-9\s]", " ", without_accents)
-    return re.sub(r"\s+", " ", cleaned).strip()
+    limpio = re.sub(r"[^a-z0-9\s]", " ", sin_acentos)
+    return re.sub(r"\s+", " ", limpio).strip()
 
 
-def _build_normalized_profession_map() -> Dict[str, str]:
-    mapping: Dict[str, str] = {}
-    for canonical, synonyms in COMMON_SERVICE_SYNONYMS.items():
-        candidates = set(synonyms)
-        candidates.add(canonical)
-        for candidate in candidates:
-            normalized_candidate = _normalize_text_for_lookup(candidate)
-            if not normalized_candidate:
+def _construir_mapa_profesion_normalizada() -> Dict[str, str]:
+    mapeo: Dict[str, str] = {}
+    for canonico, sinonimos in SINONIMOS_SERVICIOS_COMUNES.items():
+        candidatos = set(sinonimos)
+        candidatos.add(canonico)
+        for candidato in candidatos:
+            candidato_normalizado = _normalizar_texto_para_busqueda(candidato)
+            if not candidato_normalizado:
                 continue
-            mapping.setdefault(normalized_candidate, canonical)
-    return mapping
+            mapeo.setdefault(candidato_normalizado, canonico)
+    return mapeo
 
 
-NORMALIZED_PROFESSION_MAP = _build_normalized_profession_map()
+MAPA_PROFESION_NORMALIZADA = _construir_mapa_profesion_normalizada()
 
 
-def normalize_profession_for_search(term: Optional[str]) -> Optional[str]:
-    if not term:
-        return term
-    normalized = _normalize_text_for_lookup(term)
-    if not normalized:
-        return term
-    return NORMALIZED_PROFESSION_MAP.get(normalized, term)
+def normalizar_profesion_para_busqueda(termino: Optional[str]) -> Optional[str]:
+    if not termino:
+        return termino
+    normalizado = _normalizar_texto_para_busqueda(termino)
+    if not normalizado:
+        return termino
+    return MAPA_PROFESION_NORMALIZADA.get(normalizado, termino)
 
 
-def normalize_text_pair(value: Optional[str]) -> Tuple[str, str]:
+def normalizar_par_texto(valor: Optional[str]) -> Tuple[str, str]:
     """
     Retorna (original_limpio, normalizado_para_busqueda).
     - original_limpio: mantiene mayúsculas pero quita espacios duplicados/acentos raros de Unicode.
     - normalizado: minúsculas, sin acentos, solo [a-z0-9 ], espacios colapsados.
     """
-    original_clean = (value or "").strip()
-    if not original_clean:
+    original_limpio = (valor or "").strip()
+    if not original_limpio:
         return "", ""
 
     # Normalizar visualmente el original (sin perder capitalización)
-    original_normalized = unicodedata.normalize("NFKC", original_clean)
+    original_normalizado = unicodedata.normalize("NFKC", original_limpio)
 
     # Generar versión 100% normalizada para búsquedas
-    normalized = unicodedata.normalize("NFD", original_normalized.lower())
-    normalized = "".join(ch for ch in normalized if unicodedata.category(ch) != "Mn")
-    normalized = re.sub(r"[^a-z0-9\s]", " ", normalized)
-    normalized = re.sub(r"\s+", " ", normalized).strip()
+    normalizado = unicodedata.normalize("NFD", original_normalizado.lower())
+    normalizado = "".join(ch for ch in normalizado if unicodedata.category(ch) != "Mn")
+    normalizado = re.sub(r"[^a-z0-9\s]", " ", normalizado)
+    normalizado = re.sub(r"\s+", " ", normalizado).strip()
 
-    return original_normalized, normalized
+    return original_normalizado, normalizado

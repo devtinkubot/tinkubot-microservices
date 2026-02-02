@@ -1,8 +1,8 @@
-"""Mensajes relacionados con feedback y satisfacción del cliente."""
+"""Mensajes relacionados con retroalimentación y satisfacción del cliente."""
 
 
-def mensaje_solicitud_feedback(nombre_proveedor: str) -> str:
-    """Genera mensaje de solicitud de feedback después de conectar con proveedor.
+def mensaje_solicitud_retroalimentacion(nombre_proveedor: str) -> str:
+    """Genera mensaje de solicitud de retroalimentación después de conectar con proveedor.
 
     Args:
         nombre_proveedor: Nombre del proveedor con el que se conectó.

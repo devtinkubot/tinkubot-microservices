@@ -10,7 +10,7 @@ from typing import Optional
 # ==================== MENSAJES DE CIERRE ====================
 
 
-def informar_cierre_session() -> str:
+def informar_cierre_sesion() -> str:
     """Confirma que la sesión ha terminado y el bot está disponible.
 
     Returns:

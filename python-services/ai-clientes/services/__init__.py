@@ -1,4 +1,4 @@
-# Services module
+# Módulo de servicios
 from . import sesiones
 from .orquestador_conversacion import OrquestadorConversacional
 from .buscador.buscador_proveedores import BuscadorProveedores

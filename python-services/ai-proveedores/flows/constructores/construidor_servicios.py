@@ -2,7 +2,7 @@
 
 from typing import List
 
-from templates import provider_services_menu_message
+from templates import mensaje_menu_servicios_proveedor
 
 
 def construir_menu_servicios(servicios: List[str], max_servicios: int = 5) -> str:
@@ -15,4 +15,4 @@ def construir_menu_servicios(servicios: List[str], max_servicios: int = 5) -> st
     Returns:
         Menú formateado con lista de servicios y opciones.
     """
-    return provider_services_menu_message(servicios, max_servicios)
+    return mensaje_menu_servicios_proveedor(servicios, max_servicios)

@@ -3,23 +3,23 @@
 from typing import Any, Dict, Optional
 
 
-def es_opcion_reinicio(selected: str) -> bool:
+def es_opcion_reinicio(seleccionado: str) -> bool:
     """
     Verifica si la opción seleccionada es de reinicio.
 
     Args:
-        selected: Opción seleccionada por el usuario.
+        seleccionado: Opción seleccionada por el usuario.
 
     Returns:
         True si la opción corresponde a reiniciar el flujo, False en caso contrario.
     """
     from templates.busqueda.confirmacion import opciones_confirmar_nueva_busqueda_textos
-    return selected in opciones_confirmar_nueva_busqueda_textos
+    return seleccionado in opciones_confirmar_nueva_busqueda_textos
 
 
 async def verificar_ciudad_y_proceder(
-    flow: Dict[str, Any],
-    customer_profile: Optional[Dict[str, Any]]
+    flujo: Dict[str, Any],
+    perfil_cliente: Optional[Dict[str, Any]]
 ) -> Dict[str, Any]:
     """
     Verifica si el usuario YA tiene ciudad confirmada y procede accordingly.
@@ -28,27 +28,27 @@ async def verificar_ciudad_y_proceder(
     Si NO tiene ciudad, pedir ciudad normalmente.
 
     Args:
-        flow: Diccionario con el estado del flujo conversacional.
-        customer_profile: Perfil del cliente con datos previos (opcional).
+        flujo: Diccionario con el estado del flujo conversacional.
+        perfil_cliente: Perfil del cliente con datos previos (opcional).
 
     Returns:
         Dict con "response" (mensaje para el usuario) y opcionalmente "ui".
     """
-    if not customer_profile:
+    if not perfil_cliente:
         return {"response": "*Perfecto, ¿en qué ciudad lo necesitas?*"}
 
-    existing_city = customer_profile.get("city")
-    city_confirmed_at = customer_profile.get("city_confirmed_at")
+    ciudad_existente = perfil_cliente.get("city")
+    ciudad_confirmada_en = perfil_cliente.get("city_confirmed_at")
 
-    if existing_city and city_confirmed_at:
+    if ciudad_existente and ciudad_confirmada_en:
         # Tiene ciudad confirmada: usarla automáticamente
-        flow["city"] = existing_city
-        flow["city_confirmed"] = True
-        flow["state"] = "searching"
-        flow["searching_dispatched"] = True
+        flujo["city"] = ciudad_existente
+        flujo["city_confirmed"] = True
+        flujo["state"] = "searching"
+        flujo["searching_dispatched"] = True
 
         return {
-            "response": f"Perfecto, buscaré {flow.get('service')} en {existing_city}.",
+            "response": f"Perfecto, buscaré {flujo.get('service')} en {ciudad_existente}.",
             "ui": {"type": "silent"}
         }
 

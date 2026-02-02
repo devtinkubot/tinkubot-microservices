@@ -27,55 +27,55 @@ logger = logging.getLogger(__name__)
 
 
 async def procesar_respuesta_consentimiento(  # noqa: C901
-    phone: str,
-    flow: Dict[str, Any],
-    payload: Dict[str, Any],
-    provider_profile: Optional[Dict[str, Any]],
+    telefono: str,
+    flujo: Dict[str, Any],
+    carga: Dict[str, Any],
+    perfil_proveedor: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
     """
     Procesar respuesta de consentimiento para registro de proveedores.
 
     Args:
-        phone: Número de teléfono del proveedor
-        flow: Diccionario con el estado actual del flujo
-        payload: Diccionario con los datos del mensaje recibido
-        provider_profile: Diccionario con el perfil del proveedor (si existe)
+        telefono: Número de teléfono del proveedor
+        flujo: Diccionario con el estado actual del flujo
+        carga: Diccionario con los datos del mensaje recibido
+        perfil_proveedor: Diccionario con el perfil del proveedor (si existe)
 
     Returns:
         Diccionario con la respuesta a enviar al proveedor
     """
-    from main import supabase  # Import dinámico para evitar circular import
+    from principal import supabase  # Import dinámico para evitar circular import
 
     from .solicitador import solicitar_consentimiento
     from .registrador import registrar_consentimiento
 
-    message_text = (payload.get("message") or payload.get("content") or "").strip()
-    lowered = message_text.lower()
-    option = None
+    texto_mensaje = (carga.get("message") or carga.get("content") or "").strip()
+    texto_min = texto_mensaje.lower()
+    opcion = None
 
-    if lowered.startswith("1"):
-        option = "1"
-    elif lowered.startswith("2"):
-        option = "2"
+    if texto_min.startswith("1"):
+        opcion = "1"
+    elif texto_min.startswith("2"):
+        opcion = "2"
     else:
-        interpreted = interpretar_respuesta(lowered, "consentimiento")
-        if interpreted is True:
-            option = "1"
-        elif interpreted is False:
-            option = "2"
+        interpretado = interpretar_respuesta(texto_min, "consentimiento")
+        if interpretado is True:
+            opcion = "1"
+        elif interpretado is False:
+            opcion = "2"
 
-    if option not in {"1", "2"}:
-        logger.info("Reenviando solicitud de consentimiento a %s", phone)
-        return await solicitar_consentimiento(phone)
+    if opcion not in {"1", "2"}:
+        logger.info("Reenviando solicitud de consentimiento a %s", telefono)
+        return await solicitar_consentimiento(telefono)
 
-    provider_id = provider_profile.get("id") if provider_profile else None
+    proveedor_id = perfil_proveedor.get("id") if perfil_proveedor else None
 
-    if option == "1":
-        flow["has_consent"] = True
-        flow["state"] = "awaiting_menu_option"
-        await establecer_flujo(phone, flow)
+    if opcion == "1":
+        flujo["has_consent"] = True
+        flujo["state"] = "awaiting_menu_option"
+        await establecer_flujo(telefono, flujo)
 
-        if supabase and provider_id:
+        if supabase and proveedor_id:
             try:
                 await run_supabase(
                     lambda: supabase.table("providers")
@@ -85,35 +85,37 @@ async def procesar_respuesta_consentimiento(  # noqa: C901
                             "updated_at": datetime.now().isoformat(),
                         }
                     )
-                    .eq("id", provider_id)
+                    .eq("id", proveedor_id)
                     .execute(),
                     label="providers.update_consent_true",
                 )
             except Exception as exc:
                 logger.error(
                     "No se pudo actualizar flag de consentimiento para %s: %s",
-                    phone,
+                    telefono,
                     exc,
                 )
 
         await registrar_consentimiento(
-            provider_id, phone, payload, "accepted"
+            proveedor_id, telefono, carga, "accepted"
         )
-        logger.info("Consentimiento aceptado por proveedor %s", phone)
+        logger.info("Consentimiento aceptado por proveedor %s", telefono)
 
         # Determinar si el usuario está COMPLETAMENTE registrado (no solo consentimiento)
         # Un usuario con solo consentimiento no está completamente registrado
-        is_fully_registered = bool(
-            provider_profile
-            and provider_profile.get("id")
-            and provider_profile.get("full_name")  # Verificar que tiene datos completos
+        esta_registrado_completo = bool(
+            perfil_proveedor
+            and perfil_proveedor.get("id")
+            and perfil_proveedor.get("full_name")  # Verificar que tiene datos completos
             # Fase 4: Eliminada verificación de profession
         )
 
-        return construir_respuesta_consentimiento_aceptado(is_fully_registered)
+        return construir_respuesta_consentimiento_aceptado(
+            esta_registrado_completo
+        )
 
     # Rechazo de consentimiento
-    if supabase and provider_id:
+    if supabase and proveedor_id:
         try:
             await run_supabase(
                 lambda: supabase.table("providers")
@@ -123,19 +125,19 @@ async def procesar_respuesta_consentimiento(  # noqa: C901
                         "updated_at": datetime.now().isoformat(),
                     }
                 )
-                .eq("id", provider_id)
+                .eq("id", proveedor_id)
                 .execute(),
                 label="providers.update_consent_false",
             )
         except Exception as exc:
             logger.error(
-                "No se pudo marcar rechazo de consentimiento para %s: %s", phone, exc
+                "No se pudo marcar rechazo de consentimiento para %s: %s", telefono, exc
             )
 
     await registrar_consentimiento(
-        provider_id, phone, payload, "declined"
+        proveedor_id, telefono, carga, "declined"
     )
-    await reiniciar_flujo(phone)
-    logger.info("Consentimiento rechazado por proveedor %s", phone)
+    await reiniciar_flujo(telefono)
+    logger.info("Consentimiento rechazado por proveedor %s", telefono)
 
     return construir_respuesta_consentimiento_rechazado()

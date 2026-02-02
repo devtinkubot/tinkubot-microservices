@@ -10,17 +10,19 @@ import asyncio
 import logging
 from typing import Any, Dict, Optional
 
-from .ejecutor_busqueda_background import ejecutar_busqueda_y_notificar_background
+from .ejecutor_busqueda_en_segundo_plano import (
+    ejecutar_busqueda_y_notificar_en_segundo_plano,
+)
 from .transiciones_estados import verificar_ciudad_y_transicionar
 
 logger = logging.getLogger(__name__)
 
 
 async def coordinar_busqueda_completa(
-    phone: str,
-    flow: Dict[str, Any],
-    send_message_callback: Any,  # Callable async que retorna bool
-    set_flow_callback: Any,  # Callable async que guarda estado
+    telefono: str,
+    flujo: Dict[str, Any],
+    enviar_mensaje_callback: Any,  # Callable async que retorna bool
+    guardar_flujo_callback: Any,  # Callable async que guarda estado
 ) -> Optional[str]:
     """
     Coordina la búsqueda completa de proveedores desde cualquier estado.
@@ -30,59 +32,59 @@ async def coordinar_busqueda_completa(
     y ciudad) y ejecuta la búsqueda en segundo plano.
 
     Args:
-        phone: Número de teléfono del cliente.
-        flow: Diccionario con el estado actual del flujo conversacional.
-        send_message_callback: Función para enviar mensajes de WhatsApp.
-            Firma: async (phone: str, message: str) -> bool
-        set_flow_callback: Función para actualizar el estado del flujo.
-            Firma: async (phone: str, flow: Dict[str, Any]) -> None
+        telefono: Número de teléfono del cliente.
+        flujo: Diccionario con el estado actual del flujo conversacional.
+        enviar_mensaje_callback: Función para enviar mensajes de WhatsApp.
+            Firma: async (telefono: str, mensaje: str) -> bool
+        guardar_flujo_callback: Función para actualizar el estado del flujo.
+            Firma: async (telefono: str, flujo: Dict[str, Any]) -> None
 
     Returns:
         Mensaje de confirmación si se inició la búsqueda, None en caso contrario.
 
     Example:
         >>> resultado = await coordinar_busqueda_completa(
-        ...     phone="123456789",
-        ...     flow={"service": "plomero", "city": "Madrid"},
-        ...     send_message_callback=send_whatsapp_text,
-        ...     set_flow_callback=set_flow
+        ...     telefono="123456789",
+        ...     flujo={"service": "plomero", "city": "Madrid"},
+        ...     enviar_mensaje_callback=enviar_texto_whatsapp,
+        ...     guardar_flujo_callback=guardar_flujo
         ... )
     """
     try:
-        service = flow.get("service", "").strip()
-        city = flow.get("city", "").strip()
+        servicio = flujo.get("service", "").strip()
+        ciudad = flujo.get("city", "").strip()
 
-        if not service or not city:
+        if not servicio or not ciudad:
             logger.warning(
                 f"⚠️ Búsqueda cancelada: falta service o city "
-                f"(service='{service}', city='{city}')"
+                f"(service='{servicio}', city='{ciudad}')"
             )
             return None
 
         logger.info(
             f"🚀 Coordinando búsqueda completa: "
-            f"phone={phone}, service='{service}', city='{city}'"
+            f"phone={telefono}, service='{servicio}', city='{ciudad}'"
         )
 
         # Actualizar estado a "searching" y marcar como despachado
-        flow["state"] = "searching"
-        flow["searching_dispatched"] = True
-        await set_flow_callback(phone, flow)
+        flujo["state"] = "searching"
+        flujo["searching_dispatched"] = True
+        await guardar_flujo_callback(telefono, flujo)
 
         # Ejecutar búsqueda en segundo plano
-        from main import coordinador_disponibilidad
+        from principal import coordinador_disponibilidad
 
         asyncio.create_task(
-            ejecutar_busqueda_y_notificar_background(
-                phone=phone,
-                flow=flow,
-                send_message_callback=send_message_callback,
-                set_flow_callback=set_flow_callback,
+            ejecutar_busqueda_y_notificar_en_segundo_plano(
+                telefono=telefono,
+                flujo=flujo,
+                enviar_mensaje_callback=enviar_mensaje_callback,
+                guardar_flujo_callback=guardar_flujo_callback,
                 coordinador_disponibilidad=coordinador_disponibilidad,
             )
         )
 
-        return f"Perfecto, buscaré {service} en {city}."
+        return f"Perfecto, buscaré {servicio} en {ciudad}."
 
     except Exception as exc:
         logger.error(f"❌ Error en coordinar_busqueda_completa: {exc}")
@@ -90,11 +92,11 @@ async def coordinar_busqueda_completa(
 
 
 async def transicionar_a_busqueda_desde_servicio(
-    phone: str,
-    flow: Dict[str, Any],
-    customer_profile: Optional[Dict[str, Any]],
-    send_message_callback: Any,  # Callable async que retorna bool
-    set_flow_callback: Any,  # Callable async que guarda estado
+    telefono: str,
+    flujo: Dict[str, Any],
+    perfil_cliente: Optional[Dict[str, Any]],
+    enviar_mensaje_callback: Any,  # Callable async que retorna bool
+    guardar_flujo_callback: Any,  # Callable async que guarda estado
 ) -> Dict[str, Any]:
     """
     Transiciona desde el estado awaiting_service hacia búsqueda.
@@ -107,7 +109,7 @@ async def transicionar_a_busqueda_desde_servicio(
         flow: Diccionario con el estado actual del flujo conversacional.
         customer_profile: Perfil del cliente con datos previos (opcional).
         send_message_callback: Función para enviar mensajes de WhatsApp.
-        set_flow_callback: Función para actualizar el estado del flujo.
+        guardar_flujo_callback: Función para actualizar el estado del flujo.
 
     Returns:
         Diccionario con la respuesta para el usuario. Puede contener:
@@ -116,48 +118,50 @@ async def transicionar_a_busqueda_desde_servicio(
 
     Example:
         >>> respuesta = await transicionar_a_busqueda_desde_servicio(
-        ...     phone="123456789",
-        ...     flow={"service": "plomero"},
-        ...     customer_profile={"city": "Madrid", "city_confirmed_at": "2025-01-01"},
-        ...     send_message_callback=send_whatsapp_text,
-        ...     set_flow_callback=set_flow
+        ...     telefono="123456789",
+        ...     flujo={"service": "plomero"},
+        ...     perfil_cliente={"city": "Madrid", "city_confirmed_at": "2025-01-01"},
+        ...     enviar_mensaje_callback=enviar_texto_whatsapp,
+        ...     guardar_flujo_callback=guardar_flujo
         ... )
     """
     try:
-        service = flow.get("service", "").strip()
+        servicio = flujo.get("service", "").strip()
 
-        if not service:
+        if not servicio:
             logger.warning("⚠️ No hay servicio para transicionar a búsqueda")
             return {"response": "¿Qué servicio necesitas?"}
 
         logger.info(
-            f"🔄 Transicionando desde awaiting_service: phone={phone}, service='{service}'"
+            f"🔄 Transicionando desde awaiting_service: phone={telefono}, service='{servicio}'"
         )
 
         # Verificar ciudad y proceder según el caso
-        ciudad_response = await verificar_ciudad_y_transicionar(
-            flow=flow,
-            customer_profile=customer_profile,
-            set_flow_callback=set_flow_callback,
+        respuesta_ciudad = await verificar_ciudad_y_transicionar(
+            flujo=flujo,
+            perfil_cliente=perfil_cliente,
+            guardar_flujo_callback=guardar_flujo_callback,
         )
 
         # Si el estado cambió a "searching", ejecutar búsqueda
-        if flow.get("state") == "searching":
-            confirmation_msg = await coordinar_busqueda_completa(
-                phone=phone,
-                flow=flow,
-                send_message_callback=send_message_callback,
-                set_flow_callback=set_flow_callback,
+        if flujo.get("state") == "searching":
+            mensaje_confirmacion = await coordinar_busqueda_completa(
+                telefono=telefono,
+                flujo=flujo,
+                enviar_mensaje_callback=enviar_mensaje_callback,
+                guardar_flujo_callback=guardar_flujo_callback,
             )
 
-            if confirmation_msg:
+            if mensaje_confirmacion:
                 return {
-                    "response": confirmation_msg,
-                    "messages": [{"response": ciudad_response.get("response", confirmation_msg)}]
+                    "response": mensaje_confirmacion,
+                    "messages": [
+                        {"response": respuesta_ciudad.get("response", mensaje_confirmacion)}
+                    ],
                 }
 
         # Si no tiene ciudad, retornar mensaje solicitándola
-        return ciudad_response
+        return respuesta_ciudad
 
     except Exception as exc:
         logger.error(f"❌ Error en transicionar_a_busqueda_desde_servicio: {exc}")
@@ -165,13 +169,13 @@ async def transicionar_a_busqueda_desde_servicio(
 
 
 async def transicionar_a_busqueda_desde_ciudad(
-    phone: str,
-    flow: Dict[str, Any],
-    normalized_city: str,
-    customer_id: Optional[str],
-    update_customer_city_callback: Any,  # Callable async
-    send_message_callback: Any,  # Callable async que retorna bool
-    set_flow_callback: Any,  # Callable async que guarda estado
+    telefono: str,
+    flujo: Dict[str, Any],
+    ciudad_normalizada: str,
+    cliente_id: Optional[str],
+    actualizar_ciudad_cliente_callback: Any,  # Callable async
+    enviar_mensaje_callback: Any,  # Callable async que retorna bool
+    guardar_flujo_callback: Any,  # Callable async que guarda estado
 ) -> Dict[str, Any]:
     """
     Transiciona desde el estado awaiting_city hacia búsqueda.
@@ -180,69 +184,75 @@ async def transicionar_a_busqueda_desde_ciudad(
     luego ejecuta la búsqueda de proveedores.
 
     Args:
-        phone: Número de teléfono del cliente.
-        flow: Diccionario con el estado actual del flujo conversacional.
-        normalized_city: Ciudad normalizada ingresada por el usuario.
-        customer_id: ID del cliente (opcional).
-        update_customer_city_callback: Función para actualizar ciudad en BD.
-        send_message_callback: Función para enviar mensajes de WhatsApp.
-        set_flow_callback: Función para actualizar el estado del flujo.
+        telefono: Número de teléfono del cliente.
+        flujo: Diccionario con el estado actual del flujo conversacional.
+        ciudad_normalizada: Ciudad normalizada ingresada por el usuario.
+        cliente_id: ID del cliente (opcional).
+        actualizar_ciudad_cliente_callback: Función para actualizar ciudad en BD.
+        enviar_mensaje_callback: Función para enviar mensajes de WhatsApp.
+        guardar_flujo_callback: Función para actualizar el estado del flujo.
 
     Returns:
         Diccionario con la respuesta para el usuario.
 
     Example:
         >>> respuesta = await transicionar_a_busqueda_desde_ciudad(
-        ...     phone="123456789",
-        ...     flow={"service": "plomero"},
-        ...     normalized_city="Madrid",
-        ...     customer_id="abc123",
-        ...     update_customer_city_callback=update_customer_city,
-        ...     send_message_callback=send_whatsapp_text,
-        ...     set_flow_callback=set_flow
+        ...     telefono="123456789",
+        ...     flujo={"service": "plomero"},
+        ...     ciudad_normalizada="Madrid",
+        ...     cliente_id="abc123",
+        ...     actualizar_ciudad_cliente_callback=actualizar_ciudad_cliente,
+        ...     enviar_mensaje_callback=enviar_texto_whatsapp,
+        ...     guardar_flujo_callback=guardar_flujo
         ... )
     """
     try:
-        service = flow.get("service", "").strip()
+        servicio = flujo.get("service", "").strip()
 
-        if not service:
+        if not servicio:
             logger.warning("⚠️ No hay servicio para transicionar a búsqueda")
             return {"response": "¿Qué servicio necesitas?"}
 
-        if not normalized_city:
+        if not ciudad_normalizada:
             logger.warning("⚠️ No hay ciudad para transicionar a búsqueda")
             return {"response": "¿En qué ciudad lo necesitas?"}
 
         logger.info(
-            f"🔄 Transicionando desde awaiting_city: phone={phone}, service='{service}', city='{normalized_city}'"
+            f"🔄 Transicionando desde awaiting_city: phone={telefono}, service='{servicio}', city='{ciudad_normalizada}'"
         )
 
         # Actualizar flujo con ciudad confirmada
-        flow["city"] = normalized_city
-        flow["city_confirmed"] = True
-        await set_flow_callback(phone, flow)
+        flujo["city"] = ciudad_normalizada
+        flujo["city_confirmed"] = True
+        await guardar_flujo_callback(telefono, flujo)
 
         # Actualizar ciudad en perfil del cliente si hay customer_id
-        if customer_id:
+        if cliente_id:
             try:
-                update_result = await update_customer_city_callback(customer_id, normalized_city)
-                if update_result and update_result.get("city_confirmed_at"):
-                    flow["city_confirmed_at"] = update_result["city_confirmed_at"]
-                    await set_flow_callback(phone, flow)
-                    logger.info(f"✅ Ciudad actualizada en BD: {normalized_city}")
+                resultado_actualizacion = await actualizar_ciudad_cliente_callback(
+                    cliente_id, ciudad_normalizada
+                )
+                if resultado_actualizacion and resultado_actualizacion.get(
+                    "city_confirmed_at"
+                ):
+                    flujo["city_confirmed_at"] = resultado_actualizacion[
+                        "city_confirmed_at"
+                    ]
+                    await guardar_flujo_callback(telefono, flujo)
+                    logger.info(f"✅ Ciudad actualizada en BD: {ciudad_normalizada}")
             except Exception as exc:
                 logger.warning(f"⚠️ No se pudo actualizar ciudad en BD: {exc}")
 
         # Ejecutar búsqueda completa
-        confirmation_msg = await coordinar_busqueda_completa(
-            phone=phone,
-            flow=flow,
-            send_message_callback=send_message_callback,
-            set_flow_callback=set_flow_callback,
+        mensaje_confirmacion = await coordinar_busqueda_completa(
+            telefono=telefono,
+            flujo=flujo,
+            enviar_mensaje_callback=enviar_mensaje_callback,
+            guardar_flujo_callback=guardar_flujo_callback,
         )
 
-        if confirmation_msg:
-            return {"messages": [{"response": confirmation_msg}]}
+        if mensaje_confirmacion:
+            return {"messages": [{"response": mensaje_confirmacion}]}
 
         return {"response": "Ocurrió un error iniciando la búsqueda."}
 

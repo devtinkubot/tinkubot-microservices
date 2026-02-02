@@ -1,11 +1,11 @@
 """Mensajes relacionados con estados de verificación de proveedores."""
 
 from .estados import (
-    provider_under_review_message,
-    provider_verified_message,
+    mensaje_proveedor_en_revision,
+    mensaje_proveedor_verificado,
 )
 
 __all__ = [
-    "provider_under_review_message",
-    "provider_verified_message",
+    "mensaje_proveedor_en_revision",
+    "mensaje_proveedor_verificado",
 ]

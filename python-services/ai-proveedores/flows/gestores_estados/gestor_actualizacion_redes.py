@@ -13,45 +13,49 @@ from templates.interfaz import (
 
 async def manejar_actualizacion_redes_sociales(
     *,
-    flow: Dict[str, Any],
-    message_text: str,
+    flujo: Dict[str, Any],
+    texto_mensaje: str,
     supabase: Any,
-    provider_id: Optional[str],
+    proveedor_id: Optional[str],
 ) -> Dict[str, Any]:
     """Actualiza redes sociales del proveedor y devuelve la respuesta."""
-    if not provider_id or not supabase:
-        flow["state"] = "awaiting_menu_option"
+    if not proveedor_id or not supabase:
+        flujo["state"] = "awaiting_menu_option"
         return {
             "success": True,
-            "messages": [{"response": construir_menu_principal(is_registered=True)}],
+            "messages": [{"response": construir_menu_principal(esta_registrado=True)}],
         }
 
-    parsed = parsear_entrada_red_social(message_text)
-    flow["social_media_url"] = parsed["url"]
-    flow["social_media_type"] = parsed["type"]
+    red_social_parseada = parsear_entrada_red_social(texto_mensaje)
+    flujo["social_media_url"] = red_social_parseada["url"]
+    flujo["social_media_type"] = red_social_parseada["type"]
 
     resultado = await actualizar_redes_sociales(
         supabase,
-        provider_id,
-        parsed["url"],
-        parsed["type"],
+        proveedor_id,
+        red_social_parseada["url"],
+        red_social_parseada["type"],
     )
 
     if not resultado.get("success"):
-        flow["state"] = "awaiting_menu_option"
+        flujo["state"] = "awaiting_menu_option"
         return {
             "success": False,
             "messages": [
                 {"response": error_actualizar_redes_sociales()},
-                {"response": construir_menu_principal(is_registered=True)},
+                {"response": construir_menu_principal(esta_registrado=True)},
             ],
         }
 
-    flow["state"] = "awaiting_menu_option"
+    flujo["state"] = "awaiting_menu_option"
     return {
         "success": True,
         "messages": [
-            {"response": confirmar_actualizacion_redes_sociales(bool(parsed["url"]))},
-            {"response": construir_menu_principal(is_registered=True)},
+            {
+                "response": confirmar_actualizacion_redes_sociales(
+                    bool(red_social_parseada["url"])
+                )
+            },
+            {"response": construir_menu_principal(esta_registrado=True)},
         ],
     }

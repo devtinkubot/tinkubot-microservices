@@ -12,20 +12,20 @@ logger = logging.getLogger(__name__)
 
 
 async def procesar_estado_buscando(
-    flow: Dict[str, Any],
-    phone: str,
-    respond_fn: Callable[
+    flujo: Dict[str, Any],
+    telefono: str,
+    responder_fn: Callable[
         [Dict[str, Any], Dict[str, Any]], Awaitable[Dict[str, Any]]
     ],
-    search_providers_fn: Callable[[str, str], Awaitable[Dict[str, Any]]],
-    send_provider_prompt_fn: Callable[[str], Awaitable[Dict[str, Any]]],
-    set_flow_fn: Callable[[Dict[str, Any]], Awaitable[None]],
-    save_bot_message_fn: Callable[[Optional[str]], Awaitable[None]],
+    buscar_proveedores_fn: Callable[[str, str], Awaitable[Dict[str, Any]]],
+    enviar_prompt_proveedor_fn: Callable[[str], Awaitable[Dict[str, Any]]],
+    guardar_flujo_fn: Callable[[Dict[str, Any]], Awaitable[None]],
+    guardar_mensaje_bot_fn: Callable[[Optional[str]], Awaitable[None]],
     mensajes_confirmacion_busqueda_fn: Callable[..., list[Dict[str, Any]]],
-    initial_prompt: str,
-    confirm_prompt_title_default: str,
+    prompt_inicial: str,
+    titulo_confirmacion_por_defecto: str,
     logger: Any,
-    supabase_client: Optional[Any] = None,
+    cliente_supabase: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Procesa el estado `searching` ejecutando la búsqueda de proveedores.
 
@@ -37,87 +37,89 @@ async def procesar_estado_buscando(
     - Registra la solicitud en Supabase (service_requests)
     - Retorna el mensaje con los resultados
     """
-    service = (flow.get("service") or "").strip()
-    city = (flow.get("city") or "").strip()
+    servicio = (flujo.get("service") or "").strip()
+    ciudad = (flujo.get("city") or "").strip()
 
-    logger.info(f"🔍 Ejecutando búsqueda: servicio='{service}', ciudad='{city}'")
-    logger.info(f"📋 Flujo previo a búsqueda: {flow}")
+    logger.info(f"🔍 Ejecutando búsqueda: servicio='{servicio}', ciudad='{ciudad}'")
+    logger.info(f"📋 Flujo previo a búsqueda: {flujo}")
 
-    if not service or not city:
-        if not service and not city:
-            flow["state"] = "awaiting_service"
-            return await respond_fn(
-                flow,
-                {"response": f"Volvamos a empezar. {initial_prompt}"},
+    if not servicio or not ciudad:
+        if not servicio and not ciudad:
+            flujo["state"] = "awaiting_service"
+            return await responder_fn(
+                flujo,
+                {"response": f"Volvamos a empezar. {prompt_inicial}"},
             )
-        if not service:
-            flow["state"] = "awaiting_service"
-            return await respond_fn(
-                flow,
+        if not servicio:
+            flujo["state"] = "awaiting_service"
+            return await responder_fn(
+                flujo,
                 {
                     "response": preguntar_servicio(),
                 },
             )
-        flow["state"] = "awaiting_city"
-        return await respond_fn(
-            flow,
-            {"response": preguntar_ciudad_con_servicio(service)},
+        flujo["state"] = "awaiting_city"
+        return await responder_fn(
+            flujo,
+            {"response": preguntar_ciudad_con_servicio(servicio)},
         )
 
-    results = await search_providers_fn(service, city)
-    providers = results.get("providers") or []
-    if not providers:
-        flow["state"] = "confirm_new_search"
-        flow["confirm_attempts"] = 0
-        flow["confirm_title"] = confirm_prompt_title_default
-        flow["confirm_include_city_option"] = True
-        flow[""] = False
-        await set_flow_fn(flow)
-        block = mensaje_listado_sin_resultados(city)
-        await save_bot_message_fn(block)
-        confirm_msgs = mensajes_confirmacion_busqueda_fn(
-            confirm_prompt_title_default, include_city_option=True
+    resultados = await buscar_proveedores_fn(servicio, ciudad)
+    proveedores = resultados.get("providers") or []
+    if not proveedores:
+        flujo["state"] = "confirm_new_search"
+        flujo["confirm_attempts"] = 0
+        flujo["confirm_title"] = titulo_confirmacion_por_defecto
+        flujo["confirm_include_city_option"] = True
+        flujo[""] = False
+        await guardar_flujo_fn(flujo)
+        bloque = mensaje_listado_sin_resultados(ciudad)
+        await guardar_mensaje_bot_fn(bloque)
+        mensajes_confirmacion = mensajes_confirmacion_busqueda_fn(
+            titulo_confirmacion_por_defecto, incluir_opcion_ciudad=True
         )
-        for cmsg in confirm_msgs:
-            response_text = cmsg.get("response")
-            if response_text:
-                await save_bot_message_fn(response_text)
-        messages = [{"response": block}, *confirm_msgs]
-        return {"messages": messages}
+        for cmsg in mensajes_confirmacion:
+            texto_respuesta = cmsg.get("response")
+            if texto_respuesta:
+                await guardar_mensaje_bot_fn(texto_respuesta)
+        mensajes = [{"response": bloque}, *mensajes_confirmacion]
+        return {"messages": mensajes}
 
-    flow["providers"] = providers[:5]
-    flow["state"] = "presenting_results"
-    flow["confirm_include_city_option"] = False
-    flow[""] = len(flow["providers"]) > 1
-    flow.pop("provider_detail_idx", None)
+    flujo["providers"] = proveedores[:5]
+    flujo["state"] = "presenting_results"
+    flujo["confirm_include_city_option"] = False
+    flujo[""] = len(flujo["providers"]) > 1
+    flujo.pop("provider_detail_idx", None)
 
     # Guardar flow ANTES de consultar disponibilidad
-    await set_flow_fn(flow)
+    await guardar_flujo_fn(flujo)
 
-    if supabase_client:
+    if cliente_supabase:
         try:
-            supabase_client.table("service_requests").insert(
+            cliente_supabase.table("service_requests").insert(
                 {
-                    "phone": phone,
+                    "phone": telefono,
                     "intent": "service_request",
-                    "profession": service,
-                    "location_city": city,
+                    "profession": servicio,
+                    "location_city": ciudad,
                     "requested_at": datetime.utcnow().isoformat(),
                     "resolved_at": datetime.utcnow().isoformat(),
-                    "suggested_providers": flow["providers"],
+                    "suggested_providers": flujo["providers"],
                 }
             ).execute()
         except Exception as exc:  # pragma: no cover - logging auxiliar
             logger.warning(f"No se pudo registrar service_request: {exc}")
 
     try:
-        names = ", ".join([p.get("name") or "Proveedor" for p in flow["providers"]])
+        nombres = ", ".join(
+            [p.get("name") or "Proveedor" for p in flujo["providers"]]
+        )
         logger.info(
-            f"📣 Devolviendo provider_results a WhatsApp: count={len(flow['providers'])} names=[{names}]"
+            f"📣 Devolviendo provider_results a WhatsApp: count={len(flujo['providers'])} names=[{nombres}]"
         )
     except Exception:  # pragma: no cover - logging auxiliar
         logger.info(
-            f"📣 Devolviendo provider_results a WhatsApp: count={len(flow['providers'])}"
+            f"📣 Devolviendo provider_results a WhatsApp: count={len(flujo['providers'])}"
         )
 
-    return await send_provider_prompt_fn(city)
+    return await enviar_prompt_proveedor_fn(ciudad)

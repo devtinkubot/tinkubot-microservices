@@ -3,62 +3,62 @@
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from models.proveedores import SolicitudCreacionProveedor
-from templates import provider_under_review_message
+from templates import mensaje_proveedor_en_revision
 from services.servicios_proveedor.utilidades import limpiar_espacios
 from flows.validadores.validador_entrada import parsear_cadena_servicios
 from services.registro import validar_y_construir_proveedor
 
 
 async def manejar_confirmacion(
-    flow: Dict[str, Any],
-    message_text: Optional[str],
-    phone: str,
-    register_provider_fn: Callable[
+    flujo: Dict[str, Any],
+    texto_mensaje: Optional[str],
+    telefono: str,
+    registrar_proveedor_fn: Callable[
         [SolicitudCreacionProveedor], Awaitable[Optional[Dict[str, Any]]]
     ],
-    upload_media_fn: Callable[[str, Dict[str, Any]], Awaitable[None]],
-    reset_flow_fn: Callable[[], Awaitable[None]],
+    subir_medios_fn: Callable[[str, Dict[str, Any]], Awaitable[None]],
+    reiniciar_flujo_fn: Callable[[], Awaitable[None]],
     logger: Any,
 ) -> Dict[str, Any]:
     """Procesa la confirmación del registro y crea el proveedor.
 
     Args:
-        flow: Diccionario del flujo conversacional.
-        message_text: Mensaje del usuario con confirmación o edición.
-        phone: Número de teléfono del proveedor.
-        register_provider_fn: Función asíncrona para registrar el proveedor.
-        upload_media_fn: Función asíncrona para subir medios.
-        reset_flow_fn: Función asíncrona para resetear el flujo.
+        flujo: Diccionario del flujo conversacional.
+        texto_mensaje: Mensaje del usuario con confirmación o edición.
+        telefono: Número de teléfono del proveedor.
+        registrar_proveedor_fn: Función asíncrona para registrar el proveedor.
+        subir_medios_fn: Función asíncrona para subir medios.
+        reiniciar_flujo_fn: Función asíncrona para resetear el flujo.
         logger: Logger para registro de eventos.
 
     Returns:
         Respuesta con éxito y nuevo estado del flujo, o error de validación.
     """
-    raw_text = limpiar_espacios(message_text)
-    text = raw_text.lower()
+    texto_crudo = limpiar_espacios(texto_mensaje)
+    texto = texto_crudo.lower()
 
-    if text.startswith("2") or "editar" in text:
-        has_consent = flow.get("has_consent", False)
-        flow.clear()
-        flow["state"] = "awaiting_city"
-        if has_consent:
-            flow["has_consent"] = True
+    if texto.startswith("2") or "editar" in texto:
+        tiene_consentimiento = flujo.get("has_consent", False)
+        flujo.clear()
+        flujo["state"] = "awaiting_city"
+        if tiene_consentimiento:
+            flujo["has_consent"] = True
         return {
             "success": True,
             "response": ("Reiniciemos. *En que ciudad trabajas principalmente?*"),
         }
 
     if (
-        text.startswith("1")
-        or text.startswith("confirm")
-        or text in {"si", "ok", "listo", "confirmar"}
+        texto.startswith("1")
+        or texto.startswith("confirm")
+        or texto in {"si", "ok", "listo", "confirmar"}
     ):
         # Validar y construir proveedor usando el servicio de negocio
-        es_valido, mensaje_error, provider_payload = validar_y_construir_proveedor(
-            flow, phone
+        es_valido, mensaje_error, datos_proveedor = validar_y_construir_proveedor(
+            flujo, telefono
         )
 
-        if not es_valido or provider_payload is None:
+        if not es_valido or datos_proveedor is None:
             return {
                 "success": False,
                 "response": (
@@ -67,29 +67,29 @@ async def manejar_confirmacion(
                 ),
             }
 
-        registered_provider = await register_provider_fn(provider_payload)
-        if registered_provider:
+        proveedor_registrado = await registrar_proveedor_fn(datos_proveedor)
+        if proveedor_registrado:
             logger.info(
                 "Proveedor registrado exitosamente: %s",
-                registered_provider.get("id"),
+                proveedor_registrado.get("id"),
             )
-            provider_id = registered_provider.get("id")
+            proveedor_id = proveedor_registrado.get("id")
             servicios_registrados = parsear_cadena_servicios(
-                registered_provider.get("services")
+                proveedor_registrado.get("services")
             )
-            flow["services"] = servicios_registrados
-            if provider_id:
-                await upload_media_fn(provider_id, flow)
-            await reset_flow_fn()
+            flujo["services"] = servicios_registrados
+            if proveedor_id:
+                await subir_medios_fn(proveedor_id, flujo)
+            await reiniciar_flujo_fn()
             return {
                 "success": True,
-                "messages": [{"response": provider_under_review_message()}],
+                "messages": [{"response": mensaje_proveedor_en_revision()}],
                 "reset_flow": True,
                 "new_flow": {
                     "state": "pending_verification",
                     "has_consent": True,
                     "registration_allowed": False,
-                    "provider_id": provider_id,
+                    "provider_id": proveedor_id,
                     "services": servicios_registrados,
                     "awaiting_verification": True,
                 },

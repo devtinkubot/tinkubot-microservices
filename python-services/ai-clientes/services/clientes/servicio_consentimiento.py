@@ -28,7 +28,7 @@ class ServicioConsentimiento:
 
     async def solicitar_consentimiento(
         self,
-        phone: str,
+        telefono: str,
     ) -> Dict[str, Any]:
         """Solicita consentimiento al cliente para uso de sus datos.
 
@@ -36,7 +36,7 @@ class ServicioConsentimiento:
         consentimiento de datos del cliente.
 
         Args:
-            phone: Teléfono del cliente (para logging)
+            telefono: Teléfono del cliente (para logging)
 
         Returns:
             Dict con la estructura:
@@ -49,20 +49,20 @@ class ServicioConsentimiento:
         """
         from flows.mensajes import mensajes_consentimiento
 
-        self.logger.info(f"🔐 Solicitando consentimiento a cliente {phone}")
+        self.logger.info(f"🔐 Solicitando consentimiento a cliente {telefono}")
 
-        messages = [msg for msg in mensajes_consentimiento()]
+        mensajes = [msg for msg in mensajes_consentimiento()]
 
-        self.logger.info(f"✅ Mensajes de consentimiento generados para {phone}")
+        self.logger.info(f"✅ Mensajes de consentimiento generados para {telefono}")
 
-        return {"messages": messages}
+        return {"messages": mensajes}
 
     async def procesar_respuesta(
         self,
-        phone: str,
-        customer_profile: Dict[str, Any],
-        selected: str,
-        payload: Dict[str, Any],
+        telefono: str,
+        perfil_cliente: Dict[str, Any],
+        seleccionado: str,
+        carga: Dict[str, Any],
     ) -> Dict[str, Any]:
         """Procesa la respuesta de consentimiento del cliente.
 
@@ -71,10 +71,10 @@ class ServicioConsentimiento:
         legal de consentimiento.
 
         Args:
-            phone: Teléfono del cliente
-            customer_profile: Perfil del cliente con datos de Supabase
-            selected: Opción seleccionada ("1", "Acepto", etc.)
-            payload: Payload completo del mensaje de WhatsApp con metadata
+            telefono: Teléfono del cliente
+            perfil_cliente: Perfil del cliente con datos de Supabase
+            seleccionado: Opción seleccionada ("1", "Acepto", etc.)
+            carga: Payload completo del mensaje de WhatsApp con metadata
 
         Returns:
             Dict con la respuesta apropiada:
@@ -87,80 +87,80 @@ class ServicioConsentimiento:
         from flows.mensajes import mensaje_inicial_solicitud
 
         # Mapear respuesta del botón o texto
-        if selected in ["1", "Acepto"]:
-            response = "accepted"
+        if seleccionado in ["1", "Acepto"]:
+            respuesta = "accepted"
 
-            self.logger.info(f"✅ Cliente {phone} ACEPTÓ consentimiento")
+            self.logger.info(f"✅ Cliente {telefono} ACEPTÓ consentimiento")
 
             # Actualizar has_consent a TRUE
             try:
                 await self.repo_clientes.actualizar_consentimiento(
-                    customer_id=customer_profile.get("id"),
-                    has_consent=True,
+                    cliente_id=perfil_cliente.get("id"),
+                    tiene_consentimiento=True,
                 )
 
                 # Guardar registro legal en tabla consents con metadata completa
-                consent_data = {
-                    "consent_timestamp": payload.get("timestamp"),
-                    "phone": payload.get("from_number"),
-                    "message_id": payload.get("message_id"),
-                    "exact_response": payload.get("content"),
+                datos_consentimiento = {
+                    "consent_timestamp": carga.get("timestamp"),
+                    "phone": carga.get("from_number"),
+                    "message_id": carga.get("message_id"),
+                    "exact_response": carga.get("content"),
                     "consent_type": "provider_contact",
                     "platform": "whatsapp",
-                    "message_type": payload.get("message_type"),
-                    "device_type": payload.get("device_type"),
+                    "message_type": carga.get("message_type"),
+                    "device_type": carga.get("device_type"),
                 }
 
                 await self.repo_clientes.registrar_consentimiento(
-                    user_id=customer_profile.get("id"),
-                    response=response,
-                    consent_data=consent_data,
+                    usuario_id=perfil_cliente.get("id"),
+                    respuesta=respuesta,
+                    datos_consentimiento=datos_consentimiento,
                 )
 
                 self.logger.info(
-                    f"✅ Consentimiento aceptado y guardado para cliente {phone}"
+                    f"✅ Consentimiento aceptado y guardado para cliente {telefono}"
                 )
 
             except Exception as exc:
                 self.logger.error(
-                    f"❌ Error guardando consentimiento para {phone}: {exc}"
+                    f"❌ Error guardando consentimiento para {telefono}: {exc}"
                 )
 
             # Después de aceptar, continuar con el flujo normal mostrando el prompt inicial
             return {"response": mensaje_inicial_solicitud()}
 
         else:  # "No acepto" o cualquier otra opción
-            response = "declined"
-            message = mensaje_rechazo_consentimiento()
+            respuesta = "declined"
+            mensaje = mensaje_rechazo_consentimiento()
 
-            self.logger.info(f"❌ Cliente {phone} RECHAZÓ consentimiento")
+            self.logger.info(f"❌ Cliente {telefono} RECHAZÓ consentimiento")
 
             # Guardar registro legal igualmente con metadata completa
             try:
-                consent_data = {
-                    "consent_timestamp": payload.get("timestamp"),
-                    "phone": payload.get("from_number"),
-                    "message_id": payload.get("message_id"),
-                    "exact_response": payload.get("content"),
+                datos_consentimiento = {
+                    "consent_timestamp": carga.get("timestamp"),
+                    "phone": carga.get("from_number"),
+                    "message_id": carga.get("message_id"),
+                    "exact_response": carga.get("content"),
                     "consent_type": "provider_contact",
                     "platform": "whatsapp",
-                    "message_type": payload.get("message_type"),
-                    "device_type": payload.get("device_type"),
+                    "message_type": carga.get("message_type"),
+                    "device_type": carga.get("device_type"),
                 }
 
                 await self.repo_clientes.registrar_consentimiento(
-                    user_id=customer_profile.get("id"),
-                    response=response,
-                    consent_data=consent_data,
+                    usuario_id=perfil_cliente.get("id"),
+                    respuesta=respuesta,
+                    datos_consentimiento=datos_consentimiento,
                 )
 
                 self.logger.info(
-                    f"✅ Rechazo de consentimiento guardado para cliente {phone}"
+                    f"✅ Rechazo de consentimiento guardado para cliente {telefono}"
                 )
 
             except Exception as exc:
                 self.logger.error(
-                    f"❌ Error guardando rechazo de consentimiento para {phone}: {exc}"
+                    f"❌ Error guardando rechazo de consentimiento para {telefono}: {exc}"
                 )
 
-            return {"response": message}
+            return {"response": mensaje}

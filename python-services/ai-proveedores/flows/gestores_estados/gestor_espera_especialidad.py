@@ -7,20 +7,20 @@ from services.servicios_proveedor.utilidades import limpiar_espacios
 
 
 def manejar_espera_especialidad(
-    flow: Dict[str, Any], message_text: Optional[str]
+    flujo: Dict[str, Any], texto_mensaje: Optional[str]
 ) -> Dict[str, Any]:
     """Procesa la entrada del usuario para el campo especialidad/servicios.
 
     Args:
-        flow: Diccionario del flujo conversacional.
-        message_text: Mensaje del usuario con los servicios.
+        flujo: Diccionario del flujo conversacional.
+        texto_mensaje: Mensaje del usuario con los servicios.
 
     Returns:
         Respuesta con éxito y siguiente pregunta, o error de validación.
     """
-    specialty = limpiar_espacios(message_text)
-    lowered = specialty.lower()
-    if lowered in {"omitir", "ninguna", "na", "n/a"}:
+    especialidad_texto = limpiar_espacios(texto_mensaje)
+    texto_minusculas = especialidad_texto.lower()
+    if texto_minusculas in {"omitir", "ninguna", "na", "n/a"}:
         return {
             "success": True,
             "response": (
@@ -28,7 +28,7 @@ def manejar_espera_especialidad(
             ),
         }
 
-    if len(specialty) < 2:
+    if len(especialidad_texto) < 2:
         return {
             "success": True,
             "response": (
@@ -37,7 +37,7 @@ def manejar_espera_especialidad(
             ),
         }
 
-    if len(specialty) > 300:
+    if len(especialidad_texto) > 300:
         return {
             "success": True,
             "response": (
@@ -46,13 +46,13 @@ def manejar_espera_especialidad(
             ),
         }
 
-    services_list = [
+    lista_servicios = [
         item.strip()
-        for item in re.split(r"[;,/\n]+", specialty)
+        for item in re.split(r"[;,/\n]+", especialidad_texto)
         if item and item.strip()
     ]
 
-    if len(services_list) > 10:
+    if len(lista_servicios) > 10:
         return {
             "success": True,
             "response": (
@@ -60,7 +60,7 @@ def manejar_espera_especialidad(
             ),
         }
 
-    if any(len(srv) > 120 for srv in services_list):
+    if any(len(servicio) > 120 for servicio in lista_servicios):
         return {
             "success": True,
             "response": (
@@ -69,8 +69,10 @@ def manejar_espera_especialidad(
             ),
         }
 
-    flow["specialty"] = ", ".join(services_list) if services_list else specialty
-    flow["state"] = "awaiting_experience"
+    flujo["specialty"] = (
+        ", ".join(lista_servicios) if lista_servicios else especialidad_texto
+    )
+    flujo["state"] = "awaiting_experience"
     return {
         "success": True,
         "response": ("*Cuantos años de experiencia tienes? (escribe un numero)*"),

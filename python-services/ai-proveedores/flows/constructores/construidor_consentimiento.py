@@ -3,11 +3,11 @@
 from typing import Any, Dict
 
 from templates import (
-    consent_acknowledged_message,
-    consent_declined_message,
-    consent_prompt_messages,
-    provider_main_menu_message,
-    provider_post_registration_menu_message,
+    mensaje_consentimiento_aceptado,
+    mensaje_consentimiento_rechazado,
+    mensajes_prompt_consentimiento,
+    mensaje_menu_principal_proveedor,
+    mensaje_menu_post_registro_proveedor,
 )
 
 
@@ -17,30 +17,30 @@ def construir_respuesta_solicitud_consentimiento() -> Dict[str, Any]:
     Returns:
         Diccionario con mensajes de solicitud de consentimiento.
     """
-    prompts = consent_prompt_messages()
-    messages = [{"response": text} for text in prompts]
-    return {"success": True, "messages": messages}
+    mensajes_prompt = mensajes_prompt_consentimiento()
+    mensajes = [{"response": texto} for texto in mensajes_prompt]
+    return {"success": True, "messages": mensajes}
 
 
-def construir_respuesta_consentimiento_aceptado(is_registered: bool = False) -> Dict[str, Any]:
+def construir_respuesta_consentimiento_aceptado(esta_registrado: bool = False) -> Dict[str, Any]:
     """Construye respuesta cuando el consentimiento es aceptado.
 
     Args:
-        is_registered: True si el proveedor ya está registrado.
+        esta_registrado: True si el proveedor ya está registrado.
 
     Returns:
         Diccionario con mensajes de confirmación y menú correspondiente.
     """
-    menu_message = (
-        provider_post_registration_menu_message()
-        if is_registered
-        else provider_main_menu_message()
+    mensaje_menu = (
+        mensaje_menu_post_registro_proveedor()
+        if esta_registrado
+        else mensaje_menu_principal_proveedor()
     )
     return {
         "success": True,
         "messages": [
-            {"response": consent_acknowledged_message()},
-            {"response": menu_message},
+            {"response": mensaje_consentimiento_aceptado()},
+            {"response": mensaje_menu},
         ],
     }
 
@@ -53,5 +53,5 @@ def construir_respuesta_consentimiento_rechazado() -> Dict[str, Any]:
     """
     return {
         "success": True,
-        "messages": [{"response": consent_declined_message()}],
+        "messages": [{"response": mensaje_consentimiento_rechazado()}],
     }

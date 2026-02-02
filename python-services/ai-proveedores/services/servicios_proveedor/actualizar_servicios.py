@@ -22,12 +22,12 @@ from infrastructure.database import run_supabase
 logger = logging.getLogger(__name__)
 
 
-async def actualizar_servicios(provider_id: str, servicios: List[str]) -> List[str]:
+async def actualizar_servicios(proveedor_id: str, servicios: List[str]) -> List[str]:
     """
     Actualiza los servicios del proveedor en Supabase.
 
     Args:
-        provider_id: UUID del proveedor
+        proveedor_id: UUID del proveedor
         servicios: Lista de servicios a actualizar
 
     Returns:
@@ -36,7 +36,7 @@ async def actualizar_servicios(provider_id: str, servicios: List[str]) -> List[s
     Raises:
         Exception: Si hay un error al actualizar en la base de datos
     """
-    from main import supabase  # Import dinámico para evitar circular import
+    from principal import supabase  # Import dinámico para evitar circular import
 
     if not supabase:
         return servicios
@@ -48,15 +48,15 @@ async def actualizar_servicios(provider_id: str, servicios: List[str]) -> List[s
         await run_supabase(
             lambda: supabase.table("providers")
             .update({"services": cadena_servicios})
-            .eq("id", provider_id)
+            .eq("id", proveedor_id)
             .execute(),
             label="providers.update_services",
         )
-        logger.info("✅ Servicios actualizados para proveedor %s", provider_id)
+        logger.info("✅ Servicios actualizados para proveedor %s", proveedor_id)
     except Exception as exc:
         logger.error(
             "❌ Error actualizando servicios para proveedor %s: %s",
-            provider_id,
+            proveedor_id,
             exc,
         )
         raise

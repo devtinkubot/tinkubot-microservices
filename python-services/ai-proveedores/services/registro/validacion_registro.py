@@ -22,8 +22,8 @@ logger = logging.getLogger(__name__)
 
 
 def validar_y_construir_proveedor(
-    flow: Dict[str, Any],
-    phone: str,
+    flujo: Dict[str, Any],
+    telefono: str,
 ) -> Tuple[bool, Optional[str], Optional[SolicitudCreacionProveedor]]:
     """
     Función principal que valida y construye un proveedor desde el flujo.
@@ -32,8 +32,8 @@ def validar_y_construir_proveedor(
     un objeto SolicitudCreacionProveedor validado.
 
     Args:
-        flow: Diccionario del flujo conversacional
-        phone: Número de teléfono del proveedor
+        flujo: Diccionario del flujo conversacional
+        telefono: Número de teléfono del proveedor
 
     Returns:
         Tupla con:
@@ -42,21 +42,21 @@ def validar_y_construir_proveedor(
         - Optional[SolicitudCreacionProveedor]: Objeto construido y validado
     """
     # Procesar lista de servicios desde la especialidad
-    especialidad = flow.get("specialty")
+    especialidad = flujo.get("specialty")
     servicios_lista = _procesar_lista_servicios(especialidad)
 
     try:
         proveedor = SolicitudCreacionProveedor(
-            phone=phone,
-            full_name=flow.get("name") or "",
-            email=flow.get("email"),
-            city=flow.get("city") or "",
+            phone=telefono,
+            full_name=flujo.get("name") or "",
+            email=flujo.get("email"),
+            city=flujo.get("city") or "",
             # Fase 4: Eliminado campo profession - ya no existe en el modelo
             services_list=servicios_lista,
-            experience_years=flow.get("experience_years"),
-            has_consent=flow.get("has_consent", False),
-            social_media_url=flow.get("social_media_url"),
-            social_media_type=flow.get("social_media_type"),
+            experience_years=flujo.get("experience_years"),
+            has_consent=flujo.get("has_consent", False),
+            social_media_url=flujo.get("social_media_url"),
+            social_media_type=flujo.get("social_media_type"),
         )
         return True, None, proveedor
 
