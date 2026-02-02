@@ -17,6 +17,7 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"google.golang.org/protobuf/proto"
+	"github.com/tinkubot/wa-gateway/internal/webhook"
 )
 
 // Event represents a WhatsApp event to be broadcasted via SSE
@@ -38,12 +39,13 @@ type ClientManager struct {
 	clients       map[string]*whatsmeow.Client
 	container     *sqlstore.Container
 	eventHandlers []func(Event)
-	qrCodes       map[string]*StoredQR  // Store latest QR codes
+	qrCodes       map[string]*StoredQR // Store latest QR codes
+	webhookClient *webhook.WebhookClient
 	mu            sync.RWMutex
 }
 
 // NewClientManager creates a new ClientManager with SQLite
-func NewClientManager(databasePath string) (*ClientManager, error) {
+func NewClientManager(databasePath string, webhookClient *webhook.WebhookClient) (*ClientManager, error) {
 	// Create logger for sqlstore
 	log := waLog.Stdout("WA-Gateway", "INFO", true)
 
@@ -59,9 +61,10 @@ func NewClientManager(databasePath string) (*ClientManager, error) {
 	}
 
 	cm := &ClientManager{
-		clients:   make(map[string]*whatsmeow.Client),
-		container: container,
-		qrCodes:   make(map[string]*StoredQR),
+		clients:       make(map[string]*whatsmeow.Client),
+		container:     container,
+		qrCodes:       make(map[string]*StoredQR),
+		webhookClient: webhookClient,
 	}
 
 	return cm, nil
@@ -112,6 +115,7 @@ func (cm *ClientManager) StartClient(accountID string) error {
 	}
 
 	// Get the first device from the container (latest API requires context)
+	// This will retrieve the previously saved session if it exists
 	deviceStore, err := cm.container.GetFirstDevice(context.Background())
 	if err != nil {
 		return fmt.Errorf("failed to get device store: %w", err)
@@ -258,24 +262,75 @@ func (cm *ClientManager) handleDisconnected(accountID string, discEvt interface{
 	})
 }
 
+// extractMessageText extracts text from a message, handling both simple and extended text messages
+func extractMessageText(msg *waProto.Message) string {
+	// Try simple conversation first
+	if msg.Conversation != nil {
+		return *msg.Conversation
+	}
+
+	// Try extended text message (quotes, links, etc.)
+	if msg.ExtendedTextMessage != nil && msg.ExtendedTextMessage.Text != nil {
+		return *msg.ExtendedTextMessage.Text
+	}
+
+	// For other message types, you could add more handlers here
+	// (image captions, document descriptions, etc.)
+	return ""
+}
+
 // handleMessage handles incoming messages using the new API
 func (cm *ClientManager) handleMessage(accountID string, msgEvt *events.Message) {
 	// Ignore messages from broadcasts and groups
-	// Check if it's a group using msg.Info.Chat.Server
 	if msgEvt.Info.Chat.Server == "g.us" || msgEvt.Info.Chat.Server == "broadcast" {
 		return
 	}
 
-	// Get message text using the new API
-	messageText := msgEvt.Message.GetConversation()
+	// Get message text using improved extraction
+	messageText := extractMessageText(msgEvt.Message)
 
-	// TODO: Send webhook to AI service
-	// For now, just log the message
-	log.Printf("[%s] Message from %s: %s",
-		accountID,
-		msgEvt.Info.Chat.String(),
-		messageText,
-	)
+	// Extract phone number (remove @s.whatsapp.net suffix)
+	phone := msgEvt.Info.Chat.String()
+	if len(phone) > 15 {
+		phone = phone[:15]
+	}
+
+	// Prepare webhook payload
+	payload := &webhook.WebhookPayload{
+		Phone:     phone,
+		Message:   messageText,
+		Timestamp: time.Now().Format(time.RFC3339),
+		AccountID: accountID,
+	}
+
+	// Send webhook if configured
+	if cm.webhookClient != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			resp, err := cm.webhookClient.Send(ctx, payload)
+			if err != nil {
+				log.Printf("[%s] Error sending webhook: %v", accountID, err)
+				return
+			}
+
+			if !resp.Success {
+				log.Printf("[%s] AI service returned error: %s", accountID, resp.Error)
+				return
+			}
+
+			// Send response messages back to WhatsApp
+			for _, msg := range resp.Messages {
+				if err := cm.SendTextMessage(accountID, phone, msg.Response); err != nil {
+					log.Printf("[%s] Error sending response: %v", accountID, err)
+				}
+			}
+		}()
+	} else {
+		// Fallback: log only
+		log.Printf("[%s] Message from %s: %s", accountID, phone, messageText)
+	}
 }
 
 // handleLoggedOut handles logout events

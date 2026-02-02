@@ -15,6 +15,7 @@ import (
 	"github.com/tinkubot/wa-gateway/internal/api"
 	"github.com/tinkubot/wa-gateway/internal/ratelimit"
 	"github.com/tinkubot/wa-gateway/internal/whatsmeow"
+	"github.com/tinkubot/wa-gateway/internal/webhook"
 )
 
 func main() {
@@ -49,8 +50,34 @@ func main() {
 	rl := ratelimit.NewLimiter(rateLimitConfig)
 	log.Println("✅ Rate limiter initialized (in-memory)")
 
-	// Create client manager with SQLite
-	cm, err := whatsmeow.NewClientManager(databasePath)
+	// Create webhook client with dynamic routing
+	aiClientesURL := os.Getenv("AI_CLIENTES_URL")
+	if aiClientesURL == "" {
+		aiClientesURL = "http://ai-clientes:8001"
+	}
+	aiProveedoresURL := os.Getenv("AI_PROVEEDORES_URL")
+	if aiProveedoresURL == "" {
+		aiProveedoresURL = "http://ai-proveedores:8002"
+	}
+	webhookEndpoint := os.Getenv("WEBHOOK_ENDPOINT")
+	if webhookEndpoint == "" {
+		webhookEndpoint = "/handle-whatsapp-message"
+	}
+	webhookTimeout := parseIntEnv("WEBHOOK_TIMEOUT_MS", 10000)
+	webhookRetryAttempts := parseIntEnv("WEBHOOK_RETRY_ATTEMPTS", 3)
+
+	webhookClient := webhook.NewWebhookClient(
+		aiClientesURL,
+		aiProveedoresURL,
+		webhookEndpoint,
+		webhookTimeout,
+		webhookRetryAttempts,
+	)
+	log.Printf("✅ Webhook client created - clientes: %s%s, proveedores: %s%s",
+		aiClientesURL, webhookEndpoint, aiProveedoresURL, webhookEndpoint)
+
+	// Create client manager with SQLite and webhook client
+	cm, err := whatsmeow.NewClientManager(databasePath, webhookClient)
 	if err != nil {
 		log.Fatalf("❌ Failed to create client manager: %v", err)
 	}
@@ -161,7 +188,8 @@ func runHealthcheck(databasePath string) {
 	defer cancel()
 
 	// Try to create client manager (will fail if SQLite is broken)
-	_, err := whatsmeow.NewClientManager(databasePath)
+	// Note: webhookClient is nil during healthcheck, which is fine
+	_, err := whatsmeow.NewClientManager(databasePath, nil)
 	if err != nil {
 		log.Printf("❌ Health check failed: cannot initialize SQLite: %v", err)
 		os.Exit(1)

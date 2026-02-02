@@ -9,11 +9,21 @@ services:
     container_name: tinkubot-wa-gateway
     ports:
       - "${WA_GATEWAY_PORT:-7000}:${WA_GATEWAY_PORT:-7000}"
+    dns:
+      - 127.0.0.11
+      - 8.8.8.8
+    dns_search: .
     environment:
       - GATEWAY_PORT=${WA_GATEWAY_PORT:-7000}
       - DATABASE_PATH=file:./data/wa-gateway.db?_foreign_keys=on
       - RATE_LIMIT_MAX_PER_HOUR=${WA_RATE_LIMIT_MAX_PER_HOUR:-20}
       - RATE_LIMIT_MAX_PER_24H=${WA_RATE_LIMIT_MAX_PER24H:-100}
+      # Webhook Configuration (Dynamic Routing)
+      - AI_CLIENTES_URL=${AI_CLIENTES_URL:-http://ai-clientes:8001}
+      - AI_PROVEEDORES_URL=${AI_PROVEEDORES_URL:-http://ai-proveedores:8002}
+      - WEBHOOK_ENDPOINT=${WEBHOOK_ENDPOINT:-/handle-whatsapp-message}
+      - WEBHOOK_TIMEOUT_MS=${WEBHOOK_TIMEOUT_MS:-10000}
+      - WEBHOOK_RETRY_ATTEMPTS=${WEBHOOK_RETRY_ATTEMPTS:-3}
     volumes:
       - ./wa-data:/app/data
     networks:
@@ -71,19 +81,6 @@ services:
       - tinkubot-network
     restart: unless-stopped
 
-  av-proveedores:
-    build:
-      context: ./python-services/av-proveedores
-      dockerfile: Dockerfile
-    container_name: tinkubot-av-proveedores
-    environment:
-      - AV_PROVEEDORES_PUERTO=${AV_PROVEEDORES_PUERTO:-8005}
-    ports:
-      - "${AV_PROVEEDORES_PUERTO:-8005}:${AV_PROVEEDORES_PUERTO:-8005}"
-    networks:
-      - tinkubot-network
-    restart: unless-stopped
-
   # AI Service Clientes - Procesamiento con sesiones integradas
   ai-clientes:
     build:
@@ -97,8 +94,6 @@ services:
       - REDIS_URL=${REDIS_URL}
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
-      - AVAILABILITY_TIMEOUT_SECONDS=${AVAILABILITY_TIMEOUT_SECONDS:-60}
-      - AVAILABILITY_ACCEPT_GRACE_SECONDS=${AVAILABILITY_ACCEPT_GRACE_SECONDS:-60}
       - CLIENTES_SERVER_PORT=${CLIENTES_SERVER_PORT}
       - AI_SERVICE_CLIENTES_PORT=${AI_SERVICE_CLIENTES_PORT}
       - SERVER_HOST=${SERVER_HOST}
