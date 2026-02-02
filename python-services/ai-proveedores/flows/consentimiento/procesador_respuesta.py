@@ -53,6 +53,9 @@ async def procesar_respuesta_consentimiento(  # noqa: C901
     texto_min = texto_mensaje.lower()
     opcion = None
 
+    # Debug: Log para ver qué recibimos
+    logger.info(f"📝 Procesando respuesta consentimiento. Texto: '{texto_mensaje}', Carga keys: {list(carga.keys())}")
+
     if texto_min.startswith("1"):
         opcion = "1"
     elif texto_min.startswith("2"):
@@ -65,7 +68,7 @@ async def procesar_respuesta_consentimiento(  # noqa: C901
             opcion = "2"
 
     if opcion not in {"1", "2"}:
-        logger.info("Reenviando solicitud de consentimiento a %s", telefono)
+        logger.info("Reenviando solicitud de consentimiento a %s. Opción detectada: '%s'", telefono, opcion)
         return await solicitar_consentimiento(telefono)
 
     proveedor_id = perfil_proveedor.get("id") if perfil_proveedor else None

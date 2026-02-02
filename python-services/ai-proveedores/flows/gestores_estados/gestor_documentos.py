@@ -20,7 +20,7 @@ def manejar_inicio_documentos(flujo: Dict[str, Any]) -> Dict[str, Any]:
     flujo["state"] = "awaiting_city"
     return {
         "success": True,
-        "response": preguntar_actualizar_ciudad(),
+        "messages": [{"response": preguntar_actualizar_ciudad()}],
     }
 
 
@@ -30,13 +30,13 @@ def manejar_dni_frontal(flujo: Dict[str, Any], carga: Dict[str, Any]) -> Dict[st
     if not imagen_b64:
         return {
             "success": True,
-            "response": solicitar_foto_dni_frontal(),
+            "messages": [{"response": solicitar_foto_dni_frontal()}],
         }
     flujo["dni_front_image"] = imagen_b64
     flujo["state"] = "awaiting_dni_back_photo"
     return {
         "success": True,
-        "response": solicitar_foto_dni_trasera(),
+        "messages": [{"response": solicitar_foto_dni_trasera()}],
     }
 
 
@@ -46,13 +46,13 @@ def manejar_dni_trasera(flujo: Dict[str, Any], carga: Dict[str, Any]) -> Dict[st
     if not imagen_b64:
         return {
             "success": True,
-            "response": solicitar_foto_dni_trasera_requerida(),
+            "messages": [{"response": solicitar_foto_dni_trasera_requerida()}],
         }
     flujo["dni_back_image"] = imagen_b64
     flujo["state"] = "awaiting_face_photo"
     return {
         "success": True,
-        "response": solicitar_selfie_registro(),
+        "messages": [{"response": solicitar_selfie_registro()}],
     }
 
 

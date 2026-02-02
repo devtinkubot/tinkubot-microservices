@@ -103,19 +103,36 @@ async def manejar_estado_inicial(
         flujo.update(nuevo_flujo)
         return await solicitar_consentimiento(telefono)
 
+    # Tiene consentimiento, verificar estado de registro ANTES de establecer el estado
+    if esta_verificado and not flujo.get("verification_notified"):
+        flujo.update(
+            {
+                "state": "awaiting_menu_option",
+                "has_consent": True,
+                "verification_notified": True,
+            }
+        )
+        return construir_respuesta_verificado()
+
+    if not esta_registrado:
+        # NO está registrado: establecer estado para menú de NO registrados
+        flujo.update(
+            {
+                "state": "awaiting_menu_option",
+                "has_consent": True,
+                "esta_registrado": False,
+            }
+        )
+        return construir_respuesta_menu_registro()
+
+    # SÍ está registrado: establecer estado para menú de registrados
     flujo.update(
         {
             "state": "awaiting_menu_option",
             "has_consent": True,
+            "esta_registrado": True,
         }
     )
-    if esta_verificado and not flujo.get("verification_notified"):
-        flujo["verification_notified"] = True
-        return construir_respuesta_verificado()
-
-    if not esta_registrado:
-        return construir_respuesta_menu_registro()
-
     return {
         "success": True,
         "messages": [{"response": construir_menu_principal(esta_registrado=True)}],

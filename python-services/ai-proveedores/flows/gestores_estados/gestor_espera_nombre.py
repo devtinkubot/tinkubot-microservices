@@ -21,7 +21,7 @@ def manejar_espera_nombre(
     if len(nombre) < 2:
         return {
             "success": True,
-            "response": "*Por favor, enviame tu nombre completo.*",
+            "messages": [{"response": "*Por favor, enviame tu nombre completo.*"}],
         }
 
     flujo["name"] = nombre
@@ -29,8 +29,12 @@ def manejar_espera_nombre(
     flujo["state"] = "awaiting_specialty"
     return {
         "success": True,
-        "response": (
-            "*¿Qué servicios ofreces?* Sepáralos con comas "
-            "(ej: instalación eléctrica, mantenimiento industrial, consultoría)."
-        ),
+        "messages": [
+            {
+                "response": (
+                    "*¿Qué servicios ofreces?* Sepáralos con comas "
+                    "(ej: instalación eléctrica, mantenimiento industrial, consultoría)."
+                )
+            }
+        ],
     }

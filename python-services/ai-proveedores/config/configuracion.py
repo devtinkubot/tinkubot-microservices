@@ -50,7 +50,11 @@ class ConfiguracionServicio(BaseSettings):
     proveedores_service_port: int = 8002
 
     # Configuración de Redis
-    url_redis: str = "redis://localhost:6379"
+    # En Docker, usar el nombre del servicio, no localhost
+    url_redis: str = Field(
+        default="redis://redis:6379",
+        validation_alias="REDIS_URL",
+    )
 
     # Configuración de Embeddings (OpenAI)
     modelo_embeddings: str = "text-embedding-3-small"

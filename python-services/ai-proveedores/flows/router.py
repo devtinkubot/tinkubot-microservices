@@ -25,6 +25,9 @@ from flows.gestores_estados import (
     manejar_dni_trasera,
     manejar_selfie_registro,
 )
+from flows.gestores_estados.gestor_confirmacion_servicios import (
+    manejar_confirmacion_servicios,
+)
 from flows.consentimiento import solicitar_consentimiento
 from flows.sesion import reiniciar_flujo
 from services.sesion_proveedor import (
@@ -64,6 +67,7 @@ async def manejar_mensaje(
     perfil_proveedor: Optional[Dict[str, Any]],
     supabase: Any,
     servicio_embeddings: Any,
+    cliente_openai: Any = None,
     subir_medios_identidad,
     logger: Any,
 ) -> Dict[str, Any]:
@@ -93,18 +97,24 @@ async def manejar_mensaje(
                 flujo.clear()
                 flujo.update(
                     {
-                        "state": "awaiting_menu_option",
                         "last_seen_at": ahora_iso,
                         "last_seen_at_prev": ahora_iso,
                     }
                 )
+                # Sincronizar con perfil y resolver estado de registro ANUES de decidir el menú
+                flujo = sincronizar_flujo_con_perfil(flujo, perfil_proveedor)
+                _, esta_registrado_timeout, _, _ = resolver_estado_registro(flujo, perfil_proveedor)
+
+                # Establecer el estado correcto según si está registrado
+                flujo["state"] = "awaiting_menu_option"
+                mensajes_timeout = [
+                    {"response": informar_timeout_inactividad()},
+                    {"response": construir_menu_principal(esta_registrado=esta_registrado_timeout)},
+                ]
                 return {
                     "response": {
                         "success": True,
-                        "messages": [
-                            {"response": informar_timeout_inactividad()},
-                            {"response": construir_menu_principal(esta_registrado=True)},
-                        ],
+                        "messages": mensajes_timeout,
                     },
                     "new_flow": flujo,
                     "persist_flow": True,
@@ -183,6 +193,7 @@ async def enrutar_estado(
     perfil_proveedor: Optional[Dict[str, Any]],
     supabase: Any,
     servicio_embeddings: Any,
+    cliente_openai: Any = None,
     subir_medios_identidad,
     logger: Any,
 ) -> Optional[Dict[str, Any]]:
@@ -281,7 +292,15 @@ async def enrutar_estado(
         return {"response": respuesta, "persist_flow": True}
 
     if estado == "awaiting_specialty":
-        respuesta = manejar_espera_especialidad(flujo, texto_mensaje)
+        # Fase 7: Pasar cliente_openai para transformación de servicios
+        respuesta = await manejar_espera_especialidad(
+            flujo, texto_mensaje, cliente_openai
+        )
+        return {"response": respuesta, "persist_flow": True}
+
+    if estado == "awaiting_services_confirmation":
+        # Fase 7: Confirmación de servicios transformados por OpenAI
+        respuesta = manejar_confirmacion_servicios(flujo, texto_mensaje)
         return {"response": respuesta, "persist_flow": True}
 
     if estado == "awaiting_experience":

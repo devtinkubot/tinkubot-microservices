@@ -24,8 +24,12 @@ def manejar_espera_red_social(
     flujo["state"] = "awaiting_dni_front_photo"
     return {
         "success": True,
-        "response": (
-            "*Perfecto. Ahora necesito la foto de la Cédula (parte frontal). "
-            "Envia la imagen como adjunto.*"
-        ),
+        "messages": [
+            {
+                "response": (
+                    "*Perfecto. Ahora necesito la foto de la Cédula (parte frontal). "
+                    "Envia la imagen como adjunto.*"
+                )
+            }
+        ],
     }

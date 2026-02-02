@@ -23,17 +23,25 @@ def manejar_espera_correo(
     elif "@" not in correo or "." not in correo:
         return {
             "success": True,
-            "response": (
-                "*El correo no parece valido. Envialo nuevamente o escribe 'omitir'.*"
-            ),
+            "messages": [
+                {
+                    "response": (
+                        "*El correo no parece valido. Envialo nuevamente o escribe 'omitir'.*"
+                    )
+                }
+            ],
         }
 
     flujo["email"] = correo
     flujo["state"] = "awaiting_social_media"
     return {
         "success": True,
-        "response": (
-            "*Tienes alguna red social (Instagram o Facebook) para mostrar tu trabajo? "
-            "Envia el enlace o escribe 'omitir'.*"
-        ),
+        "messages": [
+            {
+                "response": (
+                    "*Tienes alguna red social (Instagram o Facebook) para mostrar tu trabajo? "
+                    "Envia el enlace o escribe 'omitir'.*"
+                )
+            }
+        ],
     }

@@ -3,7 +3,7 @@
 # ==================== CONSTANTES ====================
 
 PROMPT_INICIO_REGISTRO = (
-    "Perfecto. Empecemos. ¿En qué ciudad trabajas principalmente?"
+    "*Perfecto. Empecemos. ¿En qué ciudad trabajas principalmente?*"
 )
 
 MENSAJE_GUIA = (

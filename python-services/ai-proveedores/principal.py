@@ -173,6 +173,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
             perfil_proveedor=perfil_proveedor,
             supabase=supabase,
             servicio_embeddings=servicio_embeddings,
+            cliente_openai=cliente_openai,
             subir_medios_identidad=subir_medios_identidad,
             logger=logger,
         )

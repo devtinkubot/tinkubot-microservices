@@ -23,12 +23,16 @@ def manejar_espera_experiencia(
     if anios is None:
         return {
             "success": True,
-            "response": "*Necesito un numero de años de experiencia (ej: 5).*",
+            "messages": [{"response": "*Necesito un numero de años de experiencia (ej: 5).*"}],
         }
 
     flujo["experience_years"] = anios
     flujo["state"] = "awaiting_email"
     return {
         "success": True,
-        "response": "*Escribe tu correo electrónico o escribe \"omitir\" si no deseas agregarlo.*",
+        "messages": [
+            {
+                "response": "*Escribe tu correo electrónico o escribe \"omitir\" si no deseas agregarlo.*"
+            }
+        ],
     }

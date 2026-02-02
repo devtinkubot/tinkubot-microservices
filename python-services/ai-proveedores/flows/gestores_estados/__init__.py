@@ -24,6 +24,12 @@ from .gestor_espera_experiencia import manejar_espera_experiencia
 from .gestor_espera_nombre import manejar_espera_nombre
 # Fase 4: Eliminada referencia a awaiting_profession
 from .gestor_espera_red_social import manejar_espera_red_social
+# Confirmación de servicios (nuevo)
+from .gestor_confirmacion_servicios import (
+    manejar_confirmacion_servicios,
+    mostrar_confirmacion_servicios,
+    procesar_correccion_manual,
+)
 
 __all__ = [
     "manejar_confirmacion",
@@ -46,4 +52,8 @@ __all__ = [
     "manejar_espera_nombre",
     # Fase 4: Eliminada referencia a awaiting_profession
     "manejar_espera_red_social",
+    # Confirmación de servicios (nuevo)
+    "manejar_confirmacion_servicios",
+    "mostrar_confirmacion_servicios",
+    "procesar_correccion_manual",
 ]

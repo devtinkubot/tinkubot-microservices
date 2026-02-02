@@ -5,24 +5,22 @@ from templates.interfaz.componentes import pie_instrucciones_respuesta_numerica
 # ==================== CONSTANTES ====================
 
 PROMPT_CONSENTIMIENTO = (
-    "Hola, soy TinkuBot y estoy aqui para ayudarte a crear tu perfil de proveedor.\n\n"
-    "Antes de continuar necesito tu autorizacion para guardar tus datos y compartirlos "
-    "con clientes que busquen tus servicios a traves de nuestra plataforma."
+    "¡Hola! Soy TinkuBot 🔧\n\n"
+    "Te ayudaré a crear tu perfil para recibir clientes."
 )
 
 BLOQUE_ALCANCE_CONSENTIMIENTO = (
-    "Datos que almacenaremos:\n"
-    "- Nombre completo\n"
-    "- Telefono y ciudad\n"
-    "- Profesion y años de experiencia\n"
-    "- Opcionalmente, tu correo y redes sociales\n\n"
-    "Usaremos esta informacion unicamente para conectar tus servicios con clientes "
-    "interesados. Puedes solicitar la eliminacion de tus datos en cualquier momento."
+    "📋 *Guardaré:*\n"
+    "• Nombre, teléfono y ciudad\n"
+    "• Servicios y experiencia\n"
+    "• Opcional: correo y redes\n\n"
+    "🔒 *Solo para conectar tu servicios con clientes interesados*\n\n"
+    "*¿Autorizas el uso de tus datos?*"
 )
 
 OPCIONES_CONSENTIMIENTO = [
-    "Si, autorizo el uso de mis datos",
-    "No autorizo el uso de mis datos",
+    "Acepto",
+    "No acepto",
 ]
 
 # ==================== FUNCIONES ====================
@@ -32,8 +30,8 @@ def bloque_opciones_consentimiento() -> str:
     """Genera el bloque de opciones numeradas para consentimiento."""
     return "\n".join(
         [
-            "1) Si, autorizo el uso de mis datos",
-            "2) No autorizo el uso de mis datos",
+            "1) Acepto",
+            "2) No acepto",
         ]
     )
 

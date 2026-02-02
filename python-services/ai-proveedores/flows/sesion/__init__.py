@@ -1,15 +1,15 @@
 """Gestión de sesiones de flujos conversacionales de proveedores."""
 
 from .gestor_flujo import (
+    CLAVE_FLUJO,
     es_comando_reinicio,
     es_disparador_registro,
     establecer_flujo,
     establecer_flujo_con_estado,
     obtener_flujo,
+    PALABRAS_DISPARO,
+    PALABRAS_REINICIO,
     reiniciar_flujo,
-    FLOW_KEY,
-    TRIGGER_WORDS,
-    RESET_KEYWORDS,
 )
 from .gestor_perfil import (
     cachear_perfil_proveedor,
@@ -25,9 +25,9 @@ __all__ = [
     "reiniciar_flujo",
     "es_disparador_registro",
     "es_comando_reinicio",
-    "FLOW_KEY",
-    "TRIGGER_WORDS",
-    "RESET_KEYWORDS",
+    "CLAVE_FLUJO",
+    "PALABRAS_DISPARO",
+    "PALABRAS_REINICIO",
     "obtener_perfil_proveedor",
     "cachear_perfil_proveedor",
     "refrescar_cache_perfil_proveedor",
