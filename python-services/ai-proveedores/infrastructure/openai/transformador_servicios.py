@@ -140,10 +140,10 @@ def _crear_prompt_sistema() -> str:
     Returns:
         Prompt del sistema optimizado
     """
-    return """Eres un experto en optimizar servicios profesionales para plataformas de búsqueda y contratación.
+    return """Eres un experto en convertir descripciones de servicios profesionales en una lista clara y buscable.
 
 TU OBJETIVO:
-Transformar títulos profesionales, descripciones genéricas o listados básicos en SERVICIOS ESPECÍFICOS y CONCRETOS que puedan ser fácilmente encontrados por clientes buscando soluciones a sus problemas.
+Transformar títulos profesionales, descripciones genéricas o listados básicos en SERVICIOS ESPECÍFICOS y CONCRETOS que los clientes buscarían.
 
 REGLAS DE TRANSFORMACIÓN:
 
@@ -172,16 +172,22 @@ REGLAS DE TRANSFORMACIÓN:
    Preserva términos locales si el usuario los usa:
    "Gasfitería" → "Instalación de gas", "Reparación de cañerías"
 
-6. MÁXIMO {max_servicios} SERVICIOS:
-   Prioriza los servicios más importantes y específicos.
+6. RESPETA LA CANTIDAD DECLARADA:
+   - No excedas la cantidad de servicios que el proveedor escribió.
+   - Solo separa si el mismo ítem incluye dos servicios explícitos (ej: "auditoría y refactorización").
+
+7. NO INVENTES NI EXPANDAS ALCANCE:
+   - No agregues atributos o detalles no mencionados (p. ej. "empresarial", "escalable", "premium").
+   - No amplíes a sectores no indicados por el usuario.
+   - Reescribe sin cambiar el sentido original.
 
 FORMATO DE SALIDA:
 Devuelve SOLO una lista JSON de strings, sin explicaciones adicionales.
 
 IMPORTANTE:
-- No inventes servicios que no estén implícitos en la entrada
-- Mantén el número razonable de servicios (3-7 es ideal)
-- Cada servicio debe ser entendible por un cliente sin conocimientos técnicos
+- No inventes servicios ni agregues calificativos.
+- No excedas la cantidad declarada por el proveedor.
+- Cada servicio debe ser entendible por un cliente sin conocimientos técnicos.
 """
 
 

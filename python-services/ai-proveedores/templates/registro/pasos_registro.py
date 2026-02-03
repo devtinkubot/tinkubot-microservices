@@ -5,6 +5,7 @@
 PROMPT_INICIO_REGISTRO = (
     "*Perfecto. Empecemos. ¿En qué ciudad trabajas principalmente?*"
 )
+PROMPT_NOMBRE = "*¿Cuál es tu nombre completo?*"
 
 MENSAJE_GUIA = (
     "Hola, soy TinkuBot Proveedores. Puedo ayudarte a crear o actualizar tu perfil.\n"
@@ -35,3 +36,8 @@ def preguntar_actualizar_ciudad() -> str:
         Mensaje solicitando actualizar la ciudad donde trabaja el proveedor
     """
     return "*Actualicemos tu registro. ¿En qué ciudad trabajas principalmente?*"
+
+
+def preguntar_nombre() -> str:
+    """Solicita el nombre completo del proveedor."""
+    return PROMPT_NOMBRE

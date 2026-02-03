@@ -160,6 +160,10 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
         logger.info(
             f"📨 Mensaje WhatsApp recibido de {telefono}: {texto_mensaje[:50]}..."
         )
+        logger.info(
+            "🔎 principal.cliente_openai inicializado=%s",
+            bool(cliente_openai),
+        )
 
         flujo = await obtener_flujo(telefono)
 

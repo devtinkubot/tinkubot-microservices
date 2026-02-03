@@ -22,6 +22,8 @@ from flows.constructores import (
 from flows.sesion import establecer_flujo, reiniciar_flujo
 from flows.interpretacion import interpretar_respuesta
 from infrastructure.database import run_supabase
+from templates import mensaje_consentimiento_aceptado
+from templates.registro import PROMPT_INICIO_REGISTRO
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +77,11 @@ async def procesar_respuesta_consentimiento(  # noqa: C901
 
     if opcion == "1":
         flujo["has_consent"] = True
-        flujo["state"] = "awaiting_menu_option"
+        post_consent_state = flujo.pop("post_consent_state", None)
+        if post_consent_state:
+            flujo["state"] = post_consent_state
+        else:
+            flujo["state"] = "awaiting_menu_option"
         await establecer_flujo(telefono, flujo)
 
         if supabase and proveedor_id:
@@ -113,9 +119,16 @@ async def procesar_respuesta_consentimiento(  # noqa: C901
             # Fase 4: Eliminada verificación de profession
         )
 
-        return construir_respuesta_consentimiento_aceptado(
-            esta_registrado_completo
-        )
+        if post_consent_state == "awaiting_city":
+            return {
+                "success": True,
+                "messages": [
+                    {"response": mensaje_consentimiento_aceptado()},
+                    {"response": PROMPT_INICIO_REGISTRO},
+                ],
+            }
+
+        return construir_respuesta_consentimiento_aceptado(esta_registrado_completo)
 
     # Rechazo de consentimiento
     if supabase and proveedor_id:

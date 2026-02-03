@@ -1,9 +1,11 @@
 """Manejador del estado awaiting_specialty."""
 
-import re
+import logging
 from typing import Any, Dict, Optional
 
 from services.servicios_proveedor.utilidades import limpiar_espacios
+
+logger = logging.getLogger(__name__)
 
 
 async def manejar_espera_especialidad(
@@ -27,6 +29,11 @@ async def manejar_espera_especialidad(
     """
     especialidad_texto = limpiar_espacios(texto_mensaje)
     texto_minusculas = especialidad_texto.lower()
+    logger.info(
+        "🧩 servicios.ingreso raw='%s' openai=%s",
+        especialidad_texto[:120],
+        bool(cliente_openai),
+    )
 
     if texto_minusculas in {"omitir", "ninguna", "na", "n/a"}:
         return {
@@ -66,77 +73,69 @@ async def manejar_espera_especialidad(
             ],
         }
 
-    # Fase 7: Si hay cliente OpenAI, transformar los servicios
-    if cliente_openai:
-        try:
-            from infrastructure.openai.transformador_servicios import (
-                TransformadorServicios,
-            )
-
-            transformador = TransformadorServicios(cliente_openai)
-            servicios_transformados = await transformador.transformar_a_servicios(
-                especialidad_texto, max_servicios=10
-            )
-
-            if servicios_transformados:
-                # Guardar servicios temporalmente para confirmación
-                flujo["servicios_temporales"] = servicios_transformados
-                flujo["state"] = "awaiting_services_confirmation"
-
-                # Importar aquí para evitar circular dependency
-                from flows.gestores_estados.gestor_confirmacion_servicios import (
-                    mostrar_confirmacion_servicios,
-                )
-
-                return mostrar_confirmacion_servicios(flujo, servicios_transformados)
-            else:
-                # Si falló la transformación, guardar tal cual came del usuario
-                import logging
-                logging.getLogger(__name__).warning(
-                    "⚠️ Falló transformación de OpenAI, usando entrada original"
-                )
-
-        except Exception as e:
-            import logging
-            logging.getLogger(__name__).error(f"❌ Error en transformación: {e}")
-
-    # Fallback: Procesar manualmente sin OpenAI (comportamiento original)
-    lista_servicios = [
-        item.strip()
-        for item in re.split(r"[;,/\n]+", especialidad_texto)
-        if item and item.strip()
-    ]
-
-    if len(lista_servicios) > 10:
+    if not cliente_openai:
+        logger.error("❌ OpenAI no configurado; no se puede normalizar servicios")
         return {
             "success": True,
             "messages": [
                 {
                     "response": (
-                        "*Incluye máximo 10 servicios.* Envía nuevamente tus principales servicios separados por comas."
+                        "*No pude procesar tus servicios en este momento.* "
+                        "Por favor intenta nuevamente en unos minutos."
                     )
                 }
             ],
         }
 
-    if any(len(servicio) > 120 for servicio in lista_servicios):
+    try:
+        from infrastructure.openai.transformador_servicios import (
+            TransformadorServicios,
+        )
+
+        transformador = TransformadorServicios(cliente_openai)
+        servicios_transformados = await transformador.transformar_a_servicios(
+            especialidad_texto, max_servicios=10
+        )
+
+        if not servicios_transformados:
+            logger.warning("⚠️ Transformación OpenAI sin resultados")
+            return {
+                "success": True,
+                "messages": [
+                    {
+                        "response": (
+                            "*No pude interpretar tus servicios.* "
+                            "Por favor reescríbelos de forma más simple, separados por comas."
+                        )
+                    }
+                ],
+            }
+
+        logger.info(
+            "✅ servicios.transformados count=%s",
+            len(servicios_transformados),
+        )
+        # Guardar servicios temporalmente para confirmación
+        flujo["servicios_temporales"] = servicios_transformados
+        flujo["state"] = "awaiting_services_confirmation"
+
+        # Importar aquí para evitar circular dependency
+        from flows.gestores_estados.gestor_confirmacion_servicios import (
+            mostrar_confirmacion_servicios,
+        )
+
+        return mostrar_confirmacion_servicios(flujo, servicios_transformados)
+
+    except Exception as e:
+        logger.error("❌ Error en transformación OpenAI: %s", e)
         return {
             "success": True,
             "messages": [
                 {
                     "response": (
-                        "*Cada servicio debe ser breve (máx. 120 caracteres).* "
-                        "Recorta descripciones muy largas y envía de nuevo la lista."
+                        "*Tuvimos un problema al normalizar tus servicios.* "
+                        "Por favor intenta nuevamente."
                     )
                 }
             ],
         }
-
-    flujo["specialty"] = (
-        ", ".join(lista_servicios) if lista_servicios else especialidad_texto
-    )
-    flujo["state"] = "awaiting_experience"
-    return {
-        "success": True,
-        "messages": [{"response": ("*¿Cuántos años de experiencia tienes?* (escribe un número)")}],
-    }

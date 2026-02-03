@@ -6,6 +6,7 @@ from .pasos_registro import (
     mensaje_guia_proveedor,
     preguntar_correo_opcional,
     preguntar_actualizar_ciudad,
+    preguntar_nombre,
 )
 
 from .documentacion import (
@@ -43,6 +44,7 @@ __all__ = [
     "mensaje_guia_proveedor",
     "preguntar_correo_opcional",
     "preguntar_actualizar_ciudad",
+    "preguntar_nombre",
     # Documentación
     "solicitar_foto_dni_frontal",
     "solicitar_foto_dni_trasera",

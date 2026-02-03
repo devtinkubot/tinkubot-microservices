@@ -73,6 +73,14 @@ async def manejar_mensaje(
 ) -> Dict[str, Any]:
     """Procesa el mensaje y devuelve respuesta + control de persistencia."""
     texto_normalizado = (texto_mensaje or "").strip().lower()
+    logger.info(
+        "🧭 router.manejar_mensaje inicio telefono=%s state=%s has_consent=%s opcion_menu=%s texto='%s'",
+        telefono,
+        flujo.get("state"),
+        flujo.get("has_consent"),
+        opcion_menu,
+        texto_mensaje,
+    )
     if texto_normalizado in RESET_KEYWORDS:
         await reiniciar_flujo(telefono)
         flujo.clear()
@@ -103,14 +111,32 @@ async def manejar_mensaje(
                 )
                 # Sincronizar con perfil y resolver estado de registro ANUES de decidir el menú
                 flujo = sincronizar_flujo_con_perfil(flujo, perfil_proveedor)
-                _, esta_registrado_timeout, _, _ = resolver_estado_registro(flujo, perfil_proveedor)
+                (
+                    tiene_consentimiento_timeout,
+                    esta_registrado_timeout,
+                    _,
+                    _,
+                ) = resolver_estado_registro(flujo, perfil_proveedor)
 
-                # Establecer el estado correcto según si está registrado
-                flujo["state"] = "awaiting_menu_option"
-                mensajes_timeout = [
-                    {"response": informar_timeout_inactividad()},
-                    {"response": construir_menu_principal(esta_registrado=esta_registrado_timeout)},
-                ]
+                if not tiene_consentimiento_timeout:
+                    flujo["state"] = "awaiting_consent"
+                    flujo["has_consent"] = False
+                    prompt_consentimiento_timeout = await solicitar_consentimiento(telefono)
+                    mensajes_timeout = [{"response": informar_timeout_inactividad()}]
+                    mensajes_timeout.extend(
+                        prompt_consentimiento_timeout.get("messages", [])
+                    )
+                else:
+                    # Establecer el estado correcto según si está registrado
+                    flujo["state"] = "awaiting_menu_option"
+                    mensajes_timeout = [
+                        {"response": informar_timeout_inactividad()},
+                        {
+                            "response": construir_menu_principal(
+                                esta_registrado=esta_registrado_timeout
+                            )
+                        },
+                    ]
                 return {
                     "response": {
                         "success": True,
@@ -129,16 +155,27 @@ async def manejar_mensaje(
     tiene_consentimiento, esta_registrado, esta_verificado, esta_pendiente_revision = (
         resolver_estado_registro(flujo, perfil_proveedor)
     )
+    logger.info(
+        "🧭 router.estado_resuelto telefono=%s state=%s consent=%s registrado=%s verificado=%s pendiente=%s",
+        telefono,
+        flujo.get("state"),
+        tiene_consentimiento,
+        esta_registrado,
+        esta_verificado,
+        esta_pendiente_revision,
+    )
 
     proveedor_id = perfil_proveedor.get("id") if perfil_proveedor else None
     respuesta_pendiente = manejar_pendiente_revision(
         flujo, proveedor_id, esta_pendiente_revision
     )
     if respuesta_pendiente:
+        logger.info("🧭 router.pendiente_revision telefono=%s", telefono)
         return {"response": respuesta_pendiente, "persist_flow": True}
 
     respuesta_verificacion = manejar_aprobacion_reciente(flujo, esta_verificado)
     if respuesta_verificacion:
+        logger.info("🧭 router.aprobacion_reciente telefono=%s", telefono)
         return {"response": respuesta_verificacion, "persist_flow": True}
 
     respuesta_inicial = await manejar_estado_inicial(
@@ -150,6 +187,11 @@ async def manejar_mensaje(
         telefono=telefono,
     )
     if respuesta_inicial:
+        logger.info(
+            "🧭 router.estado_inicial telefono=%s new_state=%s",
+            telefono,
+            flujo.get("state"),
+        )
         return {"response": respuesta_inicial, "persist_flow": True}
 
     resultado_enrutado = await enrutar_estado(
@@ -164,10 +206,17 @@ async def manejar_mensaje(
         perfil_proveedor=perfil_proveedor,
         supabase=supabase,
         servicio_embeddings=servicio_embeddings,
+        cliente_openai=cliente_openai,
         subir_medios_identidad=subir_medios_identidad,
         logger=logger,
     )
     if resultado_enrutado is not None:
+        logger.info(
+            "🧭 router.enrutado telefono=%s state=%s persist=%s",
+            telefono,
+            flujo.get("state"),
+            resultado_enrutado.get("persist_flow", True),
+        )
         return resultado_enrutado
 
     await reiniciar_flujo(telefono)
@@ -212,6 +261,22 @@ async def enrutar_estado(
         )
         return {"response": respuesta, "persist_flow": True}
 
+    if not tiene_consentimiento:
+        texto_normalizado = (texto_mensaje or "").strip().lower()
+        post_consent_state = None
+        if (
+            estado == "awaiting_menu_option"
+            and not esta_registrado
+            and (opcion_menu == "1" or "registro" in texto_normalizado)
+        ):
+            post_consent_state = "awaiting_city"
+        flujo.clear()
+        flujo.update({"state": "awaiting_consent", "has_consent": False})
+        if post_consent_state:
+            flujo["post_consent_state"] = post_consent_state
+        respuesta = await solicitar_consentimiento(telefono)
+        return {"response": respuesta, "persist_flow": True}
+
     if estado == "awaiting_menu_option":
         respuesta = await manejar_estado_menu(
             flujo=flujo,
@@ -230,12 +295,6 @@ async def enrutar_estado(
         )
         persistir_flujo = respuesta.pop("persist_flow", True)
         return {"response": respuesta, "persist_flow": persistir_flujo}
-
-    if not tiene_consentimiento:
-        flujo.clear()
-        flujo.update({"state": "awaiting_consent", "has_consent": False})
-        respuesta = await solicitar_consentimiento(telefono)
-        return {"response": respuesta, "persist_flow": True}
 
     if estado == "awaiting_social_media_update":
         respuesta = await manejar_actualizacion_redes_sociales(

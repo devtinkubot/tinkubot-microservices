@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional
 from services.servicios_proveedor.utilidades import limpiar_espacios
 from templates.registro import (
     preguntar_ciudad,
+    preguntar_nombre,
     error_ciudad_corta,
     error_ciudad_larga,
     error_ciudad_caracteres_invalidos,
@@ -90,5 +91,5 @@ def manejar_espera_ciudad(
 
     return {
         "success": True,
-        "messages": [{"response": preguntar_ciudad()}],
+        "messages": [{"response": preguntar_nombre()}],
     }
