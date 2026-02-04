@@ -2,22 +2,25 @@ package whatsmeow
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/mdp/qrterminal/v3"
 	_ "github.com/mattn/go-sqlite3"
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
+	"github.com/tinkubot/wa-gateway/internal/webhook"
 	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"google.golang.org/protobuf/proto"
-	"github.com/tinkubot/wa-gateway/internal/webhook"
 )
 
 // Event represents a WhatsApp event to be broadcasted via SSE
@@ -114,9 +117,7 @@ func (cm *ClientManager) StartClient(accountID string) error {
 		client.Disconnect()
 	}
 
-	// Get the first device from the container (latest API requires context)
-	// This will retrieve the previously saved session if it exists
-	deviceStore, err := cm.container.GetFirstDevice(context.Background())
+	deviceStore, err := cm.getDeviceStore(context.Background(), accountID)
 	if err != nil {
 		return fmt.Errorf("failed to get device store: %w", err)
 	}
@@ -153,6 +154,106 @@ func (cm *ClientManager) StartClient(accountID string) error {
 	}
 
 	log.Printf("[%s] Client started successfully", accountID)
+	return nil
+}
+
+func (cm *ClientManager) getDeviceStore(ctx context.Context, accountID string) (*store.Device, error) {
+	jidStr := resolveDeviceJIDEnv(accountID)
+	if jidStr != "" {
+		jid, err := types.ParseJID(jidStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid device JID for %s (%s): %w", accountID, jidStr, err)
+		}
+
+		device, err := cm.container.GetDevice(ctx, jid)
+		if err != nil {
+			return nil, err
+		}
+		if device != nil {
+			log.Printf("[%s] Using pinned device JID %s", accountID, jidStr)
+			return device, nil
+		}
+
+		log.Printf("[%s] No stored device for JID %s. Creating new device.", accountID, jidStr)
+		return cm.container.NewDevice(), nil
+	}
+
+	devices, err := cm.container.GetAllDevices(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(devices) == 0 {
+		return cm.container.NewDevice(), nil
+	}
+	if len(devices) == 1 {
+		return devices[0], nil
+	}
+
+	// Heuristic: try to pick by push name when multiple devices exist
+	if selected := selectDeviceByAccount(devices, accountID); selected != nil {
+		log.Printf("[%s] Using heuristic device selection by push name", accountID)
+		return selected, nil
+	}
+
+	log.Printf("[%s] Multiple devices found (%d) and no JID mapping. Using first device. "+
+		"Set WA_CLIENTES_DEVICE_JID / WA_PROVEEDORES_DEVICE_JID to pin.", accountID, len(devices))
+	return devices[0], nil
+}
+
+func resolveDeviceJIDEnv(accountID string) string {
+	switch accountID {
+	case "bot-clientes":
+		if val := strings.TrimSpace(os.Getenv("WA_CLIENTES_DEVICE_JID")); val != "" {
+			return val
+		}
+	case "bot-proveedores":
+		if val := strings.TrimSpace(os.Getenv("WA_PROVEEDORES_DEVICE_JID")); val != "" {
+			return val
+		}
+	}
+
+	normalized := strings.ToUpper(strings.ReplaceAll(accountID, "-", "_"))
+	if normalized != "" {
+		if val := strings.TrimSpace(os.Getenv("WA_DEVICE_JID_" + normalized)); val != "" {
+			return val
+		}
+	}
+	return ""
+}
+
+func selectDeviceByAccount(devices []*store.Device, accountID string) *store.Device {
+	if len(devices) == 0 {
+		return nil
+	}
+
+	lowerAccount := strings.ToLower(accountID)
+	find := func(predicate func(*store.Device) bool) *store.Device {
+		for _, device := range devices {
+			if predicate(device) {
+				return device
+			}
+		}
+		return nil
+	}
+
+	if strings.Contains(lowerAccount, "proveedor") || strings.Contains(lowerAccount, "proveedores") {
+		if matched := find(func(device *store.Device) bool {
+			name := strings.ToLower(device.PushName + " " + device.BusinessName)
+			return strings.Contains(name, "provee")
+		}); matched != nil {
+			return matched
+		}
+	}
+
+	if strings.Contains(lowerAccount, "cliente") || strings.Contains(lowerAccount, "clientes") {
+		if matched := find(func(device *store.Device) bool {
+			name := strings.ToLower(device.PushName + " " + device.BusinessName)
+			return strings.Contains(name, "client")
+		}); matched != nil {
+			return matched
+		}
+	}
+
 	return nil
 }
 
@@ -274,9 +375,55 @@ func extractMessageText(msg *waProto.Message) string {
 		return *msg.ExtendedTextMessage.Text
 	}
 
+	// Try image caption
+	if msg.ImageMessage != nil && msg.ImageMessage.Caption != nil {
+		return *msg.ImageMessage.Caption
+	}
+
+	// Try document caption
+	if msg.DocumentMessage != nil && msg.DocumentMessage.Caption != nil {
+		return *msg.DocumentMessage.Caption
+	}
+
 	// For other message types, you could add more handlers here
 	// (image captions, document descriptions, etc.)
 	return ""
+}
+
+func attachMediaPayload(cm *ClientManager, accountID string, msg *waProto.Message, payload *webhook.WebhookPayload) {
+	if msg == nil || payload == nil {
+		return
+	}
+
+	client, ok := cm.GetClient(accountID)
+	if !ok || client == nil {
+		log.Printf("[%s] No client available to download media", accountID)
+		return
+	}
+
+	if msg.ImageMessage != nil {
+		data, err := client.Download(context.Background(), msg.ImageMessage)
+		if err != nil {
+			log.Printf("[%s] Error downloading image media: %v", accountID, err)
+			return
+		}
+		payload.MediaBase64 = base64.StdEncoding.EncodeToString(data)
+		payload.MediaMimetype = msg.ImageMessage.GetMimetype()
+		payload.MediaFilename = "image"
+		return
+	}
+
+	if msg.DocumentMessage != nil {
+		data, err := client.Download(context.Background(), msg.DocumentMessage)
+		if err != nil {
+			log.Printf("[%s] Error downloading document media: %v", accountID, err)
+			return
+		}
+		payload.MediaBase64 = base64.StdEncoding.EncodeToString(data)
+		payload.MediaMimetype = msg.DocumentMessage.GetMimetype()
+		payload.MediaFilename = msg.DocumentMessage.GetFileName()
+		return
+	}
 }
 
 // handleMessage handles incoming messages using the new API
@@ -302,6 +449,7 @@ func (cm *ClientManager) handleMessage(accountID string, msgEvt *events.Message)
 		Timestamp: time.Now().Format(time.RFC3339),
 		AccountID: accountID,
 	}
+	attachMediaPayload(cm, accountID, msgEvt.Message, payload)
 
 	// Send webhook if configured
 	if cm.webhookClient != nil {

@@ -255,12 +255,29 @@ const normalizarProveedorSupabase = registro => {
   const ciudad = limpiarTexto(registro?.city) || null;
   const provincia = limpiarTexto(registro?.province) || null;
   const profession = limpiarTexto(registro?.profession) || null;
-  const servicesRaw = limpiarTexto(registro?.services) || null;
-  const servicesList = Array.isArray(registro?.services_list)
-    ? registro.services_list.filter(item => typeof item === 'string' && item.trim().length > 0)
-    : servicesRaw
-        ? servicesRaw.split('|').map(item => item.trim()).filter(item => item.length > 0)
-        : [];
+  const servicesFromRelation = Array.isArray(registro?.provider_services)
+    ? registro.provider_services
+        .filter(item => item && typeof item.service_name === 'string')
+        .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
+        .map(item => item.service_name.trim())
+        .filter(item => item.length > 0)
+    : [];
+  const servicesRaw =
+    limpiarTexto(registro?.services) ||
+    (servicesFromRelation.length > 0 ? servicesFromRelation.join(' | ') : null);
+  const servicesList =
+    servicesFromRelation.length > 0
+      ? servicesFromRelation
+      : Array.isArray(registro?.services_list)
+        ? registro.services_list.filter(
+            item => typeof item === 'string' && item.trim().length > 0
+          )
+        : servicesRaw
+          ? servicesRaw
+              .split('|')
+              .map(item => item.trim())
+              .filter(item => item.length > 0)
+          : [];
   const experienceYears =
     typeof registro?.experience_years === 'number'
       ? registro.experience_years
@@ -369,7 +386,7 @@ const construirRutaSupabasePendientes = (incluirEstado = true) => {
   const parametrosBase = [
     `limit=${pendingLimit}`,
     `order=created_at.desc`,
-    'select=*'
+    'select=*,provider_services(service_name,service_name_normalized,display_order)'
   ];
 
   if (incluirEstado) {
@@ -421,7 +438,7 @@ const obtenerProveedoresPendientesSupabase = async () => {
 
 const construirRutaSupabasePorId = providerId => {
   const encodedId = encodeURIComponent(providerId);
-  return `${supabaseProvidersTable}?id=eq.${encodedId}`;
+  return `${supabaseProvidersTable}?id=eq.${encodedId}&select=*,provider_services(service_name,service_name_normalized,display_order)`;
 };
 
 const intentarActualizacionSupabase = async (

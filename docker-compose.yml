@@ -24,6 +24,8 @@ services:
       - WEBHOOK_ENDPOINT=${WEBHOOK_ENDPOINT:-/handle-whatsapp-message}
       - WEBHOOK_TIMEOUT_MS=${WEBHOOK_TIMEOUT_MS:-10000}
       - WEBHOOK_RETRY_ATTEMPTS=${WEBHOOK_RETRY_ATTEMPTS:-3}
+      - WA_CLIENTES_DEVICE_JID=${WA_CLIENTES_DEVICE_JID}
+      - WA_PROVEEDORES_DEVICE_JID=${WA_PROVEEDORES_DEVICE_JID}
     volumes:
       - ./wa-data:/app/data
     networks:

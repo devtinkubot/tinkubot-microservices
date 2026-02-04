@@ -1,17 +1,15 @@
 """
-Cliente Redis con fallback a memoria local para el servicio AI Proveedores.
+Cliente Redis para el servicio AI Proveedores.
 
-Este módulo proporciona un cliente de Redis asíncrono con capacidad de
-fallback a memoria local en caso de que Redis no esté disponible.
+Este módulo proporciona un cliente de Redis asíncrono sin fallback local.
 """
 
 import asyncio
 import json
 import logging
 import sys
-import time
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Dict, Optional
 
 import redis.asyncio as redis
 
@@ -22,21 +20,15 @@ from config import configuracion
 
 logger = logging.getLogger(__name__)
 
-# Fallback en memoria local si Redis no está disponible
-_memory_storage: Dict[str, Any] = {}
-_memory_expiry: Dict[str, float] = {}
-
-
 class ClienteRedis:
     def __init__(self):
         self.redis_client: Optional[redis.Redis] = None
-        self.pubsub = None
         self._connected = False
         self._retry_count = 0
         self._max_retries = 3
 
     async def connect(self):
-        """Conectar a Redis usando la configuración de Upstash con reintentos"""
+        """Conectar a Redis con reintentos"""
         for attempt in range(self._max_retries):
             try:
                 self.redis_client = redis.from_url(
@@ -58,9 +50,8 @@ class ClienteRedis:
                     await asyncio.sleep(1 * (attempt + 1))  # Backoff exponencial simple
                 else:
                     logger.error(f"❌ No se pudo conectar a Redis después de {self._max_retries} intentos")
-                    logger.warning("⚠️ Modo fallback activado: usando memoria local para sesiones")
                     self._connected = False
-                    # No lanzar excepción, continuar en modo fallback
+                    raise
 
     async def disconnect(self):
         """Desconectar de Redis"""
@@ -74,66 +65,11 @@ class ClienteRedis:
                 self.redis_client = None
                 self._connected = False
 
-    def _cleanup_expired_memory(self):
-        """Limpiar claves expiradas de la memoria local"""
-        current_time = time.time()
-        expired_keys = [key for key, expiry_time in _memory_expiry.items() if current_time > expiry_time]
-        for key in expired_keys:
-            _memory_storage.pop(key, None)
-            _memory_expiry.pop(key, None)
-
-    async def publish(self, channel: str, message: Dict[str, Any]):
-        """Publicar mensaje en canal Redis Pub/Sub"""
-        if not self._connected and not self.redis_client:
-            await self.connect()
-
-        if self._connected and self.redis_client:
-            try:
-                await self.redis_client.publish(channel, json.dumps(message))
-                logger.debug(f"📤 Mensaje publicado en canal '{channel}': {message}")
-                return
-            except Exception as e:
-                logger.warning(f"⚠️ Error publicando en Redis, intentando reconectar: {e}")
-                try:
-                    await self.connect()
-                    if self._connected and self.redis_client:
-                        await self.redis_client.publish(channel, json.dumps(message))
-                        logger.debug(f"📤 Mensaje publicado en canal '{channel}' (reintentado): {message}")
-                        return
-                except Exception as retry_error:
-                    logger.error(f"❌ Error en reintento de publicación: {retry_error}")
-
-        # Fallback: Pub/Sub no tiene equivalente local, solo log
-        logger.warning(f"⚠️ Pub/Sub no disponible en modo fallback: canal '{channel}' ignorado")
-
-    async def subscribe(self, channel: str, callback: Callable):
-        """Suscribirse a canal Redis Pub/Sub"""
-        if not self.redis_client:
-            await self.connect()
-
-        try:
-            self.pubsub = self.redis_client.pubsub()
-            await self.pubsub.subscribe(channel)
-            logger.info(f"📥 Suscrito al canal '{channel}'")
-
-            # Escuchar mensajes en segundo plano
-            async for message in self.pubsub.listen():
-                if message["type"] == "message":
-                    try:
-                        data = json.loads(message["data"])
-                        await callback(data)
-                    except Exception as e:
-                        logger.error(f"❌ Error procesando mensaje: {e}")
-        except Exception as e:
-            logger.error(f"❌ Error suscribiéndose al canal: {e}")
-            raise
-
     async def set(self, key: str, value: Any, expire: Optional[int] = None):
-        """Guardar valor en Redis con TTL opcional (con fallback a memoria local)"""
+        """Guardar valor en Redis con TTL opcional"""
         if not self._connected and not self.redis_client:
             await self.connect()
 
-        # Intentar guardar en Redis primero
         if self._connected and self.redis_client:
             try:
                 if isinstance(value, (dict, list)):
@@ -143,28 +79,14 @@ class ClienteRedis:
                 logger.debug(f"💾 Guardado en Redis: {key}")
                 return
             except Exception as e:
-                logger.warning(f"⚠️ Error guardando en Redis, usando fallback local: {e}")
-                # Continuar con fallback local
-
-        # Fallback: guardar en memoria local
-        try:
-            if isinstance(value, (dict, list)):
-                value = json.dumps(value)
-
-            _memory_storage[key] = value
-            if expire:
-                _memory_expiry[key] = time.time() + expire
-            logger.debug(f"💾 Guardado en memoria local (fallback): {key}")
-        except Exception as e:
-            logger.error(f"❌ Error crítico: ni Redis ni memoria local funcionan: {e}")
-            raise
+                logger.error(f"❌ Error guardando en Redis: {e}")
+                raise
 
     async def get(self, key: str) -> Optional[Any]:
-        """Obtener valor de Redis (con fallback a memoria local)"""
+        """Obtener valor de Redis"""
         if not self._connected and not self.redis_client:
             await self.connect()
 
-        # Intentar obtener de Redis primero
         if self._connected and self.redis_client:
             try:
                 value = await self.redis_client.get(key)
@@ -175,44 +97,21 @@ class ClienteRedis:
                         return value
                 return None
             except Exception as e:
-                logger.warning(f"⚠️ Error obteniendo de Redis, usando fallback local: {e}")
-                # Continuar con fallback local
-
-        # Fallback: obtener de memoria local
-        try:
-            self._cleanup_expired_memory()
-            value = _memory_storage.get(key)
-            if value:
-                try:
-                    return json.loads(value)
-                except json.JSONDecodeError:
-                    return value
-            return None
-        except Exception as e:
-            logger.error(f"❌ Error crítico obteniendo de memoria local: {e}")
-            return None
+                logger.error(f"❌ Error obteniendo de Redis: {e}")
+                raise
 
     async def delete(self, key: str):
-        """Eliminar clave de Redis (con fallback a memoria local)"""
+        """Eliminar clave de Redis"""
         if not self._connected and not self.redis_client:
             await self.connect()
 
-        # Intentar eliminar de Redis primero
         if self._connected and self.redis_client:
             try:
                 await self.redis_client.delete(key)
                 logger.debug(f"🗑️ Eliminado de Redis: {key}")
             except Exception as e:
-                logger.warning(f"⚠️ Error eliminando de Redis, eliminando solo localmente: {e}")
-
-        # Siempre eliminar de memoria local (fallback)
-        try:
-            _memory_storage.pop(key, None)
-            _memory_expiry.pop(key, None)
-            logger.debug(f"🗑️ Eliminado de memoria local: {key}")
-        except Exception as e:
-            logger.error(f"❌ Error eliminando de memoria local: {e}")
-            # No lanzar excepción para delete
+                logger.error(f"❌ Error eliminando de Redis: {e}")
+                raise
 
 
 # Instancia global

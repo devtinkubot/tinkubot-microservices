@@ -181,7 +181,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
             subir_medios_identidad=subir_medios_identidad,
             logger=logger,
         )
-        respuesta = resultado_manejo.get("response", {})
+        respuesta = normalizar_respuesta_whatsapp(resultado_manejo.get("response", {}))
         nuevo_flujo = resultado_manejo.get("new_flow")
         persistir_flujo = resultado_manejo.get("persist_flow", True)
         if nuevo_flujo is not None:
@@ -205,6 +205,42 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                         "threshold_ms": UMBRAL_LENTO_MS,
                     },
                 )
+
+
+def normalizar_respuesta_whatsapp(respuesta: Any) -> Dict[str, Any]:
+    """Normaliza la respuesta para que siempre use el esquema esperado por wa-gateway."""
+    if respuesta is None:
+        return {"success": True, "messages": []}
+
+    if not isinstance(respuesta, dict):
+        return {"success": True, "messages": [{"response": str(respuesta)}]}
+
+    if "messages" in respuesta:
+        if "success" not in respuesta:
+            respuesta["success"] = True
+        return respuesta
+
+    if "response" in respuesta:
+        texto = respuesta.get("response")
+        mensajes = []
+        if isinstance(texto, list):
+            for item in texto:
+                if isinstance(item, dict) and "response" in item:
+                    mensajes.append(item)
+                else:
+                    mensajes.append({"response": str(item)})
+        else:
+            mensajes.append({"response": str(texto) if texto is not None else ""})
+
+        normalizada = {k: v for k, v in respuesta.items() if k != "response"}
+        normalizada["messages"] = mensajes
+        if "success" not in normalizada:
+            normalizada["success"] = True
+        return normalizada
+
+    if "success" not in respuesta:
+        respuesta["success"] = True
+    return respuesta
 
 
 if __name__ == "__main__":

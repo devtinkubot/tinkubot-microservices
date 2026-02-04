@@ -52,7 +52,6 @@ def normalizar_datos_proveedor(datos_crudos: SolicitudCreacionProveedor) -> Dict
         "city": normalizar_texto_para_busqueda(datos_crudos.city),  # minúsculas
         # Fase 5: Eliminado campo 'profession'
         "services_normalized": servicios_normalizados,  # Fase 5: Lista, no string
-        "services": "",  # Campo legacy mantenido por compatibilidad con DB, pero vacío
         "experience_years": datos_crudos.experience_years or 0,
         "has_consent": datos_crudos.has_consent,
         "verified": False,
@@ -91,7 +90,6 @@ def garantizar_campos_obligatorios_proveedor(
     datos["rating"] = float(datos.get("rating") or 5.0)
     datos["experience_years"] = int(datos.get("experience_years") or 0)
     # Fase 5: Eliminada referencia a 'profession'
-    datos["services"] = datos.get("services") or ""
     datos["has_consent"] = bool(datos.get("has_consent"))
     datos["status"] = "approved" if datos.get("verified") else "pending"
     return datos
