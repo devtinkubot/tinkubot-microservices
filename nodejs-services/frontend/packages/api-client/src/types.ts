@@ -11,7 +11,11 @@ export interface WhatsAppStatusResponse {
   [key: WhatsAppInstanceKey]: WhatsAppInstanceStatus | undefined;
 }
 
-export type ProviderStatus = 'pending' | 'approved' | 'rejected';
+export type ProviderStatus =
+  | 'pending'
+  | 'approved'
+  | 'rejected'
+  | 'interview_required';
 
 export interface ProviderDocuments {
   dniFront?: string | null;
@@ -33,7 +37,6 @@ export interface ProviderRecord {
   notes?: string | null;
   city?: string | null;
   province?: string | null;
-  profession?: string | null;
   servicesRaw?: string | null;
   servicesList?: string[];
   experienceYears?: number | null;
@@ -47,9 +50,11 @@ export interface ProviderRecord {
 }
 
 export interface ProviderActionPayload {
+  status?: ProviderStatus;
   reviewer?: string;
   notes?: string;
   phone?: string;
+  message?: string;
 }
 
 export interface ProviderActionResponse {

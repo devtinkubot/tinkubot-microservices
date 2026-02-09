@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 from flows.constructores import construir_menu_principal, construir_menu_servicios
 
 logger = logging.getLogger(__name__)
-from templates.registro import PROMPT_INICIO_REGISTRO
+from templates.registro import PROMPT_INICIO_REGISTRO, preguntar_real_phone
 from templates.interfaz import (
     error_opcion_no_reconocida,
     informar_cierre_sesion,
@@ -34,11 +34,18 @@ async def manejar_estado_menu(
             logger.info(f"✅ Usuario NO registrado seleccionó Registro. Cambiando estado a awaiting_city")
             logger.info(f"📤 Respuesta a devolver: '{PROMPT_INICIO_REGISTRO}'")
             flujo["mode"] = "registration"
-            flujo["state"] = "awaiting_city"
-            respuesta = {
-                "success": True,
-                "messages": [{"response": PROMPT_INICIO_REGISTRO}],
-            }
+            if flujo.get("requires_real_phone"):
+                flujo["state"] = "awaiting_real_phone"
+                respuesta = {
+                    "success": True,
+                    "messages": [{"response": preguntar_real_phone()}],
+                }
+            else:
+                flujo["state"] = "awaiting_city"
+                respuesta = {
+                    "success": True,
+                    "messages": [{"response": PROMPT_INICIO_REGISTRO}],
+                }
             logger.info(f"📦 Response completo: {respuesta}")
             return respuesta
         if opcion == "2" or "salir" in texto_minusculas:

@@ -45,8 +45,14 @@ def normalizar_datos_proveedor(datos_crudos: SolicitudCreacionProveedor) -> Dict
     if len(servicios_normalizados) == 0:
         raise ValueError("Debe ingresar al menos 1 servicio válido")
 
+    telefono = datos_crudos.phone.strip()
+    real_phone = datos_crudos.real_phone.strip() if datos_crudos.real_phone else None
+    if not real_phone:
+        real_phone = telefono
+
     return {
-        "phone": datos_crudos.phone.strip(),
+        "phone": telefono,
+        "real_phone": real_phone,
         "full_name": datos_crudos.full_name.strip().title(),  # Formato legible
         "email": datos_crudos.email.strip() if datos_crudos.email else None,
         "city": normalizar_texto_para_busqueda(datos_crudos.city),  # minúsculas

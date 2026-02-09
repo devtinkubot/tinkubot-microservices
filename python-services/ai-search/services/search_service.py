@@ -608,6 +608,7 @@ consultas de búsqueda para maximizar la relevancia con los proveedores disponib
         return ProviderInfo(
             id=str(row["provider_id"]),
             phone_number=provider_data.get("phone_number", ""),
+            real_phone=provider_data.get("real_phone"),
             full_name=provider_data.get("full_name", ""),
             city=provider_data.get("city"),
             rating=float(provider_data.get("rating", 0.0)),
@@ -638,6 +639,7 @@ consultas de búsqueda para maximizar la relevancia con los proveedores disponib
         return ProviderInfo(
             id=str(row["id"]),
             phone_number=row.get("phone", ""),
+            real_phone=row.get("real_phone"),
             full_name=row.get("full_name", ""),
             city=row.get("city"),
             rating=float(row.get("rating", 0.0)),
@@ -668,6 +670,7 @@ consultas de búsqueda para maximizar la relevancia con los proveedores disponib
         return ProviderInfo(
             id=str(row["id"]),
             phone_number=row.get("phone", ""),
+            real_phone=row.get("real_phone"),
             full_name=row.get("full_name", ""),
             city=row.get("city"),
             rating=float(row.get("rating", 0.0)),

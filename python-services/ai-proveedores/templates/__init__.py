@@ -53,6 +53,8 @@ from templates.registro import (
     preguntar_correo_opcional,
     preguntar_actualizar_ciudad,
     preguntar_nombre,
+    preguntar_real_phone,
+    error_real_phone_invalido,
     solicitar_foto_dni_frontal,
     solicitar_foto_dni_trasera,
     solicitar_foto_dni_trasera_requerida,
@@ -64,6 +66,7 @@ from templates.registro import (
 # ==================== DOMINIO: SESIÓN ====================
 from templates.sesion import (
     informar_reinicio_conversacion,
+    informar_reinicio_con_eliminacion,
     informar_timeout_inactividad,
     informar_reinicio_completo,
 )
@@ -101,6 +104,8 @@ __all__ = [
     "preguntar_correo_opcional",
     "preguntar_actualizar_ciudad",
     "preguntar_nombre",
+    "preguntar_real_phone",
+    "error_real_phone_invalido",
     "solicitar_foto_dni_frontal",
     "solicitar_foto_dni_trasera",
     "solicitar_foto_dni_trasera_requerida",
@@ -140,6 +145,7 @@ __all__ = [
     "mensaje_proveedor_verificado",
     # Sesión
     "informar_reinicio_conversacion",
+    "informar_reinicio_con_eliminacion",
     "informar_timeout_inactividad",
     "informar_reinicio_completo",
 ]

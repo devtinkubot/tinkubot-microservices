@@ -27,7 +27,11 @@ def mensaje_conexion_formal(
     supabase_base_url: str,
 ) -> Dict[str, Any]:
     nombre = proveedor.get("name") or proveedor.get("full_name") or "Proveedor"
-    telefono_bruto = proveedor.get("phone") or proveedor.get("phone_number")
+    telefono_bruto = (
+        proveedor.get("real_phone")
+        or proveedor.get("phone")
+        or proveedor.get("phone_number")
+    )
 
     link = _construir_enlace_whatsapp(telefono_bruto) if telefono_bruto else None
 

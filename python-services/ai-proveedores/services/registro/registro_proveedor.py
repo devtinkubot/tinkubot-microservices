@@ -159,6 +159,7 @@ async def registrar_proveedor_en_base_datos(
     try:
         # Normalizar datos
         datos_normalizados = normalizar_datos_proveedor(datos_proveedor)
+        servicios_normalizados = datos_normalizados.pop("services_normalized", [])
 
         # Upsert por teléfono: reabre rechazados como pending, evita doble round-trip
         carga_upsert = {
@@ -211,7 +212,7 @@ async def registrar_proveedor_en_base_datos(
             logger.info(f"✅ Proveedor registrado en esquema unificado: {id_proveedor}")
 
             # Fase 6: Insertar servicios en provider_services con embeddings
-            servicios = datos_normalizados.get("services_normalized", [])
+            servicios = servicios_normalizados
             if servicios:
                 logger.info(f"🔄 Insertando {len(servicios)} servicios en provider_services...")
                 servicios_insertados = await insertar_servicios_proveedor(
@@ -229,13 +230,16 @@ async def registrar_proveedor_en_base_datos(
             registro_proveedor = {
                 "id": id_proveedor,
                 "phone": registro_insertado.get("phone", datos_normalizados["phone"]),
+                "real_phone": registro_insertado.get(
+                    "real_phone", datos_normalizados.get("real_phone")
+                ),
                 "full_name": registro_insertado.get(
                     "full_name", datos_normalizados["full_name"]
                 ),
                 "email": registro_insertado.get("email", datos_normalizados["email"]),
                 "city": registro_insertado.get("city", datos_normalizados["city"]),
                 # Fase 6: Eliminado campo 'profession'
-                "services_normalized": datos_normalizados.get("services_normalized", []),
+                "services_normalized": servicios_normalizados,
                 "experience_years": registro_insertado.get(
                     "experience_years", datos_normalizados["experience_years"]
                 ),

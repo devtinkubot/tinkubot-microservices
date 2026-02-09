@@ -11,6 +11,7 @@ from flows.gestores_estados import (
     manejar_espera_especialidad,
     manejar_espera_experiencia,
     manejar_espera_nombre,
+    manejar_espera_real_phone,
     manejar_espera_red_social,
     manejar_estado_consentimiento,
     manejar_estado_menu,
@@ -37,10 +38,11 @@ from services.sesion_proveedor import (
     manejar_aprobacion_reciente,
     manejar_estado_inicial,
 )
-from services import registrar_proveedor_en_base_datos
+from services import registrar_proveedor_en_base_datos, eliminar_registro_proveedor
 from templates.registro import preguntar_correo_opcional
 from templates.sesion import (
     informar_reinicio_conversacion,
+    informar_reinicio_con_eliminacion,
     informar_timeout_inactividad,
     informar_reinicio_completo,
 )
@@ -82,11 +84,17 @@ async def manejar_mensaje(
         texto_mensaje,
     )
     if texto_normalizado in RESET_KEYWORDS:
+        resultado_eliminacion = None
+        if supabase:
+            resultado_eliminacion = await eliminar_registro_proveedor(supabase, telefono)
         await reiniciar_flujo(telefono)
         flujo.clear()
         flujo.update({"state": "awaiting_consent", "has_consent": False})
         prompt_consentimiento = await solicitar_consentimiento(telefono)
-        mensajes = [{"response": informar_reinicio_conversacion()}]
+        if resultado_eliminacion and resultado_eliminacion.get("success"):
+            mensajes = [{"response": informar_reinicio_con_eliminacion()}]
+        else:
+            mensajes = [{"response": informar_reinicio_conversacion()}]
         mensajes.extend(prompt_consentimiento.get("messages", []))
         return {
             "response": {"success": True, "messages": mensajes},
@@ -114,8 +122,8 @@ async def manejar_mensaje(
                 (
                     tiene_consentimiento_timeout,
                     esta_registrado_timeout,
-                    _,
-                    _,
+                    esta_verificado_timeout,
+                    esta_pendiente_timeout,
                 ) = resolver_estado_registro(flujo, perfil_proveedor)
 
                 if not tiene_consentimiento_timeout:
@@ -128,15 +136,24 @@ async def manejar_mensaje(
                     )
                 else:
                     # Establecer el estado correcto según si está registrado
-                    flujo["state"] = "awaiting_menu_option"
-                    mensajes_timeout = [
-                        {"response": informar_timeout_inactividad()},
-                        {
-                            "response": construir_menu_principal(
-                                esta_registrado=esta_registrado_timeout
-                            )
-                        },
-                    ]
+                    if esta_pendiente_timeout and not esta_verificado_timeout:
+                        flujo["state"] = "pending_verification"
+                        mensajes_timeout = [
+                            {"response": informar_timeout_inactividad()},
+                            *manejar_pendiente_revision(
+                                flujo, proveedor_id=None, esta_pendiente_revision=True
+                            ).get("messages", []),
+                        ]
+                    else:
+                        flujo["state"] = "awaiting_menu_option"
+                        mensajes_timeout = [
+                            {"response": informar_timeout_inactividad()},
+                            {
+                                "response": construir_menu_principal(
+                                    esta_registrado=esta_registrado_timeout
+                                )
+                            },
+                        ]
                 return {
                     "response": {
                         "success": True,
@@ -269,7 +286,10 @@ async def enrutar_estado(
             and not esta_registrado
             and (opcion_menu == "1" or "registro" in texto_normalizado)
         ):
-            post_consent_state = "awaiting_city"
+            if flujo.get("requires_real_phone"):
+                post_consent_state = "awaiting_real_phone"
+            else:
+                post_consent_state = "awaiting_city"
         flujo.clear()
         flujo.update({"state": "awaiting_consent", "has_consent": False})
         if post_consent_state:
@@ -340,6 +360,10 @@ async def enrutar_estado(
 
     if estado == "awaiting_dni":
         respuesta = manejar_inicio_documentos(flujo)
+        return {"response": respuesta, "persist_flow": True}
+
+    if estado == "awaiting_real_phone":
+        respuesta = manejar_espera_real_phone(flujo, texto_mensaje)
         return {"response": respuesta, "persist_flow": True}
 
     if estado == "awaiting_city":

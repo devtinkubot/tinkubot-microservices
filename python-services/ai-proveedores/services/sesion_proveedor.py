@@ -25,6 +25,8 @@ def sincronizar_flujo_con_perfil(
             flujo["provider_id"] = proveedor_id
         servicios_guardados = perfil_proveedor.get("services_list") or []
         flujo["services"] = servicios_guardados
+        if perfil_proveedor.get("real_phone") and not flujo.get("real_phone"):
+            flujo["real_phone"] = perfil_proveedor.get("real_phone")
     else:
         flujo.setdefault("services", [])
     return flujo
@@ -99,6 +101,8 @@ async def manejar_estado_inicial(
 
     if not tiene_consentimiento:
         nuevo_flujo = {"state": "awaiting_consent", "has_consent": False}
+        if not esta_registrado and flujo.get("requires_real_phone"):
+            nuevo_flujo["post_consent_state"] = "awaiting_real_phone"
         flujo.clear()
         flujo.update(nuevo_flujo)
         return await solicitar_consentimiento(telefono)
@@ -124,6 +128,16 @@ async def manejar_estado_inicial(
             }
         )
         return construir_respuesta_menu_registro()
+
+    if not esta_verificado:
+        flujo.update(
+            {
+                "state": "pending_verification",
+                "has_consent": True,
+                "esta_registrado": True,
+            }
+        )
+        return construir_respuesta_revision()
 
     # SÍ está registrado: establecer estado para menú de registrados
     flujo.update(

@@ -48,6 +48,7 @@ class ProviderInfo(BaseModel):
 
     id: str
     phone_number: str
+    real_phone: Optional[str] = None
     full_name: str
     city: Optional[str]
     rating: float

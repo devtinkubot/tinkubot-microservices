@@ -4,6 +4,7 @@ Modelos compatibles con el esquema unificado de proveedores
 """
 
 from datetime import datetime
+import re
 from typing import List, Optional
 
 from pydantic import BaseModel, Field, field_validator
@@ -34,6 +35,7 @@ class SolicitudCreacionProveedor(BaseModel):
 
     Campos:
         phone: Número de teléfono del proveedor (10-20 caracteres)
+        real_phone: Número real del proveedor para contacto (opcional)
         full_name: Nombre completo del proveedor (2-255 caracteres)
         email: Correo electrónico (opcional)
         city: Ciudad donde opera el proveedor (2-100 caracteres)
@@ -47,6 +49,7 @@ class SolicitudCreacionProveedor(BaseModel):
         has_consent: Consentimiento de procesamiento de datos (default: False)
     """
     phone: str = Field(..., min_length=10, max_length=20)
+    real_phone: Optional[str] = None
     full_name: str = Field(..., min_length=2, max_length=255)
     email: Optional[str] = None
     city: str = Field(..., min_length=2, max_length=100)
@@ -70,6 +73,23 @@ class SolicitudCreacionProveedor(BaseModel):
             raise ValueError('Máximo 5 servicios permitidos')
         return v
 
+    @field_validator('real_phone')
+    @classmethod
+    def validate_real_phone(cls, v: Optional[str]) -> Optional[str]:
+        """Valida que el número real tenga 10-20 dígitos (con + opcional)."""
+        if v is None:
+            return v
+        valor = v.strip()
+        if not valor:
+            return None
+        if valor.startswith("+"):
+            digitos = valor[1:]
+        else:
+            digitos = valor
+        if not re.fullmatch(r"\d{10,20}", digitos):
+            raise ValueError("número real inválido")
+        return valor
+
 
 class RespuestaProveedor(BaseModel):
     """
@@ -81,6 +101,7 @@ class RespuestaProveedor(BaseModel):
     Campos:
         id: Identificador único del proveedor
         phone: Número de teléfono
+        real_phone: Número real del proveedor (opcional)
         full_name: Nombre completo
         email: Correo electrónico (opcional)
         city: Ciudad de operación
@@ -101,6 +122,7 @@ class RespuestaProveedor(BaseModel):
     """
     id: str
     phone: str
+    real_phone: Optional[str] = None
     full_name: str
     email: Optional[str]
     city: str

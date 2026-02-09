@@ -39,10 +39,16 @@ async def manejar_confirmacion(
 
     if texto.startswith("2") or "editar" in texto:
         tiene_consentimiento = flujo.get("has_consent", False)
+        real_phone = flujo.get("real_phone")
+        requiere_real_phone = flujo.get("requires_real_phone", False)
         flujo.clear()
         flujo["state"] = "awaiting_city"
         if tiene_consentimiento:
             flujo["has_consent"] = True
+        if real_phone:
+            flujo["real_phone"] = real_phone
+        if requiere_real_phone:
+            flujo["requires_real_phone"] = True
         return {
             "success": True,
             "response": ("Reiniciemos. *En que ciudad trabajas principalmente?*"),

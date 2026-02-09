@@ -9,6 +9,8 @@ import logging
 import os
 import sys
 import base64
+import imghdr
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -16,7 +18,7 @@ from typing import Any, Dict, Optional
 # Agregar el directorio raíz al sys.path para imports absolutos
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
-from infrastructure.database import run_supabase
+from infrastructure.database import run_supabase, get_supabase_client
 from infrastructure.storage.utilidades import (
     normalizar_respuesta_storage as _coerce_storage_string,
 )
@@ -35,6 +37,7 @@ async def subir_imagen_proveedor(
     datos_archivo: bytes,
     tipo_archivo: str,
     extension_archivo: str = "jpg",
+    content_type: Optional[str] = None,
 ) -> Optional[str]:
     """
     Subir imagen de proveedor a Supabase Storage
@@ -48,6 +51,7 @@ async def subir_imagen_proveedor(
     Returns:
         URL pública de la imagen o None si hay error
     """
+    supabase = get_supabase_client()
     if not supabase:
         logger.error("❌ Supabase no configurado para upload de imágenes")
         return None
@@ -82,10 +86,13 @@ async def subir_imagen_proveedor(
                     f"No se pudo eliminar archivo previo {ruta_archivo}: {remove_error}"
                 )
 
+            file_options = {
+                "content-type": content_type or "image/jpeg",
+            }
             result = storage_bucket.upload(
                 path=ruta_archivo,
                 file=datos_archivo,
-                file_options={"content-type": "image/jpeg"},
+                file_options=file_options,
             )
 
             error_carga = None
@@ -145,6 +152,7 @@ async def actualizar_imagenes_proveedor(
     Returns:
         True si actualización exitosa
     """
+    supabase = get_supabase_client()
     if not supabase:
         logger.error("❌ Supabase no configurado para actualización de imágenes")
         return False
@@ -234,6 +242,49 @@ async def procesar_imagen_base64(
         return None
 
 
+def _inferir_extension_y_mimetype(
+    datos_base64: str, bytes_imagen: bytes
+) -> Dict[str, Optional[str]]:
+    """Infiere extension y mimetype desde data URI o bytes."""
+    extension = None
+    mimetype = None
+
+    if isinstance(datos_base64, str) and datos_base64.startswith("data:image/"):
+        match = re.match(r"^data:image/(?P<tipo>[^;]+);base64,", datos_base64)
+        if match:
+            extension = match.group("tipo").lower()
+            mimetype = f"image/{extension}"
+
+    if not extension:
+        detected = imghdr.what(None, h=bytes_imagen)
+        if detected:
+            extension = detected.lower()
+            mimetype = f"image/{extension}"
+
+    if not extension:
+        if bytes_imagen[:4] == b"RIFF" and bytes_imagen[8:12] == b"WEBP":
+            extension = "webp"
+            mimetype = "image/webp"
+
+    if extension == "jpeg":
+        extension = "jpg"
+        mimetype = "image/jpeg"
+
+    return {"extension": extension, "mimetype": mimetype}
+
+
+async def procesar_imagen_base64_con_metadata(
+    datos_base64: str, tipo_archivo: str
+) -> Dict[str, Optional[Any]]:
+    """Procesa imagen base64 y retorna bytes + metadata."""
+    bytes_imagen = await procesar_imagen_base64(datos_base64, tipo_archivo)
+    if not bytes_imagen:
+        return {"bytes": None, "extension": None, "mimetype": None}
+
+    metadata = _inferir_extension_y_mimetype(datos_base64, bytes_imagen)
+    return {"bytes": bytes_imagen, **metadata}
+
+
 async def obtener_urls_imagenes_proveedor(
     proveedor_id: str,
 ) -> Dict[str, Optional[str]]:
@@ -246,6 +297,7 @@ async def obtener_urls_imagenes_proveedor(
     Returns:
         Diccionario con URLs de imágenes
     """
+    supabase = get_supabase_client()
     if not supabase:
         return {}
 
@@ -277,6 +329,7 @@ async def subir_medios_identidad(
     proveedor_id: str,
     flujo: Dict[str, Any],
 ) -> None:
+    supabase = get_supabase_client()
     if not supabase:
         return
 
@@ -296,12 +349,21 @@ async def subir_medios_identidad(
         datos_base64 = flujo.get(clave)
         if not datos_base64:
             continue
-        bytes_imagen = await procesar_imagen_base64(datos_base64, tipo_archivo)
+        procesamiento = await procesar_imagen_base64_con_metadata(
+            datos_base64, tipo_archivo
+        )
+        bytes_imagen = procesamiento.get("bytes")
         if not bytes_imagen:
             continue
+        extension = procesamiento.get("extension") or "jpg"
+        mimetype = procesamiento.get("mimetype") or "image/jpeg"
         try:
             url = await subir_imagen_proveedor(
-                proveedor_id, bytes_imagen, tipo_archivo, "jpg"
+                proveedor_id,
+                bytes_imagen,
+                tipo_archivo,
+                extension,
+                mimetype,
             )
         except Exception as exc:
             logger.error(
@@ -333,4 +395,3 @@ async def subir_medios_identidad(
         )
     else:
         logger.warning("⚠️ No se subieron documentos válidos para %s", proveedor_id)
-

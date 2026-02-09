@@ -152,7 +152,13 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
     """
     inicio_tiempo = perf_counter()
     try:
-        telefono = solicitud.phone or solicitud.from_number or "unknown"
+        raw_phone = (solicitud.phone or "").strip()
+        raw_from = (solicitud.from_number or "").strip()
+        is_lid = raw_from.endswith("@lid") or raw_phone.endswith("@lid")
+
+        telefono = raw_phone or raw_from or "unknown"
+        if "@" in telefono:
+            telefono = telefono.split("@", 1)[0]
         texto_mensaje = solicitud.message or solicitud.content or ""
         carga = solicitud.model_dump()
         opcion_menu = interpretar_respuesta(texto_mensaje, "menu")
@@ -166,6 +172,12 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
         )
 
         flujo = await obtener_flujo(telefono)
+        if is_lid:
+            flujo["requires_real_phone"] = True
+        else:
+            flujo["requires_real_phone"] = False
+            if telefono and not flujo.get("real_phone"):
+                flujo["real_phone"] = telefono
 
         perfil_proveedor = await obtener_perfil_proveedor_cacheado(telefono)
         resultado_manejo = await manejar_mensaje(

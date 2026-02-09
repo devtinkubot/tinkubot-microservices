@@ -444,11 +444,11 @@
             <div class="status-card">
               <div class="d-flex justify-content-between align-items-center mb-3">
                 <div>
-                  <h5 class="mb-0">
+                  <h5 class="mb-0" id="providers-title">
                     <i class="fas fa-user-check me-2 text-primary"></i>
                     Verificación de Proveedores
                   </h5>
-                  <p class="text-muted small mb-0">
+                  <p class="text-muted small mb-0" id="providers-subtitle">
                     Revisa y aprueba a los proveedores registrados antes de habilitarlos en el sistema.
                   </p>
                 </div>
@@ -460,6 +460,26 @@
                   </div>
                 </button>
               </div>
+              <div class="mb-3">
+                <div class="btn-group" role="group" aria-label="Filtros de proveedores">
+                  <button
+                    type="button"
+                    class="btn btn-outline-primary active"
+                    data-provider-bucket="new"
+                    id="providers-tab-new"
+                  >
+                    Proveedores nuevos
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-outline-primary"
+                    data-provider-bucket="post_review"
+                    id="providers-tab-post-review"
+                  >
+                    Pendientes post-revisión
+                  </button>
+                </div>
+              </div>
               <div id="providers-feedback" class="alert" style="display: none"></div>
               <div id="providers-loading" class="text-center text-muted py-4">
                 <div class="spinner-border text-primary" role="status">
@@ -468,7 +488,7 @@
                 <p class="mt-2 mb-0">Obteniendo proveedores pendientes...</p>
               </div>
               <div id="providers-empty" class="alert alert-info" style="display: none">
-                No hay proveedores pendientes de verificación.
+                No hay proveedores para mostrar.
               </div>
               <div class="table-responsive" id="providers-table-wrapper" style="display: none">
                 <table class="table align-middle">
@@ -504,9 +524,8 @@
                       <span id="provider-detail-name">Proveedor</span>
                     </h5>
                     <div class="provider-detail-subtitle">
-                      <span id="provider-detail-profession">Profesión pendiente</span>
                       <span
-                        class="badge bg-warning text-dark ms-2"
+                        class="badge bg-warning text-dark"
                         id="provider-detail-status-badge"
                       ></span>
                     </div>
@@ -529,10 +548,6 @@
                         <div class="provider-detail-item">
                           <span class="provider-detail-label">Experiencia</span>
                           <span id="provider-detail-experience" class="text-muted">No especifica</span>
-                        </div>
-                        <div class="provider-detail-item">
-                          <span class="provider-detail-label">Disponibilidad</span>
-                          <span id="provider-detail-availability" class="text-muted">Sin información</span>
                         </div>
                       </div>
                       <div class="col-md-6">
@@ -632,6 +647,15 @@
                   <div class="provider-detail-section provider-review-form">
                     <h6>Revisión administrativa</h6>
                     <div class="mb-3">
+                      <label class="form-label" for="provider-review-status">Resultado</label>
+                      <select class="form-select" id="provider-review-status">
+                        <option value="" selected disabled>Selecciona un resultado</option>
+                        <option value="approved">Aprobado</option>
+                        <option value="interview_required">Entrevista requerida</option>
+                        <option value="rejected">Rechazado</option>
+                      </select>
+                    </div>
+                    <div class="mb-3">
                       <label class="form-label" for="provider-reviewer-name">Tu nombre</label>
                       <input
                         type="text"
@@ -661,6 +685,19 @@
                         placeholder="Detalle conclusiones de la revisión, coincidencias con redes sociales, observaciones relevantes..."
                       ></textarea>
                     </div>
+                    <div class="mb-3">
+                      <label class="form-label" for="provider-review-message">
+                        Mensaje al proveedor (WhatsApp)
+                      </label>
+                      <textarea
+                        class="form-control"
+                        id="provider-review-message"
+                        placeholder="Ej. Necesitamos una breve entrevista para validar tus servicios. Responde a este mensaje para coordinar."
+                      ></textarea>
+                      <div class="form-text">
+                        Se enviará este mensaje al proveedor junto con el resultado seleccionado.
+                      </div>
+                    </div>
                     <div
                       class="alert alert-warning d-none"
                       id="provider-review-error"
@@ -678,13 +715,9 @@
                     Se notificará al proveedor vía WhatsApp según el resultado.
                   </div>
                   <div class="d-flex gap-2">
-                    <button type="button" class="btn btn-outline-danger" id="provider-review-reject-btn">
-                      <i class="fas fa-times me-1"></i>
-                      Rechazar
-                    </button>
-                    <button type="button" class="btn btn-success" id="provider-review-approve-btn">
-                      <i class="fas fa-check me-1"></i>
-                      Aprobar
+                    <button type="button" class="btn btn-primary" id="provider-review-submit-btn">
+                      <i class="fas fa-paper-plane me-1"></i>
+                      Guardar y notificar
                     </button>
                   </div>
                 </div>

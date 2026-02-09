@@ -48,6 +48,7 @@ def validar_y_construir_proveedor(
     try:
         proveedor = SolicitudCreacionProveedor(
             phone=telefono,
+            real_phone=flujo.get("real_phone") or telefono,
             full_name=flujo.get("name") or "",
             email=flujo.get("email"),
             city=flujo.get("city") or "",
@@ -117,6 +118,7 @@ def _formatear_mensaje_error_validacion(error: Dict[str, Any]) -> str:
     # Mapeo de campos a nombres en español
     nombres_campos = {
         "phone": "teléfono",
+        "real_phone": "teléfono real",
         "full_name": "nombre",
         "email": "correo electrónico",
         "city": "ciudad",

@@ -433,21 +433,29 @@ func (cm *ClientManager) handleMessage(accountID string, msgEvt *events.Message)
 		return
 	}
 
+	// Diagnostic logging to capture raw chat JID details (temporary)
+	rawChatJID := msgEvt.Info.Chat.String()
+	rawChatServer := msgEvt.Info.Chat.Server
+	log.Printf("[%s] Incoming message chat JID=%s server=%s", accountID, rawChatJID, rawChatServer)
+
 	// Get message text using improved extraction
 	messageText := extractMessageText(msgEvt.Message)
 
-	// Extract phone number (remove @s.whatsapp.net suffix)
-	phone := msgEvt.Info.Chat.String()
-	if len(phone) > 15 {
-		phone = phone[:15]
+	// Extract phone number (User part without server suffix)
+	// Use .User to get just the phone/LID number without @server
+	phone := msgEvt.Info.Chat.User
+	if phone == "" {
+		phone = msgEvt.Info.Chat.String()
 	}
 
 	// Prepare webhook payload
+	// FromNumber contains the full JID (user@server) to preserve server type (lid, s.whatsapp.net, etc.)
 	payload := &webhook.WebhookPayload{
-		Phone:     phone,
-		Message:   messageText,
-		Timestamp: time.Now().Format(time.RFC3339),
-		AccountID: accountID,
+		Phone:      phone,
+		FromNumber: msgEvt.Info.Chat.String(), // Full JID for response routing
+		Message:    messageText,
+		Timestamp:  time.Now().Format(time.RFC3339),
+		AccountID:  accountID,
 	}
 	attachMediaPayload(cm, accountID, msgEvt.Message, payload)
 
@@ -469,8 +477,9 @@ func (cm *ClientManager) handleMessage(accountID string, msgEvt *events.Message)
 			}
 
 			// Send response messages back to WhatsApp
+			// Use rawChatJID (full JID) to preserve server type for LIDs
 			for _, msg := range resp.Messages {
-				if err := cm.SendTextMessage(accountID, phone, msg.Response); err != nil {
+				if err := cm.SendTextMessage(accountID, rawChatJID, msg.Response); err != nil {
 					log.Printf("[%s] Error sending response: %v", accountID, err)
 				}
 			}
@@ -556,6 +565,20 @@ func parseJID(phone string) (types.JID, error) {
 		return types.JID{}, fmt.Errorf("empty phone number")
 	}
 
+	// If it already contains "@", it's a full JID - parse it manually
+	// This handles both "phone@s.whatsapp.net" and "LID@lid" formats
+	if strings.Contains(phone, "@") {
+		parts := strings.SplitN(phone, "@", 2)
+		if len(parts) == 2 {
+			user := parts[0]
+			server := parts[1]
+			if user != "" && server != "" {
+				return types.NewJID(user, server), nil
+			}
+		}
+	}
+
+	// Legacy behavior: treat as phone number only (no @server part)
 	// Remove any non-digit characters
 	cleaned := ""
 	for _, r := range phone {

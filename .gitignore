@@ -111,6 +111,7 @@ CLAUDE.md
 
 # Documentación local
 docs/
+AGENTS.md
 
 # Tokens de autenticación
 .token

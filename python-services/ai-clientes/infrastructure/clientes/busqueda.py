@@ -95,6 +95,7 @@ class ClienteBusqueda:
             proveedor_legacy = {
                 "id": proveedor.get("id"),
                 "phone_number": proveedor.get("phone_number"),
+                "real_phone": proveedor.get("real_phone") or proveedor.get("phone_number"),
                 "full_name": proveedor.get("full_name"),
                 "name": proveedor.get("full_name"),
                 "city": proveedor.get("city"),

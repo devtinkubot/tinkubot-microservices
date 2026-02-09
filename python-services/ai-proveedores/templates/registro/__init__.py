@@ -7,6 +7,8 @@ from .pasos_registro import (
     preguntar_correo_opcional,
     preguntar_actualizar_ciudad,
     preguntar_nombre,
+    preguntar_real_phone,
+    error_real_phone_invalido,
 )
 
 from .documentacion import (
@@ -45,6 +47,8 @@ __all__ = [
     "preguntar_correo_opcional",
     "preguntar_actualizar_ciudad",
     "preguntar_nombre",
+    "preguntar_real_phone",
+    "error_real_phone_invalido",
     # Documentación
     "solicitar_foto_dni_frontal",
     "solicitar_foto_dni_trasera",

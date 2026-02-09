@@ -13,12 +13,38 @@ const router = express.Router();
 
 async function obtenerPendientes(req, res) {
   try {
-    const providers = await proveedoresBff.obtenerProveedoresPendientes();
+    const providers = await proveedoresBff.obtenerProveedoresNuevos();
     res.json({ providers });
   } catch (error) {
     const status = error?.status ?? 500;
     const payload = error?.data ?? {
       error: 'No se pudo obtener la lista de proveedores pendientes.'
+    };
+    res.status(status).json(payload);
+  }
+}
+
+async function obtenerNuevos(req, res) {
+  try {
+    const providers = await proveedoresBff.obtenerProveedoresNuevos();
+    res.json({ providers });
+  } catch (error) {
+    const status = error?.status ?? 500;
+    const payload = error?.data ?? {
+      error: 'No se pudo obtener la lista de proveedores nuevos.'
+    };
+    res.status(status).json(payload);
+  }
+}
+
+async function obtenerPostRevision(req, res) {
+  try {
+    const providers = await proveedoresBff.obtenerProveedoresPostRevision();
+    res.json({ providers });
+  } catch (error) {
+    const status = error?.status ?? 500;
+    const payload = error?.data ?? {
+      error: 'No se pudo obtener la lista de proveedores post-revisión.'
     };
     res.status(status).json(payload);
   }
@@ -49,6 +75,25 @@ async function rechazarProveedor(req, res) {
     const status = error?.status ?? 500;
     const payload = error?.data ?? {
       error: 'No se pudo rechazar el proveedor.'
+    };
+    res.status(status).json(payload);
+  }
+}
+
+async function revisarProveedor(req, res) {
+  try {
+    const { providerId } = req.params;
+    const requestId = req.headers['x-request-id'] || req.headers['x-correlation-id'] || null;
+    const resultado = await proveedoresBff.revisarProveedor(
+      providerId,
+      req.body ?? {},
+      requestId
+    );
+    res.json(resultado);
+  } catch (error) {
+    const status = error?.status ?? 500;
+    const payload = error?.data ?? {
+      error: 'No se pudo procesar la revisión del proveedor.'
     };
     res.status(status).json(payload);
   }
@@ -94,8 +139,11 @@ async function servirImagen(req, res) {
 }
 
 router.get('/pending', obtenerPendientes);
+router.get('/new', obtenerNuevos);
+router.get('/post-review', obtenerPostRevision);
 router.post('/:providerId/approve', aprobarProveedor);
 router.post('/:providerId/reject', rechazarProveedor);
+router.post('/:providerId/review', revisarProveedor);
 router.get('/image/*', servirImagen);
 
 module.exports = router;

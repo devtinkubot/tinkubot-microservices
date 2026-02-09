@@ -23,17 +23,22 @@ function extraerMensajeError(error: unknown): string {
 
 type TipoAviso = 'success' | 'error' | 'info';
 
+type ProviderBucket = 'new' | 'post_review';
+
 interface EstadoProveedores {
   proveedores: ProviderRecord[];
   estaCargando: boolean;
   idAccionEnProceso: string | null;
   proveedorSeleccionado: ProviderRecord | null;
+  bucketActivo: ProviderBucket;
 }
 
 interface AccionProveedorOpciones {
+  status?: ProviderRecord['status'];
   notes?: string;
   reviewer?: string;
   phone?: string;
+  message?: string;
 }
 
 type ModalInstance = {
@@ -45,12 +50,14 @@ const estado: EstadoProveedores = {
   proveedores: [],
   estaCargando: false,
   idAccionEnProceso: null,
-  proveedorSeleccionado: null
+  proveedorSeleccionado: null,
+  bucketActivo: 'new'
 };
 
 const formateadorFecha = new Intl.DateTimeFormat('es-EC', {
   dateStyle: 'medium',
-  timeStyle: 'short'
+  timeStyle: 'short',
+  timeZone: 'America/Guayaquil'
 });
 
 const bootstrapGlobal = (window as typeof window & { bootstrap?: { Modal?: any } }).bootstrap;
@@ -114,6 +121,60 @@ function formatearFechaLarga(valor?: string | null): string {
   const fecha = new Date(valor);
   if (Number.isNaN(fecha.getTime())) return valor;
   return formateadorFecha.format(fecha);
+}
+
+function obtenerEtiquetaEstadoListado(status?: ProviderRecord['status'] | null): string {
+  switch (status) {
+    case 'interview_required':
+      return 'Entrevista';
+    case 'rejected':
+      return 'Rechazado';
+    case 'approved':
+      return 'Aprobado';
+    case 'pending':
+    default:
+      return 'Nuevo';
+  }
+}
+
+function obtenerClaseEstadoListado(status?: ProviderRecord['status'] | null): string {
+  switch (status) {
+    case 'interview_required':
+      return 'bg-secondary';
+    case 'rejected':
+      return 'bg-danger';
+    case 'approved':
+      return 'bg-success';
+    case 'pending':
+    default:
+      return 'bg-warning text-dark';
+  }
+}
+
+function actualizarEncabezadoBucket() {
+  const titulo = obtenerElemento<HTMLElement>('#providers-title');
+  const subtitulo = obtenerElemento<HTMLElement>('#providers-subtitle');
+  const vacio = obtenerElemento<HTMLElement>('#providers-empty');
+  const textoCarga = obtenerElemento<HTMLElement>('#providers-loading')?.querySelector('p');
+
+  if (estado.bucketActivo === 'post_review') {
+    if (titulo) titulo.textContent = 'Pendientes post-revisión';
+    if (subtitulo) {
+      subtitulo.textContent =
+        'Gestiona proveedores que ya tuvieron una revisión previa (entrevista o rechazo).';
+    }
+    if (vacio) vacio.textContent = 'No hay proveedores pendientes post-revisión.';
+    if (textoCarga) textoCarga.textContent = 'Obteniendo proveedores post-revisión...';
+    return;
+  }
+
+  if (titulo) titulo.textContent = 'Proveedores nuevos';
+  if (subtitulo) {
+    subtitulo.textContent =
+      'Revisa y aprueba a los proveedores recién registrados antes de habilitarlos.';
+  }
+  if (vacio) vacio.textContent = 'No hay proveedores nuevos por revisar.';
+  if (textoCarga) textoCarga.textContent = 'Obteniendo proveedores nuevos...';
 }
 
 function escaparHtml(texto: string): string {
@@ -317,9 +378,17 @@ function actualizarNotas(proveedor: ProviderRecord) {
 
 function limpiarFormularioRevision() {
   mostrarErrorModal();
+  const estadoSelect = obtenerElemento<HTMLSelectElement>('#provider-review-status');
+  if (estadoSelect) {
+    estadoSelect.value = '';
+  }
   const notasTextarea = obtenerElemento<HTMLTextAreaElement>('#provider-review-notes');
   if (notasTextarea) {
     notasTextarea.value = '';
+  }
+  const mensajeTextarea = obtenerElemento<HTMLTextAreaElement>('#provider-review-message');
+  if (mensajeTextarea) {
+    mensajeTextarea.value = '';
   }
   const revisorInput = obtenerElemento<HTMLInputElement>('#provider-reviewer-name');
   if (revisorInput) {
@@ -343,7 +412,14 @@ function actualizarBadgeEstado(status: ProviderRecord['status']) {
   const badge = obtenerElemento<HTMLSpanElement>('#provider-detail-status-badge');
   if (!badge) return;
 
-  badge.classList.remove('bg-warning', 'bg-success', 'bg-danger', 'bg-secondary', 'text-dark');
+  badge.classList.remove(
+    'bg-warning',
+    'bg-success',
+    'bg-danger',
+    'bg-secondary',
+    'bg-info',
+    'text-dark'
+  );
 
   switch (status) {
     case 'approved':
@@ -354,6 +430,10 @@ function actualizarBadgeEstado(status: ProviderRecord['status']) {
       badge.classList.add('bg-danger');
       badge.textContent = 'Rechazado';
       break;
+    case 'interview_required':
+      badge.classList.add('bg-secondary');
+      badge.textContent = 'Entrevista';
+      break;
     default:
       badge.classList.add('bg-warning', 'text-dark');
       badge.textContent = 'Pendiente';
@@ -363,9 +443,6 @@ function actualizarBadgeEstado(status: ProviderRecord['status']) {
 
 function actualizarDetalleProveedor(proveedor: ProviderRecord) {
   establecerTexto('#provider-detail-name', proveedor.name);
-  establecerTexto('#provider-detail-profession', proveedor.profession, {
-    fallback: 'Sin profesión registrada'
-  });
   actualizarBadgeEstado(proveedor.status);
   establecerTexto('#provider-detail-registered', formatearFechaLarga(proveedor.registeredAt));
 
@@ -410,6 +487,11 @@ function actualizarDetalleProveedor(proveedor: ProviderRecord) {
   actualizarDocumentos(proveedor);
   actualizarNotas(proveedor);
 
+  const estadoSelect = obtenerElemento<HTMLSelectElement>('#provider-review-status');
+  if (estadoSelect) {
+    estadoSelect.value = proveedor.status ?? '';
+  }
+
   const hiddenId = obtenerElemento<HTMLInputElement>('#provider-review-provider-id');
   if (hiddenId) {
     hiddenId.value = proveedor.id;
@@ -430,31 +512,31 @@ function establecerAccionEnProceso(proveedorId: string | null) {
     }
   }
 
-  const botonAprobar = obtenerElemento<HTMLButtonElement>('#provider-review-approve-btn');
-  const botonRechazar = obtenerElemento<HTMLButtonElement>('#provider-review-reject-btn');
+  const botonEnviar = obtenerElemento<HTMLButtonElement>('#provider-review-submit-btn');
   const indicadorProceso = obtenerElemento<HTMLSpanElement>('#provider-review-processing');
 
-  [botonAprobar, botonRechazar].forEach(boton => {
-    if (boton) {
-      boton.disabled = Boolean(proveedorId);
-    }
-  });
+  if (botonEnviar) {
+    botonEnviar.disabled = Boolean(proveedorId);
+  }
 
   if (indicadorProceso) {
     indicadorProceso.style.display = proveedorId ? 'inline-flex' : 'none';
   }
 }
 
-async function cargarProveedoresPendientes() {
+async function cargarProveedoresBucket() {
   establecerEstadoCarga(true);
   mostrarAviso('');
 
   try {
-    const proveedores = await apiProveedores.obtenerProveedoresPendientes();
+    const proveedores =
+      estado.bucketActivo === 'post_review'
+        ? await apiProveedores.obtenerProveedoresPostRevision()
+        : await apiProveedores.obtenerProveedoresNuevos();
     estado.proveedores = proveedores;
     renderizarProveedores();
   } catch (error) {
-    console.error('Error al cargar proveedores pendientes:', error);
+    console.error('Error al cargar proveedores:', error);
     mostrarAviso(
       error instanceof Error ? error.message : 'No se pudo cargar la lista de proveedores.',
       'error'
@@ -494,7 +576,7 @@ function abrirModalRevision(proveedorId: string) {
 
 async function ejecutarAccionSobreProveedor(
   proveedorId: string,
-  accion: 'approve' | 'reject',
+  accion: 'review',
   opciones: AccionProveedorOpciones = {}
 ) {
   establecerAccionEnProceso(proveedorId);
@@ -503,23 +585,15 @@ async function ejecutarAccionSobreProveedor(
   try {
     let respuesta: ProviderActionResponse;
 
-    if (accion === 'approve') {
-      respuesta = await apiProveedores.aprobarProveedor(proveedorId, opciones);
-    } else {
-      respuesta = await apiProveedores.rechazarProveedor(proveedorId, opciones);
-    }
+    respuesta = await apiProveedores.revisarProveedor(proveedorId, opciones);
 
-    const mensaje =
-      respuesta.message ??
-      (accion === 'approve'
-        ? 'Proveedor aprobado correctamente.'
-        : 'Proveedor rechazado correctamente.');
+    const mensaje = respuesta.message ?? 'Revisión guardada correctamente.';
 
     cerrarModalRevision();
     mostrarAviso(mensaje, 'success');
-    await cargarProveedoresPendientes();
+    await cargarProveedoresBucket();
   } catch (error) {
-    console.error(`Error al ${accion === 'approve' ? 'aprobar' : 'rechazar'} proveedor:`, error);
+    console.error('Error al revisar proveedor:', error);
     const mensaje = extraerMensajeError(error);
     mostrarErrorModal(mensaje);
     mostrarAviso(mensaje, 'error');
@@ -549,38 +623,79 @@ function manejarAccionesDeProveedores(evento: Event) {
   }
 }
 
-function manejarAccionModal(accion: 'approve' | 'reject') {
+function construirMensajeSugerido(
+  status: ProviderRecord['status'],
+  nombre?: string | null
+): string {
+  const nombreLimpio = nombre?.trim();
+  switch (status) {
+    case 'approved':
+      return nombreLimpio
+        ? `✅ Hola ${nombreLimpio}, tu perfil en TinkuBot fue aprobado. Ya puedes responder solicitudes cuando te escribamos.`
+        : '✅ Tu perfil en TinkuBot fue aprobado. Ya puedes responder solicitudes cuando te escribamos.';
+    case 'interview_required':
+      return nombreLimpio
+        ? `Hola ${nombreLimpio}, para continuar con tu registro necesitamos una breve entrevista de validación. Responde a este mensaje para coordinar.`
+        : 'Para continuar con tu registro necesitamos una breve entrevista de validación. Responde a este mensaje para coordinar.';
+    case 'rejected':
+      return nombreLimpio
+        ? `Hola ${nombreLimpio}, por ahora no podremos aprobar tu perfil. Si quieres postular más adelante, escríbenos.`
+        : 'Por ahora no podremos aprobar tu perfil. Si quieres postular más adelante, escríbenos.';
+    default:
+      return '';
+  }
+}
+
+function manejarAccionModal() {
   const proveedor = estado.proveedorSeleccionado;
   if (!proveedor) {
     mostrarErrorModal('Selecciona un proveedor antes de continuar.');
     return;
   }
 
+  const estadoSelect = obtenerElemento<HTMLSelectElement>('#provider-review-status');
   const notasTextarea = obtenerElemento<HTMLTextAreaElement>('#provider-review-notes');
+  const mensajeTextarea = obtenerElemento<HTMLTextAreaElement>('#provider-review-message');
   const revisorInput = obtenerElemento<HTMLInputElement>('#provider-reviewer-name');
   const checklistDocs = obtenerElemento<HTMLInputElement>('#provider-review-check-docs');
   const telefonoInput = obtenerElemento<HTMLInputElement>('#provider-phone');
 
+  const estadoSeleccionado = (estadoSelect?.value || '') as ProviderRecord['status'];
   const notas = notasTextarea?.value.trim() ?? '';
+  const mensaje = mensajeTextarea?.value.trim() ?? '';
   const reviewer = revisorInput?.value.trim() ?? undefined;
   const telefono = limpiarTelefono(telefonoInput?.value || '');
 
-  if (accion === 'reject' && notas.length === 0) {
-    mostrarErrorModal('Ingresa un motivo de rechazo para continuar.');
+  if (!estadoSeleccionado) {
+    mostrarErrorModal('Selecciona un resultado antes de continuar.');
+    estadoSelect?.focus();
+    return;
+  }
+
+  if (estadoSeleccionado !== 'approved' && mensaje.length === 0) {
+    mostrarErrorModal('Ingresa el mensaje que recibirá el proveedor.');
+    mensajeTextarea?.focus();
+    return;
+  }
+
+  if (estadoSeleccionado === 'rejected' && notas.length === 0) {
+    mostrarErrorModal('Ingresa un motivo interno de rechazo para continuar.');
     notasTextarea?.focus();
     return;
   }
 
-  if (accion === 'approve' && checklistDocs && !checklistDocs.checked) {
+  if (estadoSeleccionado === 'approved' && checklistDocs && !checklistDocs.checked) {
     mostrarErrorModal('Confirma que revisaste los documentos del proveedor.');
     checklistDocs.focus();
     return;
   }
 
-  void ejecutarAccionSobreProveedor(proveedor.id, accion, {
+  void ejecutarAccionSobreProveedor(proveedor.id, 'review', {
+    status: estadoSeleccionado,
     notes: notas.length > 0 ? notas : undefined,
     reviewer,
-    phone: telefono ?? undefined
+    phone: telefono ?? undefined,
+    message: mensaje.length > 0 ? mensaje : undefined
   });
 }
 
@@ -641,7 +756,7 @@ function renderizarProveedores() {
         registeredAt,
         notes,
         city,
-        profession
+        status
       } = proveedor;
 
       const infoContacto = [
@@ -660,11 +775,9 @@ function renderizarProveedores() {
         <tr data-provider-id="${id}">
           <td>
             <div class="fw-semibold">${escaparHtml(businessName || name)}</div>
-            ${
-              profession
-                ? `<span class="text-muted small">${escaparHtml(profession)}</span>`
-                : ''
-            }
+            <span class="badge ${obtenerClaseEstadoListado(status)}">
+              ${escaparHtml(obtenerEtiquetaEstadoListado(status))}
+            </span>
           </td>
           <td>${ubicacion}</td>
           <td>${infoContacto || '<span class="text-muted">Sin contacto</span>'}</td>
@@ -697,23 +810,46 @@ function enlazarEventos() {
   const botonRefrescar = obtenerElemento<HTMLButtonElement>('#providers-refresh-btn');
   if (botonRefrescar) {
     botonRefrescar.addEventListener('click', () => {
-      void cargarProveedoresPendientes();
+      void cargarProveedoresBucket();
     });
   }
+
+  const tabs = document.querySelectorAll<HTMLButtonElement>('[data-provider-bucket]');
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      const bucket = tab.dataset.providerBucket as ProviderBucket | undefined;
+      if (!bucket || bucket === estado.bucketActivo) {
+        return;
+      }
+      estado.bucketActivo = bucket;
+      tabs.forEach(btn => btn.classList.remove('active'));
+      tab.classList.add('active');
+      actualizarEncabezadoBucket();
+      void cargarProveedoresBucket();
+    });
+  });
 
   const contenedorTabla = obtenerElemento<HTMLDivElement>('#providers-table-wrapper');
   if (contenedorTabla) {
     contenedorTabla.addEventListener('click', manejarAccionesDeProveedores);
   }
 
-  const botonAprobar = obtenerElemento<HTMLButtonElement>('#provider-review-approve-btn');
-  if (botonAprobar) {
-    botonAprobar.addEventListener('click', () => manejarAccionModal('approve'));
+  const botonEnviar = obtenerElemento<HTMLButtonElement>('#provider-review-submit-btn');
+  if (botonEnviar) {
+    botonEnviar.addEventListener('click', () => manejarAccionModal());
   }
 
-  const botonRechazar = obtenerElemento<HTMLButtonElement>('#provider-review-reject-btn');
-  if (botonRechazar) {
-    botonRechazar.addEventListener('click', () => manejarAccionModal('reject'));
+  const estadoSelect = obtenerElemento<HTMLSelectElement>('#provider-review-status');
+  if (estadoSelect) {
+    estadoSelect.addEventListener('change', () => {
+      const mensajeTextarea =
+        obtenerElemento<HTMLTextAreaElement>('#provider-review-message');
+      if (!mensajeTextarea) {
+        return;
+      }
+      const status = estadoSelect.value as ProviderRecord['status'];
+      mensajeTextarea.value = construirMensajeSugerido(status, estado.proveedorSeleccionado?.name);
+    });
   }
 
   const botonCopiarTelefono = obtenerElemento<HTMLButtonElement>('#provider-detail-copy-phone');
@@ -732,12 +868,13 @@ function enlazarEventos() {
 
 function inicializar() {
   enlazarEventos();
-  void cargarProveedoresPendientes();
+  actualizarEncabezadoBucket();
+  void cargarProveedoresBucket();
 }
 
 export const ProvidersManager = {
   iniciar: inicializar,
-  recargar: cargarProveedoresPendientes
+  recargar: cargarProveedoresBucket
 };
 
 export type ProvidersManagerModule = typeof ProvidersManager;

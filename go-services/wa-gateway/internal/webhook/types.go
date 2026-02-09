@@ -3,6 +3,7 @@ package webhook
 // WebhookPayload represents the payload sent to AI services
 type WebhookPayload struct {
 	Phone         string `json:"phone"`
+	FromNumber    string `json:"from_number,omitempty"` // Full JID (user@server) - preserves original server type (lid, s.whatsapp.net, etc.)
 	Message       string `json:"message"`
 	Timestamp     string `json:"timestamp"`
 	AccountID     string `json:"account_id"` // "bot-clientes" or "bot-proveedores" - determines routing

@@ -175,6 +175,14 @@ const construirMensajeRechazo = (nombre, motivo) => {
   return '❌ Tu perfil en TinkuBot fue rechazado. Puedes corregir tus datos y volver a postular.';
 };
 
+const construirMensajeEntrevista = nombre => {
+  const safeName = limpiarTexto(nombre);
+  if (safeName) {
+    return `Hola ${safeName}, para continuar con tu registro necesitamos una breve entrevista de validación. Responde a este mensaje para coordinar.`;
+  }
+  return 'Para continuar con tu registro necesitamos una breve entrevista de validación. Responde a este mensaje para coordinar.';
+};
+
 const enviarNotificacionWhatsapp = async ({ to, message, requestId }) => {
   if (!limpiarTexto(to)) {
     console.warn('⚠️ Notificación WhatsApp omitida: teléfono vacío');
@@ -229,6 +237,12 @@ const normalizarEstadoProveedor = registro => {
   if (['rejected', 'rechazado', 'denied'].includes(estado)) {
     return 'rejected';
   }
+  if (['needs_info', 'falta_info', 'faltainfo'].includes(estado)) {
+    return 'interview_required';
+  }
+  if (['interview_required', 'entrevista', 'auditoria'].includes(estado)) {
+    return 'interview_required';
+  }
   if (['pending', 'pendiente'].includes(estado)) {
     return 'pending';
   }
@@ -242,7 +256,6 @@ const normalizarProveedorSupabase = registro => {
     'Proveedor sin nombre';
   const businessName =
     limpiarTexto(registro?.business_name) ||
-    limpiarTexto(registro?.profession) ||
     null;
   const contact =
     limpiarTexto(registro?.contact_name) || nombre || 'Contacto no definido';
@@ -254,7 +267,6 @@ const normalizarProveedorSupabase = registro => {
   const email = limpiarTexto(registro?.email) || null;
   const ciudad = limpiarTexto(registro?.city) || null;
   const provincia = limpiarTexto(registro?.province) || null;
-  const profession = limpiarTexto(registro?.profession) || null;
   const servicesFromRelation = Array.isArray(registro?.provider_services)
     ? registro.provider_services
         .filter(item => item && typeof item.service_name === 'string')
@@ -305,10 +317,7 @@ const normalizarProveedorSupabase = registro => {
     registro?.registered_at ||
     registro?.inserted_at ||
     new Date().toISOString();
-  const notes =
-    limpiarTexto(registro?.verification_notes) ||
-    limpiarTexto(registro?.notes) ||
-    null;
+  const notes = limpiarTexto(registro?.notes) || null;
   const dniFrontPhotoUrl = prepararUrlDocumento(
     registro?.dni_front_photo_url,
     registro?.dni_front_url,
@@ -325,8 +334,13 @@ const normalizarProveedorSupabase = registro => {
     registro?.documents?.face
   );
   const verificationReviewer =
-    limpiarTexto(registro?.verification_reviewer) || null;
-  const verificationReviewedAt = registro?.verification_reviewed_at || null;
+    limpiarTexto(registro?.verification_reviewer) ||
+    limpiarTexto(registro?.reviewer_name) ||
+    null;
+  const verificationReviewedAt =
+    limpiarTexto(registro?.verification_reviewed_at) ||
+    limpiarTexto(registro?.reviewed_at) ||
+    null;
 
   return {
     id: registro?.id,
@@ -342,7 +356,6 @@ const normalizarProveedorSupabase = registro => {
     email,
     city: ciudad,
     province: provincia,
-    profession,
     servicesRaw,
     servicesList,
     experienceYears,
@@ -390,11 +403,8 @@ const construirRutaSupabasePendientes = (incluirEstado = true) => {
   ];
 
   if (incluirEstado) {
-    // Tabla sin verification_status: usar verified=false como condición
-    parametrosBase.push('verified=eq.false');
+    parametrosBase.push('or=(status.is.null,status.in.(new,pending))');
   }
-
-  parametrosBase.push('verified=eq.false');
 
   return `${supabaseProvidersTable}?${parametrosBase.join('&')}`;
 };
@@ -414,8 +424,7 @@ const obtenerProveedoresPendientesSupabase = async () => {
     const lista = Array.isArray(response.data)
       ? response.data.map(normalizarProveedorSupabase)
       : normalizarListaProveedores(response.data).map(normalizarProveedorSupabase);
-    // Asegurar que rechazados no aparezcan aunque el filtro falle
-    return lista.filter(item => item?.status !== 'rejected');
+    return lista;
   } catch (error) {
     if (error.response?.status === 400) {
       // Columna verification_status podría no existir; reintentar sin filtro.
@@ -430,10 +439,38 @@ const obtenerProveedoresPendientesSupabase = async () => {
         : normalizarListaProveedores(response.data).map(
             normalizarProveedorSupabase
           );
-      return lista.filter(item => item?.status !== 'rejected');
+      return lista;
     }
     throw error;
   }
+};
+
+const construirRutaSupabasePostRevision = () => {
+  const parametrosBase = [
+    `limit=${pendingLimit}`,
+    `order=created_at.desc`,
+    'select=*,provider_services(service_name,service_name_normalized,display_order)',
+    'status=in.(interview_required,rejected)'
+  ];
+
+  return `${supabaseProvidersTable}?${parametrosBase.join('&')}`;
+};
+
+const obtenerProveedoresPostRevisionSupabase = async () => {
+  if (!supabaseClient) {
+    return [];
+  }
+
+  const ruta = construirRutaSupabasePostRevision();
+  const response = await supabaseClient.get(ruta, {
+    headers: {
+      Accept: 'application/json'
+    }
+  });
+  const lista = Array.isArray(response.data)
+    ? response.data.map(normalizarProveedorSupabase)
+    : normalizarListaProveedores(response.data).map(normalizarProveedorSupabase);
+  return lista;
 };
 
 const construirRutaSupabasePorId = providerId => {
@@ -486,11 +523,24 @@ async function obtenerProveedoresPendientes(requestId = null) {
   }
 }
 
+async function obtenerProveedoresNuevos(requestId = null) {
+  try {
+    return await obtenerProveedoresPendientesSupabase();
+  } catch (error) {
+    throw gestionarErrorAxios(error);
+  }
+}
+
+async function obtenerProveedoresPostRevision(requestId = null) {
+  try {
+    return await obtenerProveedoresPostRevisionSupabase();
+  } catch (error) {
+    throw gestionarErrorAxios(error);
+  }
+}
+
 const construirRespuestaAccion = (providerId, estadoFinal, mensaje, registro) => {
-  const updatedAt =
-    registro?.updated_at ||
-    registro?.verification_reviewed_at ||
-    new Date().toISOString();
+  const updatedAt = registro?.updated_at || new Date().toISOString();
 
   return {
     providerId,
@@ -505,20 +555,15 @@ async function aprobarProveedor(providerId, payload = {}, requestId = null) {
     const timestamp = new Date().toISOString();
     const payloadPrincipal = {
       verified: true,
-      verification_reviewed_at: timestamp,
-      updated_at: timestamp
+      status: 'approved',
+      updated_at: timestamp,
+      approved_notified_at: timestamp
     };
-    if (payload.reviewer) {
-      payloadPrincipal.verification_reviewer = payload.reviewer;
-    }
-    if (payload.notes) {
-      payloadPrincipal.verification_notes = payload.notes;
-    }
 
     const datosActualizados = await intentarActualizacionSupabase(
       providerId,
       payloadPrincipal,
-      { verified: true, updated_at: timestamp }
+      { verified: true, updated_at: timestamp, approved_notified_at: timestamp }
     );
 
     const registro =
@@ -526,10 +571,7 @@ async function aprobarProveedor(providerId, payload = {}, requestId = null) {
         ? datosActualizados[0]
         : null;
 
-    const mensaje =
-      payload.notes && payload.notes.length > 0
-        ? 'Proveedor aprobado con observaciones.'
-        : 'Proveedor aprobado correctamente.';
+    const mensaje = 'Proveedor aprobado correctamente.';
 
     const approvalMessage = construirMensajeAprobacion(registro?.full_name);
     await enviarNotificacionWhatsapp({
@@ -549,14 +591,13 @@ async function rechazarProveedor(providerId, payload = {}, requestId = null) {
     const timestamp = new Date().toISOString();
     const payloadPrincipal = {
       verified: false,
-      verification_reviewed_at: timestamp,
-      updated_at: timestamp
+      status: 'rejected',
+      updated_at: timestamp,
+      rejected_notified_at: timestamp
     };
-    if (payload.reviewer) {
-      payloadPrincipal.verification_reviewer = payload.reviewer;
-    }
-    if (payload.notes) {
-      payloadPrincipal.verification_notes = payload.notes;
+
+    if (limpiarTexto(payload.notes)) {
+      payloadPrincipal.notes = payload.notes.trim();
     }
 
     const datosActualizados = await intentarActualizacionSupabase(
@@ -570,10 +611,7 @@ async function rechazarProveedor(providerId, payload = {}, requestId = null) {
         ? datosActualizados[0]
         : null;
 
-    const mensaje =
-      payload.notes && payload.notes.length > 0
-        ? 'Proveedor rechazado con observaciones.'
-        : 'Proveedor rechazado correctamente.';
+    const mensaje = 'Proveedor rechazado correctamente.';
 
     const rejectionMessage = construirMensajeRechazo(
       registro?.full_name,
@@ -591,8 +629,90 @@ async function rechazarProveedor(providerId, payload = {}, requestId = null) {
   }
 }
 
+async function revisarProveedor(providerId, payload = {}, requestId = null) {
+  try {
+    const estadoSolicitado = limpiarTexto(payload.status);
+    const estadoFinal =
+      estadoSolicitado && ['approved', 'rejected', 'interview_required'].includes(estadoSolicitado)
+        ? estadoSolicitado
+        : null;
+
+    if (!estadoFinal) {
+      return {
+        providerId,
+        status: 'pending',
+        updatedAt: new Date().toISOString(),
+        message: 'Selecciona un resultado válido para continuar.'
+      };
+    }
+
+    const timestamp = new Date().toISOString();
+    const payloadBase = {
+      updated_at: timestamp,
+      status: estadoFinal,
+      verified: estadoFinal === 'approved'
+    };
+
+    if (estadoFinal === 'approved') {
+      payloadBase.approved_notified_at = timestamp;
+    } else if (estadoFinal === 'rejected') {
+      payloadBase.rejected_notified_at = timestamp;
+    }
+
+    if (limpiarTexto(payload.notes)) {
+      payloadBase.notes = payload.notes.trim();
+    }
+
+    const payloadConRevisor = {
+      ...payloadBase,
+      verification_reviewer: limpiarTexto(payload.reviewer),
+      verification_reviewed_at: timestamp
+    };
+
+    const payloadFallback = {
+      updated_at: timestamp,
+      verified: estadoFinal === 'approved'
+    };
+
+    const datosActualizados = await intentarActualizacionSupabase(
+      providerId,
+      payloadConRevisor,
+      payloadFallback
+    );
+
+    const registro =
+      Array.isArray(datosActualizados) && datosActualizados.length > 0
+        ? datosActualizados[0]
+        : null;
+
+    let mensajeProveedor = limpiarTexto(payload.message);
+    if (!mensajeProveedor) {
+      if (estadoFinal === 'approved') {
+        mensajeProveedor = construirMensajeAprobacion(registro?.full_name);
+      } else if (estadoFinal === 'interview_required') {
+        mensajeProveedor = construirMensajeEntrevista(registro?.full_name);
+      } else {
+        mensajeProveedor = construirMensajeRechazo(registro?.full_name, payload.notes);
+      }
+    }
+
+    await enviarNotificacionWhatsapp({
+      to: registro?.phone || payload.phone,
+      message: mensajeProveedor,
+      requestId
+    });
+
+    return construirRespuestaAccion(providerId, estadoFinal, 'Revisión guardada correctamente.', registro);
+  } catch (error) {
+    throw gestionarErrorAxios(error);
+  }
+}
+
 module.exports = {
   obtenerProveedoresPendientes,
+  obtenerProveedoresNuevos,
+  obtenerProveedoresPostRevision,
   aprobarProveedor,
-  rechazarProveedor
+  rechazarProveedor,
+  revisarProveedor
 };

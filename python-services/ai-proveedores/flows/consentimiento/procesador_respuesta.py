@@ -18,11 +18,13 @@ from flows.constructores import (
     construir_respuesta_consentimiento_aceptado,
     construir_respuesta_consentimiento_rechazado,
     construir_respuesta_solicitud_consentimiento,
+    construir_respuesta_revision,
 )
 from flows.sesion import establecer_flujo, reiniciar_flujo
 from flows.interpretacion import interpretar_respuesta
 from infrastructure.database import run_supabase
 from templates import mensaje_consentimiento_aceptado
+from templates.registro import preguntar_real_phone
 from templates.registro import PROMPT_INICIO_REGISTRO
 
 logger = logging.getLogger(__name__)
@@ -118,6 +120,16 @@ async def procesar_respuesta_consentimiento(  # noqa: C901
             and perfil_proveedor.get("full_name")  # Verificar que tiene datos completos
             # Fase 4: Eliminada verificación de profession
         )
+        esta_verificado = bool(perfil_proveedor and perfil_proveedor.get("verified"))
+
+        if post_consent_state == "awaiting_real_phone":
+            return {
+                "success": True,
+                "messages": [
+                    {"response": mensaje_consentimiento_aceptado()},
+                    {"response": preguntar_real_phone()},
+                ],
+            }
 
         if post_consent_state == "awaiting_city":
             return {
@@ -127,6 +139,9 @@ async def procesar_respuesta_consentimiento(  # noqa: C901
                     {"response": PROMPT_INICIO_REGISTRO},
                 ],
             }
+
+        if esta_registrado_completo and not esta_verificado:
+            return construir_respuesta_revision()
 
         return construir_respuesta_consentimiento_aceptado(esta_registrado_completo)
 
