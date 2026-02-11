@@ -15,6 +15,7 @@ from .gestor_perfil import (
     cachear_perfil_proveedor,
     obtener_perfil_proveedor,
     obtener_perfil_proveedor_cacheado,
+    invalidar_cache_perfil_proveedor,
     refrescar_cache_perfil_proveedor,
 )
 
@@ -32,4 +33,5 @@ __all__ = [
     "cachear_perfil_proveedor",
     "refrescar_cache_perfil_proveedor",
     "obtener_perfil_proveedor_cacheado",
+    "invalidar_cache_perfil_proveedor",
 ]

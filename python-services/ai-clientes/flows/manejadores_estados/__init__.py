@@ -9,6 +9,7 @@ from .manejo_detalle_proveedor import (
     conectar_y_confirmar_proveedor,
 )
 from .manejo_confirmacion import procesar_estado_confirmar_nueva_busqueda
+from .manejo_confirmacion_servicio import procesar_estado_confirmar_servicio
 
 __all__ = [
     "procesar_estado_esperando_servicio",
@@ -18,4 +19,5 @@ __all__ = [
     "procesar_estado_viendo_detalle_proveedor",
     "conectar_y_confirmar_proveedor",
     "procesar_estado_confirmar_nueva_busqueda",
+    "procesar_estado_confirmar_servicio",
 ]

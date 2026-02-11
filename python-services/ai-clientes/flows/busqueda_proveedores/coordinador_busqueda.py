@@ -67,24 +67,25 @@ async def coordinar_busqueda_completa(
         )
 
         # Actualizar estado a "searching" y marcar como despachado
+        from datetime import datetime
+        ahora_utc = datetime.utcnow()
         flujo["state"] = "searching"
         flujo["searching_dispatched"] = True
+        flujo["searching_started_at"] = ahora_utc.isoformat()  # NUEVO: para detectar búsquedas estancadas
         await guardar_flujo_callback(telefono, flujo)
 
         # Ejecutar búsqueda en segundo plano
-        from principal import coordinador_disponibilidad
-
         asyncio.create_task(
             ejecutar_busqueda_y_notificar_en_segundo_plano(
                 telefono=telefono,
                 flujo=flujo,
                 enviar_mensaje_callback=enviar_mensaje_callback,
                 guardar_flujo_callback=guardar_flujo_callback,
-                coordinador_disponibilidad=coordinador_disponibilidad,
             )
         )
 
-        return f"Perfecto, buscaré {servicio} en {ciudad}."
+        from templates.busqueda.confirmacion import mensaje_buscando_expertos
+        return mensaje_buscando_expertos
 
     except Exception as exc:
         logger.error(f"❌ Error en coordinar_busqueda_completa: {exc}")

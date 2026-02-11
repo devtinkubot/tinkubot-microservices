@@ -90,15 +90,29 @@ async def manejar_inactividad(
     guardar_flujo,
     mensaje_reinicio_por_inactividad,
     mensaje_inicial_solicitud,
+    mensajes_consentimiento,
 ) -> Optional[Dict[str, Any]]:
-    """Reinicia el flujo si hay inactividad > 3 minutos."""
+    """Reinicia el flujo si hay inactividad > 5 minutos."""
     ultima_vista_cruda = flujo.get("last_seen_at_prev")
     try:
         ultima_vista_dt = datetime.fromisoformat(ultima_vista_cruda) if ultima_vista_cruda else None
     except Exception:
         ultima_vista_dt = None
 
-    if ultima_vista_dt and (ahora_utc - ultima_vista_dt).total_seconds() > 180:
+    if ultima_vista_dt and (ahora_utc - ultima_vista_dt).total_seconds() > 300:
+        if flujo.get("state") == "awaiting_consent":
+            flujo.update(
+                {
+                    "state": "awaiting_consent",
+                    "last_seen_at": ahora_utc.isoformat(),
+                    "last_seen_at_prev": ahora_utc.isoformat(),
+                }
+            )
+            if repositorio_flujo:
+                await repositorio_flujo.guardar(telefono, flujo)
+            else:
+                await guardar_flujo(telefono, flujo)
+            return {"messages": mensajes_consentimiento()}
         if repositorio_flujo:
             await repositorio_flujo.resetear(telefono)
             await repositorio_flujo.guardar(

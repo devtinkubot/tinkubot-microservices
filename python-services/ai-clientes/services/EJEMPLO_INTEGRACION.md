@@ -14,7 +14,6 @@ orquestador = OrquestadorConversacional(
     redis_client=redis_client,
     supabase=supabase,
     session_manager=session_manager,
-    coordinador_disponibilidad=coordinador_disponibilidad,
     logger=logger,
 )
 

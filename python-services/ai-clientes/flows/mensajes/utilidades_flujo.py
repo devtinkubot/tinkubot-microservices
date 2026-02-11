@@ -47,8 +47,9 @@ async def verificar_ciudad_y_proceder(
         flujo["state"] = "searching"
         flujo["searching_dispatched"] = True
 
+        from templates.busqueda.confirmacion import mensaje_buscando_expertos
         return {
-            "response": f"Perfecto, buscaré {flujo.get('service')} en {ciudad_existente}.",
+            "response": mensaje_buscando_expertos,
             "ui": {"type": "silent"}
         }
 

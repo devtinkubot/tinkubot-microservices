@@ -4,22 +4,24 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/mdp/qrterminal/v3"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/mdp/qrterminal/v3"
+	"github.com/tinkubot/wa-gateway/internal/webhook"
 	"go.mau.fi/whatsmeow"
+	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
-	"github.com/tinkubot/wa-gateway/internal/webhook"
-	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -33,8 +35,8 @@ type Event struct {
 
 // StoredQR stores a QR code with its expiration time
 type StoredQR struct {
-	QRCode     string
-	ExpiresAt  time.Time
+	QRCode    string
+	ExpiresAt time.Time
 }
 
 // ClientManager manages multiple whatsmeow clients
@@ -479,6 +481,17 @@ func (cm *ClientManager) handleMessage(accountID string, msgEvt *events.Message)
 			// Send response messages back to WhatsApp
 			// Use rawChatJID (full JID) to preserve server type for LIDs
 			for _, msg := range resp.Messages {
+				if strings.EqualFold(msg.MediaType, "image") && msg.MediaURL != "" {
+					caption := msg.MediaCaption
+					if caption == "" {
+						caption = msg.Response
+					}
+					if err := cm.SendImageMessage(accountID, rawChatJID, msg.MediaURL, caption); err != nil {
+						log.Printf("[%s] Error sending image response: %v", accountID, err)
+					}
+					continue
+				}
+
 				if err := cm.SendTextMessage(accountID, rawChatJID, msg.Response); err != nil {
 					log.Printf("[%s] Error sending response: %v", accountID, err)
 				}
@@ -556,6 +569,85 @@ func (cm *ClientManager) SendTextMessage(accountID string, to string, message st
 
 	log.Printf("[%s] Message sent to %s", accountID, to)
 
+	return nil
+}
+
+func downloadMedia(ctx context.Context, mediaURL string) ([]byte, string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, mediaURL, nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to create media request: %w", err)
+	}
+
+	client := &http.Client{Timeout: 20 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to fetch media: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, "", fmt.Errorf("media request failed with status %d", resp.StatusCode)
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to read media body: %w", err)
+	}
+	if len(data) == 0 {
+		return nil, "", fmt.Errorf("empty media payload")
+	}
+
+	mimetype := resp.Header.Get("Content-Type")
+	if mimetype == "" {
+		mimetype = http.DetectContentType(data)
+	}
+
+	return data, mimetype, nil
+}
+
+func (cm *ClientManager) SendImageMessage(accountID string, to string, mediaURL string, caption string) error {
+	client, ok := cm.GetClient(accountID)
+	if !ok {
+		return fmt.Errorf("client not found for account: %s", accountID)
+	}
+
+	jid, err := parseJID(to)
+	if err != nil {
+		return fmt.Errorf("invalid JID: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	data, mimetype, err := downloadMedia(ctx, mediaURL)
+	if err != nil {
+		return fmt.Errorf("failed to download media: %w", err)
+	}
+
+	uploaded, err := client.Upload(ctx, data, whatsmeow.MediaImage)
+	if err != nil {
+		return fmt.Errorf("failed to upload media to WhatsApp: %w", err)
+	}
+
+	msg := &waProto.Message{
+		ImageMessage: &waProto.ImageMessage{
+			Caption:       proto.String(caption),
+			Mimetype:      proto.String(mimetype),
+			URL:           proto.String(uploaded.URL),
+			DirectPath:    proto.String(uploaded.DirectPath),
+			MediaKey:      uploaded.MediaKey,
+			FileEncSHA256: uploaded.FileEncSHA256,
+			FileSHA256:    uploaded.FileSHA256,
+			FileLength:    proto.Uint64(uint64(len(data))),
+		},
+	}
+
+	_, err = client.SendMessage(context.Background(), jid, msg)
+	if err != nil {
+		return fmt.Errorf("failed to send image message: %w", err)
+	}
+
+	log.Printf("[%s] Image message sent to %s", accountID, to)
 	return nil
 }
 

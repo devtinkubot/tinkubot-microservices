@@ -4,20 +4,24 @@ Servicio de gestión de proveedores con búsqueda y capacidad de recibir mensaje
 """
 
 import asyncio
+import json
 import logging
 import os
+import re
 import sys
 from pathlib import Path
 from time import perf_counter
 from datetime import datetime
 from typing import Any, Dict, Optional
+import unicodedata
 
 # Agregar el directorio raíz al sys.path para imports absolutos
 sys.path.insert(0, str(Path(__file__).parent))
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Header
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 # Import de módulos especializados del flujo de proveedores
 from flows.router import manejar_mensaje
 from openai import AsyncOpenAI
@@ -32,9 +36,11 @@ from flows.sesion import (
     obtener_flujo,
     establecer_flujo,
     obtener_perfil_proveedor_cacheado,
+    invalidar_cache_perfil_proveedor,
 )
 from flows.interpretacion import interpretar_respuesta
 from infrastructure.storage import subir_medios_identidad
+from infrastructure.redis import cliente_redis
 
 # Configuración desde variables de entorno
 URL_SUPABASE = configuracion.supabase_url or os.getenv("SUPABASE_URL", "")
@@ -45,6 +51,9 @@ NIVEL_LOG = os.getenv("LOG_LEVEL", "INFO")
 TIEMPO_ESPERA_SUPABASE_SEGUNDOS = float(os.getenv("SUPABASE_TIMEOUT_SECONDS", "5"))
 REGISTRO_RENDIMIENTO_HABILITADO = os.getenv("PERF_LOG_ENABLED", "true").lower() == "true"
 UMBRAL_LENTO_MS = int(os.getenv("SLOW_QUERY_THRESHOLD_MS", "800"))
+AVAILABILITY_RESULT_TTL_SECONDS = int(
+    os.getenv("AVAILABILITY_RESULT_TTL_SECONDS", "300")
+)
 
 # Configurar logging
 logging.basicConfig(level=getattr(logging, NIVEL_LOG))
@@ -92,6 +101,10 @@ app = FastAPI(
     version="2.0.0",
 )
 
+
+class SolicitudInvalidacionCache(BaseModel):
+    phone: str
+
 # === FASTAPI LIFECYCLE EVENTS ===
 
 
@@ -112,6 +125,120 @@ app.add_middleware(
 
 # --- Flujo interactivo de registro de proveedores ---
 CLAVE_FLUJO = "prov_flow:{}"  # telefono
+
+
+def _normalizar_texto_simple(texto: str) -> str:
+    base = (texto or "").strip().lower()
+    normalizado = unicodedata.normalize("NFD", base)
+    sin_acentos = "".join(
+        ch for ch in normalizado if unicodedata.category(ch) != "Mn"
+    )
+    return re.sub(r"\s+", " ", sin_acentos).strip()
+
+
+def _parsear_respuesta_disponibilidad(texto: str) -> Optional[str]:
+    normalizado = _normalizar_texto_simple(texto)
+    if not normalizado:
+        return None
+
+    if normalizado in {"1", "si", "s", "ok", "dale", "disponible", "acepto"}:
+        return "accepted"
+    if normalizado in {"2", "no", "n", "ocupado", "no disponible"}:
+        return "rejected"
+
+    tokens = set(normalizado.split())
+    if "si" in tokens and "no" not in tokens:
+        return "accepted"
+    if "no" in tokens:
+        return "rejected"
+    if "disponible" in tokens:
+        return "accepted"
+    if "ocupado" in tokens:
+        return "rejected"
+    return None
+
+
+async def _registrar_respuesta_disponibilidad_si_aplica(
+    telefono: str, texto_mensaje: str
+) -> Optional[Dict[str, Any]]:
+    decision = _parsear_respuesta_disponibilidad(texto_mensaje)
+    if not decision:
+        return None
+
+    clave_pendientes = f"availability:provider:{telefono}:pending"
+    pendientes = await cliente_redis.get(clave_pendientes)
+
+    # Mejora: Manejar casos donde pendientes puede venir como string JSON o no estar decodificado
+    if pendientes is None:
+        logger.info(f"📭 No hay solicitudes pendientes para {telefono}")
+        return None
+
+    # Si es string JSON, intentar decodificar
+    if isinstance(pendientes, str):
+        try:
+            pendientes = json.loads(pendientes)
+        except (json.JSONDecodeError, TypeError) as e:
+            logger.warning(
+                "⚠️ No se pudo decodificar pendientes de disponibilidad para %s: %s | Error: %s",
+                telefono,
+                str(pendientes)[:100] if pendientes else None,
+                e
+            )
+            return None
+
+    # Verificar que sea una lista después de la decodificación
+    if not isinstance(pendientes, list) or not pendientes:
+        logger.info(f"📭 Pendientes vacío o inválido para {telefono}: {type(pendientes)}")
+        return None
+
+    req_resuelto = None
+    for req_id in pendientes:
+        clave_req = f"availability:request:{req_id}:provider:{telefono}"
+        estado = await cliente_redis.get(clave_req)
+
+        # Mejora: Manejar estados que pueden venir como string JSON
+        if isinstance(estado, str):
+            try:
+                estado = json.loads(estado)
+            except (json.JSONDecodeError, TypeError):
+                logger.warning(f"⚠️ No se pudo decodificar estado para req {req_id}")
+                continue
+
+        if not isinstance(estado, dict):
+            continue
+        if str(estado.get("status") or "").lower() != "pending":
+            continue
+
+        estado["status"] = decision
+        estado["responded_at"] = datetime.utcnow().isoformat()
+        estado["response_text"] = (texto_mensaje or "")[:160]
+        await cliente_redis.set(
+            clave_req, estado, expire=AVAILABILITY_RESULT_TTL_SECONDS
+        )
+        req_resuelto = req_id
+        break
+
+    if not req_resuelto:
+        logger.info(f"📭 No se encontró solicitud pendiente válida para {telefono}")
+        return None
+
+    nuevos_pendientes = [rid for rid in pendientes if rid != req_resuelto]
+    await cliente_redis.set(
+        clave_pendientes, nuevos_pendientes, expire=AVAILABILITY_RESULT_TTL_SECONDS
+    )
+
+    if decision == "accepted":
+        respuesta = "✅ Disponibilidad confirmada. Gracias por responder."
+    else:
+        respuesta = "✅ Gracias. Registré que no estás disponible ahora."
+
+    logger.info(
+        "📝 Respuesta de disponibilidad registrada: telefono=%s req_id=%s decision=%s",
+        telefono,
+        req_resuelto,
+        decision,
+    )
+    return {"success": True, "messages": [{"response": respuesta}]}
 
 @app.get("/health", response_model=RespuestaSalud)
 async def health_check() -> RespuestaSalud:
@@ -143,6 +270,28 @@ async def health_check() -> RespuestaSalud:
         )
 
 
+@app.post("/admin/invalidate-provider-cache")
+async def invalidate_provider_cache(
+    solicitud: SolicitudInvalidacionCache,
+    token: Optional[str] = Header(default=None, alias="x-internal-token"),
+) -> Dict[str, Any]:
+    """
+    Invalida el caché de un proveedor por teléfono.
+    Requiere token interno si está configurado.
+    """
+    token_esperado = configuracion.internal_token
+    if token_esperado:
+        if not token or token != token_esperado:
+            return {"success": False, "message": "Unauthorized"}
+
+    telefono = (solicitud.phone or "").strip()
+    if not telefono:
+        return {"success": False, "message": "Phone is required"}
+
+    ok = await invalidar_cache_perfil_proveedor(telefono)
+    return {"success": ok, "phone": telefono}
+
+
 @app.post("/handle-whatsapp-message")
 async def manejar_mensaje_whatsapp(  # noqa: C901
     solicitud: RecepcionMensajeWhatsApp,
@@ -170,6 +319,12 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
             "🔎 principal.cliente_openai inicializado=%s",
             bool(cliente_openai),
         )
+
+        respuesta_disponibilidad = await _registrar_respuesta_disponibilidad_si_aplica(
+            telefono, texto_mensaje
+        )
+        if respuesta_disponibilidad:
+            return normalizar_respuesta_whatsapp(respuesta_disponibilidad)
 
         flujo = await obtener_flujo(telefono)
         if is_lid:

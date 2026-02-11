@@ -176,14 +176,55 @@ class OrquestadorRetrollamadas:
         return []
 
     async def enviar_prompt_proveedor(self, telefono: str, flujo: dict, ciudad: str):
-        self.logger.info(
-            f"Placeholder: enviar_prompt_proveedor para {telefono} en {ciudad}"
+        """Construye y retorna el listado de proveedores para WhatsApp."""
+        from templates.proveedores.detalle import instruccion_seleccionar_proveedor
+        from templates.proveedores.listado import (
+            bloque_listado_proveedores_compacto,
+            mensaje_intro_listado_proveedores,
+            mensaje_listado_sin_resultados,
         )
-        return None
 
-    async def enviar_prompt_confirmacion(self, telefono: str, flujo: dict):
-        self.logger.info(f"Placeholder: enviar_prompt_confirmacion para {telefono}")
-        return None
+        proveedores = (flujo or {}).get("providers") or []
+        ciudad_texto = ciudad or (flujo or {}).get("city") or ""
+
+        if not proveedores:
+            self.logger.warning(
+                f"Sin proveedores en flujo al enviar prompt para {telefono} (city={ciudad_texto})"
+            )
+            return {"response": mensaje_listado_sin_resultados(ciudad_texto)}
+
+        intro = mensaje_intro_listado_proveedores(ciudad_texto)
+        bloque = bloque_listado_proveedores_compacto(proveedores)
+        mensaje = f"{intro}\n\n{bloque}\n{instruccion_seleccionar_proveedor}"
+        return {"response": mensaje}
+
+    async def enviar_prompt_confirmacion(
+        self, telefono: str, flujo: dict, titulo: str = None
+    ):
+        """Construye y retorna el prompt de confirmación de nueva búsqueda."""
+        from templates.busqueda.confirmacion import (
+            mensajes_confirmacion_busqueda,
+            titulo_confirmacion_repetir_busqueda,
+        )
+
+        incluir_opcion_ciudad = bool((flujo or {}).get("confirm_include_city_option"))
+        titulo_final = (
+            titulo
+            or (flujo or {}).get("confirm_title")
+            or titulo_confirmacion_repetir_busqueda
+        )
+
+        self.logger.info(
+            "Enviando prompt confirmación para %s (titulo=%s, opcion_ciudad=%s)",
+            telefono,
+            titulo_final,
+            incluir_opcion_ciudad,
+        )
+        return {
+            "messages": mensajes_confirmacion_busqueda(
+                titulo_final, incluir_opcion_ciudad=incluir_opcion_ciudad
+            )
+        }
 
     def limpiar_ciudad_cliente(self, cliente_id: str):
         if self.repositorio_clientes and cliente_id:

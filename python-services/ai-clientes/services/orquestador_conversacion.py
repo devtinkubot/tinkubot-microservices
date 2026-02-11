@@ -32,6 +32,7 @@ from flows.mensajes import (
     mensaje_error_ciudad_no_reconocida,
     solicitar_ciudad_con_servicio,
     verificar_ciudad_y_proceder,
+    mensajes_consentimiento,
 )
 from flows.validadores import validar_entrada_servicio
 from flows.busqueda_proveedores.coordinador_busqueda import (
@@ -50,7 +51,6 @@ from models.catalogo_servicios import (
 )
 from services.sesion_clientes import (
     validar_consentimiento,
-    manejar_inactividad,
     sincronizar_cliente,
     procesar_comando_reinicio,
 )
@@ -255,7 +255,6 @@ class OrquestadorConversacional:
         redis_client,
         supabase,
         gestor_sesiones,
-        coordinador_disponibilidad,
         buscador=None,
         validador=None,
         expansor=None,
@@ -271,7 +270,6 @@ class OrquestadorConversacional:
             redis_client: Cliente Redis para persistencia de flujo
             supabase: Cliente Supabase para datos de clientes
             gestor_sesiones: Gestor de sesiones para historial
-            coordinador_disponibilidad: Coordinador de disponibilidad (HTTP)
             buscador: Servicio BuscadorProveedores (opcional, para backward compatibility)
             validador: Servicio ValidadorProveedoresIA (opcional, para backward compatibility)
             expansor: Servicio ExpansorSinonimos (opcional, para backward compatibility)
@@ -283,7 +281,6 @@ class OrquestadorConversacional:
         self.redis_client = redis_client
         self.supabase = supabase
         self.gestor_sesiones = gestor_sesiones
-        self.coordinador_disponibilidad = coordinador_disponibilidad
         self.logger = logger or logging.getLogger(__name__)
 
         # Nuevos servicios (inyectados opcionalmente para backward compatibility)
@@ -383,24 +380,6 @@ class OrquestadorConversacional:
             normalizar_boton_fn=normalizar_boton,
             interpretar_si_no_fn=interpretar_si_no,
             opciones_consentimiento_textos=opciones_consentimiento_textos,
-        )
-
-    async def _manejar_inactividad(
-        self, telefono: str, flujo: Dict[str, Any], ahora_utc: datetime
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Reinicia el flujo si hay inactividad > 3 minutos.
-        Returns None si no hay inactividad, dict con respuesta si sí.
-        """
-        return await manejar_inactividad(
-            telefono=telefono,
-            flujo=flujo,
-            ahora_utc=ahora_utc,
-            repositorio_flujo=self.repositorio_flujo,
-            resetear_flujo=self.resetear_flujo,
-            guardar_flujo=self.guardar_flujo,
-            mensaje_reinicio_por_inactividad=mensaje_reinicio_por_inactividad,
-            mensaje_inicial_solicitud=mensaje_inicial_solicitud,
         )
 
     async def _sincronizar_cliente(
@@ -554,6 +533,9 @@ class OrquestadorConversacional:
         )
         flujo = flujo_actualizado
 
+        if flujo.get("state") == "confirm_service":
+            return await responder(flujo, respuesta)
+
         # 4. Verificar ciudad existente (optimización)
         # Usar repositorio si está disponible, sino callback
         if self.repositorio_clientes:
@@ -619,6 +601,7 @@ class OrquestadorConversacional:
                     "city",
                     "city_confirmed",
                     "searching_dispatched",
+                    "searching_started_at",  # NUEVO: limpiar timestamp de búsqueda
                 ]:
                     flujo.pop(key, None)
                 valor_servicio = (profesion_detectada or texto).strip()
@@ -678,6 +661,13 @@ class OrquestadorConversacional:
         if respuesta.get("response"):
             return await responder(flujo_actualizado, respuesta)
 
+        if not flujo_actualizado.get("service"):
+            flujo_actualizado["state"] = "awaiting_service"
+            return await responder(
+                flujo_actualizado,
+                {"response": mensaje_inicial_solicitud()},
+            )
+
         # Usar transicionar_a_busqueda_desde_ciudad
         ciudad_del_flujo = flujo_actualizado.get("city") or (
             ciudad_normalizada_entrada or texto
@@ -708,13 +698,54 @@ class OrquestadorConversacional:
     async def _procesar_searching(
         self, telefono: str, flujo: Dict[str, Any], ejecutar_busqueda
     ) -> Dict[str, Any]:
-        """Procesa el estado 'searching'."""
-        # Si ya despachamos la búsqueda, evitar duplicarla y avisar que seguimos procesando
+        """Procesa el estado 'searching' con timeout para búsquedas fallidas."""
+        SEARCHING_TIMEOUT_SECONDS = 60
+
         if flujo.get("searching_dispatched"):
+            searching_started_at = flujo.get("searching_started_at")
+
+            if searching_started_at:
+                try:
+                    from datetime import datetime
+                    ahora_utc = datetime.utcnow()
+                    inicio_dt = datetime.fromisoformat(searching_started_at)
+                    segundos_transcurridos = (ahora_utc - inicio_dt).total_seconds()
+
+                    if segundos_transcurridos > SEARCHING_TIMEOUT_SECONDS:
+                        self.logger.warning(
+                            f"⏰ TIMEOUT de búsqueda detectado para {telefono}: "
+                            f"{segundos_transcurridos:.1f}s transcurridos"
+                        )
+
+                        # Restablecer estado
+                        flujo["searching_dispatched"] = False
+                        flujo.pop("searching_started_at", None)
+
+                        if self.repositorio_flujo:
+                            await self.repositorio_flujo.guardar(telefono, flujo)
+                        else:
+                            await self.guardar_flujo(telefono, flujo)
+
+                        return {
+                            "response": (
+                                f"⚠️ La búsqueda tomó demasiado tiempo. "
+                                f"Por favor intenta nuevamente."
+                            )
+                        }
+                except Exception as e:
+                    self.logger.error(f"❌ Error verificando timeout: {e}")
+                    flujo["searching_dispatched"] = False
+                    flujo.pop("searching_started_at", None)
+                    if self.repositorio_flujo:
+                        await self.repositorio_flujo.guardar(telefono, flujo)
+                    else:
+                        await self.guardar_flujo(telefono, flujo)
+
             return {
                 "response": f"Estoy buscando {flujo.get('service')} en {flujo.get('city')}, espera un momento."
             }
-        # Si por alguna razón no se despachó, lanzarla ahora
+
+        # Si no se despachó, lanzarla ahora
         if flujo.get("service") and flujo.get("city"):
             mensaje_confirmacion = await coordinar_busqueda_completa(
                 telefono=telefono,
@@ -723,4 +754,5 @@ class OrquestadorConversacional:
                 guardar_flujo_callback=self.guardar_flujo,
             )
             return {"response": mensaje_confirmacion or "Iniciando búsqueda..."}
+
         return await ejecutar_busqueda()

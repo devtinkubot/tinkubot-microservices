@@ -27,3 +27,15 @@ def mensaje_reinicio_por_inactividad() -> str:
         Mensaje explicativo de reinicio por timeout.
     """
     return "*No tuve respuesta y reinicié la conversación para ayudarte mejor.*"
+
+
+def informar_timeout_inactividad() -> str:
+    """Informa que la sesión expiró por inactividad y se reinició.
+
+    Returns:
+        Mensaje explicando el timeout por inactividad y disponibilidad del bot.
+    """
+    return (
+        "**No tuve respuesta y reinicié la conversación para ayudarte mejor. "
+        "Gracias por usar TinkuBot; escríbeme cuando quieras.**"
+    )

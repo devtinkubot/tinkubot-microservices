@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     max_search_results: int = 20
     search_timeout_ms: int = 5000
     max_openai_concurrency: int = 5
+    embeddings_model: str = "text-embedding-3-small"
+    embeddings_timeout_seconds: int = 8
+    vector_top_k: int = 30
+    vector_similarity: str = "cosine"
 
     # API Configuration
     search_api_host: str = "0.0.0.0"

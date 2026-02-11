@@ -9,6 +9,8 @@ y los resultados obtenidos.
 import logging
 from typing import Any, Dict, List, Callable, Awaitable
 from templates.busqueda.confirmacion import (
+    mensaje_sin_disponibilidad,
+    mensaje_confirmando_disponibilidad,
     mensajes_confirmacion_busqueda,
     titulo_confirmacion_repetir_busqueda,
 )
@@ -18,10 +20,7 @@ from templates.proveedores.listado import (
     mensaje_intro_listado_proveedores,
     mensaje_listado_sin_resultados,
 )
-from flows.mensajes.mensajes_busqueda import (
-    mensaje_buscando_expertos,
-    mensaje_expertos_encontrados,
-)
+from flows.mensajes.mensajes_busqueda import mensaje_expertos_encontrados
 
 logger = logging.getLogger(__name__)
 
@@ -31,18 +30,15 @@ async def ejecutar_busqueda_y_notificar_en_segundo_plano(
     flujo: Dict[str, Any],
     enviar_mensaje_callback: Any,  # Callable async que retorna bool
     guardar_flujo_callback: Any,  # Callable async que guarda estado
-    coordinador_disponibilidad: Any,
 ) -> None:
     """
     Ejecuta búsqueda + disponibilidad y envía resultado vía WhatsApp en segundo plano.
 
     Esta función realiza los siguientes pasos:
     1. Valida que se tenga servicio y ciudad
-    2. Envía mensaje de "buscando expertos"
-    3. Ejecuta búsqueda de proveedores
-    4. Envía mensaje con cantidad de expertos encontrados
-    5. Consulta disponibilidad en vivo
-    6. Construye y envía mensajes con resultados
+    2. Ejecuta búsqueda de proveedores
+    3. Consulta disponibilidad en vivo
+    4. Construye y envía mensajes con resultados
 
     Args:
         telefono: Número de teléfono del cliente.
@@ -51,7 +47,6 @@ async def ejecutar_busqueda_y_notificar_en_segundo_plano(
             Firma: (telefono: str, mensaje: str) -> bool
         guardar_flujo_callback: Función para actualizar el estado del flujo.
             Firma: (telefono: str, flujo: Dict[str, Any]) -> Awaitable[None]
-        coordinador_disponibilidad: Instancia del CoordinadorDisponibilidad para consultar disponibilidad.
 
     Returns:
         None (ejecuta en segundo plano)
@@ -84,11 +79,6 @@ async def ejecutar_busqueda_y_notificar_en_segundo_plano(
         # Extraer expanded_terms del flujo
         terminos_expandidos = flujo.get("expanded_terms")
 
-        # Informar que está buscando
-        logger.info("📨 Enviando mensaje 1: 'Estoy buscando expertos'")
-        await enviar_mensaje_callback(telefono, mensaje_buscando_expertos())
-        logger.info("✅ Mensaje 1 enviado")
-
         # Ejecutar búsqueda
         from principal import buscar_proveedores
         from services.proveedores.disponibilidad import servicio_disponibilidad
@@ -106,15 +96,33 @@ async def ejecutar_busqueda_y_notificar_en_segundo_plano(
             f"📦 Búsqueda completada: {len(proveedores)} proveedores encontrados"
         )
 
-        # Informar cantidad encontrada
-        cantidad = len(proveedores)
-        logger.info(
-            f"📨 Enviando mensaje 2: 'He encontrado {cantidad} experto(s) en {ciudad}'"
-        )
-        await enviar_mensaje_callback(
-            telefono, mensaje_expertos_encontrados(cantidad, ciudad)
-        )
-        logger.info("✅ Mensaje 2 enviado")
+        # Notificar hallazgos iniciales ANTES de confirmar disponibilidad.
+        if proveedores:
+            resumen_encontrados = mensaje_expertos_encontrados(len(proveedores), ciudad)
+            try:
+                enviado_resumen = await enviar_mensaje_callback(
+                    telefono, resumen_encontrados
+                )
+                if enviado_resumen:
+                    logger.info("✅ Mensaje de hallazgos iniciales enviado")
+                else:
+                    logger.warning(
+                        "⚠️ No se pudo enviar mensaje de hallazgos iniciales"
+                    )
+                try:
+                    from services.sesiones.gestor_sesiones import gestor_sesiones
+
+                    await gestor_sesiones.guardar_sesion(
+                        telefono, resumen_encontrados, es_bot=True
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        f"⚠️ No se pudo guardar hallazgos iniciales en sesión: {exc}"
+                    )
+            except Exception as exc:
+                logger.warning(
+                    f"⚠️ Error enviando hallazgos iniciales: {exc}"
+                )
 
         proveedores_finales: List[Dict[str, Any]] = []
 
@@ -128,13 +136,38 @@ async def ejecutar_busqueda_y_notificar_en_segundo_plano(
             logger.info(
                 f"🔔 Consultando disponibilidad de {len(proveedores)} proveedores"
             )
+            try:
+                enviado_confirmacion = await enviar_mensaje_callback(
+                    telefono, mensaje_confirmando_disponibilidad
+                )
+                if enviado_confirmacion:
+                    logger.info("✅ Mensaje de confirmación de disponibilidad enviado")
+                else:
+                    logger.warning("⚠️ No se pudo enviar confirmación de disponibilidad")
+                try:
+                    from services.sesiones.gestor_sesiones import gestor_sesiones
+
+                    await gestor_sesiones.guardar_sesion(
+                        telefono, mensaje_confirmando_disponibilidad, es_bot=True
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        f"⚠️ No se pudo guardar confirmación en sesión: {exc}"
+                    )
+            except Exception as exc:
+                logger.warning(
+                    f"⚠️ Error enviando confirmación de disponibilidad: {exc}"
+                )
+
             from infrastructure.persistencia.cliente_redis import cliente_redis as redis_client
 
             # Preparar candidatos para el cliente HTTP
             candidatos = [
                 {
+                    **p,
                     "provider_id": p.get("id") or p.get("provider_id"),
                     "nombre": p.get("name") or p.get("full_name"),
+                    "real_phone": p.get("real_phone") or p.get("phone_number"),
                 }
                 for p in proveedores
             ]
@@ -150,11 +183,13 @@ async def ejecutar_busqueda_y_notificar_en_segundo_plano(
             logger.info(
                 f"✅ Disponibilidad: {len(aceptados)} proveedores aceptados"
             )
-            proveedores_finales = (aceptados if aceptados else [])[:5]
+            proveedores_finales = aceptados[:5]
 
         # Construir mensajes para enviar
         mensajes_por_enviar = await _construir_mensajes_resultados(
             proveedores_finales=proveedores_finales,
+            cantidad_encontrada=len(proveedores),
+            servicio=servicio,
             ciudad=ciudad,
             flujo=flujo,
             telefono=telefono,
@@ -172,9 +207,12 @@ async def ejecutar_busqueda_y_notificar_en_segundo_plano(
         # Enviar mensajes
         for indice, mensaje in enumerate(mensajes_por_enviar, start=1):
             if mensaje:
-                logger.info(f"📨 Enviando mensaje {indice + 2}: resultados")
-                await enviar_mensaje_callback(telefono, mensaje)
-                logger.info(f"✅ Mensaje {indice + 2} enviado")
+                logger.info(f"📨 Enviando mensaje {indice}: resultados")
+                enviado = await enviar_mensaje_callback(telefono, mensaje)
+                if enviado:
+                    logger.info(f"✅ Mensaje {indice} enviado")
+                else:
+                    logger.error(f"❌ Mensaje {indice} NO enviado")
 
                 # Guardar en sesión
                 try:
@@ -191,11 +229,17 @@ async def ejecutar_busqueda_y_notificar_en_segundo_plano(
         )
 
     except Exception as exc:
-        logger.error(f"❌ Error en ejecutar_busqueda_y_notificar_en_segundo_plano: {exc}")
+        import traceback
+        logger.error(
+            f"❌ Error en ejecutar_busqueda_y_notificar_en_segundo_plano: {exc}\n"
+            f"Traceback:\n{traceback.format_exc()}"
+        )
 
 
 async def _construir_mensajes_resultados(
     proveedores_finales: List[Dict[str, Any]],
+    cantidad_encontrada: int,
+    servicio: str,
     ciudad: str,
     flujo: Dict[str, Any],
     telefono: str,
@@ -223,11 +267,18 @@ async def _construir_mensajes_resultados(
         # Hay proveedores: construir listado
         intro = mensaje_intro_listado_proveedores(ciudad)
         bloque = bloque_listado_proveedores_compacto(proveedores_finales)
-        bloque_encabezado = f"{intro}\n\n{bloque}\n{instruccion_seleccionar_proveedor}"
+        bloque_encabezado = (
+            f"{intro}\n\n"
+            f"{bloque}\n"
+            f"{instruccion_seleccionar_proveedor}"
+        )
         mensajes_por_enviar.append(bloque_encabezado)
     else:
         # No hay proveedores: construir mensaje sin resultados y cambiar a confirm_new_search
-        bloque = mensaje_listado_sin_resultados(ciudad)
+        if cantidad_encontrada > 0:
+            bloque = mensaje_sin_disponibilidad(servicio, ciudad)
+        else:
+            bloque = mensaje_listado_sin_resultados(ciudad)
         mensajes_por_enviar.append(bloque)
 
         # Cambiar flujo a confirmación de nueva búsqueda

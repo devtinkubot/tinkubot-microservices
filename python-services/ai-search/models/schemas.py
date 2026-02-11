@@ -16,6 +16,7 @@ class SearchStrategy(str, Enum):
     FULL_TEXT = "full_text"
     HYBRID = "hybrid"
     AI_ENHANCED = "ai_enhanced"
+    EMBEDDINGS = "embeddings"
 
 
 class SearchFilters(BaseModel):
@@ -40,7 +41,7 @@ class SearchRequest(BaseModel):
     limit: int = Field(default=10, ge=1, le=50)
     offset: int = Field(default=0, ge=0)
     use_ai_enhancement: bool = True
-    preferred_strategy: SearchStrategy = SearchStrategy.AI_ENHANCED
+    preferred_strategy: SearchStrategy = SearchStrategy.EMBEDDINGS
 
 
 class ProviderInfo(BaseModel):

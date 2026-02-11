@@ -203,6 +203,76 @@ class ClienteRedis:
             logger.error(f"❌ Error eliminando de memoria local: {e}")
             # No lanzar excepción para delete
 
+    async def keys(self, pattern: str) -> list[str]:
+        """
+        Obtiene todas las claves que coinciden con un patrón.
+
+        Args:
+            pattern: Patrón de búsqueda (ej: "flow:*")
+
+        Returns:
+            Lista de claves que coinciden con el patrón
+        """
+        if not self._connected and not self.redis_client:
+            await self.connect()
+
+        if self._connected and self.redis_client:
+            try:
+                keys = []
+                async for key in self.redis_client.scan_iter(match=pattern, count=100):
+                    keys.append(key)
+                return keys
+            except Exception as e:
+                logger.warning(f"⚠️ Error escaneando claves en Redis: {e}")
+
+        # Fallback: claves de memoria local que coinciden con el patrón
+        self._cleanup_expired_memory()
+        if pattern == "*":
+            return list(_memory_storage.keys())
+        # Conversión simple de patrón Redis a glob pattern
+        import fnmatch
+        return [k for k in _memory_storage.keys() if fnmatch.fnmatch(k, pattern)]
+
+    async def get_many(self, keys: list[str]) -> Dict[str, Any]:
+        """
+        Obtiene múltiples valores de Redis en una sola operación.
+
+        Args:
+            keys: Lista de claves a obtener
+
+        Returns:
+            Dict mapeando clave -> valor
+        """
+        if not self._connected and not self.redis_client:
+            await self.connect()
+
+        resultado = {}
+
+        if self._connected and self.redis_client:
+            try:
+                # Usar MGET para obtener múltiples valores eficientemente
+                valores = await self.redis_client.mget(keys)
+                for key, value in zip(keys, valores):
+                    if value:
+                        try:
+                            resultado[key] = json.loads(value)
+                        except json.JSONDecodeError:
+                            resultado[key] = value
+                return resultado
+            except Exception as e:
+                logger.warning(f"⚠️ Error obteniendo múltiples valores de Redis: {e}")
+
+        # Fallback: obtener de memoria local
+        self._cleanup_expired_memory()
+        for key in keys:
+            value = _memory_storage.get(key)
+            if value:
+                try:
+                    resultado[key] = json.loads(value)
+                except json.JSONDecodeError:
+                    resultado[key] = value
+        return resultado
+
 
 # Instancia global
 cliente_redis = ClienteRedis()

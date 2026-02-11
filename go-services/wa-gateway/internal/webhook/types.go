@@ -21,7 +21,10 @@ type WebhookResponse struct {
 
 // ResponseMessage represents a response message
 type ResponseMessage struct {
-	Response string `json:"response"`
+	Response     string `json:"response"`
+	MediaURL     string `json:"media_url,omitempty"`
+	MediaType    string `json:"media_type,omitempty"`
+	MediaCaption string `json:"media_caption,omitempty"`
 }
 
 // WebhookClient manages HTTP webhooks to AI services

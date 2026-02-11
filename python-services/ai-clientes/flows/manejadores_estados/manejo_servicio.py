@@ -77,12 +77,13 @@ async def procesar_estado_esperando_servicio(
         flujo["expanded_terms"] = None
         profesion = None
 
-    valor_servicio = profesion or texto
+    valor_servicio = (profesion or texto or "").strip()
     flujo.update(
         {
-            "service": valor_servicio,
+            "service_candidate": valor_servicio,
             "service_full": texto or valor_servicio,
-            "state": "awaiting_city",
+            "state": "confirm_service",
         }
     )
-    return flujo, {"response": "*Perfecto, ¿en qué ciudad lo necesitas?*"}
+    from templates.mensajes.validacion import mensaje_confirmar_servicio
+    return flujo, {"response": mensaje_confirmar_servicio(valor_servicio)}

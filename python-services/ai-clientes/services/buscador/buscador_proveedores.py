@@ -64,14 +64,14 @@ class BuscadorProveedores:
         if terminos_expandidos and len(terminos_expandidos) > 1:
             # Usar términos expandidos por IA
             terminos_unidos = " ".join(terminos_expandidos)
-            consulta = f"{terminos_unidos} en {ciudad}"
+            consulta = f"{terminos_unidos}"
             self.logger.info(
                 f"🔍 Búsqueda con términos expandidos ({len(terminos_expandidos)} términos): "
                 f"profession='{profesion}', location='{ciudad}'"
             )
         else:
             # Comportamiento original (backward compatible)
-            consulta = f"{profesion} en {ciudad}"
+            consulta = f"{profesion}"
             self.logger.info(
                 f"🔍 Búsqueda con validación IA: profession='{profesion}', location='{ciudad}'"
             )

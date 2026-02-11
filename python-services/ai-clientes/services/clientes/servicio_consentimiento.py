@@ -127,7 +127,7 @@ class ServicioConsentimiento:
                 )
 
             # Después de aceptar, continuar con el flujo normal mostrando el prompt inicial
-            return {"response": mensaje_inicial_solicitud()}
+            return {"response": mensaje_inicial_solicitud(), "consent_status": "accepted"}
 
         else:  # "No acepto" o cualquier otra opción
             respuesta = "declined"
@@ -163,4 +163,4 @@ class ServicioConsentimiento:
                     f"❌ Error guardando rechazo de consentimiento para {telefono}: {exc}"
                 )
 
-            return {"response": mensaje}
+            return {"response": mensaje, "consent_status": "declined"}

@@ -61,24 +61,18 @@ BUCKET_SUPABASE_PROVEEDORES = os.getenv(
     "SUPABASE_PROVIDERS_BUCKET", "tinkubot-providers"
 )
 
-# WhatsApp Clientes URL para envíos salientes (scheduler)
-_puerto_whatsapp_clientes = (
-    os.getenv("WHATSAPP_CLIENTES_PORT")
-    or os.getenv("CLIENTES_WHATSAPP_PORT")
-    or str(configuracion.whatsapp_clientes_port)
-)
-_dominio_servidor = os.getenv("SERVER_DOMAIN")
-if _dominio_servidor:
-    _url_whatsapp_clientes_por_defecto = (
-        f"http://{_dominio_servidor}:{_puerto_whatsapp_clientes}"
-    )
-else:
-    _url_whatsapp_clientes_por_defecto = (
-        f"http://wa-clientes:{_puerto_whatsapp_clientes}"
-    )
+# WhatsApp Gateway URL para envíos salientes (scheduler)
+# El servicio se llama 'wa-gateway' y corre en el puerto 7000
+_url_whatsapp_gateway_por_defecto = "http://wa-gateway:7000"
+
+# Permitir override con variable de entorno
 URL_WHATSAPP_CLIENTES = os.getenv(
     "WHATSAPP_CLIENTES_URL",
-    _url_whatsapp_clientes_por_defecto,
+    _url_whatsapp_gateway_por_defecto,
+)
+WHATSAPP_CLIENTES_ACCOUNT_ID = os.getenv(
+    "WHATSAPP_CLIENTES_ACCOUNT_ID",
+    "bot-clientes",
 )
 
 # Supabase client (opcional) para persistencia
@@ -137,7 +131,6 @@ orquestador = OrquestadorConversacional(
     redis_client=redis_client,
     supabase=supabase,
     gestor_sesiones=gestor_sesiones,
-    coordinador_disponibilidad=servicio_disponibilidad,
     buscador=buscador,
     validador=validador,
     expansor=expansor,
@@ -158,6 +151,7 @@ moderador_contenido = ModeradorContenido(
 programador_retroalimentacion = ProgramadorRetroalimentacion(
     supabase=supabase,
     whatsapp_url=URL_WHATSAPP_CLIENTES,
+    whatsapp_account_id=WHATSAPP_CLIENTES_ACCOUNT_ID,
     retraso_retroalimentacion_segundos=configuracion.feedback_delay_seconds,
     intervalo_sondeo_tareas_segundos=configuracion.task_poll_interval_seconds,
     logger=logger,
@@ -229,6 +223,42 @@ async def health_check():
 
 
 
+def normalizar_respuesta_whatsapp(respuesta: Any) -> Dict[str, Any]:
+    """Normaliza la respuesta para que siempre use el esquema esperado por wa-gateway."""
+    if respuesta is None:
+        return {"success": True, "messages": []}
+
+    if not isinstance(respuesta, dict):
+        return {"success": True, "messages": [{"response": str(respuesta)}]}
+
+    if "messages" in respuesta:
+        if "success" not in respuesta:
+            respuesta["success"] = True
+        return respuesta
+
+    if "response" in respuesta:
+        texto = respuesta.get("response")
+        mensajes = []
+        if isinstance(texto, list):
+            for item in texto:
+                if isinstance(item, dict) and "response" in item:
+                    mensajes.append(item)
+                else:
+                    mensajes.append({"response": str(item)})
+        else:
+            mensajes.append({"response": str(texto) if texto is not None else ""})
+
+        normalizada = {k: v for k, v in respuesta.items() if k != "response"}
+        normalizada["messages"] = mensajes
+        if "success" not in normalizada:
+            normalizada["success"] = True
+        return normalizada
+
+    if "success" not in respuesta:
+        respuesta["success"] = True
+    return respuesta
+
+
 @app.post("/handle-whatsapp-message")
 async def handle_whatsapp_message(payload: Dict[str, Any]):
     """
@@ -238,8 +268,10 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
     OrquestadorConversacional, manteniendo solo la capa HTTP.
     """
     try:
+        if not payload.get("content") and payload.get("message"):
+            payload["content"] = payload.get("message")
         result = await orquestador.procesar_mensaje_whatsapp(payload)
-        return result
+        return normalizar_respuesta_whatsapp(result)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

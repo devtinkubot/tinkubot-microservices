@@ -53,20 +53,22 @@ async def verificar_ciudad_y_transicionar(
 
     if ciudad_existente and ciudad_confirmada_en:
         # Tiene ciudad confirmada: usarla automáticamente
+        from datetime import datetime
+        ahora_utc = datetime.utcnow()
         flujo["city"] = ciudad_existente
         flujo["city_confirmed"] = True
         flujo["state"] = "searching"
         flujo["searching_dispatched"] = True
+        flujo["searching_started_at"] = ahora_utc.isoformat()  # NUEVO: para detectar búsquedas estancadas
 
         logger.info(
             f"✅ Ciudad confirmada encontrada: '{ciudad_existente}', "
             f"transicionando a searching"
         )
 
+        from templates.busqueda.confirmacion import mensaje_buscando_expertos
         return {
-            "response": (
-                f"Perfecto, buscaré {flujo.get('service')} en {ciudad_existente}."
-            ),
+            "response": mensaje_buscando_expertos,
             "ui": {"type": "silent"},
         }
 
@@ -157,8 +159,9 @@ async def inicializar_busqueda_con_ciudad_confirmada(
                     f"⚠️ No se pudo actualizar ciudad en BD: {exc}"
                 )
 
+        from templates.busqueda.confirmacion import mensaje_buscando_expertos
         return {
-            "response": f"Perfecto, buscaré {servicio} en {ciudad_normalizada}.",
+            "response": mensaje_buscando_expertos,
             "state": "searching",
         }
 
@@ -236,6 +239,7 @@ def limpiar_datos_busqueda(flujo: Dict[str, Any]) -> Dict[str, Any]:
         "chosen_provider",
         "provider_detail_idx",
         "searching_dispatched",
+        "searching_started_at",  # NUEVO: limpiar timestamp de búsqueda
         "expanded_terms",
     ]
 

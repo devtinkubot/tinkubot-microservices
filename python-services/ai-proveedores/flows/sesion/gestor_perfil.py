@@ -132,3 +132,24 @@ async def obtener_perfil_proveedor_cacheado(telefono: str) -> Optional[Dict[str,
     if perfil:
         await cachear_perfil_proveedor(telefono, perfil)
     return perfil
+
+
+async def invalidar_cache_perfil_proveedor(telefono: str) -> bool:
+    """
+    Invalidar caché del perfil de proveedor por teléfono.
+
+    Args:
+        telefono: Número de teléfono del proveedor
+
+    Returns:
+        True si se solicitó la eliminación, False si no se pudo.
+    """
+    if not telefono:
+        return False
+
+    try:
+        await cliente_redis.delete(CLAVE_CACHE_PERFIL.format(telefono))
+        return True
+    except Exception as exc:
+        logger.warning(f"No se pudo invalidar cache de {telefono}: {exc}")
+        return False

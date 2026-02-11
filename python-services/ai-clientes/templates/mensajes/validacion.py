@@ -49,3 +49,16 @@ def solicitar_reformulacion() -> str:
 def solicitar_descripcion_servicio() -> str:
     """Solicita descripción del servicio."""
     return "Por favor describe el servicio."
+
+
+def mensaje_confirmar_servicio(servicio: str) -> str:
+    """Confirma el servicio detectado antes de continuar la búsqueda."""
+    from templates.comunes import pie_instrucciones_respuesta_numerica
+
+    servicio_texto = (servicio or "").strip() or "tu solicitud"
+    return (
+        f"*Entendí que necesitas:* **{servicio_texto}**\n\n"
+        f"{pie_instrucciones_respuesta_numerica}\n\n"
+        "1) Sí\n"
+        "2) No"
+    )

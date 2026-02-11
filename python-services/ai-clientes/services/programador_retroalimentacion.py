@@ -16,12 +16,14 @@ class ProgramadorRetroalimentacion:
         *,
         supabase,
         whatsapp_url: str,
+        whatsapp_account_id: str,
         retraso_retroalimentacion_segundos: float,
         intervalo_sondeo_tareas_segundos: float,
         logger,
     ) -> None:
         self.supabase = supabase
         self.whatsapp_url = whatsapp_url
+        self.whatsapp_account_id = whatsapp_account_id
         self.retraso_retroalimentacion_segundos = retraso_retroalimentacion_segundos
         self.intervalo_sondeo_tareas_segundos = intervalo_sondeo_tareas_segundos
         self.logger = logger
@@ -65,7 +67,12 @@ class ProgramadorRetroalimentacion:
             url = f"{self.whatsapp_url}/send"
             async with httpx.AsyncClient(timeout=10.0) as client:
                 respuesta = await client.post(
-                    url, json={"to": telefono, "message": texto}
+                    url,
+                    json={
+                        "account_id": self.whatsapp_account_id,
+                        "to": telefono,
+                        "message": texto,
+                    },
                 )
             if respuesta.status_code == 200:
                 return True

@@ -17,6 +17,10 @@ const supabaseProvidersTable =
 const supabaseProvidersBucket = (
   process.env.SUPABASE_PROVIDERS_BUCKET || 'tinkubot-providers'
 ).trim();
+const aiProveedoresUrl = (process.env.AI_PROVEEDORES_URL || '').trim();
+const aiProveedoresInternalToken = (
+  process.env.AI_PROVEEDORES_INTERNAL_TOKEN || ''
+).trim();
 
 const supabaseRestBaseUrl = supabaseUrl
   ? `${supabaseUrl.replace(/\/$/, '')}/rest/v1`
@@ -99,6 +103,27 @@ const withRequestId = (config, requestId) => {
   if (!config.headers) config.headers = {};
   config.headers['x-request-id'] = requestId;
   return config;
+};
+
+const invalidarCacheProveedor = async (phone, requestId = null) => {
+  if (!aiProveedoresUrl || !phone) return;
+
+  const baseUrl = aiProveedoresUrl.replace(/\/$/, '');
+  const headers = {};
+  if (requestId) headers['x-request-id'] = requestId;
+  if (aiProveedoresInternalToken) {
+    headers['x-internal-token'] = aiProveedoresInternalToken;
+  }
+
+  try {
+    await axiosClient.post(
+      `${baseUrl}/admin/invalidate-provider-cache`,
+      { phone },
+      { headers }
+    );
+  } catch (error) {
+    console.warn('⚠️ No se pudo invalidar cache de proveedor:', error?.message || error);
+  }
 };
 
 console.warn(
@@ -580,6 +605,8 @@ async function aprobarProveedor(providerId, payload = {}, requestId = null) {
       requestId
     });
 
+    await invalidarCacheProveedor(registro?.phone, requestId);
+
     return construirRespuestaAccion(providerId, 'approved', mensaje, registro);
   } catch (error) {
     throw gestionarErrorAxios(error);
@@ -701,6 +728,10 @@ async function revisarProveedor(providerId, payload = {}, requestId = null) {
       message: mensajeProveedor,
       requestId
     });
+
+    if (estadoFinal === 'approved') {
+      await invalidarCacheProveedor(registro?.phone || payload.phone, requestId);
+    }
 
     return construirRespuestaAccion(providerId, estadoFinal, 'Revisión guardada correctamente.', registro);
   } catch (error) {

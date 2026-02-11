@@ -128,7 +128,9 @@ class SearchService:
         logger.info(f"🎯 Estrategia seleccionada: {strategy.value}")
 
         # 4. Ejecutar búsqueda según estrategia
-        if strategy == SearchStrategy.TOKEN_BASED:
+        if strategy == SearchStrategy.EMBEDDINGS:
+            providers = await self._search_by_embeddings(request, query_analysis)
+        elif strategy == SearchStrategy.TOKEN_BASED:
             providers = await self._search_by_tokens(request, query_analysis)
         elif strategy == SearchStrategy.FULL_TEXT:
             providers = await self._search_fulltext(request, query_analysis)
@@ -148,7 +150,7 @@ class SearchService:
 
         # 6. Ordenar y limitar resultados
         providers = self._sort_and_limit_results(
-            providers, request.limit, request.offset
+            providers, request.limit, request.offset, strategy
         )
 
         # 7. Crear resultado
@@ -159,7 +161,7 @@ class SearchService:
             total_results=len(providers),
             search_time_ms=search_time_ms,
             confidence=self._calculate_overall_confidence(providers, query_analysis),
-            used_ai_enhancement=(strategy == SearchStrategy.AI_ENHANCED),
+            used_ai_enhancement=(strategy in {SearchStrategy.AI_ENHANCED, SearchStrategy.EMBEDDINGS}),
             cache_hit=False,
             filters_applied=request.filters.model_dump() if request.filters else {},
         )
@@ -183,7 +185,10 @@ class SearchService:
         ai_available = bool(settings.openai_api_key)
 
         # Respetar estrategia preferida explícita cuando sea posible
-        if request.preferred_strategy == SearchStrategy.AI_ENHANCED:
+        if request.preferred_strategy == SearchStrategy.EMBEDDINGS:
+            if ai_available:
+                return SearchStrategy.EMBEDDINGS
+        elif request.preferred_strategy == SearchStrategy.AI_ENHANCED:
             if request.use_ai_enhancement and ai_available:
                 return SearchStrategy.AI_ENHANCED
             # Sin API key, caerá a tokens
@@ -192,11 +197,126 @@ class SearchService:
         elif request.preferred_strategy == SearchStrategy.FULL_TEXT:
             return SearchStrategy.FULL_TEXT
 
-        # Default: priorizar IA si está habilitada y disponible, si no, tokens
-        if request.use_ai_enhancement and ai_available:
-            return SearchStrategy.AI_ENHANCED
+        # Default: embeddings si hay OpenAI, si no, tokens
+        if ai_available:
+            return SearchStrategy.EMBEDDINGS
 
         return SearchStrategy.TOKEN_BASED
+
+    async def _generate_embedding(self, text: str) -> Optional[List[float]]:
+        """Genera embedding para el texto de consulta con caché en Redis."""
+        if not self.openai_client or not text:
+            return None
+
+        # Generar clave de caché: embedding:{modelo}:{hash}
+        text_hash = hashlib.sha256(text.encode()).hexdigest()[:16]
+        cache_key = f"embedding:{settings.embeddings_model}:{text_hash}"
+
+        # Verificar caché Redis primero
+        try:
+            if cache_service.is_connected and cache_service.redis_client:
+                cached = await cache_service.redis_client.get(cache_key)
+                if cached:
+                    logger.info(f"✅ Cache HIT para query: {text[:50]}...")
+                    return json.loads(cached)
+                logger.info(f"❌ Cache MISS para query: {text[:50]}...")
+        except Exception as exc:
+            logger.warning(f"⚠️ Error verificando caché embedding: {exc}")
+
+        # Generar embedding con OpenAI
+        try:
+            async with self._openai_semaphore:
+                embedding = await asyncio.wait_for(
+                    self._openai_embed(text), timeout=settings.embeddings_timeout_seconds
+                )
+
+            # Guardar en caché Redis
+            try:
+                if cache_service.is_connected and cache_service.redis_client and embedding:
+                    await cache_service.redis_client.setex(
+                        cache_key,
+                        3600,  # TTL: 1 hora
+                        json.dumps(embedding)
+                    )
+                    logger.debug(f"💾 Embedding cacheado: {cache_key}")
+            except Exception as exc:
+                logger.warning(f"⚠️ Error guardando caché embedding: {exc}")
+
+            return embedding
+        except Exception as exc:
+            logger.warning(f"⚠️ Error generando embedding: {exc}")
+            return None
+
+    async def _openai_embed(self, text: str) -> List[float]:
+        response = await self.openai_client.embeddings.create(
+            model=settings.embeddings_model,
+            input=text,
+        )
+        return response.data[0].embedding
+
+    async def _search_by_embeddings(
+        self, request: SearchRequest, query_analysis: Dict[str, Any]
+    ) -> List[ProviderInfo]:
+        """Búsqueda por embeddings usando provider_services."""
+        try:
+            if not self.supabase:
+                raise Exception("Supabase client not initialized")
+
+            embedding = await self._generate_embedding(request.query)
+            if not embedding:
+                logger.warning("⚠️ Embedding no disponible, fallback a tokens")
+                return await self._search_by_tokens(request, query_analysis)
+
+            city = None
+            verified_only = True
+            if request.filters:
+                city = request.filters.city
+                verified_only = request.filters.verified_only
+
+            match_count = max(settings.vector_top_k, request.limit + request.offset)
+            params = {
+                "query_embedding": embedding,
+                "match_count": match_count,
+                "city_filter": f"%{city}%" if city else None,
+                "verified_only": verified_only,
+            }
+
+            response = await self._run_supabase(
+                lambda: self.supabase.rpc("match_provider_services", params).execute(),
+                label="providers.search_embeddings",
+            )
+
+            providers: List[ProviderInfo] = []
+            if response and response.data:
+                for row in response.data:
+                    providers.append(self._dict_to_provider_info_from_vector(row))
+            return providers
+        except Exception as exc:
+            logger.error(f"❌ Error en búsqueda por embeddings: {exc}")
+            return []
+
+    def _dict_to_provider_info_from_vector(self, row: Dict[str, Any]) -> ProviderInfo:
+        """Convertir resultado vectorial a ProviderInfo."""
+        services = row.get("services") or []
+        return ProviderInfo(
+            id=str(row.get("provider_id") or row.get("id")),
+            phone_number=row.get("phone", ""),
+            real_phone=row.get("real_phone"),
+            full_name=row.get("full_name", ""),
+            city=row.get("city"),
+            rating=float(row.get("rating", 0.0)),
+            available=self._normalize_available(
+                row.get("available"), row.get("verified")
+            ),
+            verified=row.get("verified", False),
+            professions=[],
+            services=services,
+            years_of_experience=row.get("experience_years"),
+            created_at=row.get("created_at", datetime.now()),
+            social_media_url=row.get("social_media_url"),
+            social_media_type=row.get("social_media_type"),
+            face_photo_url=row.get("face_photo_url"),
+        )
 
     async def _search_by_tokens(
         self, request: SearchRequest, query_analysis: Dict[str, Any]
@@ -563,13 +683,20 @@ consultas de búsqueda para maximizar la relevancia con los proveedores disponib
         return filtered_providers
 
     def _sort_and_limit_results(
-        self, providers: List[ProviderInfo], limit: int, offset: int
+        self,
+        providers: List[ProviderInfo],
+        limit: int,
+        offset: int,
+        strategy: Optional[SearchStrategy] = None,
     ) -> List[ProviderInfo]:
         """Ordenar y paginar resultados"""
-        # Ordenar por rating (descendente) y fecha (más recientes primero)
-        sorted_providers = sorted(
-            providers, key=lambda p: (p.rating, p.created_at), reverse=True
-        )
+        if strategy == SearchStrategy.EMBEDDINGS:
+            sorted_providers = list(providers)
+        else:
+            # Ordenar por rating (descendente) y fecha (más recientes primero)
+            sorted_providers = sorted(
+                providers, key=lambda p: (p.rating, p.created_at), reverse=True
+            )
 
         # Aplicar paginación
         start_idx = offset

@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, Optional
 
+from flows.mensajes import mensaje_inicial_solicitud, solicitar_ciudad
 
 async def pre_enrutar_mensaje(
     orquestador,
@@ -16,6 +17,10 @@ async def pre_enrutar_mensaje(
     Retorna:
         - {"response": <dict>} si hay salida temprana
         - {"context": {...}} si debe continuar el enrutador
+
+    NOTA: Los timestamps (last_seen_at, last_seen_at_prev) se actualizan
+    en enrutador.py, NO aquí, para evitar sobrescribir valores necesarios
+    para el cálculo de timeout.
     """
     telefono = (carga.get("from_number") or "").strip()
     if not telefono:
@@ -28,38 +33,62 @@ async def pre_enrutar_mensaje(
     else:
         perfil_cliente = await orquestador.obtener_o_crear_cliente(telefono=telefono)
 
-    if not perfil_cliente:
-        if orquestador.servicio_consentimiento:
-            return {
-                "response": await orquestador.servicio_consentimiento.solicitar_consentimiento(
-                    telefono
-                )
-            }
-        return {"response": await orquestador.solicitar_consentimiento(telefono)}
-
-    if not perfil_cliente.get("has_consent"):
-        return {
-            "response": await orquestador._validar_consentimiento(
-                telefono, perfil_cliente, carga
-            )
-        }
-
     if orquestador.repositorio_flujo:
         flujo = await orquestador.repositorio_flujo.obtener(telefono)
     else:
         flujo = await orquestador.obtener_flujo(telefono)
 
-    ahora_utc = datetime.utcnow()
-    ahora_iso = ahora_utc.isoformat()
-    flujo["last_seen_at"] = ahora_iso
+    if not isinstance(flujo, dict):
+        flujo = {}
 
-    resultado_inactividad = await orquestador._manejar_inactividad(
-        telefono, flujo, ahora_utc
+    requiere_consentimiento = (not perfil_cliente) or (
+        perfil_cliente and not perfil_cliente.get("has_consent")
     )
-    if resultado_inactividad:
-        return {"response": resultado_inactividad}
+    if requiere_consentimiento:
+        flujo["state"] = "awaiting_consent"
 
-    flujo["last_seen_at_prev"] = ahora_iso
+    # Función auxiliar para actualizar timestamps en retornos tempranos
+    async def actualizar_y_guardar_flujo():
+        ahora_utc = datetime.utcnow()
+        ahora_iso = ahora_utc.isoformat()
+        valor_anterior = flujo.get("last_seen_at")
+        flujo["last_seen_at"] = ahora_iso
+        # Solo establecer last_seen_at_prev si hay un valor anterior válido
+        if valor_anterior:
+            flujo["last_seen_at_prev"] = valor_anterior
+        # Dejar last_seen_at_prev como None en conversaciones nuevas
+        if orquestador.repositorio_flujo:
+            await orquestador.repositorio_flujo.guardar(telefono, flujo)
+        else:
+            await orquestador.guardar_flujo(telefono, flujo)
+
+    if requiere_consentimiento:
+        await actualizar_y_guardar_flujo()
+
+        if not perfil_cliente:
+            if orquestador.servicio_consentimiento:
+                return {
+                    "response": await orquestador.servicio_consentimiento.solicitar_consentimiento(
+                        telefono
+                    )
+                }
+            return {"response": await orquestador.solicitar_consentimiento(telefono)}
+
+        resultado_consentimiento = await orquestador._validar_consentimiento(
+            telefono, perfil_cliente, carga
+        )
+        if resultado_consentimiento.get("consent_status") == "accepted":
+            ciudad_guardada = (perfil_cliente.get("city") or "").strip()
+            if ciudad_guardada:
+                flujo["state"] = "awaiting_service"
+                await actualizar_y_guardar_flujo()
+                return {"response": mensaje_inicial_solicitud()}
+
+            flujo["state"] = "awaiting_city"
+            await actualizar_y_guardar_flujo()
+            return {"response": solicitar_ciudad()}
+
+        return {"response": resultado_consentimiento}
 
     cliente_id = await orquestador._sincronizar_cliente(flujo, perfil_cliente)
 
@@ -79,6 +108,8 @@ async def pre_enrutar_mensaje(
         telefono, flujo, texto
     )
     if resultado_reinicio:
+        # Actualizar timestamps en retorno por reinicio
+        await actualizar_y_guardar_flujo()
         return {"response": resultado_reinicio}
 
     if texto:
@@ -100,6 +131,8 @@ async def pre_enrutar_mensaje(
     orquestador.logger.info(f"🏷️ Tipo de mensaje: {tipo_mensaje}")
     orquestador.logger.info(f"🔧 Flujo completo: {flujo}")
 
+    tiene_consentimiento = bool(perfil_cliente and perfil_cliente.get("has_consent"))
+
     return {
         "context": {
             "phone": telefono,
@@ -109,5 +142,6 @@ async def pre_enrutar_mensaje(
             "msg_type": tipo_mensaje,
             "location": ubicacion,
             "customer_id": cliente_id,
+            "has_consent": tiene_consentimiento,
         }
     }
