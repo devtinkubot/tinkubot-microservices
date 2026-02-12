@@ -15,7 +15,7 @@ async def procesar_estado_confirmar_servicio(
 ) -> Dict[str, Any]:
     """Confirma el servicio detectado antes de iniciar búsqueda."""
     eleccion = (seleccionado or texto or "").strip()
-    eleccion_norm = eleccion.lower()
+    eleccion_norm = eleccion.lower().strip().strip("*").rstrip(".)")
     service_candidate = (flujo.get("service_candidate") or "").strip()
 
     if eleccion_norm in {"1", "si", "sí", "s"} or interpretar_si_no_fn(eleccion) is True:
@@ -42,4 +42,8 @@ async def procesar_estado_confirmar_servicio(
         await guardar_flujo_fn(flujo)
         return {"response": mensaje_inicial_solicitud}
 
-    return {"response": f"Por favor responde 1) Sí o 2) No para confirmar {service_candidate}."}
+    return {
+        "response": (
+            f"Por favor responde *1.* Sí o *2.* No para confirmar {service_candidate}."
+        )
+    }

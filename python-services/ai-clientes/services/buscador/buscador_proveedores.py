@@ -43,7 +43,7 @@ class BuscadorProveedores:
         Buscar proveedores usando Search Service + validación IA.
 
         Flujo:
-        1. Búsqueda token-based rápida (sin AI-Enhanced)
+        1. Búsqueda embeddings-only en Search Service
         2. Validación con IA para filtrar proveedores que REALMENTE pueden ayudar
         3. Retornar solo proveedores validados
 
@@ -68,13 +68,12 @@ class BuscadorProveedores:
         )
 
         try:
-            # Búsqueda token-based (rápida, sin IA-Enhanced)
+            # Búsqueda embeddings-only
             resultado = await self.cliente_busqueda.buscar_proveedores(
                 consulta=consulta,
                 ciudad=ciudad,
                 descripcion_problema=descripcion_problema or profesion,
                 limite=10,
-                usar_mejora_ia=False,
             )
 
             if not resultado.get("ok"):

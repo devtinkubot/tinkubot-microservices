@@ -15,9 +15,9 @@ def solicitar_confirmacion_eliminacion() -> str:
         "- Tus fotos y documentos\n"
         "- Todas tus configuraciones\n\n"
         "*Esta acción NO se puede deshacer*\n\n"
-        "Responde:\n"
-        "1) Confirmar eliminación\n"
-        "2) Cancelar y volver al menú"
+        "*Responde:*\n"
+        "*1.* Confirmar eliminación\n"
+        "*2.* Cancelar y volver al menú"
     )
 
 

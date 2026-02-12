@@ -19,11 +19,13 @@ func (wc *WebhookClient) Send(ctx context.Context, payload *WebhookPayload) (*We
 	for attempt := 0; attempt <= wc.retryAttempts; attempt++ {
 		if attempt > 0 {
 			log.Printf("[Webhook] Retry %d/%d for %s", attempt, wc.retryAttempts, payload.AccountID)
-			time.Sleep(time.Duration(attempt) * time.Second)
+			backoff := time.Duration(attempt) * time.Second
+			select {
+			case <-time.After(backoff):
+			case <-ctx.Done():
+				return nil, fmt.Errorf("request canceled while retrying webhook: %w", ctx.Err())
+			}
 		}
-
-		timeout := time.Duration(wc.timeout) * time.Millisecond
-		client := &http.Client{Timeout: timeout}
 
 		jsonData, err := json.Marshal(payload)
 		if err != nil {
@@ -40,7 +42,7 @@ func (wc *WebhookClient) Send(ctx context.Context, payload *WebhookPayload) (*We
 		req.Header.Set("User-Agent", "wa-gateway/1.0")
 		req.Header.Set("X-Account-ID", payload.AccountID)
 
-		resp, err := client.Do(req)
+		resp, err := wc.httpClient.Do(req)
 		if err != nil {
 			lastErr = fmt.Errorf("request failed: %w", err)
 			continue

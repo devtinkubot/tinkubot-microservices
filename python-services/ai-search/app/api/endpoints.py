@@ -3,41 +3,39 @@ Endpoints API para Search Service
 """
 
 import logging
-import time
 import uuid
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Query, Request
 from models.schemas import (
     BulkIndexRequest,
     BulkIndexResponse,
-    ErrorResponse,
     HealthCheck,
     Metrics,
-    ProviderInfo,
     SearchMetadata,
     SearchRequest,
     SearchResult,
-    SuggestionRequest,
     SuggestionResponse,
 )
 from services.cache_service import cache_service
-from services.search_service import search_service
+from services.search_service import EmbeddingUnavailableError, search_service
 from utils.text_processor import analyze_query
 
 from app.config import settings
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+ALLOWED_SEARCH_FIELDS = {"query", "context", "filters", "limit", "offset"}
 
 
 @router.post("/search", response_model=SearchResult)
 async def search_providers(
     request: SearchRequest,
+    raw_request: Request,
     background_tasks: BackgroundTasks,
     x_request_id: Optional[str] = None,
+    x_internal_token: Optional[str] = Header(default=None),
 ):
     """
     Buscar proveedores por texto libre
@@ -45,11 +43,32 @@ async def search_providers(
     - **query**: Texto de búsqueda (ej: "necesito médico en Quito")
     - **filters**: Filtros opcionales (ciudad, rating, etc.)
     - **limit**: Límite de resultados (default: 10)
-    - **use_ai_enhancement**: Usar IA para mejorar búsqueda (default: true)
+    - **offset**: Desplazamiento para paginación
     """
     request_id = x_request_id or str(uuid.uuid4())
 
     try:
+        # Seguridad interna: solo llamadas autenticadas desde servicios internos.
+        if not settings.ai_search_internal_token:
+            logger.error("❌ AI_SEARCH_INTERNAL_TOKEN no está configurado")
+            raise HTTPException(status_code=503, detail="internal_token_not_configured")
+
+        if x_internal_token != settings.ai_search_internal_token:
+            logger.warning("⚠️ Token interno inválido en /search request_id=%s", request_id)
+            raise HTTPException(status_code=401, detail="unauthorized")
+
+        # Detección no bloqueante de campos legacy/extras.
+        payload_raw = await raw_request.json()
+        if isinstance(payload_raw, dict):
+            extra_fields = sorted(set(payload_raw.keys()) - ALLOWED_SEARCH_FIELDS)
+            if extra_fields:
+                logger.warning(
+                    "⚠️ Campos legacy/no esperados detectados en /search request_id=%s extras=%s",
+                    request_id,
+                    extra_fields,
+                )
+                await cache_service.increment_counter("legacy_search_fields_received")
+
         logger.info(f"🔍 Búsqueda [{request_id}]: {request.query}")
 
         # Validar límite
@@ -75,6 +94,12 @@ async def search_providers(
 
         return result
 
+    except EmbeddingUnavailableError as e:
+        logger.warning(f"⚠️ Embeddings no disponible [{request_id}]: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail="embedding_unavailable",
+        )
     except HTTPException:
         raise
     except Exception as e:

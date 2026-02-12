@@ -18,7 +18,7 @@ def bloque_listado_proveedores_compacto(proveedores: List[Dict[str, Any]]) -> st
         nombre = (
             proveedor.get("name") or proveedor.get("provider_name") or "Proveedor"
         ).strip()
-        lineas.append(f"{indice}) {nombre}")
+        lineas.append(f"*{indice}.* {nombre}")
     lineas.append("")
     return "\n".join(lineas)
 
@@ -35,7 +35,7 @@ def mensaje_listado_sin_resultados(ciudad: str) -> str:
 
 def instruccion_seleccion_numero() -> str:
     """Instrucción para seleccionar proveedor por número."""
-    return "Indica el número (1-5) del proveedor que quieres ver."
+    return "Indica el número del 1 al 5 del proveedor que quieres ver."
 def error_proveedor_no_encontrado() -> str:
     """Error cuando no se encuentra el proveedor seleccionado."""
     return "No encontré ese proveedor, elige otra opción."

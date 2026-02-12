@@ -4,13 +4,9 @@ Microservicio especializado en búsqueda ultra-rápida de proveedores para Tinku
 
 ## 🚀 Características
 
-- **Búsqueda por tokens**: Ultra-rápida (< 50ms) usando índices optimizados
-- **Búsqueda full-text**: Para consultas complejas y descriptivas
-- **Búsqueda híbrida**: Combina múltiples estrategias
-- **Mejora con IA**: OpenAI integrada para consultas ambiguas
+- **Embeddings-only**: búsqueda semántica vectorial como única estrategia
 - **Caché inteligente**: Redis para respuestas instantáneas
-- **Orquestación automática**: Selecciona la mejor estrategia según la consulta
-- **Normalización avanzada**: Texto sin acentos, minúsculas, sin caracteres especiales
+- **Normalización avanzada**: texto sin acentos, minúsculas, sin caracteres especiales
 
 ## 📋 Arquitectura
 
@@ -26,7 +22,7 @@ Microservicio especializado en búsqueda ultra-rápida de proveedores para Tinku
                                 │
                        ┌────────▼────────┐
                        │   OpenAI API    │
-                       │  (opcional)     │
+                       │  (obligatorio)  │
                        └─────────────────┘
 ```
 
@@ -77,8 +73,7 @@ Content-Type: application/json
     "min_rating": 4.0,
     "city": "Quito"
   },
-  "limit": 10,
-  "use_ai_enhancement": true
+  "limit": 10
 }
 ```
 
@@ -100,42 +95,22 @@ GET /api/v1/analyze?q=necesito plomero en guayaquil
 GET /api/v1/health
 ```
 
-## 🎯 Estrategias de Búsqueda
+## 🎯 Estrategia de Búsqueda
 
-### 1. Token-Based (por defecto)
-- **Velocidad**: < 50ms
-- **Ideal**: "médico quito", "plomero", "abogado"
-- **Cómo funciona**: Busca coincidencias exactas de tokens normalizados
-
-### 2. Full-Text
-- **Velocidad**: 100-200ms
-- **Ideal**: "necesito alguien que arregle la tubería de la cocina"
-- **Cómo funciona**: Búsqueda semántica con PostgreSQL tsvector
-
-### 3. Hybrid
-- **Velocidad**: 100-300ms
-- **Ideal**: Consultas con múltiples interpretaciones
-- **Cómo funciona**: Combina resultados de ambas estrategias
-
-### 4. AI-Enhanced
-- **Velocidad**: 300-600ms
-- **Ideal**: "ayuda con algo legal", "tengo un problema técnico"
-- **Cómo funciona**: OpenAI mejora la consulta antes de buscar
+### Embeddings (única estrategia)
+- **Cómo funciona**: genera embedding de la consulta y hace match vectorial en base de datos.
+- **Comportamiento ante falla de embeddings**: fail-fast (error controlado, sin fallback a estrategias legacy).
 
 ## 🗃️ Base de Datos Optimizada
 
 ### Índices Especializados
 
 ```sql
--- Búsqueda por contención de arrays
-CREATE INDEX idx_profession_tokens_gin
-ON provider_search_index USING GIN(profession_tokens);
-
--- Búsqueda full-text
+-- Índice vectorial / semántico
 CREATE INDEX idx_search_vector_gin
 ON provider_search_index USING GIN(search_vector);
 
--- Búsquedas compuestas
+-- Búsquedas compuestas para filtros
 CREATE INDEX idx_city_active
 ON provider_search_index(city_normalized, is_active);
 ```
@@ -143,11 +118,12 @@ ON provider_search_index(city_normalized, is_active);
 ### Funciones de Búsqueda
 
 ```sql
--- Búsqueda optimizada por tokens
-SELECT * FROM search_providers_by_tokens(
-    ARRAY['medico', 'doctor'],
-    'Quito',
-    10, 0
+-- Búsqueda vectorial optimizada
+SELECT * FROM match_provider_services(
+    query_embedding := :embedding,
+    match_count := 30,
+    city_filter := '%Quito%',
+    verified_only := true
 );
 ```
 
@@ -164,18 +140,11 @@ async def search_in_service(query: str):
             "http://search-token:8000/api/v1/search",
             json={
                 "query": query,
-                "use_ai_enhancement": True,
                 "limit": 5
             }
         )
         return response.json()
 ```
-
-### Flujo de Decisión
-
-1. **Consulta clara** → Token-based (instantáneo)
-2. **Consulta ambigua** → AI-enhanced (inteligente)
-3. **Consulta compleja** → Hybrid (completo)
 
 ## 📊 Métricas y Monitoreo
 
@@ -206,7 +175,7 @@ curl http://localhost:9091/metrics
 |----------|---------|-------------|
 | `DATABASE_URL` | - | URL de PostgreSQL |
 | `REDIS_URL` | `redis://localhost:6379/1` | URL de Redis |
-| `OPENAI_API_KEY` | - | API Key de OpenAI (opcional) |
+| `OPENAI_API_KEY` | - | API Key de OpenAI (obligatoria) |
 | `MAX_SEARCH_RESULTS` | `20` | Máximo de resultados |
 | `CACHE_TTL_SECONDS` | `300` | TTL del caché |
 
@@ -302,7 +271,7 @@ curl http://localhost:8000/api/v1/cache/info
 curl -X DELETE http://localhost:8000/api/v1/cache/clear
 ```
 
-**IA no mejora consultas**
+**Embeddings no disponibles**
 ```bash
 # Verificar API Key
 curl -H "Authorization: Bearer $OPENAI_API_KEY" \
@@ -314,7 +283,7 @@ curl -H "Authorization: Bearer $OPENAI_API_KEY" \
 - [ ] Búsqueda por geolocalización
 - [ ] Aprendizaje automático de preferencias
 - [ ] Búsqueda por disponibilidad en tiempo real
-- [ ] Integración con más APIs de IA
+- [ ] Optimización de recuperación vectorial
 - [ ] Sistema de recomendaciones personalizado
 
 ## 📝 Licencia

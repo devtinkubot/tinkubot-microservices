@@ -141,6 +141,8 @@ def _parsear_respuesta_disponibilidad(texto: str) -> Optional[str]:
     if not normalizado:
         return None
 
+    normalizado = normalizado.strip("*").rstrip(".)")
+
     if normalizado in {"1", "si", "s", "ok", "dale", "disponible", "acepto"}:
         return "accepted"
     if normalizado in {"2", "no", "n", "ocupado", "no disponible"}:

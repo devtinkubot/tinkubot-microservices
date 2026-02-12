@@ -60,8 +60,8 @@ def manejar_confirmacion_servicios(
             "messages": [
                 {
                     "response": "*Por favor selecciona una opción:*\n"
-                    "1) Sí, continuar\n"
-                    "2) No, corregir"
+                    "*1.* Sí, continuar\n"
+                    "*2.* No, corregir"
                 }
             ],
         }

@@ -152,10 +152,10 @@ def menu_opciones_detalle_proveedor() -> str:
 
     return "\n".join(
         [
-            pie_instrucciones_respuesta_numerica,
+            f"*{pie_instrucciones_respuesta_numerica}*",
             "",
-            "1) Seleccionar a este proveedor",
-            "2) Regresar al listado de proveedores",
-            "3) Salir",
+            "*1.* Seleccionar a este proveedor",
+            "*2.* Regresar al listado de proveedores",
+            "*3.* Salir",
         ]
     )

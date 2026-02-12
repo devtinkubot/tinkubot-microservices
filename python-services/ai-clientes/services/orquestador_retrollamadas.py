@@ -61,6 +61,8 @@ class OrquestadorRetrollamadas:
             return {}
 
     async def solicitar_consentimiento(self, telefono: str):
+        from templates.mensajes.consentimiento import mensajes_flujo_consentimiento
+
         flujo = (
             await self.repositorio_flujo.obtener(telefono)
             if self.repositorio_flujo
@@ -69,13 +71,9 @@ class OrquestadorRetrollamadas:
         flujo["state"] = "awaiting_consent"
         if self.repositorio_flujo:
             await self.repositorio_flujo.guardar(telefono, flujo)
+        mensajes = mensajes_flujo_consentimiento()
         return {
-            "messages": [
-                {"response": "*¿Aceptas que TinkuBot use tus datos?*"},
-                {
-                    "response": "*Responde con el número de tu opción:\n\n1) Acepto\n2) No acepto"
-                },
-            ]
+            "messages": [{"response": msg} for msg in mensajes]
         }
 
     async def manejar_respuesta_consentimiento(
@@ -85,8 +83,9 @@ class OrquestadorRetrollamadas:
         opcion_seleccionada: str = None,
         carga: Dict[str, Any] = None,
     ):
-        if opcion_seleccionada and opcion_seleccionada.strip() in ["1", "2"]:
-            acepta = opcion_seleccionada.strip() == "1"
+        opcion_normalizada = (opcion_seleccionada or "").strip().strip("*").rstrip(".)")
+        if opcion_normalizada in {"1", "2"}:
+            acepta = opcion_normalizada == "1"
             if acepta:
                 if self.repositorio_clientes and perfil_cliente:
                     await self.repositorio_clientes.actualizar_consentimiento(

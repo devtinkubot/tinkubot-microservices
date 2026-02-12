@@ -22,8 +22,8 @@ def mensaje_confirmacion_servicios(servicios: List[str]) -> str:
 🔍 *Estos servicios ayudarán a que los clientes te encuentren mejor cuando busquen soluciones.*
 
 ¿Estás de acuerdo con esta lista?
-1) Sí, continuar
-2) No, corregir""".strip()
+*1.* Sí, continuar
+*2.* No, corregir""".strip()
 
 
 def mensaje_correccion_servicios() -> str:

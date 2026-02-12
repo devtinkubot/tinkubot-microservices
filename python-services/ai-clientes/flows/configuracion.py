@@ -30,5 +30,6 @@ RESET_KEYWORDS = {
 MAX_CONFIRM_ATTEMPTS = 2
 
 FAREWELL_MESSAGE = (
-    "*¡Gracias por utilizar nuestros servicios!* Si necesitas otro apoyo, solo escríbeme."
+    "*¡Gracias por usar TinkuBot!*\n"
+    "Si necesitas otro apoyo, solo escríbeme."
 )

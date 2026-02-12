@@ -20,7 +20,7 @@ def informar_datos_recibidos() -> str:
 def pedir_confirmacion_resumen() -> str:
     """Solicita aceptar o rechazar el resumen mostrado."""
     return (
-        "Responde con el número de tu opción:\n\n"
-        "1) Acepto\n"
-        "2) No acepto"
+        "*Responde con el número de tu opción:*\n\n"
+        "*1.* Acepto\n"
+        "*2.* No acepto"
     )

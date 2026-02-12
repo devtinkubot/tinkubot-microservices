@@ -3,20 +3,9 @@ Modelos de datos para Search Service
 """
 
 from datetime import datetime
-from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
-
-
-class SearchStrategy(str, Enum):
-    """Estrategias de búsqueda disponibles"""
-
-    TOKEN_BASED = "token_based"
-    FULL_TEXT = "full_text"
-    HYBRID = "hybrid"
-    AI_ENHANCED = "ai_enhanced"
-    EMBEDDINGS = "embeddings"
 
 
 class SearchFilters(BaseModel):
@@ -40,8 +29,6 @@ class SearchRequest(BaseModel):
     filters: Optional[SearchFilters] = None
     limit: int = Field(default=10, ge=1, le=50)
     offset: int = Field(default=0, ge=0)
-    use_ai_enhancement: bool = True
-    preferred_strategy: SearchStrategy = SearchStrategy.EMBEDDINGS
 
 
 class ProviderInfo(BaseModel):
@@ -68,11 +55,11 @@ class SearchMetadata(BaseModel):
     """Metadatos de búsqueda"""
 
     query_tokens: List[str]
-    search_strategy: SearchStrategy
+    search_strategy: str
     total_results: int
     search_time_ms: int
     confidence: float = Field(ge=0.0, le=1.0)
-    used_ai_enhancement: bool
+    used_embeddings: bool
     cache_hit: bool = False
     filters_applied: Dict[str, Any]
 

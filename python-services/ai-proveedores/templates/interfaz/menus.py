@@ -10,20 +10,20 @@ MENU_PRINCIPAL_PROVEEDOR = (
     "\n"
     f"{pie_instrucciones_respuesta_numerica}\n"
     "\n"
-    "1) Registro\n"
-    "2) Salir\n"
+    "*1.* Registro\n"
+    "*2.* Salir\n"
 )
 
 MENU_POST_REGISTRO_PROVEEDOR = (
-    "*Menú de Proveedor*\n"
+    "*Menú de Proveedores*\n"
     "\n"
-    f"{pie_instrucciones_respuesta_numerica}\n"
+    "*1.* Gestionar servicios\n"
+    "*2.* Actualizar selfie\n"
+    "*3.* Actualizar redes sociales\n"
+    "*4.* Eliminar mi registro\n"
+    "*5.* Salir\n"
     "\n"
-    "1) Gestionar servicios\n"
-    "2) Actualizar selfie\n"
-    "3) Actualizar redes sociales (Instagram/Facebook)\n"
-    "4) Eliminar mi registro\n"
-    "5) Salir\n"
+    "*Responde con el número de opción para ver detalles.*\n"
 )
 
 # ==================== FUNCIONES ====================
@@ -44,25 +44,27 @@ def mensaje_menu_servicios_proveedor(servicios: List[str], max_servicios: int) -
     encabezado = ["*Gestión de Servicios*", ""]
 
     if servicios:
-        listado = ["Servicios registrados:"]
+        listado = ["*Servicios registrados:*", ""]
         listado.extend(
             [f"{idx + 1}. {servicio}" for idx, servicio in enumerate(servicios)]
         )
+        listado.append("")
     else:
         listado = ["Todavía no registras servicios."]
 
     limite_texto = (
-        f"(Puedes tener hasta {max_servicios} servicios activos)."
+        f"(*Nota:* Puedes tener hasta {max_servicios} servicios activos)."
         if max_servicios
         else ""
     )
 
     opciones = [
-        f"{pie_instrucciones_respuesta_numerica} {limite_texto}".strip(),
+        f"*{pie_instrucciones_respuesta_numerica}*",
+        limite_texto,
         "",
-        "1) Agregar servicio",
-        "2) Eliminar servicio",
-        "3) Volver al menú principal",
+        "*1.* Agregar servicio",
+        "*2.* Eliminar servicio",
+        "*3.* Volver al menú principal",
     ]
 
     cuerpo = encabezado + listado + opciones

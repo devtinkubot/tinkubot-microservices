@@ -202,6 +202,8 @@ async def startup_event():
 async def shutdown_event():
     """Limpiar conexiones al detener el servicio"""
     logger.info("🔴 Deteniendo AI Service Clientes...")
+    await cliente_busqueda.close()
+    await servicio_disponibilidad.close()
     await redis_client.disconnect()
     logger.info("✅ Conexiones cerradas")
 

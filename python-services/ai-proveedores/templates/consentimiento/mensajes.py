@@ -30,8 +30,8 @@ def bloque_opciones_consentimiento() -> str:
     """Genera el bloque de opciones numeradas para consentimiento."""
     return "\n".join(
         [
-            "1) Acepto",
-            "2) No acepto",
+            "*1.* Acepto",
+            "*2.* No acepto",
         ]
     )
 

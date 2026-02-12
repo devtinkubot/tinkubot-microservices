@@ -59,9 +59,9 @@ def menu_opciones_confirmacion(incluir_opcion_ciudad: bool = False) -> str:
             [
                 f"{pie_instrucciones_respuesta_numerica}",
                 "",
-                "1) Buscar en otra ciudad",
-                f"2) {opciones_confirmar_nueva_busqueda_textos[0]}",
-                "3) Salir",
+                "*1.* Buscar en otra ciudad",
+                f"*2.* {opciones_confirmar_nueva_busqueda_textos[0]}",
+                "*3.* Salir",
                 "",
             ]
         )
@@ -70,8 +70,8 @@ def menu_opciones_confirmacion(incluir_opcion_ciudad: bool = False) -> str:
             [
                 f"{pie_instrucciones_respuesta_numerica}",
                 "",
-                f"1) {opciones_confirmar_nueva_busqueda_textos[0]}",
-                "2) Salir",
+                f"*1.* {opciones_confirmar_nueva_busqueda_textos[0]}",
+                "*2.* Salir",
                 "",
             ]
         )

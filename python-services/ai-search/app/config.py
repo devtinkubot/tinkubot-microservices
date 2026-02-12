@@ -19,6 +19,7 @@ class Settings(BaseSettings):
 
     # OpenAI Configuration
     openai_api_key: str = ""
+    ai_search_internal_token: str = ""
 
     # Supabase Configuration
     supabase_url: str = ""
@@ -33,7 +34,9 @@ class Settings(BaseSettings):
     search_timeout_ms: int = 5000
     max_openai_concurrency: int = 5
     embeddings_model: str = "text-embedding-3-small"
-    embeddings_timeout_seconds: int = 8
+    embeddings_timeout_seconds: int = 20
+    embeddings_retry_attempts: int = 1
+    embeddings_retry_backoff_ms: int = 300
     vector_top_k: int = 30
     vector_similarity: str = "cosine"
 

@@ -15,7 +15,7 @@ import (
 
 // SSEClient represents a connected SSE client
 type SSEClient struct {
-	ID     string
+	ID      string
 	Channel chan whatsmeow.Event
 }
 
@@ -54,8 +54,6 @@ func (h *SSEHub) RemoveClient(clientID string) {
 // Broadcast sends an event to all connected clients
 func (h *SSEHub) Broadcast(event whatsmeow.Event) {
 	h.mu.RLock()
-	defer h.mu.RUnlock()
-
 	deadClients := []string{}
 
 	for clientID, client := range h.clients {
@@ -67,6 +65,7 @@ func (h *SSEHub) Broadcast(event whatsmeow.Event) {
 			deadClients = append(deadClients, clientID)
 		}
 	}
+	h.mu.RUnlock()
 
 	// Remove dead clients
 	for _, clientID := range deadClients {
@@ -90,15 +89,15 @@ func (h *Handlers) EventStream(c *gin.Context) {
 	c.Header("X-Accel-Buffering", "no")
 
 	// Get filter parameters (optional)
-	accountsFilter := c.Query("accounts")   // comma-separated list
-	eventsFilter := c.Query("events")       // comma-separated list
+	accountsFilter := c.Query("accounts") // comma-separated list
+	eventsFilter := c.Query("events")     // comma-separated list
 
 	// Create client channel with buffer
 	clientChan := make(chan whatsmeow.Event, 100)
 
 	// Create SSE client
 	client := &SSEClient{
-		ID:     generateSessionID(),
+		ID:      generateSessionID(),
 		Channel: clientChan,
 	}
 

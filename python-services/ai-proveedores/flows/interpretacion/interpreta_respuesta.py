@@ -38,6 +38,11 @@ def interpretar_respuesta(text: Optional[str], modo: str = "menu") -> Optional[o
 
     # Modo consentimiento (sí/no)
     if modo == "consentimiento":
+        if normalized_value.startswith("1"):
+            return True
+        if normalized_value.startswith("2"):
+            return False
+
         affirmative = {
             "1",
             "si",

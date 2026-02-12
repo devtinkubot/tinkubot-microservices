@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 from typing import Any, Callable, Dict, Optional
 
 import redis.asyncio as redis
@@ -21,6 +22,12 @@ class ClienteRedis:
         self._connected = False
         self._retry_count = 0
         self._max_retries = 3
+        self._memory_fallback_enabled = (
+            os.getenv("REDIS_MEMORY_FALLBACK_ENABLED", "false").lower() == "true"
+        )
+
+    def _can_use_memory_fallback(self) -> bool:
+        return self._memory_fallback_enabled
 
     async def connect(self):
         """Conectar a Redis usando la configuración de Upstash con reintentos"""
@@ -45,9 +52,14 @@ class ClienteRedis:
                     await asyncio.sleep(1 * (attempt + 1))  # Backoff exponencial simple
                 else:
                     logger.error(f"❌ No se pudo conectar a Redis después de {self._max_retries} intentos")
-                    logger.warning("⚠️ Modo fallback activado: usando memoria local para sesiones")
                     self._connected = False
-                    # No lanzar excepción, continuar en modo fallback
+                    if self._can_use_memory_fallback():
+                        logger.warning("⚠️ Modo fallback activado: usando memoria local para sesiones")
+                    else:
+                        logger.error(
+                            "❌ Redis no disponible y fallback en memoria deshabilitado "
+                            "(REDIS_MEMORY_FALLBACK_ENABLED=false)"
+                        )
 
     async def disconnect(self):
         """Desconectar de Redis"""
@@ -92,7 +104,10 @@ class ClienteRedis:
                     logger.error(f"❌ Error en reintento de publicación: {retry_error}")
 
         # Fallback: Pub/Sub no tiene equivalente local, solo log
-        logger.warning(f"⚠️ Pub/Sub no disponible en modo fallback: canal '{channel}' ignorado")
+        if self._can_use_memory_fallback():
+            logger.warning(f"⚠️ Pub/Sub no disponible en modo fallback: canal '{channel}' ignorado")
+            return
+        raise RuntimeError("Redis Pub/Sub no disponible y fallback en memoria deshabilitado")
 
     async def subscribe(self, channel: str, callback: Callable):
         """Suscribirse a canal Redis Pub/Sub"""
@@ -131,10 +146,14 @@ class ClienteRedis:
                 logger.debug(f"💾 Guardado en Redis: {key}")
                 return
             except Exception as e:
-                logger.warning(f"⚠️ Error guardando en Redis, usando fallback local: {e}")
+                logger.warning(f"⚠️ Error guardando en Redis: {e}")
                 # Continuar con fallback local
 
         # Fallback: guardar en memoria local
+        if not self._can_use_memory_fallback():
+            raise RuntimeError(
+                "Redis no disponible para set y fallback en memoria deshabilitado"
+            )
         try:
             if isinstance(value, (dict, list)):
                 value = json.dumps(value)
@@ -164,10 +183,12 @@ class ClienteRedis:
                         return value
                 return None
             except Exception as e:
-                logger.warning(f"⚠️ Error obteniendo de Redis, usando fallback local: {e}")
+                logger.warning(f"⚠️ Error obteniendo de Redis: {e}")
                 # Continuar con fallback local
 
         # Fallback: obtener de memoria local
+        if not self._can_use_memory_fallback():
+            return None
         try:
             self._cleanup_expired_memory()
             value = _memory_storage.get(key)
@@ -193,6 +214,9 @@ class ClienteRedis:
                 logger.debug(f"🗑️ Eliminado de Redis: {key}")
             except Exception as e:
                 logger.warning(f"⚠️ Error eliminando de Redis, eliminando solo localmente: {e}")
+
+        if not self._can_use_memory_fallback():
+            return
 
         # Siempre eliminar de memoria local (fallback)
         try:
@@ -224,6 +248,9 @@ class ClienteRedis:
                 return keys
             except Exception as e:
                 logger.warning(f"⚠️ Error escaneando claves en Redis: {e}")
+
+        if not self._can_use_memory_fallback():
+            return []
 
         # Fallback: claves de memoria local que coinciden con el patrón
         self._cleanup_expired_memory()
@@ -261,6 +288,9 @@ class ClienteRedis:
                 return resultado
             except Exception as e:
                 logger.warning(f"⚠️ Error obteniendo múltiples valores de Redis: {e}")
+
+        if not self._can_use_memory_fallback():
+            return resultado
 
         # Fallback: obtener de memoria local
         self._cleanup_expired_memory()

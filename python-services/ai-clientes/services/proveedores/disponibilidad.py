@@ -19,9 +19,20 @@ class ServicioDisponibilidad:
         self.account_id = os.getenv("WHATSAPP_PROVEEDORES_ACCOUNT_ID", "bot-proveedores")
         self.timeout_seconds = int(os.getenv("AVAILABILITY_TIMEOUT_SECONDS", "45"))
         self.ttl_seconds = int(os.getenv("AVAILABILITY_TTL_SECONDS", "120"))
+        self.send_timeout_seconds = float(
+            os.getenv("AVAILABILITY_SEND_TIMEOUT_SECONDS", "10")
+        )
+        self.max_send_concurrency = int(
+            os.getenv("AVAILABILITY_MAX_SEND_CONCURRENCY", "50")
+        )
         self.poll_interval_seconds = float(
             os.getenv("AVAILABILITY_POLL_INTERVAL_SECONDS", "1")
         )
+        self._client = httpx.AsyncClient(
+            timeout=self.send_timeout_seconds,
+            limits=httpx.Limits(max_connections=200, max_keepalive_connections=100),
+        )
+        self._send_semaphore = asyncio.Semaphore(self.max_send_concurrency)
 
     @staticmethod
     def _normalizar_telefono(valor: Optional[str]) -> str:
@@ -43,25 +54,25 @@ class ServicioDisponibilidad:
         ciudad_txt = ciudad or "tu ciudad"
         detalle = (descripcion_problema or "").strip() or servicio
         return (
-            f"Hola {nombre or 'proveedor'},\n\n"
-            f"Se requiere el siguiente servicio en {ciudad_txt}: {servicio}.\n"
-            f"Para atender lo siguiente: {detalle}.\n\n"
+            f"Hola *{nombre or 'proveedor'}*,\n\n"
+            f"Se requiere el siguiente servicio en {ciudad_txt}: *{servicio}*.\n"
+            f"Para atender lo siguiente: *{detalle}*.\n\n"
             "¿Estás disponible para atenderlo?"
         )
 
     @staticmethod
     def _mensaje_disponibilidad_opciones() -> str:
         return (
-            "Responde con el número de tu opción:\n\n"
-            "1) Sí, estoy disponible\n"
-            "2) No disponible"
+            "*Responde con el número de tu opción:*\n\n"
+            "*1.* Sí, estoy disponible\n"
+            "*2.* No disponible"
         )
 
     async def _enviar_whatsapp(self, *, telefono: str, mensaje: str) -> bool:
         try:
             url = f"{self.whatsapp_url}/send"
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                respuesta = await client.post(
+            async with self._send_semaphore:
+                respuesta = await self._client.post(
                     url,
                     json={
                         "account_id": self.account_id,
@@ -81,6 +92,66 @@ class ServicioDisponibilidad:
         except Exception as exc:
             logger.error("❌ Error enviando disponibilidad a %s: %s", telefono, exc)
             return False
+
+    async def _registrar_y_enviar_a_proveedor(
+        self,
+        *,
+        req_id_real: str,
+        servicio: str,
+        ciudad: Optional[str],
+        descripcion_problema: Optional[str],
+        telefono: str,
+        candidato: Dict[str, Any],
+        ahora_iso: str,
+        cliente_redis: Any,
+    ) -> None:
+        clave_solicitud = f"availability:request:{req_id_real}:provider:{telefono}"
+        clave_pendientes = f"availability:provider:{telefono}:pending"
+
+        solicitud = {
+            "req_id": req_id_real,
+            "provider_phone": telefono,
+            "provider_id": candidato.get("provider_id"),
+            "provider_name": candidato.get("nombre"),
+            "service": servicio,
+            "city": ciudad,
+            "problem_description": (descripcion_problema or "").strip(),
+            "status": "pending",
+            "requested_at": ahora_iso,
+        }
+        await cliente_redis.set(clave_solicitud, solicitud, expire=self.ttl_seconds)
+
+        pendientes = await cliente_redis.get(clave_pendientes) or []
+        if not isinstance(pendientes, list):
+            pendientes = []
+        if req_id_real not in pendientes:
+            pendientes.append(req_id_real)
+        await cliente_redis.set(clave_pendientes, pendientes, expire=self.ttl_seconds)
+
+        mensaje_contexto = self._mensaje_disponibilidad_contexto(
+            nombre=str(candidato.get("nombre") or "").strip(),
+            servicio=servicio,
+            ciudad=ciudad,
+            descripcion_problema=descripcion_problema,
+        )
+        mensaje_opciones = self._mensaje_disponibilidad_opciones()
+
+        enviado_contexto = await self._enviar_whatsapp(
+            telefono=telefono, mensaje=mensaje_contexto
+        )
+        if not enviado_contexto:
+            solicitud["status"] = "failed_to_send"
+            await cliente_redis.set(clave_solicitud, solicitud, expire=self.ttl_seconds)
+            return
+
+        enviado_opciones = await self._enviar_whatsapp(
+            telefono=telefono, mensaje=mensaje_opciones
+        )
+        if not enviado_opciones:
+            logger.warning(
+                "⚠️ Se envió contexto de disponibilidad pero falló mensaje de opciones para %s",
+                telefono,
+            )
 
     async def verificar_disponibilidad(
         self,
@@ -125,57 +196,21 @@ class ServicioDisponibilidad:
             logger.warning("⚠️ No hay candidatos con teléfono para consultar disponibilidad")
             return {"aceptados": [], "respondidos": [], "tiempo_agotado": False}
 
-        # Publicar solicitudes pendientes y enviar WhatsApp a cada proveedor
-        for telefono, candidato in candidatos_por_telefono.items():
-            clave_solicitud = f"availability:request:{req_id_real}:provider:{telefono}"
-            clave_pendientes = f"availability:provider:{telefono}:pending"
-
-            solicitud = {
-                "req_id": req_id_real,
-                "provider_phone": telefono,
-                "provider_id": candidato.get("provider_id"),
-                "provider_name": candidato.get("nombre"),
-                "service": servicio,
-                "city": ciudad,
-                "problem_description": (descripcion_problema or "").strip(),
-                "status": "pending",
-                "requested_at": ahora_iso,
-            }
-            await cliente_redis.set(clave_solicitud, solicitud, expire=self.ttl_seconds)
-
-            pendientes = await cliente_redis.get(clave_pendientes) or []
-            if not isinstance(pendientes, list):
-                pendientes = []
-            if req_id_real not in pendientes:
-                pendientes.append(req_id_real)
-            await cliente_redis.set(clave_pendientes, pendientes, expire=self.ttl_seconds)
-
-            mensaje_contexto = self._mensaje_disponibilidad_contexto(
-                nombre=str(candidato.get("nombre") or "").strip(),
+        # Publicar solicitudes pendientes y enviar WhatsApp de forma concurrente controlada.
+        tareas_envio = [
+            self._registrar_y_enviar_a_proveedor(
+                req_id_real=req_id_real,
                 servicio=servicio,
                 ciudad=ciudad,
                 descripcion_problema=descripcion_problema,
+                telefono=telefono,
+                candidato=candidato,
+                ahora_iso=ahora_iso,
+                cliente_redis=cliente_redis,
             )
-            mensaje_opciones = self._mensaje_disponibilidad_opciones()
-
-            enviado_contexto = await self._enviar_whatsapp(
-                telefono=telefono, mensaje=mensaje_contexto
-            )
-            if not enviado_contexto:
-                solicitud["status"] = "failed_to_send"
-                await cliente_redis.set(
-                    clave_solicitud, solicitud, expire=self.ttl_seconds
-                )
-                continue
-
-            enviado_opciones = await self._enviar_whatsapp(
-                telefono=telefono, mensaje=mensaje_opciones
-            )
-            if not enviado_opciones:
-                logger.warning(
-                    "⚠️ Se envió contexto de disponibilidad pero falló mensaje de opciones para %s",
-                    telefono,
-                )
+            for telefono, candidato in candidatos_por_telefono.items()
+        ]
+        await asyncio.gather(*tareas_envio, return_exceptions=True)
 
         aceptados: List[Dict[str, Any]] = []
         respondidos: List[Dict[str, Any]] = []
@@ -240,6 +275,10 @@ class ServicioDisponibilidad:
     async def start_listener(self) -> None:
         """Compatibilidad con la interfaz anterior."""
         return None
+
+    async def close(self) -> None:
+        """Cerrar cliente HTTP compartido."""
+        await self._client.aclose()
 
 
 servicio_disponibilidad = ServicioDisponibilidad()

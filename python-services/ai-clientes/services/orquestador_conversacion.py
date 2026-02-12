@@ -368,7 +368,7 @@ def normalizar_boton(valor: Optional[str]) -> Optional[str]:
     """Normaliza el valor de un botón/quick reply para comparaciones robustas."""
     if not valor:
         return None
-    return valor.strip()
+    return valor.strip().strip("*").rstrip(".)")
 
 
 class OrquestadorConversacional:

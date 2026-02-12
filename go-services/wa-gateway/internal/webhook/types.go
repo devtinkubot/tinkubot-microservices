@@ -1,5 +1,10 @@
 package webhook
 
+import (
+	"net/http"
+	"time"
+)
+
 // WebhookPayload represents the payload sent to AI services
 type WebhookPayload struct {
 	Phone         string `json:"phone"`
@@ -34,16 +39,24 @@ type WebhookClient struct {
 	endpoint       string
 	timeout        int
 	retryAttempts  int
+	httpClient     *http.Client
 }
 
 // NewWebhookClient creates a new webhook client with dynamic routing
 func NewWebhookClient(clientesURL, proveedoresURL, endpoint string, timeoutMs, retryAttempts int) *WebhookClient {
+	timeout := timeoutMs
+	if timeout <= 0 {
+		timeout = 10000
+	}
 	return &WebhookClient{
 		clientesURL:    clientesURL,
 		proveedoresURL: proveedoresURL,
 		endpoint:       endpoint,
-		timeout:        timeoutMs,
+		timeout:        timeout,
 		retryAttempts:  retryAttempts,
+		httpClient: &http.Client{
+			Timeout: time.Duration(timeout) * time.Millisecond,
+		},
 	}
 }
 
