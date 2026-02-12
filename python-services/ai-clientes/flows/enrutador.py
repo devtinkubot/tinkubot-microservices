@@ -54,12 +54,20 @@ async def manejar_mensaje(orquestador, carga: Dict[str, Any]) -> Dict[str, Any]:
     # === Verificar timeout de inactividad ANTES de procesar estados ===
     ahora_utc = datetime.utcnow()
     ahora_iso = ahora_utc.isoformat()
-    ultima_vista_cruda = flujo.get("last_seen_at_prev")
+    ultima_vista_cruda = flujo.get("last_seen_at_prev") or flujo.get("last_seen_at")
 
     if ultima_vista_cruda:
         try:
             ultima_vista_dt = datetime.fromisoformat(ultima_vista_cruda)
-            if (ahora_utc - ultima_vista_dt).total_seconds() > 300:  # 5 minutos
+            delta_segundos = (ahora_utc - ultima_vista_dt).total_seconds()
+            if delta_segundos > 300:  # 5 minutos
+                orquestador.logger.info(
+                    "⏰ Timeout inactividad detectado phone=%s state=%s delta=%ss last_seen_ref=%s",
+                    telefono,
+                    flujo.get("state"),
+                    round(delta_segundos, 2),
+                    ultima_vista_cruda,
+                )
                 # Timeout detectado - reiniciar flujo
                 if orquestador.repositorio_flujo:
                     await orquestador.repositorio_flujo.resetear(telefono)
@@ -102,16 +110,25 @@ async def manejar_mensaje(orquestador, carga: Dict[str, Any]) -> Dict[str, Any]:
 
                 return {"messages": mensajes_timeout}
         except Exception as e:
-            orquestador.logger.warning(f"Error verificando timeout: {e}")
+            orquestador.logger.warning(
+                "Error verificando timeout phone=%s last_seen_ref=%s error=%s",
+                telefono,
+                ultima_vista_cruda,
+                e,
+            )
             pass
 
     # Actualizar timestamps - IMPORTANTE: guardar valor anterior ANTES de sobrescribir
     valor_last_seen_anterior = flujo.get("last_seen_at")
     flujo["last_seen_at"] = ahora_iso
-    # Solo establecer last_seen_at_prev si hay un valor anterior válido
-    if valor_last_seen_anterior:
-        flujo["last_seen_at_prev"] = valor_last_seen_anterior
-    # Dejar last_seen_at_prev como None en conversaciones nuevas
+    # Garantizar referencia temporal en todos los casos para timeout consistente.
+    flujo["last_seen_at_prev"] = valor_last_seen_anterior or ahora_iso
+
+    # Persistir timestamps antes de enrutar para no perder referencia de inactividad.
+    if orquestador.repositorio_flujo:
+        await orquestador.repositorio_flujo.guardar(telefono, flujo)
+    else:
+        await orquestador.guardar_flujo(telefono, flujo)
 
     return await enrutar_estado(
         orquestador,
@@ -168,39 +185,47 @@ async def enrutar_estado(
     if not estado or es_opcion_reinicio(seleccionado):
         limpio = texto.strip().lower() if texto else ""
         if texto and limpio and limpio not in orquestador.greetings:
-            if orquestador.usar_expansion_ia:
-                orquestador.logger.info(
-                    f"🤖 Conversación nueva, usando wrapper con IA para: '{limpio[:50]}...'"
+            # IA-only extraction - no static categories
+            orquestador.logger.info(
+                f"🤖 Conversación nueva, usando extracción IA pura para: '{limpio[:50]}...'"
+            )
+            if getattr(orquestador, "extractor_ia", None):
+                extractor = orquestador.extractor_ia
+                extraer_servicio = getattr(
+                    extractor,
+                    "extraer_servicio_con_ia",
+                    extractor.extraer_servicio_con_ia_pura,
                 )
-                if orquestador.expansor:
-                    (
-                        profesion,
-                        ubicacion_extraida,
-                        terminos_expandidos,
-                    ) = await orquestador.expansor.extraer_servicio_y_ubicacion_con_expansion(
-                        "", limpio
-                    )
-                else:
-                    (
-                        profesion,
-                        ubicacion_extraida,
-                        terminos_expandidos,
-                    ) = await orquestador.extraer_servicio_y_ubicacion_con_expansion(
-                        "", limpio
-                    )
-                valor_servicio = profesion or limpio
-                if terminos_expandidos:
-                    flujo["expanded_terms"] = terminos_expandidos
-                    orquestador.logger.info(
-                        f"📝 expanded_terms guardados en nueva conversación: {len(terminos_expandidos)} términos"
-                    )
+                extraer_ubicacion = getattr(
+                    extractor,
+                    "extraer_ubicacion_con_ia",
+                    extractor._extraer_ubicacion_con_ia,
+                )
+                profesion = await extraer_servicio(limpio)
+                ubicacion_extraida = await extraer_ubicacion(limpio)
             else:
-                profesion_detectada, ciudad_detectada = orquestador.extraer_servicio_y_ubicacion(
-                    "", texto
+                profesion = await orquestador.extraer_servicio_con_ia_pura(limpio)
+                ubicacion_extraida = await orquestador._extraer_ubicacion_con_ia(limpio)
+            valor_servicio = (profesion or "").strip()
+            if not valor_servicio:
+                flujo.update({"state": "awaiting_service"})
+                return await responder(
+                    flujo,
+                    {
+                        "response": (
+                            "No pude identificar con claridad el servicio que necesitas. "
+                            "Descríbelo de forma más concreta (ej: desarrollador web, "
+                            "plomero, electricista, diseñador gráfico)."
+                        )
+                    },
                 )
-                valor_servicio = (profesion_detectada or texto).strip()
+            descripcion_problema = limpio  # Guardar el mensaje completo como contexto del problema
 
-            flujo.update({"service": valor_servicio, "service_full": texto})
+            flujo.update({
+                "service": valor_servicio,
+                "service_full": texto,
+                "descripcion_problema": descripcion_problema
+            })
 
             if flujo.get("service") and flujo.get("city"):
                 mensaje_confirmacion = await coordinar_busqueda_completa(
@@ -291,6 +316,11 @@ async def enrutar_estado(
                     req_id=f"search-{telefono}",
                     servicio=texto_servicio,
                     ciudad=ciudad,
+                    descripcion_problema=(
+                        flujo.get("descripcion_problema")
+                        or flujo.get("service_full")
+                        or texto_servicio
+                    ),
                     candidatos=candidatos,
                     cliente_redis=orquestador.redis_client,
                 )
@@ -329,10 +359,18 @@ async def enrutar_estado(
                     orquestador.buscador.buscar(
                         profesion=servicio_buscar,
                         ciudad=ciudad_buscar,
-                        terminos_expandidos=flujo.get("expanded_terms"),
+                        descripcion_problema=flujo.get("descripcion_problema")
+                        or flujo.get("service_full")
+                        or servicio_buscar,
                     )
                     if orquestador.buscador
-                    else orquestador.buscar_proveedores(servicio_buscar, ciudad_buscar)
+                    else orquestador.buscar_proveedores(
+                        servicio_buscar,
+                        ciudad_buscar,
+                        descripcion_problema=flujo.get("descripcion_problema")
+                        or flujo.get("service_full")
+                        or servicio_buscar,
+                    )
                 ),
                 enviar_con_disponibilidad,
                 lambda data: (

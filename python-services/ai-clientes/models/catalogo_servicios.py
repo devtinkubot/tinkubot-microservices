@@ -7,84 +7,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from typing import Dict, Optional, Set, Tuple
-
-# Sinónimos comunes de servicios/profesiones
-SINONIMOS_SERVICIOS_COMUNES: Dict[str, Set[str]] = {
-    "plomero": {"plomero", "plomeria", "plomería"},
-    "electricista": {"electricista", "electricistas"},
-    "médico": {"médico", "medico", "doctor", "doctora"},
-    "mecánico": {
-        "mecanico",
-        "mecánico",
-        "mecanicos",
-        "mecanica automotriz",
-        "taller mecanico",
-    },
-    "pintor": {"pintor", "pintura", "pintores"},
-    "albañil": {"albañil", "albanil", "maestro de obra"},
-    "gasfitero": {"gasfitero", "gasfiteria", "fontanero"},
-    "cerrajero": {"cerrajero", "cerrajeria"},
-    "veterinario": {"veterinario", "veterinaria"},
-    "chef": {"chef", "cocinero", "cocinera"},
-    "mesero": {"mesero", "mesera", "camarero", "camarera"},
-    "profesor": {"profesor", "profesora", "maestro", "maestra"},
-    "bartender": {"bartender", "barman"},
-    "carpintero": {"carpintero", "carpinteria"},
-    "jardinero": {"jardinero", "jardineria"},
-    "marketing": {
-        "marketing",
-        "marketing digital",
-        "mercadotecnia",
-        "publicidad",
-        "publicista",
-        "agente de publicidad",
-        "campanas de marketing",
-        "campanas publicitarias",
-    },
-    "diseñador gráfico": {
-        "diseño grafico",
-        "diseno grafico",
-        "diseñador grafico",
-        "designer grafico",
-        "graphic designer",
-        "diseñador",
-    },
-    "consultor": {
-        "consultor",
-        "consultoria",
-        "consultoría",
-        "asesor",
-        "asesoria",
-        "asesoría",
-        "consultor de negocios",
-    },
-    "desarrollador": {
-        "desarrollador",
-        "programador",
-        "developer",
-        "desarrollo web",
-        "software developer",
-        "ingeniero de software",
-    },
-    "contador": {
-        "contador",
-        "contadora",
-        "contable",
-        "contabilidad",
-        "finanzas",
-    },
-    "abogado": {
-        "abogado",
-        "abogada",
-        "legal",
-        "asesoria legal",
-        "asesoría legal",
-        "servicios legales",
-    },
-}
-
-SERVICIOS_COMUNES = list(SINONIMOS_SERVICIOS_COMUNES.keys())
+from typing import Optional, Tuple
 
 
 def _normalizar_texto_para_busqueda(texto: Optional[str]) -> str:
@@ -97,29 +20,22 @@ def _normalizar_texto_para_busqueda(texto: Optional[str]) -> str:
     return re.sub(r"\s+", " ", limpio).strip()
 
 
-def _construir_mapa_profesion_normalizada() -> Dict[str, str]:
-    mapeo: Dict[str, str] = {}
-    for canonico, sinonimos in SINONIMOS_SERVICIOS_COMUNES.items():
-        candidatos = set(sinonimos)
-        candidatos.add(canonico)
-        for candidato in candidatos:
-            candidato_normalizado = _normalizar_texto_para_busqueda(candidato)
-            if not candidato_normalizado:
-                continue
-            mapeo.setdefault(candidato_normalizado, canonico)
-    return mapeo
-
-
-MAPA_PROFESION_NORMALIZADA = _construir_mapa_profesion_normalizada()
-
-
 def normalizar_profesion_para_busqueda(termino: Optional[str]) -> Optional[str]:
+    """
+    Normaliza un término de profesión/servicio para búsqueda.
+
+    Esta función solo normaliza el texto (sin acentos, minúsculas, etc.)
+    sin forzar mapeo a categorías predefinidas.
+
+    Args:
+        termino: Término de profesión a normalizar
+
+    Returns:
+        El término normalizado para búsqueda
+    """
     if not termino:
         return termino
-    normalizado = _normalizar_texto_para_busqueda(termino)
-    if not normalizado:
-        return termino
-    return MAPA_PROFESION_NORMALIZADA.get(normalizado, termino)
+    return _normalizar_texto_para_busqueda(termino) or termino
 
 
 def normalizar_par_texto(valor: Optional[str]) -> Tuple[str, str]:

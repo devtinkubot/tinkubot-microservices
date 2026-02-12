@@ -3,7 +3,6 @@
 from typing import Any, Dict
 
 from templates import (
-    mensaje_consentimiento_aceptado,
     mensaje_consentimiento_rechazado,
     mensajes_prompt_consentimiento,
     mensaje_menu_principal_proveedor,
@@ -39,7 +38,6 @@ def construir_respuesta_consentimiento_aceptado(esta_registrado: bool = False) -
     return {
         "success": True,
         "messages": [
-            {"response": mensaje_consentimiento_aceptado()},
             {"response": mensaje_menu},
         ],
     }

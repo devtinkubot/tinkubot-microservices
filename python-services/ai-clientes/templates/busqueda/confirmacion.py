@@ -3,11 +3,11 @@
 # ==================== MENSAJES ====================
 
 mensaje_confirmando_disponibilidad = (
-    "⏳ *Estoy confirmando disponibilidad, te aviso en breve.*"
+    "⏳ Estoy confirmando disponibilidad. Te aviso en breve."
 )
 
 mensaje_buscando_expertos = (
-    "⏳ *Estoy buscando expertos, te aviso en breve.*"
+    "⏳ Estoy buscando expertos. Te aviso en breve."
 )
 
 texto_opcion_buscar_otro_servicio = "Buscar otro servicio"
@@ -26,8 +26,8 @@ def mensaje_sin_disponibilidad(servicio: str, ciudad: str) -> str:
     """Mensaje cuando no hay disponibilidad inmediata en proveedores aceptados."""
     servicio_texto = (servicio or "").strip() or "tu solicitud"
     ciudad_texto = (ciudad or "").strip()
-    destino = f"**{servicio_texto}**" if servicio_texto else "este servicio"
-    ciudad_mensaje = f" en **{ciudad_texto}**" if ciudad_texto else ""
+    destino = f"*{servicio_texto}*" if servicio_texto else "este servicio"
+    ciudad_mensaje = f" en *{ciudad_texto}*" if ciudad_texto else ""
     return (
         f"No hay proveedores disponibles ahora mismo para {destino}{ciudad_mensaje}. "
         "¿Quieres buscar en otra ciudad o intentarlo más tarde?"
@@ -45,8 +45,8 @@ def mensaje_expertos_encontrados(cantidad: int, ciudad: str) -> str:
         Mensaje con singular/plural correcto.
     """
     if cantidad == 1:
-        return f"✅ *He encontrado 1 experto en {ciudad}.*"
-    return f"✅ *He encontrado {cantidad} expertos en {ciudad}.*"
+        return f"✅ He encontrado 1 experto en {ciudad}."
+    return f"✅ He encontrado {cantidad} expertos en {ciudad}."
 
 
 def menu_opciones_confirmacion(incluir_opcion_ciudad: bool = False) -> str:

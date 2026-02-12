@@ -6,7 +6,6 @@ from .mensajes import (
     OPCIONES_CONSENTIMIENTO,
     bloque_opciones_consentimiento,
     mensajes_prompt_consentimiento,
-    mensaje_consentimiento_aceptado,
     mensaje_consentimiento_rechazado,
 )
 
@@ -16,6 +15,5 @@ __all__ = [
     "OPCIONES_CONSENTIMIENTO",
     "bloque_opciones_consentimiento",
     "mensajes_prompt_consentimiento",
-    "mensaje_consentimiento_aceptado",
     "mensaje_consentimiento_rechazado",
 ]

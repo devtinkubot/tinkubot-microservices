@@ -139,6 +139,15 @@ const limpiarTexto = valor => {
   return undefined;
 };
 
+const timestampIncluyeZona = valor =>
+  /(?:[zZ]|[+-]\d{2}(?::?\d{2})?)$/.test(valor);
+
+const normalizarTimestampComoUtc = valor => {
+  const texto = limpiarTexto(valor);
+  if (!texto) return undefined;
+  return timestampIncluyeZona(texto) ? texto : `${texto}Z`;
+};
+
 const extraerUrlDocumento = valor => {
   if (!valor) return undefined;
   if (typeof valor === 'string') {
@@ -180,7 +189,7 @@ const extraerUrlDocumento = valor => {
 const construirMensajeAprobacion = nombre => {
   const safeName = limpiarTexto(nombre);
   if (safeName) {
-    return `✅ Hola ${safeName}, tu perfil en TinkuBot fue aprobado. Ya puedes responder solicitudes cuando te escribamos.`;
+    return `✅ Hola *${safeName}*, tu perfil en TinkuBot fue aprobado. Ya puedes responder solicitudes cuando te escribamos.`;
   }
   return '✅ Tu perfil en TinkuBot fue aprobado. Ya puedes responder solicitudes cuando te escribamos.';
 };
@@ -338,9 +347,9 @@ const normalizarProveedorSupabase = registro => {
         ? Number(registro?.rating)
         : null;
   const registeredAt =
-    registro?.created_at ||
-    registro?.registered_at ||
-    registro?.inserted_at ||
+    normalizarTimestampComoUtc(registro?.created_at) ||
+    normalizarTimestampComoUtc(registro?.registered_at) ||
+    normalizarTimestampComoUtc(registro?.inserted_at) ||
     new Date().toISOString();
   const notes = limpiarTexto(registro?.notes) || null;
   const dniFrontPhotoUrl = prepararUrlDocumento(
@@ -363,8 +372,8 @@ const normalizarProveedorSupabase = registro => {
     limpiarTexto(registro?.reviewer_name) ||
     null;
   const verificationReviewedAt =
-    limpiarTexto(registro?.verification_reviewed_at) ||
-    limpiarTexto(registro?.reviewed_at) ||
+    normalizarTimestampComoUtc(registro?.verification_reviewed_at) ||
+    normalizarTimestampComoUtc(registro?.reviewed_at) ||
     null;
 
   return {

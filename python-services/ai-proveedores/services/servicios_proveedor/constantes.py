@@ -5,7 +5,7 @@ Constantes para procesamiento de servicios de proveedores.
 from typing import Set
 
 # Constantes
-SERVICIOS_MAXIMOS = 5
+SERVICIOS_MAXIMOS = 7
 
 STOPWORDS_SERVICIOS: Set[str] = {
     "de",

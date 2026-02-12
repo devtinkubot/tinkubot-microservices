@@ -19,10 +19,10 @@ def interpretar_respuesta(text: Optional[str], modo: str = "menu") -> Optional[o
 
     Args:
         text: Texto a interpretar
-        modo: "menu" para opciones 1-4, "consentimiento" para sí/no
+        modo: "menu" para opciones 1-5, "consentimiento" para sí/no
 
     Returns:
-        - modo="menu": "1", "2", "3", "4" o None
+        - modo="menu": "1", "2", "3", "4", "5" o None
         - modo="consentimiento": True, False o None
     """
     value = (text or "").strip().lower()
@@ -56,7 +56,7 @@ def interpretar_respuesta(text: Optional[str], modo: str = "menu") -> Optional[o
             return False
         return None
 
-    # Modo menú (opciones 1-4)
+    # Modo menú (opciones 1-5)
     if modo == "menu":
         # Opción 1 - Gestionar servicios
         if (
@@ -90,16 +90,26 @@ def interpretar_respuesta(text: Optional[str], modo: str = "menu") -> Optional[o
         ):
             return "3"
 
-        # Opción 4 - Salir
+        # Opción 4 - Eliminar registro
         if (
             normalized_value.startswith("4")
             or normalized_value.startswith("cuatro")
+            or "eliminar" in normalized_value
+            or "borrar" in normalized_value
+            or "delete" in normalized_value
+        ):
+            return "4"
+
+        # Opción 5 - Salir
+        if (
+            normalized_value.startswith("5")
+            or normalized_value.startswith("cinco")
             or "salir" in normalized_value
             or "terminar" in normalized_value
             or "menu" in normalized_value
             or "volver" in normalized_value
         ):
-            return "4"
+            return "5"
 
         return None
 

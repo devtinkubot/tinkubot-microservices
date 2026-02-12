@@ -1,17 +1,19 @@
 """
 Servicio de eliminación de registros de proveedores.
 
-Este módulo proporciona funcionalidad para eliminar completamente
-el registro de un proveedor, incluyendo base de datos y caché.
+Elimina de forma integral: perfil, servicios, assets de storage y estado de caché/flujo.
 """
 
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Optional, Set
+from urllib.parse import unquote, urlparse
 
 from infrastructure.database import run_supabase
-from infrastructure.redis import cliente_redis
+from infrastructure.storage.almacenamiento_imagenes import SUPABASE_PROVIDERS_BUCKET
 
 logger = logging.getLogger(__name__)
+
+_RUTAS_POR_DEFECTO_EXTS = ("jpg", "jpeg", "png", "webp")
 
 
 async def eliminar_registro_proveedor(
@@ -20,97 +22,171 @@ async def eliminar_registro_proveedor(
 ) -> Dict[str, Any]:
     """
     Elimina completamente el registro de un proveedor.
-
-    Proceso:
-    1. Eliminar de Supabase (hard delete)
-    2. Eliminar caché de Redis (perfil + flujo)
-    3. Reiniciar flujo conversacional
-    4. Retornar resultado detallado
-
-    Args:
-        supabase: Cliente de Supabase
-        telefono: Número de teléfono del proveedor a eliminar
-
-    Returns:
-        Dict con:
-            - success (bool): Estado de la operación
-            - message (str): Mensaje descriptivo
-            - deleted_from_db (bool): Si se eliminó de la BD
-            - deleted_from_cache (bool): Si se eliminó del caché
-
-    Raises:
-        ValueError: Si telefono no está proporcionado
     """
-    # Validación de entrada
     if not telefono:
         raise ValueError("telefono es requerido")
 
-    # Verificar disponibilidad de Supabase
-    if not supabase:
-        return {
-            "success": False,
-            "message": "Cliente Supabase no disponible",
-            "deleted_from_db": False,
-            "deleted_from_cache": False,
-        }
-
-    # Inicializar resultado
     resultado = {
         "success": False,
         "message": "",
         "deleted_from_db": False,
         "deleted_from_cache": False,
+        "deleted_related_services": False,
+        "deleted_storage_assets": False,
     }
 
-    try:
-        # 1. Eliminar de Supabase
-        logger.info(f"🗑️ Iniciando eliminación del proveedor {telefono}")
+    if not supabase:
+        resultado["message"] = "Cliente Supabase no disponible"
+        return resultado
 
-        eliminado_bd = await run_supabase(
+    try:
+        logger.info("🗑️ Iniciando eliminación integral del proveedor %s", telefono)
+
+        perfil = await _obtener_perfil_para_eliminacion(supabase, telefono)
+        provider_id = perfil.get("id") if perfil else None
+
+        if provider_id:
+            await run_supabase(
+                lambda: supabase.table("provider_services")
+                .delete()
+                .eq("provider_id", provider_id)
+                .execute(),
+                label="provider_services.delete_on_provider_removal",
+            )
+            resultado["deleted_related_services"] = True
+            logger.info("✅ Servicios relacionados eliminados para provider_id=%s", provider_id)
+
+        rutas_storage = _obtener_rutas_storage(perfil, provider_id)
+        resultado["deleted_storage_assets"] = await _eliminar_assets_storage(
+            supabase=supabase,
+            rutas=rutas_storage,
+        )
+
+        await run_supabase(
             lambda: supabase.table("providers")
             .delete()
             .eq("phone", telefono)
-            .execute()
+            .execute(),
+            label="providers.delete_by_phone",
         )
-
-        # Verificar si se eliminó algo
-        # Supabase no retorna datos en delete, pero verificamos que no haya error
         resultado["deleted_from_db"] = True
-        logger.info(f"✅ Proveedor {telefono} eliminado de la base de datos")
+        logger.info("✅ Proveedor %s eliminado de la base de datos", telefono)
 
-        # 2. Eliminar perfil cacheado de Redis
-        clave_cache_perfil = f"prov_profile_cache:{telefono}"
-        cache_deleted = await cliente_redis.delete(clave_cache_perfil)
-
-        # redis_client.delete() puede retornar None o el número de claves eliminadas
-        # Consideramos exitoso si no es None y es mayor que 0, o si es simplemente True-ish
-        cache_was_deleted = cache_deleted is not None and cache_deleted > 0
-        resultado["deleted_from_cache"] = cache_was_deleted
-
-        if cache_was_deleted:
-            logger.info(f"✅ Caché de perfil eliminado para {telefono}")
-        else:
-            logger.warning(f"⚠️ No había caché de perfil para {telefono}")
-
-        # 3. Eliminar flujo conversacional
-        # Import local para evitar circular import
+        from flows.sesion import marcar_perfil_eliminado
         from flows.sesion.gestor_flujo import reiniciar_flujo
-        await reiniciar_flujo(telefono)
-        logger.info(f"✅ Flujo conversacional reiniciado para {telefono}")
 
-        # Resultado exitoso
+        resultado["deleted_from_cache"] = await marcar_perfil_eliminado(telefono)
+        await reiniciar_flujo(telefono)
+        logger.info("✅ Caché y flujo conversacional limpiados para %s", telefono)
+
         resultado["success"] = True
         resultado["message"] = "Tu registro ha sido eliminado correctamente."
+        logger.info("✨ Eliminación completada exitosamente para %s", telefono)
 
-        logger.info(f"✨ Eliminación completada exitosamente para {telefono}")
-
-    except Exception as e:
-        error_msg = f"Error al eliminar proveedor {telefono}: {str(e)}"
-        logger.error(f"❌ {error_msg}", exc_info=True)
-
+    except Exception as exc:
+        logger.error("❌ Error al eliminar proveedor %s: %s", telefono, exc, exc_info=True)
         resultado["message"] = (
             "Hubo un error al eliminar tu registro. Por favor, intenta nuevamente."
         )
-        resultado["success"] = False
 
     return resultado
+
+
+async def _obtener_perfil_para_eliminacion(
+    supabase: Any, telefono: str
+) -> Optional[Dict[str, Any]]:
+    respuesta = await run_supabase(
+        lambda: supabase.table("providers")
+        .select("id,dni_front_photo_url,dni_back_photo_url,face_photo_url")
+        .eq("phone", telefono)
+        .limit(1)
+        .execute(),
+        label="providers.lookup_for_delete",
+    )
+    if respuesta.data:
+        return respuesta.data[0]
+    return None
+
+
+def _obtener_rutas_storage(
+    perfil: Optional[Dict[str, Any]],
+    provider_id: Optional[str],
+) -> list[str]:
+    rutas: Set[str] = set()
+    if perfil:
+        for campo in ("dni_front_photo_url", "dni_back_photo_url", "face_photo_url"):
+            ruta = _extraer_path_storage_desde_url(perfil.get(campo))
+            if ruta:
+                rutas.add(ruta)
+
+    if provider_id:
+        for extension in _RUTAS_POR_DEFECTO_EXTS:
+            rutas.add(f"dni-fronts/{provider_id}.{extension}")
+            rutas.add(f"dni-backs/{provider_id}.{extension}")
+            rutas.add(f"faces/{provider_id}.{extension}")
+
+    return sorted(rutas)
+
+
+def _extraer_path_storage_desde_url(valor: Any) -> Optional[str]:
+    if not isinstance(valor, str):
+        return None
+
+    texto = valor.strip()
+    if not texto:
+        return None
+
+    if "://" not in texto:
+        limpio = texto.lstrip("/")
+        prefijo_bucket = f"{SUPABASE_PROVIDERS_BUCKET}/"
+        if limpio.startswith(prefijo_bucket):
+            return limpio[len(prefijo_bucket):]
+        return limpio
+
+    parsed = urlparse(texto)
+    path = unquote(parsed.path or "")
+    if not path:
+        return None
+
+    bucket = SUPABASE_PROVIDERS_BUCKET
+    marcadores = (
+        f"/storage/v1/object/public/{bucket}/",
+        f"/storage/v1/object/sign/{bucket}/",
+        f"/storage/v1/object/{bucket}/",
+    )
+    for marcador in marcadores:
+        if marcador in path:
+            return path.split(marcador, 1)[1].lstrip("/")
+
+    partes = [segmento for segmento in path.split("/") if segmento]
+    if bucket in partes:
+        indice = partes.index(bucket)
+        resto = partes[indice + 1:]
+        if resto:
+            return "/".join(resto)
+
+    return None
+
+
+async def _eliminar_assets_storage(
+    *,
+    supabase: Any,
+    rutas: list[str],
+) -> bool:
+    if not rutas:
+        return True
+
+    if not SUPABASE_PROVIDERS_BUCKET:
+        logger.warning("⚠️ Bucket de proveedores no configurado; no se eliminan assets")
+        return False
+
+    try:
+        await run_supabase(
+            lambda: supabase.storage.from_(SUPABASE_PROVIDERS_BUCKET).remove(rutas),
+            label="storage.remove_provider_assets",
+        )
+        logger.info("✅ Eliminación de assets solicitada para %s rutas", len(rutas))
+        return True
+    except Exception as exc:
+        logger.warning("⚠️ No se pudieron eliminar assets de storage: %s", exc)
+        return False

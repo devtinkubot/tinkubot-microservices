@@ -16,7 +16,7 @@ def informar_cierre_sesion() -> str:
     Returns:
         Mensaje de cierre amigable indicando disposición para ayudar
     """
-    return "*Perfecto. Si necesitas algo más, solo escríbeme.*"
+    return "Perfecto. Si necesitas algo más, solo escríbeme."
 
 
 # ==================== MENSAJES DE ERROR ====================

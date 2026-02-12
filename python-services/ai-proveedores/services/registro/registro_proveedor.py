@@ -13,7 +13,9 @@ from infrastructure.database import run_supabase
 
 # Fase 6: Importar servicio de embeddings
 from infrastructure.embeddings.servicio_embeddings import ServicioEmbeddings
-from services.servicios_proveedor.utilidades import normalizar_texto_para_busqueda
+from services.servicios_proveedor.utilidades import (
+    normalizar_texto_para_busqueda,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +91,7 @@ async def insertar_servicios_proveedor(
 
             if not embedding:
                 logger.warning(f"⚠️ No se pudo generar embedding para servicio: {servicio}")
-                continue
+                embedding = None
 
             # Normalizar nombre para búsqueda
             servicio_normalizado = normalizar_texto_para_busqueda(servicio)
@@ -110,9 +112,10 @@ async def insertar_servicios_proveedor(
 
             if resultado.data:
                 servicios_insertados.append(resultado.data[0])
+                embedding_dims = len(embedding) if embedding else 0
                 logger.info(
                     f"✅ Servicio insertado: {servicio} "
-                    f"(embedding: {len(embedding)} dims, primary: {idx == 0})"
+                    f"(embedding: {embedding_dims} dims, primary: {idx == 0})"
                 )
             else:
                 logger.warning(f"⚠️ No se pudo insertar servicio: {servicio}")
@@ -265,10 +268,16 @@ async def registrar_proveedor_en_base_datos(
                 registro_proveedor
             )
             # Importar localmente para evitar ciclo de importación
-            from flows.sesion import cachear_perfil_proveedor
+            from flows.sesion import (
+                cachear_perfil_proveedor,
+                limpiar_marca_perfil_eliminado,
+            )
+
+            telefono_perfil = perfil_normalizado.get("phone", datos_normalizados["phone"])
+            await limpiar_marca_perfil_eliminado(telefono_perfil)
 
             await cachear_perfil_proveedor(
-                perfil_normalizado.get("phone", datos_normalizados["phone"]),
+                telefono_perfil,
                 perfil_normalizado,
             )
             return perfil_normalizado

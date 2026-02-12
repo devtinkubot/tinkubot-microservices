@@ -7,8 +7,8 @@ from typing import Any, Dict, List
 
 def mensaje_intro_listado_proveedores(ciudad: str) -> str:
     if ciudad:
-        return f"**Encontré estas opciones en {ciudad}:**"
-    return "**Encontré estas opciones para ti:**"
+        return f"*Encontré estas opciones en {ciudad}:*"
+    return "*Encontré estas opciones para ti:*"
 
 
 def bloque_listado_proveedores_compacto(proveedores: List[Dict[str, Any]]) -> str:
@@ -42,4 +42,4 @@ def error_proveedor_no_encontrado() -> str:
 
 def preguntar_servicio() -> str:
     """Pregunta qué servicio necesita."""
-    return "*Perfecto. Describe el problema o la necesidad que quieres resolver.*"
+    return "Perfecto. Describe el problema o la necesidad que quieres resolver."

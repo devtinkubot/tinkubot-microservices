@@ -76,19 +76,25 @@ async def ejecutar_busqueda_y_notificar_en_segundo_plano(
             )
             return
 
-        # Extraer expanded_terms del flujo
-        terminos_expandidos = flujo.get("expanded_terms")
+        descripcion_problema = (
+            flujo.get("descripcion_problema")
+            or flujo.get("service_full")
+            or servicio
+        )
 
         # Ejecutar búsqueda
         from principal import buscar_proveedores
         from services.proveedores.disponibilidad import servicio_disponibilidad
 
         logger.info(
-            f"🔍 Ejecutando búsqueda de proveedores: service='{servicio}', city='{ciudad}', expanded_terms={len(terminos_expandidos) if terminos_expandidos else 0} términos"
+            f"🔍 Ejecutando búsqueda de proveedores: service='{servicio}', city='{ciudad}'"
         )
 
         resultado_busqueda = await buscar_proveedores(
-            servicio, ciudad, radio_km=10.0, terminos_expandidos=terminos_expandidos
+            servicio,
+            ciudad,
+            radio_km=10.0,
+            descripcion_problema=descripcion_problema,
         )
         proveedores = resultado_busqueda.get("providers") or []
 
@@ -176,6 +182,7 @@ async def ejecutar_busqueda_y_notificar_en_segundo_plano(
                 req_id=f"search-{telefono}",
                 servicio=servicio,
                 ciudad=ciudad,
+                descripcion_problema=descripcion_problema,
                 candidatos=candidatos,
                 cliente_redis=redis_client,
             )

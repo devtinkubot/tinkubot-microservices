@@ -7,7 +7,6 @@ from typing import Any, Dict, List, Optional
 from templates.registro import (
     mensaje_confirmacion_servicios,
     mensaje_correccion_servicios,
-    mensaje_servicios_aceptados,
     mensaje_lista_servicios_corregida,
 )
 
@@ -94,7 +93,6 @@ def manejar_confirmacion_servicios(
         return {
             "success": True,
             "messages": [
-                {"response": mensaje_servicios_aceptados()},
                 {
                     "response": (
                         "*¿Cuántos años de experiencia tienes?* "

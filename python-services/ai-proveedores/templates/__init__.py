@@ -11,7 +11,6 @@ from templates.consentimiento import (
     OPCIONES_CONSENTIMIENTO,
     PROMPT_CONSENTIMIENTO,
     BLOQUE_ALCANCE_CONSENTIMIENTO,
-    mensaje_consentimiento_aceptado,
     mensaje_consentimiento_rechazado,
     bloque_opciones_consentimiento,
     mensajes_prompt_consentimiento,
@@ -95,7 +94,6 @@ __all__ = [
     "OPCIONES_CONSENTIMIENTO",
     "bloque_opciones_consentimiento",
     "mensajes_prompt_consentimiento",
-    "mensaje_consentimiento_aceptado",
     "mensaje_consentimiento_rechazado",
     # Registro
     "PROMPT_INICIO_REGISTRO",

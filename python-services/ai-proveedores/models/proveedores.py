@@ -9,6 +9,8 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+SERVICIOS_MAXIMOS = 7
+
 
 class ServiceInfo(BaseModel):
     """
@@ -31,7 +33,7 @@ class SolicitudCreacionProveedor(BaseModel):
     Modelo para crear proveedor (Opción C - Sin profession)
 
     IMPORTANTE: Ya no se usa 'profession', todo se maneja con provider_services.
-    El proveedor debe ingresar entre 1 y 5 servicios.
+    El proveedor debe ingresar entre 1 y SERVICIOS_MAXIMOS servicios.
 
     Campos:
         phone: Número de teléfono del proveedor (10-20 caracteres)
@@ -39,7 +41,7 @@ class SolicitudCreacionProveedor(BaseModel):
         full_name: Nombre completo del proveedor (2-255 caracteres)
         email: Correo electrónico (opcional)
         city: Ciudad donde opera el proveedor (2-100 caracteres)
-        services_list: Lista de 1-5 servicios ofrecidos (REQUERIDO)
+        services_list: Lista de 1-SERVICIOS_MAXIMOS servicios ofrecidos (REQUERIDO)
         experience_years: Años de experiencia (default: 0)
         social_media_url: URL de red social (opcional)
         social_media_type: Tipo de red social (opcional)
@@ -54,7 +56,7 @@ class SolicitudCreacionProveedor(BaseModel):
     email: Optional[str] = None
     city: str = Field(..., min_length=2, max_length=100)
     # profession: ELIMINADO - Ahora se usa provider_services
-    services_list: List[str] = Field(..., min_length=1)  # 1-5 servicios REQUERIDOS, validado en @field_validator
+    services_list: List[str] = Field(..., min_length=1)  # 1-SERVICIOS_MAXIMOS servicios REQUERIDOS, validado en @field_validator
     experience_years: Optional[int] = Field(default=0, ge=0)
     social_media_url: Optional[str] = None
     social_media_type: Optional[str] = None
@@ -66,11 +68,11 @@ class SolicitudCreacionProveedor(BaseModel):
     @field_validator('services_list')
     @classmethod
     def validate_services_list(cls, v: List[str]) -> List[str]:
-        """Valida que la lista de servicios tenga entre 1 y 5 elementos."""
+        """Valida que la lista de servicios tenga entre 1 y SERVICIOS_MAXIMOS elementos."""
         if len(v) < 1:
             raise ValueError('Debe ingresar al menos 1 servicio')
-        if len(v) > 5:
-            raise ValueError('Máximo 5 servicios permitidos')
+        if len(v) > SERVICIOS_MAXIMOS:
+            raise ValueError(f'Máximo {SERVICIOS_MAXIMOS} servicios permitidos')
         return v
 
     @field_validator('real_phone')

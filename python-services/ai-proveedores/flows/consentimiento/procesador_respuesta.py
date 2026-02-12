@@ -23,7 +23,6 @@ from flows.constructores import (
 from flows.sesion import establecer_flujo, reiniciar_flujo
 from flows.interpretacion import interpretar_respuesta
 from infrastructure.database import run_supabase
-from templates import mensaje_consentimiento_aceptado
 from templates.registro import preguntar_real_phone
 from templates.registro import PROMPT_INICIO_REGISTRO
 
@@ -126,7 +125,6 @@ async def procesar_respuesta_consentimiento(  # noqa: C901
             return {
                 "success": True,
                 "messages": [
-                    {"response": mensaje_consentimiento_aceptado()},
                     {"response": preguntar_real_phone()},
                 ],
             }
@@ -135,13 +133,13 @@ async def procesar_respuesta_consentimiento(  # noqa: C901
             return {
                 "success": True,
                 "messages": [
-                    {"response": mensaje_consentimiento_aceptado()},
                     {"response": PROMPT_INICIO_REGISTRO},
                 ],
             }
 
         if esta_registrado_completo and not esta_verificado:
-            return construir_respuesta_revision()
+            nombre_proveedor = perfil_proveedor["full_name"]
+            return construir_respuesta_revision(nombre_proveedor)
 
         return construir_respuesta_consentimiento_aceptado(esta_registrado_completo)
 

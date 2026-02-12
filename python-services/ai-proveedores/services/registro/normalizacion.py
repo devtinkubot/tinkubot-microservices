@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional
 
 from models.proveedores import SolicitudCreacionProveedor
 
+from services.servicios_proveedor.constantes import SERVICIOS_MAXIMOS
 from services.servicios_proveedor.utilidades import (
     normalizar_texto_para_busqueda,
     sanitizar_lista_servicios as sanitizar_servicios,
@@ -28,14 +29,14 @@ def normalizar_datos_proveedor(datos_crudos: SolicitudCreacionProveedor) -> Dict
         Dict con datos normalizados según el esquema unificado
 
     Raises:
-        ValueError: Si no hay servicios o más de 5 servicios
+        ValueError: Si no hay servicios o supera el máximo permitido
     """
     # Fase 5: Validar cantidad de servicios
     servicios = datos_crudos.services_list or []
     if len(servicios) == 0:
         raise ValueError("Debe ingresar al menos 1 servicio")
-    if len(servicios) > 5:
-        raise ValueError("Máximo 5 servicios permitidos")
+    if len(servicios) > SERVICIOS_MAXIMOS:
+        raise ValueError(f"Máximo {SERVICIOS_MAXIMOS} servicios permitidos")
 
     # Fase 5: Normalizar servicios (title case, trim)
     servicios_limpios = sanitizar_servicios(servicios)

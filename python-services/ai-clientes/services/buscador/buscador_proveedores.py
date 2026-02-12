@@ -1,7 +1,7 @@
 """Servicio de búsqueda de proveedores."""
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from infrastructure.clientes.busqueda import ClienteBusqueda
 
@@ -37,7 +37,7 @@ class BuscadorProveedores:
         profesion: str,
         ciudad: str,
         radio_km: float = 10.0,
-        terminos_expandidos: Optional[List[str]] = None,
+        descripcion_problema: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Buscar proveedores usando Search Service + validación IA.
@@ -51,7 +51,7 @@ class BuscadorProveedores:
             profesion: Profesión/servicio a buscar
             ciudad: Ciudad donde buscar
             radio_km: Radio de búsqueda en km (no usado actualmente)
-            terminos_expandidos: Términos expandidos por IA para mejorar búsqueda
+            descripcion_problema: Contexto completo del problema del cliente
 
         Returns:
             Dict con:
@@ -60,29 +60,21 @@ class BuscadorProveedores:
                 - total: cantidad de proveedores
                 - search_scope: ámbito de búsqueda
         """
-        # Usar términos expandidos por IA si están disponibles
-        if terminos_expandidos and len(terminos_expandidos) > 1:
-            # Usar términos expandidos por IA
-            terminos_unidos = " ".join(terminos_expandidos)
-            consulta = f"{terminos_unidos}"
-            self.logger.info(
-                f"🔍 Búsqueda con términos expandidos ({len(terminos_expandidos)} términos): "
-                f"profession='{profesion}', location='{ciudad}'"
-            )
-        else:
-            # Comportamiento original (backward compatible)
-            consulta = f"{profesion}"
-            self.logger.info(
-                f"🔍 Búsqueda con validación IA: profession='{profesion}', location='{ciudad}'"
-            )
+        consulta = f"{profesion}"
+        self.logger.info(
+            "🔍 Búsqueda embeddings + validación IA: profession='%s', location='%s'",
+            profesion,
+            ciudad,
+        )
 
         try:
             # Búsqueda token-based (rápida, sin IA-Enhanced)
             resultado = await self.cliente_busqueda.buscar_proveedores(
                 consulta=consulta,
                 ciudad=ciudad,
+                descripcion_problema=descripcion_problema or profesion,
                 limite=10,
-                usar_mejora_ia=False,  # ✅ Solo token-based (sin IA)
+                usar_mejora_ia=False,
             )
 
             if not resultado.get("ok"):
@@ -107,6 +99,7 @@ class BuscadorProveedores:
             # NUEVO: Validar con IA antes de devolver
             proveedores_validados = await self.validador_ia.validar_proveedores(
                 necesidad_usuario=profesion,
+                descripcion_problema=descripcion_problema or profesion,
                 proveedores=proveedores,
             )
 

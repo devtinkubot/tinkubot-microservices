@@ -6,7 +6,7 @@ from .componentes import pie_instrucciones_respuesta_numerica
 # ==================== MENSAJES ====================
 
 MENU_PRINCIPAL_PROVEEDOR = (
-    "**Menú de Proveedores**\n"
+    "*Menú de Proveedores*\n"
     "\n"
     f"{pie_instrucciones_respuesta_numerica}\n"
     "\n"
@@ -15,7 +15,7 @@ MENU_PRINCIPAL_PROVEEDOR = (
 )
 
 MENU_POST_REGISTRO_PROVEEDOR = (
-    "**Menú de Proveedor**\n"
+    "*Menú de Proveedor*\n"
     "\n"
     f"{pie_instrucciones_respuesta_numerica}\n"
     "\n"
@@ -41,15 +41,15 @@ def mensaje_menu_post_registro_proveedor() -> str:
 
 def mensaje_menu_servicios_proveedor(servicios: List[str], max_servicios: int) -> str:
     """Genera el menú de gestión de servicios con los servicios registrados."""
-    encabezado = ["**Gestión de Servicios**", ""]
+    encabezado = ["*Gestión de Servicios*", ""]
 
     if servicios:
-        listado = ["_Servicios registrados:_"]
+        listado = ["Servicios registrados:"]
         listado.extend(
             [f"{idx + 1}. {servicio}" for idx, servicio in enumerate(servicios)]
         )
     else:
-        listado = ["_Todavía no registras servicios._"]
+        listado = ["Todavía no registras servicios."]
 
     limite_texto = (
         f"(Puedes tener hasta {max_servicios} servicios activos)."

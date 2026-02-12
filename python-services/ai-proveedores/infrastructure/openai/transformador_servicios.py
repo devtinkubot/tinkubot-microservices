@@ -17,6 +17,8 @@ import logging
 from typing import List, Optional
 from openai import AsyncOpenAI
 
+from services.servicios_proveedor.constantes import SERVICIOS_MAXIMOS
+
 logger = logging.getLogger(__name__)
 
 
@@ -42,14 +44,14 @@ class TransformadorServicios:
     async def transformar_a_servicios(
         self,
         entrada_usuario: str,
-        max_servicios: int = 10,
+        max_servicios: int = SERVICIOS_MAXIMOS,
     ) -> Optional[List[str]]:
         """
         Transforma entrada de usuario en lista de servicios optimizados.
 
         Args:
             entrada_usuario: Texto del usuario (ej: "ingeniero de sistemas, plomería")
-            max_servicios: Máximo número de servicios a extraer (default: 10)
+            max_servicios: Máximo número de servicios a extraer (default: SERVICIOS_MAXIMOS)
 
         Returns:
             Lista de servicios optimizados, o None si falló
@@ -114,6 +116,11 @@ class TransformadorServicios:
 
             if not servicios:
                 logger.warning("⚠️ No se extrajeron servicios de la respuesta")
+                return None
+
+            servicios = _normalizar_y_limitar_servicios(servicios, max_servicios)
+            if not servicios:
+                logger.warning("⚠️ Servicios inválidos tras normalización")
                 return None
 
             logger.info(f"✅ Transformación exitosa: {len(servicios)} servicios extraídos")
@@ -218,12 +225,32 @@ Recuerda:
 Responde SOLO con el JSON de la lista de servicios."""
 
 
+def _normalizar_y_limitar_servicios(servicios: List[str], max_servicios: int) -> List[str]:
+    """
+    Normaliza, deduplica y limita la lista final de servicios.
+
+    Este paso es defensivo: incluso si el modelo excede el límite pedido,
+    la salida se recorta a max_servicios.
+    """
+    resultado: List[str] = []
+
+    for servicio in servicios:
+        texto = str(servicio).strip()
+        if not texto or texto in resultado:
+            continue
+        resultado.append(texto)
+        if len(resultado) >= max_servicios:
+            break
+
+    return resultado
+
+
 # Función auxiliar para usar directamente sin instanciar la clase
 async def transformar_texto_a_servicios(
     entrada: str,
     cliente_openai: AsyncOpenAI,
     modelo: str = "gpt-4o",
-    max_servicios: int = 10,
+    max_servicios: int = SERVICIOS_MAXIMOS,
 ) -> Optional[List[str]]:
     """
     Función de conveniencia para transformar texto a servicios.

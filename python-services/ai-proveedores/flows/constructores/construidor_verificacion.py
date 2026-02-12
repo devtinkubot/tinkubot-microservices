@@ -20,13 +20,16 @@ def construir_respuesta_verificado() -> Dict[str, Any]:
     return {"success": True, "messages": mensajes}
 
 
-def construir_respuesta_revision() -> Dict[str, Any]:
+def construir_respuesta_revision(nombre: str) -> Dict[str, Any]:
     """Construye respuesta cuando está en revisión.
+
+    Args:
+        nombre: Nombre del proveedor para personalizar el mensaje.
 
     Returns:
         Diccionario con mensaje de estado bajo revisión.
     """
     return {
         "success": True,
-        "messages": [{"response": mensaje_proveedor_en_revision()}],
+        "messages": [{"response": mensaje_proveedor_en_revision(nombre)}],
     }

@@ -1,7 +1,7 @@
 """Retrollamadas para el orquestador conversacional."""
 
 import asyncio
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 from infrastructure.database import run_supabase
 from services.proveedores.conexion import (
@@ -162,7 +162,7 @@ class OrquestadorRetrollamadas:
         servicio: str,
         ciudad: str,
         radio_km: float = 10.0,
-        terminos_expandidos: List[str] = None,
+        descripcion_problema: str | None = None,
         limite: int = 10,
     ):
         if self.buscador:
@@ -170,7 +170,7 @@ class OrquestadorRetrollamadas:
                 profesion=servicio,
                 ciudad=ciudad,
                 radio_km=radio_km,
-                terminos_expandidos=terminos_expandidos,
+                descripcion_problema=descripcion_problema or servicio,
             )
             return resultado.get("results", []) if resultado else []
         return []

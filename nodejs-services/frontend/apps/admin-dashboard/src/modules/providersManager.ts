@@ -631,7 +631,7 @@ function construirMensajeSugerido(
   switch (status) {
     case 'approved':
       return nombreLimpio
-        ? `✅ Hola ${nombreLimpio}, tu perfil en TinkuBot fue aprobado. Ya puedes responder solicitudes cuando te escribamos.`
+        ? `✅ Hola *${nombreLimpio}*, tu perfil en TinkuBot fue aprobado. Ya puedes responder solicitudes cuando te escribamos.`
         : '✅ Tu perfil en TinkuBot fue aprobado. Ya puedes responder solicitudes cuando te escribamos.';
     case 'interview_required':
       return nombreLimpio

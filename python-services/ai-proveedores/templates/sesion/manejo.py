@@ -28,8 +28,8 @@ def informar_timeout_inactividad() -> str:
         Mensaje explicando el timeout por inactividad y disponibilidad del bot
     """
     return (
-        "**No tuve respuesta y reinicié la conversación para ayudarte mejor. "
-        "Gracias por usar TinkuBot Proveedores; escríbeme cuando quieras.**"
+        "No tuve respuesta y reinicié la conversación para ayudarte mejor. "
+        "Gracias por usar TinkuBot Proveedores; escríbeme cuando quieras."
     )
 
 

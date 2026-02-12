@@ -22,7 +22,7 @@ from services.orquestador_conversacion import OrquestadorConversacional
 from infrastructure.persistencia.repositorio_clientes import RepositorioClientesSupabase
 from infrastructure.persistencia.repositorio_flujo import RepositorioFlujoRedis
 from services.validacion.validador_proveedores_ia import ValidadorProveedoresIA
-from services.expansion.expansor_sinonimos import ExpansorSinonimos
+from services.extraccion.extractor_necesidad_ia import ExtractorNecesidadIA
 from services.buscador.buscador_proveedores import BuscadorProveedores
 from services.clientes.servicio_consentimiento import ServicioConsentimiento
 from services.programador_retroalimentacion import ProgramadorRetroalimentacion
@@ -33,9 +33,9 @@ from services.orquestador_retrollamadas import OrquestadorRetrollamadas
 logging.basicConfig(level=getattr(logging, configuracion.log_level))
 logger = logging.getLogger(__name__)
 
-# Feature flag para expansión IA de sinónimos
-USAR_EXPANSION_IA = os.getenv("USE_AI_EXPANSION", "true").lower() == "true"
-logger.info(f"🔧 Expansión IA habilitada: {USAR_EXPANSION_IA}")
+# Feature flag para extracción IA
+USAR_EXTRACCION_IA = os.getenv("USE_AI_EXTRACTION", "true").lower() == "true"
+logger.info("🔧 Extracción IA habilitada: %s", USAR_EXTRACCION_IA)
 
 # Inicializar FastAPI
 app = FastAPI(
@@ -105,7 +105,7 @@ validador = ValidadorProveedoresIA(
     logger=logger,
 )
 
-expansor = ExpansorSinonimos(
+extractor_ia = ExtractorNecesidadIA(
     cliente_openai=cliente_openai,
     semaforo_openai=semaforo_openai,
     tiempo_espera_openai=TIEMPO_ESPERA_OPENAI_SEGUNDOS,
@@ -133,7 +133,7 @@ orquestador = OrquestadorConversacional(
     gestor_sesiones=gestor_sesiones,
     buscador=buscador,
     validador=validador,
-    expansor=expansor,
+    extractor_ia=extractor_ia,
     servicio_consentimiento=servicio_consentimiento,
     repositorio_flujo=repositorio_flujo,
     repositorio_clientes=repositorio_clientes,
@@ -177,7 +177,7 @@ async def buscar_proveedores(
     servicio: str,
     ciudad: str,
     radio_km: float = 10.0,
-    terminos_expandidos=None,
+    descripcion_problema: str | None = None,
 ):
     """Wrapper de búsqueda para flujos en segundo plano."""
     if orquestador.buscador:
@@ -185,7 +185,7 @@ async def buscar_proveedores(
             profesion=servicio,
             ciudad=ciudad,
             radio_km=radio_km,
-            terminos_expandidos=terminos_expandidos,
+            descripcion_problema=descripcion_problema or servicio,
         )
     return {"ok": False, "providers": [], "total": 0}
 

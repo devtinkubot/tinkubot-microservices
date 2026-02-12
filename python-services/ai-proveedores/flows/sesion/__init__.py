@@ -13,9 +13,12 @@ from .gestor_flujo import (
 )
 from .gestor_perfil import (
     cachear_perfil_proveedor,
+    limpiar_marca_perfil_eliminado,
+    marcar_perfil_eliminado,
     obtener_perfil_proveedor,
     obtener_perfil_proveedor_cacheado,
     invalidar_cache_perfil_proveedor,
+    perfil_marcado_eliminado,
     refrescar_cache_perfil_proveedor,
 )
 
@@ -34,4 +37,7 @@ __all__ = [
     "refrescar_cache_perfil_proveedor",
     "obtener_perfil_proveedor_cacheado",
     "invalidar_cache_perfil_proveedor",
+    "marcar_perfil_eliminado",
+    "limpiar_marca_perfil_eliminado",
+    "perfil_marcado_eliminado",
 ]

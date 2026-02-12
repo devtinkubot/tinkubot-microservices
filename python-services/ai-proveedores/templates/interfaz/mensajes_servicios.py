@@ -20,8 +20,8 @@ def error_limite_servicios_alcanzado(max_servicios: int) -> str:
         Mensaje explicando el límite y sugiriendo eliminar uno primero
 
     Examples:
-        >>> error_limite_servicios_alcanzado(5)
-        'Ya tienes 5 servicios registrados. Elimina uno antes de agregar otro.'
+        >>> error_limite_servicios_alcanzado(7)
+        'Ya tienes 7 servicios registrados. Elimina uno antes de agregar otro.'
     """
     return (
         f"Ya tienes {max_servicios} servicios registrados. "
@@ -107,8 +107,8 @@ def informar_limite_servicios_alcanzado(
         Mensaje explicando que se alcanzó el límite
 
     Examples:
-        >>> informar_limite_servicios_alcanzado(2, 5)
-        'Solo se agregaron 2 servicio(s) por alcanzar el máximo de 5.'
+        >>> informar_limite_servicios_alcanzado(2, 7)
+        'Solo se agregaron 2 servicio(s) por alcanzar el máximo de 7.'
     """
     return (
         f"Solo se agregaron {agregados} servicio(s) "

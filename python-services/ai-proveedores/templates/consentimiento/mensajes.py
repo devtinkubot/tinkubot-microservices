@@ -5,7 +5,7 @@ from templates.interfaz.componentes import pie_instrucciones_respuesta_numerica
 # ==================== CONSTANTES ====================
 
 PROMPT_CONSENTIMIENTO = (
-    "¡Hola! Soy TinkuBot 🔧\n\n"
+    "*¡Hola! Soy TinkuBot 🔧*\n\n"
     "Te ayudaré a crear tu perfil para recibir clientes."
 )
 
@@ -14,7 +14,7 @@ BLOQUE_ALCANCE_CONSENTIMIENTO = (
     "• Nombre, teléfono y ciudad\n"
     "• Servicios y experiencia\n"
     "• Opcional: correo y redes\n\n"
-    "🔒 *Solo para conectar tu servicios con clientes interesados*\n\n"
+    "🔒 Solo para conectar tus servicios con clientes interesados.\n\n"
     "*¿Autorizas el uso de tus datos?*"
 )
 
@@ -42,13 +42,6 @@ def mensajes_prompt_consentimiento() -> list:
         f"{PROMPT_CONSENTIMIENTO}\n\n{BLOQUE_ALCANCE_CONSENTIMIENTO}",
         f"{pie_instrucciones_respuesta_numerica}\n\n{bloque_opciones_consentimiento()}",
     ]
-
-
-def mensaje_consentimiento_aceptado() -> str:
-    """Mensaje de confirmación cuando el proveedor acepta el consentimiento."""
-    return (
-        "Gracias. Registre tu consentimiento. Continuemos con la creacion de tu perfil."
-    )
 
 
 def mensaje_consentimiento_rechazado() -> str:

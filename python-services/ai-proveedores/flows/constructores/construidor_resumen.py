@@ -49,9 +49,8 @@ def construir_resumen_confirmacion(flujo: Dict[str, Any]) -> str:
         texto_servicios = "  No especificados"
 
     lineas = [
-        "-----------------------------",
-        "*Por favor confirma tus datos:*",
-        "-----------------------------",
+        "✅ *Por favor confirma tus datos:*",
+        "",
         f"- Ciudad: {ciudad}",
         f"- Nombre: {nombre}",
         # Fase 7: Mostrar lista de servicios numerados
@@ -63,11 +62,5 @@ def construir_resumen_confirmacion(flujo: Dict[str, Any]) -> str:
         f"- Foto Cédula (frente): {foto_frente}",
         f"- Foto Cédula (reverso): {foto_reverso}",
         f"- Selfie: {selfie}",
-        "",
-        "-----------------------------",
-        "1. Confirmar datos",
-        "2. Editar información",
-        "-----------------------------",
-        "*Responde con el numero de tu opcion:*",
     ]
     return "\n".join(lineas)

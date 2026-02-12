@@ -240,7 +240,6 @@ def limpiar_datos_busqueda(flujo: Dict[str, Any]) -> Dict[str, Any]:
         "provider_detail_idx",
         "searching_dispatched",
         "searching_started_at",  # NUEVO: limpiar timestamp de búsqueda
-        "expanded_terms",
     ]
 
     for key in claves_a_remover:

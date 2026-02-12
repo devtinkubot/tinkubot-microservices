@@ -41,6 +41,7 @@ class ValidadorProveedoresIA:
     async def validar_proveedores(
         self,
         necesidad_usuario: str,
+        descripcion_problema: Optional[str],
         proveedores: List[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
         """
@@ -52,6 +53,7 @@ class ValidadorProveedoresIA:
 
         Args:
             necesidad_usuario: Necesidad del usuario (ej: "marketing", "community manager")
+            descripcion_problema: Descripción completa del problema del cliente
             proveedores: Lista de proveedores a validar
 
         Returns:
@@ -67,6 +69,7 @@ class ValidadorProveedoresIA:
         self.logger.info(
             f"🤖 Validando {len(proveedores)} proveedores con IA para '{necesidad_usuario}'"
         )
+        problema = (descripcion_problema or necesidad_usuario or "").strip()
 
         # Construir prompt con información completa de proveedores
         proveedores_info = []
@@ -103,7 +106,8 @@ class ValidadorProveedoresIA:
 
 IMPORTANTE: Los servicios pueden estar en español o inglés. Términos como "community manager", "social media manager", "community management" son EQUIVALENTES a "gestor de redes sociales", "manejo de redes sociales", "gestión de redes sociales".
 
-NECESIDAD DEL USUARIO: "{necesidad_usuario}"
+NECESIDAD DETECTADA: "{necesidad_usuario}"
+PROBLEMA ESPECÍFICO DEL CLIENTE: "{problema}"
 
 {bloque_proveedores}
 
@@ -111,20 +115,20 @@ Para CADA proveedor, responde si PUEDE ayudar o NO ayudar.
 
 Criterios importantes:
 1. La profesión del proveedor debe ser APROPIADA para la necesidad
-   - Ejemplo: Para "contratación pública", un ABOGADO es apropiado, un MÉDICO NO lo es
-   - Ejemplo: Para "marketing", un PUBLICISTA es apropiado, un PLOMERO NO lo es
+   - Ejemplo: Para "bug en página web", un DESARROLLADOR WEB es apropiado
+   - Ejemplo: Para "arreglo de tubería", un PLOMERO es apropiado
    - Ejemplo: Para "gestor de redes sociales", "community manager" o "social media" son APROPIADOS
 
 2. Los servicios que ofrece deben ser RELEVANTES y APLICABLES
    - No basta con mencionar palabras clave
    - Los servicios deben demostrar capacidad real de atender la necesidad
-   - Acepta términos en inglés o español que sean equivalentes
-   - "community manager" = "gestor de redes sociales" ✓
-   - "social media" = "redes sociales" ✓
-   - "marketing" = "mercadeo" ✓
+   - "Desarrollo Software Backend" NO es automáticamente adecuado para "bugs de página web"
+   - Un desarrollador backend probablemente NO puede ayudar con problemas frontend
 
-3. La experiencia debe ser APLICABLE a la necesidad
-   - No solo mencionar el término, sino tener experiencia real en ese servicio
+3. Considera el contexto específico proporcionado
+   - "Bug en página web" requiere conocimiento de HTML/CSS/JavaScript
+   - "Error en base de datos" requiere conocimiento SQL/Base de datos
+   - "App no funciona" requiere debugging de aplicaciones
 
 Responde SOLO con JSON (array de booleanos, en el mismo orden):
 [

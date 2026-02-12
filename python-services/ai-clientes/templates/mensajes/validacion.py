@@ -3,7 +3,7 @@
 # ==================== MENSAJES ====================
 
 mensaje_inicial_solicitud_servicio = (
-    "*Cuéntame. Describe el problema o la necesidad que quieres resolver.*"
+    "Cuéntame. Describe el problema o la necesidad que quieres resolver."
 )
 
 mensaje_error_input_invalido = """Para continuar, por favor describe el servicio que buscas, la necesidad o el problema que quieres resolver.
@@ -57,7 +57,7 @@ def mensaje_confirmar_servicio(servicio: str) -> str:
 
     servicio_texto = (servicio or "").strip() or "tu solicitud"
     return (
-        f"*Entendí que necesitas:* **{servicio_texto}**\n\n"
+        f"Entendí que necesitas: *{servicio_texto}*\n\n"
         f"{pie_instrucciones_respuesta_numerica}\n\n"
         "1) Sí\n"
         "2) No"

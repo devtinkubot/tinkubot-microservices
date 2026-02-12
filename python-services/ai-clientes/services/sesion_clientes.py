@@ -93,7 +93,7 @@ async def manejar_inactividad(
     mensajes_consentimiento,
 ) -> Optional[Dict[str, Any]]:
     """Reinicia el flujo si hay inactividad > 5 minutos."""
-    ultima_vista_cruda = flujo.get("last_seen_at_prev")
+    ultima_vista_cruda = flujo.get("last_seen_at_prev") or flujo.get("last_seen_at")
     try:
         ultima_vista_dt = datetime.fromisoformat(ultima_vista_cruda) if ultima_vista_cruda else None
     except Exception:

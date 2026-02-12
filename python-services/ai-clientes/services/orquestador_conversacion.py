@@ -6,13 +6,14 @@ mensajes de WhatsApp, maneja la máquina de estados y coordina con
 otros servicios (disponibilidad, búsqueda, etc.).
 """
 
+import asyncio
 import logging
 import os
 import re
+import unicodedata
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-import unicodedata
 from flows.manejadores_estados import (
     procesar_estado_esperando_servicio,
     procesar_estado_esperando_ciudad,
@@ -44,10 +45,6 @@ from templates.mensajes.consentimiento import (
 )
 from templates.mensajes.sesion import (
     mensaje_reinicio_por_inactividad,
-)
-from models.catalogo_servicios import (
-    SERVICIOS_COMUNES,
-    SINONIMOS_SERVICIOS_COMUNES,
 )
 from services.sesion_clientes import (
     validar_consentimiento,
@@ -103,7 +100,7 @@ PALABRAS_NEGATIVAS = {
     "prefiero no",
 }
 
-USAR_EXPANSION_IA = os.getenv("USE_AI_EXPANSION", "true").lower() == "true"
+USAR_EXTRACCION_IA = os.getenv("USE_AI_EXTRACTION", "true").lower() == "true"
 
 
 def _normalizar_token(texto: str) -> str:
@@ -169,6 +166,12 @@ def interpretar_si_no(texto: Optional[str]) -> Optional[bool]:
 def extraer_servicio_y_ubicacion(
     historial_texto: str, ultimo_mensaje: str
 ) -> tuple[Optional[str], Optional[str]]:
+    """
+    Extrae ubicación (ciudad) del texto con heurística local.
+
+    La extracción de servicio se resuelve con IA en el extractor canónico.
+    Esta función mantiene compatibilidad para detección de ciudad en texto libre.
+    """
     texto_combinado = f"{historial_texto}\n{ultimo_mensaje}"
     texto_normalizado = _normalizar_texto_para_coincidencia(texto_combinado)
     if not texto_normalizado:
@@ -176,23 +179,8 @@ def extraer_servicio_y_ubicacion(
 
     texto_con_padding = f" {texto_normalizado} "
 
+    # Servicio siempre es None - se extrae con IA
     profesion = None
-    for canonico, sinonimos in SINONIMOS_SERVICIOS_COMUNES.items():
-        for sinonimo in sinonimos:
-            sinonimo_normalizado = _normalizar_texto_para_coincidencia(sinonimo)
-            if not sinonimo_normalizado:
-                continue
-            if f" {sinonimo_normalizado} " in texto_con_padding:
-                profesion = canonico
-                break
-        if profesion:
-            break
-
-    if not profesion:
-        for servicio in SERVICIOS_COMUNES:
-            servicio_normalizado = _normalizar_texto_para_coincidencia(servicio)
-            if servicio_normalizado and f" {servicio_normalizado} " in texto_con_padding:
-                profesion = servicio
 
     ubicacion = None
     for ciudad_canonica, sinonimos in SINONIMOS_CIUDADES_ECUADOR.items():
@@ -211,25 +199,170 @@ def extraer_servicio_y_ubicacion(
     return profesion, ubicacion
 
 
-async def extraer_servicio_y_ubicacion_con_expansion(
-    historial_texto: str, ultimo_mensaje: str
-) -> tuple[Optional[str], Optional[str], Optional[List[str]]]:
+async def extraer_servicio_con_ia_pura(
+    mensaje_usuario: str,
+    semaforo_openai: Optional[asyncio.Semaphore],
+    cliente_openai: Optional[Any],
+    logger: logging.Logger,
+    tiempo_espera_openai: float = 5.0,
+) -> Optional[str]:
     """
-    Extrae profesión y ubicación usando expansión IA de sinónimos.
-    Retorna: (profession, location, expanded_terms)
+    Extrae servicio usando IA.
+
+    Args:
+        mensaje_usuario: Mensaje del usuario para extraer el servicio
+        semaforo_openai: Semaphore para limitar concurrencia
+        cliente_openai: Cliente de OpenAI
+        logger: Logger para trazabilidad
+        tiempo_espera_openai: Timeout en segundos
+
+    Returns:
+        El servicio detectado o None si no se pudo detectar
     """
-    # NOTA: La expansión IA de sinónimos está deshabilitada temporalmente
-    # porque el módulo expansion_sinonimos no existe.
-    # Esta función retorna solo la extracción básica sin expansión.
+    if not cliente_openai:
+        logger.warning("⚠️ extraer_servicio_con_ia_pura: sin cliente OpenAI")
+        return None
 
-    profesion, ubicacion = extraer_servicio_y_ubicacion(
-        historial_texto, ultimo_mensaje
-    )
+    if not mensaje_usuario or not mensaje_usuario.strip():
+        return None
 
-    # Sin expansión por ahora
-    terminos_expandidos = None
+    prompt_sistema = """Eres un experto en servicios profesionales. Tu tarea es identificar el servicio que necesita el usuario.
 
-    return profesion, ubicacion, terminos_expandidos
+IMPORTANTE:
+- No estás limitado a una lista predefinida de servicios
+- Detecta el servicio más específico posible
+- Si el usuario menciona "bug en página web", responde "desarrollador web"
+- Si menciona "error en app", responde "desarrollador de aplicaciones"
+- Si menciona "problema con base de datos", responde "administrador de base de datos"
+- Términos en inglés como "community manager" o "developer" son válidos
+
+Responde SOLO con el nombre del servicio, sin explicaciones."""
+
+    prompt_usuario = f'¿Qué servicio necesita este usuario: "{mensaje_usuario[:200]}"'
+
+    try:
+        async with semaforo_openai:
+            respuesta = await asyncio.wait_for(
+                cliente_openai.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": prompt_sistema},
+                        {"role": "user", "content": prompt_usuario},
+                    ],
+                    temperature=0.3,
+                    max_tokens=50,
+                ),
+                timeout=tiempo_espera_openai,
+            )
+
+        if not respuesta.choices:
+            return None
+
+        servicio = (respuesta.choices[0].message.content or "").strip()
+        # Limpiar comillas si la IA las agregó
+        servicio = servicio.strip('"').strip("'").strip()
+
+        logger.info(f"✅ IA detectó servicio: '{servicio}' de: '{mensaje_usuario[:50]}...'")
+        return servicio if servicio else None
+
+    except asyncio.TimeoutError:
+        logger.warning("⚠️ Timeout extrayendo servicio con IA pura")
+        return None
+    except Exception as exc:
+        logger.warning(f"⚠️ Error extrayendo servicio con IA pura: {exc}")
+        return None
+
+
+async def _extraer_ubicacion_con_ia(
+    texto: str,
+    semaforo_openai: Optional[asyncio.Semaphore],
+    cliente_openai: Optional[Any],
+    logger: logging.Logger,
+    tiempo_espera_openai: float = 5.0,
+) -> Optional[str]:
+    """
+    Extrae la ciudad del texto usando IA.
+    """
+    ciudades = [
+        "Quito",
+        "Guayaquil",
+        "Cuenca",
+        "Santo Domingo",
+        "Manta",
+        "Portoviejo",
+        "Machala",
+        "Durán",
+        "Loja",
+        "Ambato",
+        "Riobamba",
+        "Esmeraldas",
+    ]
+
+    ciudades_str = ", ".join(ciudades)
+
+    if not cliente_openai:
+        return None
+
+    prompt_sistema = f"""Eres un experto en identificar ciudades de Ecuador. Tu tarea es extraer LA CIUDAD mencionada en el texto.
+
+Ciudades válidas: {ciudades_str}
+
+Reglas:
+1. Responde SOLO con el nombre de la ciudad si está en la lista
+2. Si no se menciona ninguna ciudad válida, responde "null"
+3. Normaliza el nombre (ej: "quito" → "Quito")
+
+Ejemplos:
+- "en Quito" → "Quito"
+- "lo necesito en cuenca" → "Cuenca"
+- "para guayaquil" → "Guayaquil"
+- "en mi ciudad" → "null"
+
+Responde SOLO con el nombre de la ciudad o "null", sin explicaciones."""
+
+    prompt_usuario = f'¿Qué ciudad de Ecuador se menciona en: "{texto[:200]}"'
+
+    try:
+        async with semaforo_openai:
+            respuesta = await asyncio.wait_for(
+                cliente_openai.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": prompt_sistema},
+                        {"role": "user", "content": prompt_usuario},
+                    ],
+                    temperature=0.3,
+                    max_tokens=30,
+                ),
+                timeout=tiempo_espera_openai,
+            )
+
+        if not respuesta.choices:
+            return None
+
+        ubicacion = (respuesta.choices[0].message.content or "").strip()
+        ubicacion = ubicacion.strip('"').strip("'").strip()
+
+        if ubicacion.lower() == "null" or not ubicacion:
+            return None
+
+        # Verificar que sea una ciudad válida
+        for ciudad in ciudades:
+            if ciudad.lower() == ubicacion.lower():
+                logger.info(
+                    f"✅ IA extrajo ciudad: '{ciudad}' del texto: '{texto[:50]}...'"
+                )
+                return ciudad
+
+        return None
+
+    except asyncio.TimeoutError:
+        logger.warning("⚠️ Timeout extrayendo ciudad con IA")
+        return None
+    except Exception as exc:
+        logger.warning(f"⚠️ Error extrayendo ciudad con IA: {exc}")
+        return None
+
 
 def normalizar_boton(valor: Optional[str]) -> Optional[str]:
     """Normaliza el valor de un botón/quick reply para comparaciones robustas."""
@@ -257,7 +390,7 @@ class OrquestadorConversacional:
         gestor_sesiones,
         buscador=None,
         validador=None,
-        expansor=None,
+        extractor_ia=None,
         servicio_consentimiento=None,
         repositorio_flujo=None,
         repositorio_clientes=None,
@@ -272,7 +405,7 @@ class OrquestadorConversacional:
             gestor_sesiones: Gestor de sesiones para historial
             buscador: Servicio BuscadorProveedores (opcional, para backward compatibility)
             validador: Servicio ValidadorProveedoresIA (opcional, para backward compatibility)
-            expansor: Servicio ExpansorSinonimos (opcional, para backward compatibility)
+            extractor_ia: Servicio ExtractorNecesidadIA (opcional)
             servicio_consentimiento: Servicio ServicioConsentimiento (opcional, para backward compatibility)
             repositorio_flujo: RepositorioFlujoRedis (opcional, para backward compatibility)
             repositorio_clientes: RepositorioClientesSupabase (opcional, para backward compatibility)
@@ -286,21 +419,54 @@ class OrquestadorConversacional:
         # Nuevos servicios (inyectados opcionalmente para backward compatibility)
         self.buscador = buscador
         self.validador = validador
-        self.expansor = expansor
+        self.extractor_ia = extractor_ia
         self.servicio_consentimiento = servicio_consentimiento
         self.repositorio_flujo = repositorio_flujo
         self.repositorio_clientes = repositorio_clientes
 
         # Constantes/config usadas por el router
         self.greetings = GREETINGS
-        self.usar_expansion_ia = USAR_EXPANSION_IA
+        self.usar_extraccion_ia = USAR_EXTRACCION_IA
         self.farewell_message = FAREWELL_MESSAGE
         self.max_confirm_attempts = MAX_CONFIRM_ATTEMPTS
         # Nombres en español para extracción de servicio
         self.extraer_servicio_y_ubicacion = extraer_servicio_y_ubicacion
-        self.extraer_servicio_y_ubicacion_con_expansion = (
-            extraer_servicio_y_ubicacion_con_expansion
-        )
+
+        # Wrapper para extracción IA pura con firma compatible
+        async def _extraer_servicio_wrapper(historial: str, mensaje: str):
+            # Usar extractor inyectado si está disponible.
+            if self.extractor_ia:
+                extraer_servicio = getattr(
+                    self.extractor_ia,
+                    "extraer_servicio_con_ia",
+                    self.extractor_ia.extraer_servicio_con_ia_pura,
+                )
+                extraer_ubicacion = getattr(
+                    self.extractor_ia,
+                    "extraer_ubicacion_con_ia",
+                    self.extractor_ia._extraer_ubicacion_con_ia,
+                )
+                servicio = await extraer_servicio(mensaje)
+                ubicacion = await extraer_ubicacion(mensaje)
+            else:
+                # Fallback a funciones globales
+                servicio = await extraer_servicio_con_ia_pura(
+                    mensaje_usuario=mensaje,
+                    semaforo_openai=None,
+                    cliente_openai=None,
+                    logger=self.logger,
+                    tiempo_espera_openai=5.0,
+                )
+                ubicacion = await _extraer_ubicacion_con_ia(
+                    texto=mensaje,
+                    semaforo_openai=None,
+                    cliente_openai=None,
+                    logger=self.logger,
+                    tiempo_espera_openai=5.0,
+                )
+            return servicio, ubicacion
+
+        self.extraer_servicio_con_ia_pura = _extraer_servicio_wrapper
 
         # Inyectar callbacks necesarios
         self._setup_callbacks()
@@ -495,8 +661,9 @@ class OrquestadorConversacional:
             )
 
         # 1. Validación estructurada básica
+        # NOTA: Ya no usamos catálogo estático de servicios - IA detecta cualquier servicio
         es_valido, mensaje_error = validar_entrada_servicio(
-            texto or "", GREETINGS, SINONIMOS_SERVICIOS_COMUNES
+            texto or "", GREETINGS, {}  # Catálogo vacío - IA detecta servicios dinámicamente
         )
 
         if not es_valido:
@@ -513,16 +680,12 @@ class OrquestadorConversacional:
         if mensaje_advertencia:
             return await responder(flujo, {"response": mensaje_advertencia})
 
-        # 3. Seleccionar función de extracción según feature flag
-        if self.usar_expansion_ia:
-            # Usar expansor si está disponible, sino función global
-            funcion_extraccion = (
-                self.expansor.extraer_servicio_y_ubicacion_con_expansion
-                if self.expansor
-                else extraer_servicio_y_ubicacion_con_expansion
-            )
-        else:
-            funcion_extraccion = extraer_servicio_y_ubicacion
+        # 3. IA-only extraction - usar extractor inyectado si está disponible
+        funcion_extraccion = (
+            self.extractor_ia.extraer_servicio_con_ia_pura
+            if self.extractor_ia
+            else self.extraer_servicio_con_ia_pura
+        )
 
         flujo_actualizado, respuesta = await procesar_estado_esperando_servicio(
             flujo,
@@ -604,7 +767,17 @@ class OrquestadorConversacional:
                     "searching_started_at",  # NUEVO: limpiar timestamp de búsqueda
                 ]:
                     flujo.pop(key, None)
-                valor_servicio = (profesion_detectada or texto).strip()
+                valor_servicio = (profesion_detectada or "").strip()
+                if not valor_servicio:
+                    return await responder(
+                        flujo,
+                        {
+                            "response": (
+                                "No pude identificar el servicio con claridad. "
+                                "Por favor descríbelo nuevamente antes de indicar la ciudad."
+                            )
+                        },
+                    )
                 flujo.update(
                     {
                         "service": valor_servicio,

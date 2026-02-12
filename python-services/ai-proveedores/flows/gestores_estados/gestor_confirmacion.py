@@ -1,6 +1,6 @@
 """Manejador del estado de confirmación (async)."""
 
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, Optional
 
 from models.proveedores import SolicitudCreacionProveedor
 from templates import mensaje_proveedor_en_revision
@@ -51,7 +51,9 @@ async def manejar_confirmacion(
             flujo["requires_real_phone"] = True
         return {
             "success": True,
-            "response": ("Reiniciemos. *En que ciudad trabajas principalmente?*"),
+            "messages": [
+                {"response": "Reiniciemos. *En que ciudad trabajas principalmente?*"}
+            ],
         }
 
     if (
@@ -66,11 +68,15 @@ async def manejar_confirmacion(
 
         if not es_valido or datos_proveedor is None:
             return {
-                "success": False,
-                "response": (
-                    f"*No pude validar tus datos:* {mensaje_error}. "
-                    "Revisa que nombre, ciudad y profesión cumplan con el formato y longitud."
-                ),
+                "success": True,
+                "messages": [
+                    {
+                        "response": (
+                            f"*No pude validar tus datos:* {mensaje_error}. "
+                            "Revisa que nombre, ciudad y servicios cumplan con el formato."
+                        )
+                    }
+                ],
             }
 
         proveedor_registrado = await registrar_proveedor_fn(datos_proveedor)
@@ -80,16 +86,30 @@ async def manejar_confirmacion(
                 proveedor_registrado.get("id"),
             )
             proveedor_id = proveedor_registrado.get("id")
-            servicios_registrados = parsear_cadena_servicios(
-                proveedor_registrado.get("services")
-            )
+            servicios_registrados = []
+            if isinstance(proveedor_registrado.get("services_normalized"), list):
+                servicios_registrados = [
+                    str(servicio).strip()
+                    for servicio in proveedor_registrado.get("services_normalized", [])
+                    if str(servicio).strip()
+                ]
+            if not servicios_registrados:
+                servicios_registrados = parsear_cadena_servicios(
+                    proveedor_registrado.get("services")
+                )
             flujo["services"] = servicios_registrados
             if proveedor_id:
                 await subir_medios_fn(proveedor_id, flujo)
             await reiniciar_flujo_fn()
             return {
                 "success": True,
-                "messages": [{"response": mensaje_proveedor_en_revision()}],
+                "messages": [
+                    {
+                        "response": mensaje_proveedor_en_revision(
+                            datos_proveedor.full_name
+                        )
+                    }
+                ],
                 "reset_flow": True,
                 "new_flow": {
                     "state": "pending_verification",
@@ -103,15 +123,23 @@ async def manejar_confirmacion(
 
         logger.error("No se pudo registrar el proveedor")
         return {
-            "success": False,
-            "response": (
-                "*Hubo un error al guardar tu informacion. Por favor intenta de nuevo.*"
-            ),
+            "success": True,
+            "messages": [
+                {
+                    "response": (
+                        "*Hubo un error al guardar tu informacion. Por favor intenta de nuevo.*"
+                    )
+                }
+            ],
         }
 
     return {
         "success": True,
-        "response": (
-            "*Por favor selecciona 1 para confirmar o 2 para editar tu informacion.*"
-        ),
+        "messages": [
+            {
+                "response": (
+                    "*Por favor responde 1 para aceptar o 2 para no aceptar.*"
+                )
+            }
+        ],
     }

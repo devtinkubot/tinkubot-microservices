@@ -1,9 +1,8 @@
 """Módulo para el procesamiento del estado de espera de servicio."""
 
-import inspect
 import logging
 import re
-from typing import Any, Awaitable, Callable, Dict, Optional, Tuple, Union
+from typing import Any, Awaitable, Callable, Dict, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -13,10 +12,7 @@ async def procesar_estado_esperando_servicio(
     texto: Optional[str],
     saludos: set[str],
     prompt_inicial: str,
-    extraer_fn: Union[
-        Callable[[str, str], Tuple[Optional[str], Optional[str]]],
-        Callable[[str, str], Awaitable[Tuple[Optional[str], Optional[str], Optional[list[str]]]]],
-    ],
+    extraer_fn: Callable[[str], Awaitable[Optional[str]]],
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """Procesa el estado `awaiting_service`.
 
@@ -44,40 +40,25 @@ async def procesar_estado_esperando_servicio(
         }
 
     try:
-        # Detectar si la función es async (wrapper con expansión IA)
-        es_async = inspect.iscoroutinefunction(extraer_fn)
         logger.info(
-            f"🔍 extraer_fn es async: {es_async}, nombre: {getattr(extraer_fn, '__name__', 'unknown')}"
+            "🤖 Usando extracción IA para servicio: '%s...'",
+            limpio[:50],
         )
-
-        if es_async:
-            # Nueva versión con expansión IA (async)
-            logger.info(f"🤖 Usando wrapper con expansión IA para: '{limpio[:50]}...'")
-            resultado = await extraer_fn("", limpio)
-            if resultado and len(resultado) >= 3:
-                profesion, _, terminos_expandidos = (
-                    resultado[0],
-                    resultado[1],
-                    resultado[2],
-                )
-                flujo["expanded_terms"] = terminos_expandidos
-                logger.info(
-                    f"📝 expanded_terms guardados: {len(terminos_expandidos) if terminos_expandidos else 0} términos"
-                )
-            else:
-                profesion = resultado[0] if resultado and len(resultado) >= 1 else None
-                flujo["expanded_terms"] = None
-        else:
-            # Versión original (backward compatible, síncrona)
-            logger.info(f"📋 Usando extracción estática para: '{limpio[:50]}...'")
-            profesion, _ = extraer_fn("", limpio)
-            flujo["expanded_terms"] = None
+        profesion = await extraer_fn(limpio)
     except Exception as exc:
         logger.warning(f"⚠️ Error en extraer_fn: {exc}")
-        flujo["expanded_terms"] = None
         profesion = None
 
-    valor_servicio = (profesion or texto or "").strip()
+    valor_servicio = (profesion or "").strip()
+    if not valor_servicio:
+        return flujo, {
+            "response": (
+                "No pude identificar con claridad el servicio. "
+                "Descríbelo de forma más concreta (ej: desarrollador web, "
+                "plomero, electricista, diseñador gráfico)."
+            )
+        }
+
     flujo.update(
         {
             "service_candidate": valor_servicio,

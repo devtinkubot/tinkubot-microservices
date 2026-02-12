@@ -5,6 +5,7 @@ from typing import Any, Dict
 from infrastructure.storage.utilidades import extraer_primera_imagen_base64
 from templates.registro import (
     preguntar_actualizar_ciudad,
+    pedir_confirmacion_resumen,
     solicitar_foto_dni_frontal,
     solicitar_foto_dni_trasera,
     solicitar_foto_dni_trasera_requerida,
@@ -72,5 +73,6 @@ def manejar_selfie_registro(flujo: Dict[str, Any], carga: Dict[str, Any]) -> Dic
         "messages": [
             {"response": informar_datos_recibidos()},
             {"response": resumen},
+            {"response": pedir_confirmacion_resumen()},
         ],
     }

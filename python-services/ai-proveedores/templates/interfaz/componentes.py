@@ -2,4 +2,4 @@
 
 # ==================== CONSTANTES ====================
 
-pie_instrucciones_respuesta_numerica = "*Responde con el número de tu opción:*"
+pie_instrucciones_respuesta_numerica = "Responde con el número de tu opción:"

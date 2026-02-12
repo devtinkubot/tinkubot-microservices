@@ -3,7 +3,6 @@
 import asyncio
 import logging
 import os
-import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -33,29 +32,29 @@ class ServicioDisponibilidad:
             telefono = telefono.split("@", 1)[0]
         return telefono
 
-    @staticmethod
-    def _generar_codigo(req_id: str) -> str:
-        limpio = re.sub(r"[^A-Za-z0-9]", "", req_id or "")
-        if not limpio:
-            return "000000"
-        return limpio[-6:].upper()
-
-    def _mensaje_disponibilidad(
+    def _mensaje_disponibilidad_contexto(
         self,
         *,
         nombre: str,
         servicio: str,
         ciudad: Optional[str],
-        codigo: str,
+        descripcion_problema: Optional[str],
     ) -> str:
-        ciudad_txt = f" en {ciudad}" if ciudad else ""
+        ciudad_txt = ciudad or "tu ciudad"
+        detalle = (descripcion_problema or "").strip() or servicio
         return (
-            f"Hola {nombre or 'proveedor'}, ¿estás disponible para una solicitud de "
-            f"{servicio}{ciudad_txt}?\n\n"
-            "Responde:\n"
+            f"Hola {nombre or 'proveedor'},\n\n"
+            f"Se requiere el siguiente servicio en {ciudad_txt}: {servicio}.\n"
+            f"Para atender lo siguiente: {detalle}.\n\n"
+            "¿Estás disponible para atenderlo?"
+        )
+
+    @staticmethod
+    def _mensaje_disponibilidad_opciones() -> str:
+        return (
+            "Responde con el número de tu opción:\n\n"
             "1) Sí, estoy disponible\n"
-            "2) No disponible\n\n"
-            f"Código: {codigo}"
+            "2) No disponible"
         )
 
     async def _enviar_whatsapp(self, *, telefono: str, mensaje: str) -> bool:
@@ -89,6 +88,7 @@ class ServicioDisponibilidad:
         req_id: str,
         servicio: str,
         ciudad: Optional[str],
+        descripcion_problema: Optional[str],
         candidatos: List[Dict[str, Any]],
         cliente_redis: Any,
     ) -> Dict[str, Any]:
@@ -96,8 +96,6 @@ class ServicioDisponibilidad:
         Verifica disponibilidad consultando por WhatsApp a cada proveedor.
         """
         req_id_real = f"{req_id}-{int(datetime.utcnow().timestamp() * 1000)}"
-        codigo = self._generar_codigo(req_id_real)
-
         logger.info(
             "📍 Verificando disponibilidad: req_id=%s, servicio='%s', ciudad=%s, %s candidatos",
             req_id_real,
@@ -134,12 +132,12 @@ class ServicioDisponibilidad:
 
             solicitud = {
                 "req_id": req_id_real,
-                "code": codigo,
                 "provider_phone": telefono,
                 "provider_id": candidato.get("provider_id"),
                 "provider_name": candidato.get("nombre"),
                 "service": servicio,
                 "city": ciudad,
+                "problem_description": (descripcion_problema or "").strip(),
                 "status": "pending",
                 "requested_at": ahora_iso,
             }
@@ -152,17 +150,31 @@ class ServicioDisponibilidad:
                 pendientes.append(req_id_real)
             await cliente_redis.set(clave_pendientes, pendientes, expire=self.ttl_seconds)
 
-            mensaje = self._mensaje_disponibilidad(
+            mensaje_contexto = self._mensaje_disponibilidad_contexto(
                 nombre=str(candidato.get("nombre") or "").strip(),
                 servicio=servicio,
                 ciudad=ciudad,
-                codigo=codigo,
+                descripcion_problema=descripcion_problema,
             )
-            enviado = await self._enviar_whatsapp(telefono=telefono, mensaje=mensaje)
-            if not enviado:
+            mensaje_opciones = self._mensaje_disponibilidad_opciones()
+
+            enviado_contexto = await self._enviar_whatsapp(
+                telefono=telefono, mensaje=mensaje_contexto
+            )
+            if not enviado_contexto:
                 solicitud["status"] = "failed_to_send"
                 await cliente_redis.set(
                     clave_solicitud, solicitud, expire=self.ttl_seconds
+                )
+                continue
+
+            enviado_opciones = await self._enviar_whatsapp(
+                telefono=telefono, mensaje=mensaje_opciones
+            )
+            if not enviado_opciones:
+                logger.warning(
+                    "⚠️ Se envió contexto de disponibilidad pero falló mensaje de opciones para %s",
+                    telefono,
                 )
 
         aceptados: List[Dict[str, Any]] = []

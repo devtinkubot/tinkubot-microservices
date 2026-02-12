@@ -21,6 +21,7 @@ from .documentacion import (
 
 from .confirmacion import (
     informar_datos_recibidos,
+    pedir_confirmacion_resumen,
 )
 
 from .confirmacion_servicios import (
@@ -57,6 +58,7 @@ __all__ = [
     "solicitar_selfie_requerida_registro",
     # Confirmación
     "informar_datos_recibidos",
+    "pedir_confirmacion_resumen",
     # Confirmación de servicios
     "mensaje_confirmacion_servicios",
     "mensaje_correccion_servicios",

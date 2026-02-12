@@ -7,7 +7,7 @@ from typing import Any, Dict, List
 # ==================== CONSTANTES ====================
 
 instruccion_seleccionar_proveedor = (
-    "**Responde con el número del proveedor para ver detalles.**"
+    "*Responde con el número del proveedor para ver detalles.*"
 )
 
 
@@ -17,10 +17,10 @@ def _negrita(texto: str) -> str:
     texto_limpio = (texto or "").strip()
     if not texto_limpio:
         return ""
-    if texto_limpio.startswith("**") and texto_limpio.endswith("**"):
+    if texto_limpio.startswith("*") and texto_limpio.endswith("*"):
         return texto_limpio
     texto_limpio = texto_limpio.strip("*")
-    return f"**{texto_limpio}**"
+    return f"*{texto_limpio}*"
 
 
 def _parsear_servicios(valor: Any) -> List[str]:

@@ -3,10 +3,16 @@
 # ==================== FUNCIONES ====================
 
 
-def mensaje_proveedor_en_revision() -> str:
-    """Mensaje cuando el perfil está en revisión."""
+def mensaje_proveedor_en_revision(nombre: str) -> str:
+    """Mensaje cuando el perfil está en revisión.
+
+    Args:
+        nombre: Nombre del proveedor para personalizar el mensaje.
+    """
+    nombre_limpio = nombre.strip()
     return (
-        "**Listo. Estamos revisando tu perfil; si falta algo, te escribimos.**"
+        f"✅ *{nombre_limpio}*, tu perfil en TinkuBot fue registrado y lo estamos revisando; "
+        "si falta algo, te escribimos."
     )
 
 

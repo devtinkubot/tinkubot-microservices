@@ -14,7 +14,7 @@ Variables de entorno soportadas:
 - SUPABASE_SERVICE_KEY: Clave de servicio de Supabase. Optional
 - FEEDBACK_DELAY_SECONDS: Delay para scheduler de feedback. Default: 300.0
 - TASK_POLL_INTERVAL_SECONDS: Intervalo de polling de tareas. Default: 60.0
-- FLOW_TTL_SECONDS: TTL del estado de conversación en Redis. Default: 3600
+- FLOW_TTL_SECONDS: TTL del estado de conversación en Redis. Default: 86400
 - CLIENTES_INSTANCE_ID: ID de instancia del bot clientes. Default: "clientes"
 - CLIENTES_INSTANCE_NAME: Nombre de instancia del bot clientes. Default: "Bot Clientes"
 - CLIENTES_SERVER_PORT: Puerto del servicio ai-clientes. Default: 8001
@@ -55,7 +55,7 @@ class ConfiguracionServicio(BaseSettings):
     # Timing Configuration
     feedback_delay_seconds: float = 300.0  # 5 minutos
     task_poll_interval_seconds: float = 60.0  # 1 minuto
-    flow_ttl_seconds: int = 3600  # 1 hora
+    flow_ttl_seconds: int = 86400  # 24 horas
 
     # Instance Configuration
     clientes_instance_id: str = "clientes"

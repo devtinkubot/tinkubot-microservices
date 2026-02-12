@@ -23,6 +23,7 @@ class ClienteBusqueda:
         self,
         consulta: str,
         ciudad: Optional[str] = None,
+        descripcion_problema: Optional[str] = None,
         limite: int = 10,
         usar_mejora_ia: bool = True,
     ) -> Dict[str, Any]:
@@ -32,6 +33,7 @@ class ClienteBusqueda:
         Args:
             consulta: Texto de búsqueda
             ciudad: Ciudad para filtrar
+            descripcion_problema: Contexto original del usuario (trazabilidad)
             limite: Límite de resultados
             usar_mejora_ia: Usar mejora con IA
 
@@ -44,6 +46,8 @@ class ClienteBusqueda:
                 "limit": limite,
                 "use_ai_enhancement": usar_mejora_ia,
             }
+            if descripcion_problema:
+                carga["context"] = {"problem_description": descripcion_problema}
 
             # Agregar filtros si se proporcionan
             filtros: Dict[str, Any] = {"verified_only": True}

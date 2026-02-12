@@ -19,13 +19,24 @@ async def procesar_estado_confirmar_servicio(
     service_candidate = (flujo.get("service_candidate") or "").strip()
 
     if eleccion_norm in {"1", "si", "sí", "s"} or interpretar_si_no_fn(eleccion) is True:
-        flujo["service"] = service_candidate or flujo.get("service_full")
+        if not service_candidate:
+            for key in ["service", "service_full", "service_candidate"]:
+                flujo.pop(key, None)
+            flujo["state"] = "awaiting_service"
+            await guardar_flujo_fn(flujo)
+            return {
+                "response": (
+                    "No pude confirmar el servicio detectado. "
+                    "Por favor descríbelo nuevamente de forma concreta."
+                )
+            }
+        flujo["service"] = service_candidate
         flujo.pop("service_candidate", None)
         await guardar_flujo_fn(flujo)
         return await iniciar_busqueda_fn(flujo)
 
     if eleccion_norm in {"2", "no"} or interpretar_si_no_fn(eleccion) is False:
-        for key in ["service", "service_full", "service_candidate", "expanded_terms"]:
+        for key in ["service", "service_full", "service_candidate"]:
             flujo.pop(key, None)
         flujo["state"] = "awaiting_service"
         await guardar_flujo_fn(flujo)

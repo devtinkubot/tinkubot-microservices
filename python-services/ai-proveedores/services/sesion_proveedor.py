@@ -23,6 +23,8 @@ def sincronizar_flujo_con_perfil(
         proveedor_id = perfil_proveedor.get("id")
         if proveedor_id:
             flujo["provider_id"] = proveedor_id
+        if perfil_proveedor.get("full_name"):
+            flujo["full_name"] = perfil_proveedor.get("full_name")
         servicios_guardados = perfil_proveedor.get("services_list") or []
         flujo["services"] = servicios_guardados
         if perfil_proveedor.get("real_phone") and not flujo.get("real_phone"):
@@ -65,7 +67,8 @@ def manejar_pendiente_revision(
             "provider_id": proveedor_id,
         }
     )
-    return construir_respuesta_revision()
+    nombre_proveedor = flujo["full_name"]
+    return construir_respuesta_revision(nombre_proveedor)
 
 
 def manejar_aprobacion_reciente(
@@ -107,17 +110,6 @@ async def manejar_estado_inicial(
         flujo.update(nuevo_flujo)
         return await solicitar_consentimiento(telefono)
 
-    # Tiene consentimiento, verificar estado de registro ANTES de establecer el estado
-    if esta_verificado and not flujo.get("verification_notified"):
-        flujo.update(
-            {
-                "state": "awaiting_menu_option",
-                "has_consent": True,
-                "verification_notified": True,
-            }
-        )
-        return construir_respuesta_verificado()
-
     if not esta_registrado:
         # NO está registrado: establecer estado para menú de NO registrados
         flujo.update(
@@ -137,7 +129,8 @@ async def manejar_estado_inicial(
                 "esta_registrado": True,
             }
         )
-        return construir_respuesta_revision()
+        nombre_proveedor = flujo["full_name"]
+        return construir_respuesta_revision(nombre_proveedor)
 
     # SÍ está registrado: establecer estado para menú de registrados
     flujo.update(
@@ -145,6 +138,7 @@ async def manejar_estado_inicial(
             "state": "awaiting_menu_option",
             "has_consent": True,
             "esta_registrado": True,
+            "verification_notified": True,
         }
     )
     return {

@@ -3,6 +3,8 @@
 import logging
 from typing import Any, Dict, Optional
 
+from services.servicios_proveedor.constantes import SERVICIOS_MAXIMOS
+from services.servicios_proveedor.utilidades import sanitizar_lista_servicios
 from services.servicios_proveedor.utilidades import limpiar_espacios
 
 logger = logging.getLogger(__name__)
@@ -94,7 +96,7 @@ async def manejar_espera_especialidad(
 
         transformador = TransformadorServicios(cliente_openai)
         servicios_transformados = await transformador.transformar_a_servicios(
-            especialidad_texto, max_servicios=10
+            especialidad_texto, max_servicios=SERVICIOS_MAXIMOS
         )
 
         if not servicios_transformados:
@@ -111,10 +113,23 @@ async def manejar_espera_especialidad(
                 ],
             }
 
-        logger.info(
-            "✅ servicios.transformados count=%s",
-            len(servicios_transformados),
-        )
+        servicios_transformados = sanitizar_lista_servicios(servicios_transformados)
+        logger.info("✅ servicios.transformados count=%s", len(servicios_transformados))
+
+        if not servicios_transformados:
+            logger.warning("⚠️ Servicios vacíos tras sanitización")
+            return {
+                "success": True,
+                "messages": [
+                    {
+                        "response": (
+                            "*No pude interpretar tus servicios.* "
+                            "Por favor reescríbelos de forma más simple, separados por comas."
+                        )
+                    }
+                ],
+            }
+
         # Guardar servicios temporalmente para confirmación
         flujo["servicios_temporales"] = servicios_transformados
         flujo["state"] = "awaiting_services_confirmation"

@@ -9,7 +9,7 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 import redis.asyncio as redis
 
@@ -100,18 +100,21 @@ class ClienteRedis:
                 logger.error(f"❌ Error obteniendo de Redis: {e}")
                 raise
 
-    async def delete(self, key: str):
-        """Eliminar clave de Redis"""
+    async def delete(self, key: str) -> int:
+        """Eliminar clave de Redis y retornar cuántas claves fueron eliminadas."""
         if not self._connected and not self.redis_client:
             await self.connect()
 
         if self._connected and self.redis_client:
             try:
-                await self.redis_client.delete(key)
+                eliminadas = await self.redis_client.delete(key)
                 logger.debug(f"🗑️ Eliminado de Redis: {key}")
+                return int(eliminadas or 0)
             except Exception as e:
                 logger.error(f"❌ Error eliminando de Redis: {e}")
                 raise
+
+        return 0
 
 
 # Instancia global
