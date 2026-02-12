@@ -26,6 +26,7 @@ from services.extraccion.extractor_necesidad_ia import ExtractorNecesidadIA
 from services.buscador.buscador_proveedores import BuscadorProveedores
 from services.clientes.servicio_consentimiento import ServicioConsentimiento
 from services.programador_retroalimentacion import ProgramadorRetroalimentacion
+from services.leads import GestorLeads
 from services.seguridad.contenido import ModeradorContenido
 from services.orquestador_retrollamadas import OrquestadorRetrollamadas
 
@@ -150,10 +151,16 @@ moderador_contenido = ModeradorContenido(
 
 programador_retroalimentacion = ProgramadorRetroalimentacion(
     supabase=supabase,
+    repositorio_flujo=repositorio_flujo,
     whatsapp_url=URL_WHATSAPP_CLIENTES,
     whatsapp_account_id=WHATSAPP_CLIENTES_ACCOUNT_ID,
     retraso_retroalimentacion_segundos=configuracion.feedback_delay_seconds,
     intervalo_sondeo_tareas_segundos=configuracion.task_poll_interval_seconds,
+    logger=logger,
+)
+
+gestor_leads = GestorLeads(
+    supabase=supabase,
     logger=logger,
 )
 
@@ -164,6 +171,7 @@ retrollamadas = OrquestadorRetrollamadas(
     buscador=buscador,
     moderador_contenido=moderador_contenido,
     programador_retroalimentacion=programador_retroalimentacion,
+    gestor_leads=gestor_leads,
     logger=logger,
     supabase_bucket=BUCKET_SUPABASE_PROVEEDORES,
     supabase_base_url=configuracion.supabase_url,
@@ -194,6 +202,10 @@ async def startup_event():
     """Inicializar conexiones al arrancar el servicio"""
     logger.info("🚀 Iniciando AI Service Clientes...")
     await redis_client.connect()
+    # Lanzar scheduler de feedback diferido en startup real (uvicorn principal:app).
+    app.state.feedback_scheduler_task = asyncio.create_task(
+        programador_retroalimentacion.bucle_programador_retroalimentacion()
+    )
     # HTTP puro: no hay listeners adicionales.
     logger.info("✅ AI Service Clientes listo (modo HTTP puro)")
 
@@ -202,6 +214,13 @@ async def startup_event():
 async def shutdown_event():
     """Limpiar conexiones al detener el servicio"""
     logger.info("🔴 Deteniendo AI Service Clientes...")
+    tarea_feedback = getattr(app.state, "feedback_scheduler_task", None)
+    if tarea_feedback:
+        tarea_feedback.cancel()
+        try:
+            await tarea_feedback
+        except asyncio.CancelledError:
+            pass
     await cliente_busqueda.close()
     await servicio_disponibilidad.close()
     await redis_client.disconnect()
@@ -286,24 +305,18 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
 
 
 if __name__ == "__main__":
-    # Iniciar servicio
-    async def startup_wrapper():
-        # Lanzar scheduler en background
-        asyncio.create_task(programador_retroalimentacion.bucle_programador_retroalimentacion())
-        server_host = os.getenv("SERVER_HOST", "0.0.0.0")
-        server_port = int(
-            os.getenv("CLIENTES_SERVER_PORT")
-            or os.getenv("AI_SERVICE_CLIENTES_PORT")
-            or configuracion.clientes_service_port
-        )
-        config = {
-            "app": "principal:app",
-            "host": server_host,
-            "port": server_port,
-            "reload": os.getenv("UVICORN_RELOAD", "true").lower() == "true",
-            "log_level": configuracion.log_level.lower(),
-        }
-        uvicorn.run(**config)
-
-    # Ejecutar
-    asyncio.run(startup_wrapper())
+    # Iniciar servicio (el scheduler se lanza en @app.on_event("startup")).
+    server_host = os.getenv("SERVER_HOST", "0.0.0.0")
+    server_port = int(
+        os.getenv("CLIENTES_SERVER_PORT")
+        or os.getenv("AI_SERVICE_CLIENTES_PORT")
+        or configuracion.clientes_service_port
+    )
+    config = {
+        "app": "principal:app",
+        "host": server_host,
+        "port": server_port,
+        "reload": os.getenv("UVICORN_RELOAD", "true").lower() == "true",
+        "log_level": configuracion.log_level.lower(),
+    }
+    uvicorn.run(**config)

@@ -132,6 +132,7 @@ class SearchService:
             providers = await self._apply_filters(providers, request.filters)
 
         providers = self._filter_by_intent(providers, base_intent_tokens, base_city)
+        providers = await self._filter_by_billing_eligibility(providers)
 
         providers = self._sort_and_limit_results(
             providers, request.limit, request.offset
@@ -400,6 +401,60 @@ class SearchService:
         if available is None:
             return bool(verified if verified is not None else True)
         return bool(available)
+
+    async def _filter_by_billing_eligibility(
+        self, providers: List[ProviderInfo]
+    ) -> List[ProviderInfo]:
+        """
+        Filtra proveedores por wallet de leads cuando monetización está activa.
+
+        Regla:
+        - billing_status debe ser active
+        - free_leads_remaining + paid_leads_remaining > 0
+        """
+        if not settings.billing_filter_enabled:
+            return providers
+
+        if not providers or not self.supabase:
+            return providers
+
+        provider_ids = [p.id for p in providers if p.id]
+        if not provider_ids:
+            return providers
+
+        try:
+            response = await self._run_supabase(
+                lambda: self.supabase.table("provider_lead_wallet")
+                .select(
+                    "provider_id,billing_status,free_leads_remaining,paid_leads_remaining"
+                )
+                .in_("provider_id", provider_ids)
+                .execute(),
+                label="providers.billing_wallet",
+            )
+            wallets = response.data or []
+            wallet_by_provider: Dict[str, Dict[str, Any]] = {
+                str(w.get("provider_id")): w for w in wallets
+            }
+
+            eligible: List[ProviderInfo] = []
+            for provider in providers:
+                wallet = wallet_by_provider.get(provider.id)
+                # Sin wallet aún: mantener elegible para no romper etapa pre-monetización.
+                if wallet is None:
+                    eligible.append(provider)
+                    continue
+
+                status = str(wallet.get("billing_status") or "active").lower()
+                free_remaining = int(wallet.get("free_leads_remaining") or 0)
+                paid_remaining = int(wallet.get("paid_leads_remaining") or 0)
+                if status == "active" and (free_remaining + paid_remaining) > 0:
+                    eligible.append(provider)
+
+            return eligible
+        except Exception as exc:
+            logger.warning("No se pudo aplicar filtro billing wallet: %s", exc)
+            return providers
 
     async def _update_metrics_async(
         self, request: SearchRequest, metadata: SearchMetadata, cache_hit: bool

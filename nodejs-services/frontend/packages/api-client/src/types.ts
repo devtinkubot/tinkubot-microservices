@@ -63,3 +63,38 @@ export interface ProviderActionResponse {
   updatedAt?: string;
   message?: string;
 }
+
+export type MonetizationBillingStatus = 'active' | 'paused_paywall' | 'suspended';
+
+export interface MonetizationOverview {
+  activeProviders: number;
+  pausedProviders: number;
+  leadsShared7d: number;
+  leadsShared30d: number;
+  hiredYes30d: number;
+  hiredNo30d: number;
+  hiredRate30d: number | null;
+}
+
+export interface MonetizationProviderRecord {
+  providerId: string;
+  name: string;
+  phone?: string | null;
+  city?: string | null;
+  billingStatus: MonetizationBillingStatus;
+  freeLeadsRemaining: number;
+  paidLeadsRemaining: number;
+  leadsShared30d: number;
+  hiredYes30d: number;
+  hiredNo30d: number;
+  lastLeadAt?: string | null;
+}
+
+export interface MonetizationProvidersResponse {
+  items: MonetizationProviderRecord[];
+  pagination: {
+    limit: number;
+    offset: number;
+    count: number;
+  };
+}

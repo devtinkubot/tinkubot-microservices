@@ -2,16 +2,17 @@
 
 
 def mensaje_solicitud_retroalimentacion(nombre_proveedor: str) -> str:
-    """Genera mensaje de solicitud de retroalimentación después de conectar con proveedor.
+    """Pregunta si hubo contratación del proveedor seleccionado.
 
     Args:
         nombre_proveedor: Nombre del proveedor con el que se conectó.
 
     Returns:
-        Mensaje solicitando calificación del 1 al 5.
+        Mensaje con opción Sí/No.
     """
     return (
-        f"✨ ¿Cómo te fue con {nombre_proveedor}?\n"
-        f"Tu opinión ayuda a mejorar nuestra comunidad.\n"
-        f"Responde con un número del 1 al 5 (1=mal, 5=excelente)."
+        f"*¿Lograste contratar a {nombre_proveedor}?*\n\n"
+        "*Responde con el número de tu opción:*\n\n"
+        "*1.* Sí\n"
+        "*2.* No"
     )

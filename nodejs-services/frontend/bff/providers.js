@@ -9,6 +9,8 @@ const toPositiveInt = value => {
 const requestTimeoutMs =
   toPositiveInt(process.env.PROVIDERS_SERVICE_TIMEOUT_MS) ?? 5000;
 const pendingLimit = toPositiveInt(process.env.PROVIDERS_PENDING_LIMIT) ?? 100;
+const monetizationLimit =
+  toPositiveInt(process.env.MONETIZATION_PROVIDER_LIMIT) ?? 100;
 
 const supabaseUrl = (process.env.SUPABASE_URL || '').trim();
 const supabaseServiceKey = (process.env.SUPABASE_SERVICE_KEY || '').trim();
@@ -417,6 +419,43 @@ const normalizarListaProveedores = payload => {
   return [];
 };
 
+const normalizarEstadoMonetizacion = value => {
+  const estado = limpiarTexto(value)?.toLowerCase();
+  if (estado === 'paused_paywall' || estado === 'suspended') {
+    return estado;
+  }
+  return 'active';
+};
+
+const toIsoUtc = value => {
+  const text = limpiarTexto(value);
+  if (!text) return null;
+  return timestampIncluyeZona(text) ? text : `${text}Z`;
+};
+
+const agruparEventosPorProveedor = eventos => {
+  const grouped = new Map();
+  for (const item of eventos || []) {
+    const providerId = limpiarTexto(item?.provider_id);
+    if (!providerId) continue;
+    if (!grouped.has(providerId)) {
+      grouped.set(providerId, []);
+    }
+    grouped.get(providerId).push(item);
+  }
+  return grouped;
+};
+
+const agruparFeedbackPorLeadId = feedbackRows => {
+  const grouped = new Map();
+  for (const item of feedbackRows || []) {
+    const leadEventId = limpiarTexto(item?.lead_event_id);
+    if (!leadEventId) continue;
+    grouped.set(leadEventId, item);
+  }
+  return grouped;
+};
+
 const gestionarErrorAxios = error => {
   const status = error.response?.status ?? 500;
   const data =
@@ -748,11 +787,289 @@ async function revisarProveedor(providerId, payload = {}, requestId = null) {
   }
 }
 
+const obtenerWalletsMonetizacion = async ({
+  status = 'all',
+  limit = monetizationLimit,
+  offset = 0
+} = {}) => {
+  if (!supabaseClient) return [];
+
+  const query = [
+    'select=provider_id,free_leads_remaining,paid_leads_remaining,billing_status,updated_at',
+    `order=updated_at.desc`,
+    `limit=${limit}`,
+    `offset=${offset}`
+  ];
+  const estado = normalizarEstadoMonetizacion(status);
+  if (status !== 'all') {
+    query.push(`billing_status=eq.${estado}`);
+  }
+
+  const response = await supabaseClient.get(`provider_lead_wallet?${query.join('&')}`, {
+    headers: { Accept: 'application/json' }
+  });
+  return Array.isArray(response.data) ? response.data : [];
+};
+
+const obtenerWalletsResumen = async () => {
+  if (!supabaseClient) return [];
+  const response = await supabaseClient.get(
+    'provider_lead_wallet?select=provider_id,free_leads_remaining,paid_leads_remaining,billing_status',
+    {
+      headers: { Accept: 'application/json' }
+    }
+  );
+  return Array.isArray(response.data) ? response.data : [];
+};
+
+const obtenerWalletPorProviderId = async providerId => {
+  if (!supabaseClient || !providerId) return null;
+  const encodedId = encodeURIComponent(providerId);
+  const response = await supabaseClient.get(
+    `provider_lead_wallet?select=provider_id,free_leads_remaining,paid_leads_remaining,billing_status,updated_at&provider_id=eq.${encodedId}&limit=1`,
+    {
+      headers: { Accept: 'application/json' }
+    }
+  );
+  if (Array.isArray(response.data) && response.data.length > 0) {
+    return response.data[0];
+  }
+  return null;
+};
+
+const obtenerEventosLeadDesde = async ({ sinceIso, providerIds = null }) => {
+  if (!supabaseClient) return [];
+
+  const params = [
+    'select=id,provider_id,created_at',
+    `created_at=gte.${encodeURIComponent(sinceIso)}`,
+    'order=created_at.desc',
+    'limit=5000'
+  ];
+  if (Array.isArray(providerIds) && providerIds.length > 0) {
+    const encodedIds = providerIds.map(id => `"${id}"`).join(',');
+    params.push(`provider_id=in.(${encodedIds})`);
+  }
+
+  const response = await supabaseClient.get(`lead_events?${params.join('&')}`, {
+    headers: { Accept: 'application/json' }
+  });
+  return Array.isArray(response.data) ? response.data : [];
+};
+
+const obtenerFeedbackPorLeadIds = async leadIds => {
+  if (!supabaseClient || !Array.isArray(leadIds) || leadIds.length === 0) return [];
+  const encodedIds = leadIds.map(id => `"${id}"`).join(',');
+  const response = await supabaseClient.get(
+    `lead_feedback?select=lead_event_id,hired&lead_event_id=in.(${encodedIds})`,
+    {
+      headers: { Accept: 'application/json' }
+    }
+  );
+  return Array.isArray(response.data) ? response.data : [];
+};
+
+const obtenerProveedoresPorIds = async providerIds => {
+  if (!supabaseClient || !Array.isArray(providerIds) || providerIds.length === 0) return [];
+  const encodedIds = providerIds.map(id => `"${id}"`).join(',');
+  const response = await supabaseClient.get(
+    `${supabaseProvidersTable}?select=id,full_name,phone,city&limit=500&id=in.(${encodedIds})`,
+    {
+      headers: { Accept: 'application/json' }
+    }
+  );
+  return Array.isArray(response.data) ? response.data : [];
+};
+
+const normalizarProveedorMonetizacion = ({
+  wallet,
+  provider,
+  eventos = [],
+  feedbackByLeadId = new Map()
+}) => {
+  let hiredYes30d = 0;
+  let hiredNo30d = 0;
+  let lastLeadAt = null;
+
+  for (const evento of eventos) {
+    const leadId = limpiarTexto(evento?.id);
+    if (!lastLeadAt) {
+      lastLeadAt = toIsoUtc(evento?.created_at);
+    }
+    if (!leadId) continue;
+    const feedback = feedbackByLeadId.get(leadId);
+    if (!feedback || typeof feedback.hired !== 'boolean') continue;
+    if (feedback.hired) {
+      hiredYes30d += 1;
+    } else {
+      hiredNo30d += 1;
+    }
+  }
+
+  return {
+    providerId: String(wallet?.provider_id || provider?.id || ''),
+    name:
+      limpiarTexto(provider?.full_name) ||
+      limpiarTexto(provider?.name) ||
+      'Proveedor sin nombre',
+    phone: limpiarTexto(provider?.phone) || null,
+    city: limpiarTexto(provider?.city) || null,
+    billingStatus: normalizarEstadoMonetizacion(wallet?.billing_status),
+    freeLeadsRemaining: Number(wallet?.free_leads_remaining || 0),
+    paidLeadsRemaining: Number(wallet?.paid_leads_remaining || 0),
+    leadsShared30d: eventos.length,
+    hiredYes30d,
+    hiredNo30d,
+    lastLeadAt
+  };
+};
+
+async function obtenerMonetizacionResumen() {
+  try {
+    const wallets = await obtenerWalletsResumen();
+    const now = Date.now();
+    const since7d = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const since30d = new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    const [eventos7d, eventos30d] = await Promise.all([
+      obtenerEventosLeadDesde({ sinceIso: since7d }),
+      obtenerEventosLeadDesde({ sinceIso: since30d })
+    ]);
+
+    const feedback30d = await obtenerFeedbackPorLeadIds(
+      eventos30d.map(item => item.id).filter(Boolean)
+    );
+
+    const hiredYes30d = feedback30d.filter(item => item.hired === true).length;
+    const hiredNo30d = feedback30d.filter(item => item.hired === false).length;
+    const totalFeedback30d = hiredYes30d + hiredNo30d;
+    const hiredRate30d =
+      totalFeedback30d > 0 ? Number((hiredYes30d / totalFeedback30d).toFixed(4)) : null;
+
+    const activeProviders = wallets.filter(
+      w => normalizarEstadoMonetizacion(w.billing_status) === 'active'
+    ).length;
+    const pausedProviders = wallets.filter(
+      w => normalizarEstadoMonetizacion(w.billing_status) === 'paused_paywall'
+    ).length;
+
+    return {
+      activeProviders,
+      pausedProviders,
+      leadsShared7d: eventos7d.length,
+      leadsShared30d: eventos30d.length,
+      hiredYes30d,
+      hiredNo30d,
+      hiredRate30d
+    };
+  } catch (error) {
+    throw gestionarErrorAxios(error);
+  }
+}
+
+async function obtenerMonetizacionProveedores({
+  status = 'all',
+  limit = monetizationLimit,
+  offset = 0
+} = {}) {
+  try {
+    const wallets = await obtenerWalletsMonetizacion({ status, limit, offset });
+    const providerIds = wallets.map(item => String(item.provider_id)).filter(Boolean);
+    const [providers, eventos30d] = await Promise.all([
+      obtenerProveedoresPorIds(providerIds),
+      obtenerEventosLeadDesde({
+        sinceIso: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+        providerIds
+      })
+    ]);
+
+    const eventosByProvider = agruparEventosPorProveedor(eventos30d);
+    const feedback30d = await obtenerFeedbackPorLeadIds(
+      eventos30d.map(item => item.id).filter(Boolean)
+    );
+    const feedbackByLeadId = agruparFeedbackPorLeadId(feedback30d);
+    const providerById = new Map(
+      providers.map(item => [String(item.id), item])
+    );
+
+    const items = wallets.map(wallet =>
+      normalizarProveedorMonetizacion({
+        wallet,
+        provider: providerById.get(String(wallet.provider_id)),
+        eventos: eventosByProvider.get(String(wallet.provider_id)) || [],
+        feedbackByLeadId
+      })
+    );
+
+    return {
+      items,
+      pagination: {
+        limit,
+        offset,
+        count: items.length
+      }
+    };
+  } catch (error) {
+    throw gestionarErrorAxios(error);
+  }
+}
+
+async function obtenerMonetizacionProveedor(providerId) {
+  try {
+    const id = limpiarTexto(providerId);
+    if (!id) {
+      return {
+        providerId: '',
+        name: 'Proveedor no encontrado',
+        phone: null,
+        city: null,
+        billingStatus: 'active',
+        freeLeadsRemaining: 0,
+        paidLeadsRemaining: 0,
+        leadsShared30d: 0,
+        hiredYes30d: 0,
+        hiredNo30d: 0,
+        lastLeadAt: null
+      };
+    }
+
+    const wallet = (await obtenerWalletPorProviderId(id)) || {
+      provider_id: id,
+      free_leads_remaining: 0,
+      paid_leads_remaining: 0,
+      billing_status: 'active'
+    };
+    const [providers, eventos30d] = await Promise.all([
+      obtenerProveedoresPorIds([id]),
+      obtenerEventosLeadDesde({
+        sinceIso: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+        providerIds: [id]
+      })
+    ]);
+    const feedback30d = await obtenerFeedbackPorLeadIds(
+      eventos30d.map(item => item.id).filter(Boolean)
+    );
+    const feedbackByLeadId = agruparFeedbackPorLeadId(feedback30d);
+
+    return normalizarProveedorMonetizacion({
+      wallet,
+      provider: providers[0],
+      eventos: eventos30d,
+      feedbackByLeadId
+    });
+  } catch (error) {
+    throw gestionarErrorAxios(error);
+  }
+}
+
 module.exports = {
   obtenerProveedoresPendientes,
   obtenerProveedoresNuevos,
   obtenerProveedoresPostRevision,
   aprobarProveedor,
   rechazarProveedor,
-  revisarProveedor
+  revisarProveedor,
+  obtenerMonetizacionResumen,
+  obtenerMonetizacionProveedores,
+  obtenerMonetizacionProveedor
 };

@@ -389,6 +389,49 @@ async def enrutar_estado(
 
         return await orquestador._procesar_searching(telefono, flujo, do_search)
 
+    if estado == "awaiting_hiring_feedback":
+        eleccion = (seleccionado or texto or "").strip().strip("*").rstrip(".)")
+        if eleccion in {"1", "2"}:
+            lead_event_id = str(flujo.get("pending_feedback_lead_event_id") or "")
+            hired = eleccion == "1"
+            registrar_feedback = getattr(orquestador, "registrar_feedback_contratacion", None)
+            if registrar_feedback and lead_event_id:
+                try:
+                    await registrar_feedback(lead_event_id=lead_event_id, hired=hired)
+                except Exception as exc:
+                    orquestador.logger.warning(
+                        "No se pudo registrar feedback contratación lead=%s: %s",
+                        lead_event_id,
+                        exc,
+                    )
+
+            flujo.pop("pending_feedback_lead_event_id", None)
+            flujo.pop("pending_feedback_provider_name", None)
+            flujo["state"] = "awaiting_service"
+            if orquestador.repositorio_flujo:
+                await orquestador.repositorio_flujo.guardar(telefono, flujo)
+            else:
+                await orquestador.guardar_flujo(telefono, flujo)
+            return {
+                "messages": [
+                    {
+                        "response": (
+                            "*¡Gracias por tu respuesta!*\n"
+                            "Tu feedback nos ayuda a mejorar."
+                        )
+                    },
+                    {"response": mensaje_inicial_solicitud()},
+                ]
+            }
+
+        return {
+            "response": (
+                "*Responde con el número de tu opción:*\n\n"
+                "*1.* Sí\n"
+                "*2.* No"
+            )
+        }
+
     if estado == "presenting_results":
         return await procesar_estado_presentando_resultados(
             flujo,
@@ -419,6 +462,7 @@ async def enrutar_estado(
             orquestador.mensaje_conexion_formal,
             mensajes_confirmacion_busqueda,
             orquestador.programar_solicitud_retroalimentacion,
+            getattr(orquestador, "registrar_lead_contacto", None),
             orquestador.logger,
             "¿Te ayudo con otro servicio?",
             lambda: orquestador.enviar_prompt_proveedor(

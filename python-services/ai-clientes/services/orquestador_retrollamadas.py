@@ -19,6 +19,7 @@ class OrquestadorRetrollamadas:
         buscador,
         moderador_contenido,
         programador_retroalimentacion,
+        gestor_leads,
         logger,
         supabase_bucket: str,
         supabase_base_url: str,
@@ -29,6 +30,7 @@ class OrquestadorRetrollamadas:
         self.buscador = buscador
         self.moderador_contenido = moderador_contenido
         self.programador_retroalimentacion = programador_retroalimentacion
+        self.gestor_leads = gestor_leads
         self.logger = logger
         self.supabase_bucket = supabase_bucket
         self.supabase_base_url = supabase_base_url
@@ -256,12 +258,47 @@ class OrquestadorRetrollamadas:
         )
 
     async def programar_solicitud_retroalimentacion(
-        self, telefono: str, proveedor: Dict[str, Any]
+        self,
+        telefono: str,
+        proveedor: Dict[str, Any],
+        lead_event_id: str = "",
     ):
         if self.programador_retroalimentacion:
             await self.programador_retroalimentacion.programar_solicitud_retroalimentacion(
-                telefono, proveedor
+                telefono, proveedor, lead_event_id
             )
+
+    async def registrar_lead_contacto(
+        self,
+        *,
+        provider_id: str,
+        customer_phone: str,
+        service: str,
+        city: str,
+    ) -> Dict[str, Any]:
+        if not self.gestor_leads:
+            return {
+                "ok": True,
+                "billable": False,
+                "lead_event_id": None,
+                "reason": "lead_manager_unavailable",
+            }
+        return await self.gestor_leads.registrar_contacto_compartido(
+            provider_id=provider_id,
+            customer_phone=customer_phone,
+            service=service,
+            city=city,
+        )
+
+    async def registrar_feedback_contratacion(
+        self, *, lead_event_id: str, hired: bool
+    ) -> bool:
+        if not self.gestor_leads:
+            return False
+        return await self.gestor_leads.registrar_feedback_contratacion(
+            lead_event_id=lead_event_id,
+            hired=hired,
+        )
 
     async def enviar_texto_whatsapp(self, telefono: str, texto: str) -> bool:
         if self.programador_retroalimentacion:
@@ -298,5 +335,7 @@ class OrquestadorRetrollamadas:
             "limpiar_consentimiento_cliente": self.limpiar_consentimiento_cliente,
             "mensaje_conexion_formal": self.mensaje_conexion_formal,
             "programar_solicitud_retroalimentacion": self.programar_solicitud_retroalimentacion,
+            "registrar_lead_contacto": self.registrar_lead_contacto,
+            "registrar_feedback_contratacion": self.registrar_feedback_contratacion,
             "enviar_texto_whatsapp": self.enviar_texto_whatsapp,
         }

@@ -99,6 +99,58 @@ async function revisarProveedor(req, res) {
   }
 }
 
+async function obtenerMonetizacionResumen(req, res) {
+  try {
+    const overview = await proveedoresBff.obtenerMonetizacionResumen();
+    res.json(overview);
+  } catch (error) {
+    const status = error?.status ?? 500;
+    const payload = error?.data ?? {
+      error: 'No se pudo obtener el resumen de monetización.'
+    };
+    res.status(status).json(payload);
+  }
+}
+
+async function obtenerMonetizacionProveedores(req, res) {
+  try {
+    const status = typeof req.query.status === 'string' ? req.query.status : 'all';
+    const limit = Number.isFinite(Number(req.query.limit))
+      ? Number(req.query.limit)
+      : undefined;
+    const offset = Number.isFinite(Number(req.query.offset))
+      ? Number(req.query.offset)
+      : undefined;
+
+    const resultado = await proveedoresBff.obtenerMonetizacionProveedores({
+      status,
+      limit,
+      offset
+    });
+    res.json(resultado);
+  } catch (error) {
+    const status = error?.status ?? 500;
+    const payload = error?.data ?? {
+      error: 'No se pudo obtener el listado de monetización por proveedor.'
+    };
+    res.status(status).json(payload);
+  }
+}
+
+async function obtenerMonetizacionProveedor(req, res) {
+  try {
+    const { providerId } = req.params;
+    const resultado = await proveedoresBff.obtenerMonetizacionProveedor(providerId);
+    res.json(resultado);
+  } catch (error) {
+    const status = error?.status ?? 500;
+    const payload = error?.data ?? {
+      error: 'No se pudo obtener el detalle de monetización del proveedor.'
+    };
+    res.status(status).json(payload);
+  }
+}
+
 async function servirImagen(req, res) {
   try {
     const filePath = req.params[0]; // Para wildcard router.get('/image/*')
@@ -144,6 +196,9 @@ router.get('/post-review', obtenerPostRevision);
 router.post('/:providerId/approve', aprobarProveedor);
 router.post('/:providerId/reject', rechazarProveedor);
 router.post('/:providerId/review', revisarProveedor);
+router.get('/monetization/overview', obtenerMonetizacionResumen);
+router.get('/monetization/providers', obtenerMonetizacionProveedores);
+router.get('/monetization/provider/:providerId', obtenerMonetizacionProveedor);
 router.get('/image/*', servirImagen);
 
 module.exports = router;

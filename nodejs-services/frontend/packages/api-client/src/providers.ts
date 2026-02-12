@@ -1,5 +1,8 @@
 import { realizarSolicitudHttp } from './http';
 import type {
+  MonetizationOverview,
+  MonetizationProviderRecord,
+  MonetizationProvidersResponse,
   ProviderActionPayload,
   ProviderActionResponse,
   ProviderRecord
@@ -74,4 +77,31 @@ export async function revisarProveedor(
     },
     body: JSON.stringify(carga)
   });
+}
+
+export async function obtenerMonetizacionResumen(): Promise<MonetizationOverview> {
+  return realizarSolicitudHttp<MonetizationOverview>(`${RUTA_BASE}/monetization/overview`);
+}
+
+export async function obtenerMonetizacionProveedores(params?: {
+  status?: 'all' | 'active' | 'paused_paywall' | 'suspended';
+  limit?: number;
+  offset?: number;
+}): Promise<MonetizationProvidersResponse> {
+  const query = new URLSearchParams();
+  if (params?.status) query.set('status', params.status);
+  if (typeof params?.limit === 'number') query.set('limit', String(params.limit));
+  if (typeof params?.offset === 'number') query.set('offset', String(params.offset));
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  return realizarSolicitudHttp<MonetizationProvidersResponse>(
+    `${RUTA_BASE}/monetization/providers${suffix}`
+  );
+}
+
+export async function obtenerMonetizacionProveedor(
+  providerId: string
+): Promise<MonetizationProviderRecord> {
+  return realizarSolicitudHttp<MonetizationProviderRecord>(
+    `${RUTA_BASE}/monetization/provider/${providerId}`
+  );
 }

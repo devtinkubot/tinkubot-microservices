@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     embeddings_retry_backoff_ms: int = 300
     vector_top_k: int = 30
     vector_similarity: str = "cosine"
+    billing_filter_enabled: bool = False
 
     # API Configuration
     search_api_host: str = "0.0.0.0"

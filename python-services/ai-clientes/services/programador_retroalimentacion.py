@@ -15,6 +15,7 @@ class ProgramadorRetroalimentacion:
         self,
         *,
         supabase,
+        repositorio_flujo,
         whatsapp_url: str,
         whatsapp_account_id: str,
         retraso_retroalimentacion_segundos: float,
@@ -22,6 +23,7 @@ class ProgramadorRetroalimentacion:
         logger,
     ) -> None:
         self.supabase = supabase
+        self.repositorio_flujo = repositorio_flujo
         self.whatsapp_url = whatsapp_url
         self.whatsapp_account_id = whatsapp_account_id
         self.retraso_retroalimentacion_segundos = retraso_retroalimentacion_segundos
@@ -29,7 +31,7 @@ class ProgramadorRetroalimentacion:
         self.logger = logger
 
     async def programar_solicitud_retroalimentacion(
-        self, telefono: str, proveedor: Dict[str, Any]
+        self, telefono: str, proveedor: Dict[str, Any], lead_event_id: str = ""
     ):
         if not self.supabase:
             return
@@ -42,7 +44,9 @@ class ProgramadorRetroalimentacion:
             carga = {
                 "phone": telefono,
                 "message": mensaje,
-                "type": "request_feedback",
+                "type": "request_hiring_feedback",
+                "lead_event_id": lead_event_id or "",
+                "provider_name": nombre,
             }
             await run_supabase(
                 lambda: self.supabase.table("task_queue").insert(
@@ -103,6 +107,22 @@ class ProgramadorRetroalimentacion:
             procesadas = 0
             for tarea in tareas:
                 tarea_id = tarea["id"]
+                # Claim atómico: evita procesamiento duplicado con múltiples workers.
+                claim_until_iso = datetime.utcfromtimestamp(
+                    datetime.utcnow().timestamp() + 120
+                ).isoformat()
+                claim = await run_supabase(
+                    lambda: self.supabase.table("task_queue")
+                    .update({"scheduled_at": claim_until_iso})
+                    .eq("id", tarea_id)
+                    .eq("status", "pending")
+                    .lte("scheduled_at", ahora_iso)
+                    .execute(),
+                    etiqueta="task_queue.claim_processing",
+                )
+                if not claim.data:
+                    continue
+
                 carga = tarea.get("payload") or {}
                 telefono = carga.get("phone")
                 mensaje = carga.get("message")
@@ -110,6 +130,27 @@ class ProgramadorRetroalimentacion:
                 if telefono and mensaje:
                     exito = await self.enviar_texto_whatsapp(telefono, mensaje)
                 if exito:
+                    # Si es encuesta de contratación, dejar el flujo listo para captar 1/2.
+                    if (
+                        self.repositorio_flujo
+                        and carga.get("type") == "request_hiring_feedback"
+                    ):
+                        try:
+                            flujo = await self.repositorio_flujo.obtener(telefono) or {}
+                            lead_event_id = carga.get("lead_event_id") or ""
+                            if lead_event_id:
+                                flujo["state"] = "awaiting_hiring_feedback"
+                                flujo["pending_feedback_lead_event_id"] = lead_event_id
+                                flujo["pending_feedback_provider_name"] = (
+                                    carga.get("provider_name") or "Proveedor"
+                                )
+                                await self.repositorio_flujo.guardar(telefono, flujo)
+                        except Exception as flow_exc:
+                            self.logger.warning(
+                                "No se pudo preparar estado awaiting_hiring_feedback: %s",
+                                flow_exc,
+                            )
+
                     await run_supabase(
                         lambda: self.supabase.table("task_queue").update(
                             {

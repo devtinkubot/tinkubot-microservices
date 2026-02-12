@@ -18,7 +18,10 @@ async def procesar_estado_viendo_detalle_proveedor(
     ],
     mensajes_confirmacion_busqueda_fn: Callable[..., list[Dict[str, Any]]],
     programar_retroalimentacion_fn: Optional[
-        Callable[[str, Dict[str, Any]], Awaitable[None]]
+        Callable[[str, Dict[str, Any], str], Awaitable[None]]
+    ],
+    registrar_lead_contacto_fn: Optional[
+        Callable[..., Awaitable[Dict[str, Any]]]
     ],
     logger: Any,
     titulo_confirmacion_por_defecto: str,
@@ -85,6 +88,7 @@ async def procesar_estado_viendo_detalle_proveedor(
             mensaje_conexion_formal_fn,
             mensajes_confirmacion_busqueda_fn,
             programar_retroalimentacion_fn,
+            registrar_lead_contacto_fn,
             logger,
             titulo_confirmacion_por_defecto,
         )
@@ -108,7 +112,10 @@ async def conectar_y_confirmar_proveedor(
     ],
     mensajes_confirmacion_busqueda_fn: Callable[..., list[Dict[str, Any]]],
     programar_retroalimentacion_fn: Optional[
-        Callable[[str, Dict[str, Any]], Awaitable[None]]
+        Callable[[str, Dict[str, Any], str], Awaitable[None]]
+    ],
+    registrar_lead_contacto_fn: Optional[
+        Callable[..., Awaitable[Dict[str, Any]]]
     ],
     logger: Any,
     titulo_confirmacion_por_defecto: str,
@@ -123,6 +130,16 @@ async def conectar_y_confirmar_proveedor(
     """
 
     flujo.pop("provider_detail_idx", None)
+    lead_event_id = ""
+    if registrar_lead_contacto_fn:
+        provider_id = str(proveedor.get("id") or proveedor.get("provider_id") or "").strip()
+        lead_resultado = await registrar_lead_contacto_fn(
+            provider_id=provider_id,
+            customer_phone=telefono,
+            service=flujo.get("service") or "",
+            city=flujo.get("city") or "",
+        )
+        lead_event_id = str(lead_resultado.get("lead_event_id") or "")
     flujo["chosen_provider"] = proveedor
     flujo["state"] = "confirm_new_search"
     flujo["confirm_attempts"] = 0
@@ -145,7 +162,11 @@ async def conectar_y_confirmar_proveedor(
 
     if programar_retroalimentacion_fn:
         try:
-            await programar_retroalimentacion_fn(telefono, proveedor or {})
+            await programar_retroalimentacion_fn(
+                telefono,
+                proveedor or {},
+                lead_event_id,
+            )
         except Exception as exc:  # pragma: no cover - logging auxiliar
             logger.warning(f"No se pudo agendar feedback: {exc}")
 

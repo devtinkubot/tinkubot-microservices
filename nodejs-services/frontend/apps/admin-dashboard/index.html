@@ -329,6 +329,10 @@
                 <i class="fas fa-user-check me-2"></i>
                 Proveedores
               </a>
+              <a class="nav-link" href="#" data-section="monetization">
+                <i class="fas fa-coins me-2"></i>
+                Monetización
+              </a>
               <a class="nav-link" href="#" data-section="settings">
                 <i class="fas fa-cog me-2"></i>
                 Configuración
@@ -721,6 +725,102 @@
                     </button>
                   </div>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Monetization Section -->
+          <div id="monetization-section" style="display: none">
+            <div class="status-card">
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                  <h5 class="mb-0">
+                    <i class="fas fa-coins me-2 text-warning"></i>
+                    Monetización (solo lectura)
+                  </h5>
+                  <p class="text-muted small mb-0">
+                    Estado de saldos y desempeño de leads por proveedor.
+                  </p>
+                </div>
+                <button class="refresh-btn" id="monetization-refresh-btn" type="button">
+                  <i class="fas fa-sync-alt me-1"></i>
+                  Actualizar
+                  <div class="spinner-border spinner-border-sm loading-spinner" role="status">
+                    <span class="visually-hidden">Cargando...</span>
+                  </div>
+                </button>
+              </div>
+
+              <div class="row g-3 mb-3">
+                <div class="col-md-2">
+                  <div class="border rounded p-2 bg-light">
+                    <small class="text-muted d-block">Activos</small>
+                    <strong id="metric-active-providers">—</strong>
+                  </div>
+                </div>
+                <div class="col-md-2">
+                  <div class="border rounded p-2 bg-light">
+                    <small class="text-muted d-block">Pausados</small>
+                    <strong id="metric-paused-providers">—</strong>
+                  </div>
+                </div>
+                <div class="col-md-2">
+                  <div class="border rounded p-2 bg-light">
+                    <small class="text-muted d-block">Leads 7d</small>
+                    <strong id="metric-leads-7d">—</strong>
+                  </div>
+                </div>
+                <div class="col-md-2">
+                  <div class="border rounded p-2 bg-light">
+                    <small class="text-muted d-block">Leads 30d</small>
+                    <strong id="metric-leads-30d">—</strong>
+                  </div>
+                </div>
+                <div class="col-md-2">
+                  <div class="border rounded p-2 bg-light">
+                    <small class="text-muted d-block">Hired rate</small>
+                    <strong id="metric-hired-rate-30d">—</strong>
+                  </div>
+                </div>
+                <div class="col-md-2">
+                  <label for="monetization-status-filter" class="form-label mb-1 small text-muted">
+                    Estado
+                  </label>
+                  <select class="form-select form-select-sm" id="monetization-status-filter">
+                    <option value="all" selected>Todos</option>
+                    <option value="active">Activos</option>
+                    <option value="paused_paywall">Pausados</option>
+                    <option value="suspended">Suspendidos</option>
+                  </select>
+                </div>
+              </div>
+
+              <div id="monetization-feedback" class="alert" style="display: none"></div>
+              <div id="monetization-loading" class="text-center text-muted py-4">
+                <div class="spinner-border text-primary" role="status">
+                  <span class="visually-hidden">Cargando...</span>
+                </div>
+                <p class="mt-2 mb-0">Obteniendo datos de monetización...</p>
+              </div>
+              <div id="monetization-empty" class="alert alert-info" style="display: none">
+                No hay datos de monetización para mostrar.
+              </div>
+              <div class="table-responsive" id="monetization-table-wrapper" style="display: none">
+                <table class="table align-middle">
+                  <thead>
+                    <tr>
+                      <th>Proveedor</th>
+                      <th>Ciudad</th>
+                      <th>Estado</th>
+                      <th>Gratis</th>
+                      <th>Pagados</th>
+                      <th>Leads 30d</th>
+                      <th>Contrató (Sí/No)</th>
+                      <th>Último lead</th>
+                    </tr>
+                  </thead>
+                  <tbody id="monetization-table-body"></tbody>
+                </table>
               </div>
             </div>
           </div>
