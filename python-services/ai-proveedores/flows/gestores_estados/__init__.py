@@ -7,6 +7,7 @@ from .gestor_actualizacion_redes import manejar_actualizacion_redes_sociales
 from .gestor_servicios import (
     manejar_accion_servicios,
     manejar_agregar_servicios,
+    manejar_confirmacion_agregar_servicios,
     manejar_eliminar_servicio,
 )
 from .gestor_actualizacion_selfie import manejar_actualizacion_selfie
@@ -22,10 +23,13 @@ from .gestor_espera_correo import manejar_espera_correo
 from .gestor_espera_especialidad import manejar_espera_especialidad
 from .gestor_espera_experiencia import manejar_espera_experiencia
 from .gestor_espera_nombre import manejar_espera_nombre
+
 # Nuevo: captura de real_phone para @lid
 from .gestor_espera_real_phone import manejar_espera_real_phone
+
 # Fase 4: Eliminada referencia a awaiting_profession
 from .gestor_espera_red_social import manejar_espera_red_social
+
 # Confirmación de servicios (nuevo)
 from .gestor_confirmacion_servicios import (
     manejar_confirmacion_servicios,
@@ -40,6 +44,7 @@ __all__ = [
     "manejar_actualizacion_redes_sociales",
     "manejar_accion_servicios",
     "manejar_agregar_servicios",
+    "manejar_confirmacion_agregar_servicios",
     "manejar_eliminar_servicio",
     "manejar_actualizacion_selfie",
     "manejar_confirmacion_eliminacion",

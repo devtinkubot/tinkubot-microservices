@@ -1,6 +1,5 @@
-"""
-Funciones de registro de proveedores en base de datos.
-"""
+"""Funciones de registro de proveedores en base de datos."""
+
 import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -8,16 +7,21 @@ from typing import Any, Dict, List, Optional
 from models.proveedores import SolicitudCreacionProveedor
 from supabase import Client
 
-from services.registro.normalizacion import normalizar_datos_proveedor, garantizar_campos_obligatorios_proveedor
 from infrastructure.database import run_supabase
-
-# Fase 6: Importar servicio de embeddings
 from infrastructure.embeddings.servicio_embeddings import ServicioEmbeddings
-from services.servicios_proveedor.utilidades import (
-    normalizar_texto_para_busqueda,
+from services.registro.normalizacion import (
+    garantizar_campos_obligatorios_proveedor,
+    normalizar_datos_proveedor,
 )
+from services.servicios_proveedor.constantes import DISPLAY_ORDER_MAX_DB
+from services.servicios_proveedor.utilidades import normalizar_texto_para_busqueda
 
 logger = logging.getLogger(__name__)
+
+
+def _resolver_display_order(idx: int) -> int:
+    """Compatibilidad temporal con check DB: provider_services.display_order <= 4."""
+    return idx if idx <= DISPLAY_ORDER_MAX_DB else DISPLAY_ORDER_MAX_DB
 
 
 async def insertar_servicios_proveedor(
@@ -26,7 +30,7 @@ async def insertar_servicios_proveedor(
     servicios: List[str],
     servicio_embeddings: Optional[ServicioEmbeddings],
     tiempo_espera: float = 5.0,
-) -> List[Dict[str, Any]]:
+) -> Dict[str, Any]:
     """
     Inserta servicios individuales en provider_services con embeddings.
 
@@ -42,37 +46,56 @@ async def insertar_servicios_proveedor(
         tiempo_espera: Timeout para operaciones de Supabase (segundos)
 
     Returns:
-        Lista de servicios insertados con sus IDs y embeddings
+        Dict con conteos y detalle de errores:
+        - inserted_rows: Filas insertadas en provider_services
+        - requested_count: Cantidad solicitada
+        - inserted_count: Cantidad insertada
+        - failed_services: Lista de errores por servicio
 
     Example:
         >>> servicios = ["Plomería", "Electricidad", "Gasfitería"]
         >>> insertados = await insertar_servicios_proveedor(
         ...     supabase, "prov-123", servicios, servicio_embeddings
         ... )
-        >>> print(len(insertados))  # 3
+        >>> print(insertados["inserted_count"])  # 3
     """
-    servicios_insertados = []
+    servicios_insertados: List[Dict[str, Any]] = []
+    failed_services: List[Dict[str, str]] = []
+    requested_count = len(servicios)
+
+    def _resultado() -> Dict[str, Any]:
+        return {
+            "inserted_rows": servicios_insertados,
+            "requested_count": requested_count,
+            "inserted_count": len(servicios_insertados),
+            "failed_services": failed_services,
+        }
 
     if not servicio_embeddings:
-        logger.warning("⚠️ Servicio de embeddings no disponible, no se generarán embeddings")
+        logger.warning(
+            "⚠️ Servicio de embeddings no disponible, no se generarán embeddings"
+        )
         # Si no hay servicio de embeddings, igual insertamos los servicios sin embedding
         for idx, servicio in enumerate(servicios):
             servicio_normalizado = normalizar_texto_para_busqueda(servicio)
 
             try:
                 resultado = await run_supabase(
-                    lambda: supabase.table("provider_services").insert({
-                        "provider_id": proveedor_id,
-                        "service_name": servicio,
-                        "service_name_normalized": servicio_normalizado,
-                        "service_embedding": None,  # Sin embedding
-                        "is_primary": (idx == 0),
-                        "display_order": idx,
-                    }).execute(),
+                    lambda: supabase.table("provider_services")
+                    .insert(
+                        {
+                            "provider_id": proveedor_id,
+                            "service_name": servicio,
+                            "service_name_normalized": servicio_normalizado,
+                            "service_embedding": None,  # Sin embedding
+                            "is_primary": (idx == 0),
+                            "display_order": _resolver_display_order(idx),
+                        }
+                    )
+                    .execute(),
                     timeout=tiempo_espera,
                     label="provider_services.insert_no_embedding",
                 )
-
                 if resultado.data:
                     servicios_insertados.append(resultado.data[0])
                     logger.info(
@@ -80,10 +103,23 @@ async def insertar_servicios_proveedor(
                         servicio,
                     )
 
-            except Exception as e:
-                logger.error(f"❌ Error insertando servicio {servicio}: {e}")
+                else:
+                    failed_services.append(
+                        {
+                            "service": servicio,
+                            "error": "insert_without_data",
+                        }
+                    )
+            except Exception as exc:
+                logger.error("❌ Error insertando servicio %s: %s", servicio, exc)
+                failed_services.append(
+                    {
+                        "service": servicio,
+                        "error": str(exc),
+                    }
+                )
 
-        return servicios_insertados
+        return _resultado()
 
     # Generar embeddings para cada servicio
     for idx, servicio in enumerate(servicios):
@@ -103,18 +139,21 @@ async def insertar_servicios_proveedor(
 
             # Insertar en provider_services
             resultado = await run_supabase(
-                lambda: supabase.table("provider_services").insert({
-                    "provider_id": proveedor_id,
-                    "service_name": servicio,
-                    "service_name_normalized": servicio_normalizado,
-                    "service_embedding": embedding,
-                    "is_primary": (idx == 0),  # Primer servicio = principal
-                    "display_order": idx,
-                }).execute(),
+                lambda: supabase.table("provider_services")
+                .insert(
+                    {
+                        "provider_id": proveedor_id,
+                        "service_name": servicio,
+                        "service_name_normalized": servicio_normalizado,
+                        "service_embedding": embedding,
+                        "is_primary": (idx == 0),  # Primer servicio = principal
+                        "display_order": _resolver_display_order(idx),
+                    }
+                )
+                .execute(),
                 timeout=tiempo_espera,
                 label="provider_services.insert_with_embedding",
             )
-
             if resultado.data:
                 servicios_insertados.append(resultado.data[0])
                 embedding_dims = len(embedding) if embedding else 0
@@ -124,13 +163,30 @@ async def insertar_servicios_proveedor(
                 )
             else:
                 logger.warning(f"⚠️ No se pudo insertar servicio: {servicio}")
+                failed_services.append(
+                    {
+                        "service": servicio,
+                        "error": "insert_without_data",
+                    }
+                )
 
-        except Exception as e:
-            logger.error(f"❌ Error insertando servicio {servicio}: {e}")
+        except Exception as exc:
+            logger.error("❌ Error insertando servicio %s: %s", servicio, exc)
+            failed_services.append(
+                {
+                    "service": servicio,
+                    "error": str(exc),
+                }
+            )
             continue
 
-    logger.info(f"✅ Total servicios insertados: {len(servicios_insertados)}/{len(servicios)}")
-    return servicios_insertados
+    logger.info(
+        "✅ Total servicios insertados: %s/%s (fallidos=%s)",
+        len(servicios_insertados),
+        len(servicios),
+        len(failed_services),
+    )
+    return _resultado()
 
 
 async def registrar_proveedor_en_base_datos(
@@ -222,15 +278,23 @@ async def registrar_proveedor_en_base_datos(
             # Fase 6: Insertar servicios en provider_services con embeddings
             servicios = servicios_normalizados
             if servicios:
-                logger.info(f"🔄 Insertando {len(servicios)} servicios en provider_services...")
-                servicios_insertados = await insertar_servicios_proveedor(
+                logger.info(
+                    "🔄 Insertando %s servicios en provider_services...",
+                    len(servicios),
+                )
+                resultado_insercion = await insertar_servicios_proveedor(
                     supabase=supabase,
                     proveedor_id=id_proveedor,
                     servicios=servicios,
                     servicio_embeddings=servicio_embeddings,
                     tiempo_espera=tiempo_espera,
                 )
-                logger.info(f"✅ Servicios insertados: {len(servicios_insertados)}/{len(servicios)}")
+                logger.info(
+                    "✅ Servicios insertados: %s/%s (fallidos=%s)",
+                    resultado_insercion["inserted_count"],
+                    resultado_insercion["requested_count"],
+                    len(resultado_insercion["failed_services"]),
+                )
             else:
                 logger.warning("⚠️ No hay servicios para insertar en provider_services")
 
@@ -251,7 +315,9 @@ async def registrar_proveedor_en_base_datos(
                 "experience_years": registro_insertado.get(
                     "experience_years", datos_normalizados["experience_years"]
                 ),
-                "rating": registro_insertado.get("rating", datos_normalizados["rating"]),
+                "rating": registro_insertado.get(
+                    "rating", datos_normalizados["rating"]
+                ),
                 "verified": registro_insertado.get(
                     "verified", datos_normalizados["verified"]
                 ),
@@ -278,7 +344,9 @@ async def registrar_proveedor_en_base_datos(
                 limpiar_marca_perfil_eliminado,
             )
 
-            telefono_perfil = perfil_normalizado.get("phone", datos_normalizados["phone"])
+            telefono_perfil = perfil_normalizado.get(
+                "phone", datos_normalizados["phone"]
+            )
             await limpiar_marca_perfil_eliminado(telefono_perfil)
 
             await cachear_perfil_proveedor(

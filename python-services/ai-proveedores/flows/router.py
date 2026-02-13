@@ -18,6 +18,7 @@ from flows.gestores_estados import (
     manejar_actualizacion_redes_sociales,
     manejar_accion_servicios,
     manejar_agregar_servicios,
+    manejar_confirmacion_agregar_servicios,
     manejar_eliminar_servicio,
     manejar_actualizacion_selfie,
     manejar_confirmacion_eliminacion,
@@ -86,7 +87,9 @@ async def manejar_mensaje(
     if texto_normalizado in RESET_KEYWORDS:
         resultado_eliminacion = None
         if supabase:
-            resultado_eliminacion = await eliminar_registro_proveedor(supabase, telefono)
+            resultado_eliminacion = await eliminar_registro_proveedor(
+                supabase, telefono
+            )
         await reiniciar_flujo(telefono)
         flujo.clear()
         flujo.update({"state": "awaiting_consent", "has_consent": False})
@@ -129,7 +132,9 @@ async def manejar_mensaje(
                 if not tiene_consentimiento_timeout:
                     flujo["state"] = "awaiting_consent"
                     flujo["has_consent"] = False
-                    prompt_consentimiento_timeout = await solicitar_consentimiento(telefono)
+                    prompt_consentimiento_timeout = await solicitar_consentimiento(
+                        telefono
+                    )
                     mensajes_timeout = [{"response": informar_timeout_inactividad()}]
                     mensajes_timeout.extend(
                         prompt_consentimiento_timeout.get("messages", [])
@@ -335,6 +340,15 @@ async def enrutar_estado(
 
     if estado == "awaiting_service_add":
         respuesta = await manejar_agregar_servicios(
+            flujo=flujo,
+            proveedor_id=flujo.get("provider_id"),
+            texto_mensaje=texto_mensaje,
+            cliente_openai=cliente_openai,
+        )
+        return {"response": respuesta, "persist_flow": True}
+
+    if estado == "awaiting_service_add_confirmation":
+        respuesta = await manejar_confirmacion_agregar_servicios(
             flujo=flujo,
             proveedor_id=flujo.get("provider_id"),
             texto_mensaje=texto_mensaje,

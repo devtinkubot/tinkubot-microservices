@@ -80,9 +80,7 @@ async def obtener_perfil_proveedor(telefono: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-async def cachear_perfil_proveedor(
-    telefono: str, perfil: Dict[str, Any]
-) -> None:
+async def cachear_perfil_proveedor(telefono: str, perfil: Dict[str, Any]) -> None:
     """
     Guardar el perfil de proveedor en caché con TTL definido.
 
@@ -237,9 +235,10 @@ async def _obtener_servicios_relacionados(
     try:
         respuesta = await run_supabase(
             lambda: supabase.table("provider_services")
-            .select("service_name,display_order")
+            .select("service_name,display_order,created_at")
             .eq("provider_id", provider_id)
             .order("display_order", desc=False)
+            .order("created_at", desc=False)
             .execute(),
             label="provider_services.by_provider",
         )

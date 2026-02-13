@@ -70,6 +70,49 @@ def error_guardar_servicio() -> str:
     return "No pude guardar el servicio en este momento. Intenta nuevamente más tarde."
 
 
+def error_normalizar_servicio() -> str:
+    """Informa que no se pudo normalizar el servicio en este momento.
+
+    Returns:
+        Mensaje de error para fallback bloqueante cuando IA no está disponible
+    """
+    return (
+        "No pude normalizar tus servicios en este momento. "
+        "Intenta nuevamente en unos minutos."
+    )
+
+
+def mensaje_confirmacion_servicios_menu(servicios: List[str]) -> str:
+    """Solicita confirmación de servicios transformados en menú de servicios.
+
+    Args:
+        servicios: Lista de servicios propuestos para agregar
+
+    Returns:
+        Mensaje con lista y opciones 1/2 para confirmar o corregir
+    """
+    servicios_formateados = "\n".join([f"• {servicio}" for servicio in servicios])
+    return f"""*Identifiqué estos servicios para agregar:*
+
+{servicios_formateados}
+
+¿Quieres agregarlos a tu perfil?
+*1.* Sí, agregar
+*2.* No, corregir""".strip()
+
+
+def mensaje_correccion_servicios_menu() -> str:
+    """Solicita corrección manual de servicios desde menú.
+
+    Returns:
+        Mensaje para que el proveedor ingrese una versión corregida
+    """
+    return (
+        "Entendido. Escribe nuevamente los servicios que deseas agregar, "
+        "separados por comas."
+    )
+
+
 def confirmar_servicios_agregados(servicios: List[str]) -> str:
     """Confirma que los servicios fueron agregados exitosamente.
 
@@ -93,10 +136,7 @@ def confirmar_servicios_agregados(servicios: List[str]) -> str:
     return f"Servicios agregados: {listado}."
 
 
-def informar_limite_servicios_alcanzado(
-    agregados: int,
-    maximo: int
-) -> str:
+def informar_limite_servicios_alcanzado(agregados: int, maximo: int) -> str:
     """Informa que solo se agregaron algunos servicios por alcanzar el límite.
 
     Args:

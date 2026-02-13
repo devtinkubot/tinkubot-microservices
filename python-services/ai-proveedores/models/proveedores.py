@@ -9,7 +9,7 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
-SERVICIOS_MAXIMOS = 7
+from services.servicios_proveedor.constantes import SERVICIOS_MAXIMOS
 
 
 class ServiceInfo(BaseModel):
@@ -22,6 +22,7 @@ class ServiceInfo(BaseModel):
         is_primary: Si es el servicio principal del proveedor
         display_order: Orden de visualización (0-4)
     """
+
     id: str
     service_name: str
     is_primary: bool
@@ -50,13 +51,16 @@ class SolicitudCreacionProveedor(BaseModel):
         face_photo_url: URL foto facial (opcional)
         has_consent: Consentimiento de procesamiento de datos (default: False)
     """
+
     phone: str = Field(..., min_length=10, max_length=20)
     real_phone: Optional[str] = None
     full_name: str = Field(..., min_length=2, max_length=255)
     email: Optional[str] = None
     city: str = Field(..., min_length=2, max_length=100)
     # profession: ELIMINADO - Ahora se usa provider_services
-    services_list: List[str] = Field(..., min_length=1)  # 1-SERVICIOS_MAXIMOS servicios REQUERIDOS, validado en @field_validator
+    services_list: List[str] = Field(
+        ..., min_length=1
+    )  # 1-SERVICIOS_MAXIMOS servicios REQUERIDOS, validado en @field_validator
     experience_years: Optional[int] = Field(default=0, ge=0)
     social_media_url: Optional[str] = None
     social_media_type: Optional[str] = None
@@ -65,17 +69,17 @@ class SolicitudCreacionProveedor(BaseModel):
     face_photo_url: Optional[str] = None
     has_consent: bool = False
 
-    @field_validator('services_list')
+    @field_validator("services_list")
     @classmethod
     def validate_services_list(cls, v: List[str]) -> List[str]:
         """Valida que la lista de servicios tenga entre 1 y SERVICIOS_MAXIMOS elementos."""
         if len(v) < 1:
-            raise ValueError('Debe ingresar al menos 1 servicio')
+            raise ValueError("Debe ingresar al menos 1 servicio")
         if len(v) > SERVICIOS_MAXIMOS:
-            raise ValueError(f'Máximo {SERVICIOS_MAXIMOS} servicios permitidos')
+            raise ValueError(f"Máximo {SERVICIOS_MAXIMOS} servicios permitidos")
         return v
 
-    @field_validator('real_phone')
+    @field_validator("real_phone")
     @classmethod
     def validate_real_phone(cls, v: Optional[str]) -> Optional[str]:
         """Valida que el número real tenga 10-20 dígitos (con + opcional)."""
@@ -122,6 +126,7 @@ class RespuestaProveedor(BaseModel):
         created_at: Fecha de creación (opcional)
         updated_at: Fecha de última actualización (opcional)
     """
+
     id: str
     phone: str
     real_phone: Optional[str] = None
@@ -129,7 +134,9 @@ class RespuestaProveedor(BaseModel):
     email: Optional[str]
     city: str
     # profession: ELIMINADO
-    services: Optional[List[ServiceInfo]] = None  # Nueva estructura con servicios individuales
+    services: Optional[List[ServiceInfo]] = (
+        None  # Nueva estructura con servicios individuales
+    )
     total_services: int  # Contador de servicios
     rating: float
     available: bool
