@@ -75,7 +75,10 @@ async def insertar_servicios_proveedor(
 
                 if resultado.data:
                     servicios_insertados.append(resultado.data[0])
-                    logger.info(f"✅ Servicio insertado (sin embedding): {servicio}")
+                    logger.info(
+                        "✅ Servicio insertado (sin embedding): %s",
+                        servicio,
+                    )
 
             except Exception as e:
                 logger.error(f"❌ Error insertando servicio {servicio}: {e}")
@@ -90,7 +93,9 @@ async def insertar_servicios_proveedor(
             embedding = await servicio_embeddings.generar_embedding(servicio)
 
             if not embedding:
-                logger.warning(f"⚠️ No se pudo generar embedding para servicio: {servicio}")
+                logger.warning(
+                    f"⚠️ No se pudo generar embedding para servicio: {servicio}"
+                )
                 embedding = None
 
             # Normalizar nombre para búsqueda

@@ -3,8 +3,8 @@
 import re
 
 from templates.mensajes.validacion import (
+    mensaje_inicial_solicitud_servicio,
     mensaje_error_input_invalido,
-    solicitar_descripcion_servicio,
 )
 
 
@@ -32,7 +32,7 @@ def validar_entrada_servicio(
 
     # Caso 1: Vacío o saludo
     if not texto_limpio or texto_limpio.lower() in saludos:
-        return False, solicitar_descripcion_servicio()
+        return False, mensaje_inicial_solicitud_servicio
 
     # Caso 2: Solo números
     if texto_limpio.isdigit():

@@ -60,10 +60,11 @@ class BuscadorProveedores:
                 - total: cantidad de proveedores
                 - search_scope: ámbito de búsqueda
         """
-        consulta = f"{profesion}"
+        consulta = (descripcion_problema or profesion or "").strip() or profesion
         self.logger.info(
-            "🔍 Búsqueda embeddings + validación IA: profession='%s', location='%s'",
+            "🔍 Búsqueda embeddings + validación IA: profession='%s', query='%s', location='%s'",
             profesion,
+            consulta,
             ciudad,
         )
 
@@ -73,6 +74,7 @@ class BuscadorProveedores:
                 consulta=consulta,
                 ciudad=ciudad,
                 descripcion_problema=descripcion_problema or profesion,
+                service_candidate=profesion,
                 limite=10,
             )
 

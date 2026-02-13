@@ -46,11 +46,6 @@ def solicitar_reformulacion() -> str:
     """Solicita al usuario reformular su mensaje."""
     return "¿Podrías reformular tu mensaje?"
 
-def solicitar_descripcion_servicio() -> str:
-    """Solicita descripción del servicio."""
-    return "Por favor describe el servicio."
-
-
 def mensaje_confirmar_servicio(servicio: str) -> str:
     """Confirma el servicio detectado antes de continuar la búsqueda."""
     from templates.comunes import pie_instrucciones_respuesta_numerica

@@ -14,12 +14,18 @@ from infrastructure.database import run_supabase
 class GestorLeads:
     """Registra eventos de lead y consume saldo (gratis o pagado)."""
 
-    def __init__(self, *, supabase, logger: Optional[logging.Logger] = None) -> None:
+    def __init__(
+        self,
+        *,
+        supabase,
+        feedback_delay_seconds: float,
+        logger: Optional[logging.Logger] = None,
+    ) -> None:
         self.supabase = supabase
         self.logger = logger or logging.getLogger(__name__)
+        self.feedback_delay_seconds = int(feedback_delay_seconds)
         self.dedupe_window_days = int(os.getenv("LEAD_DEDUPE_WINDOW_DAYS", "7"))
         self.free_leads_default = int(os.getenv("FREE_LEADS_DEFAULT", "5"))
-        self.feedback_delay_seconds = int(os.getenv("FEEDBACK_DELAY_SECONDS", "300"))
 
     def _build_dedupe_key(
         self,

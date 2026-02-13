@@ -189,23 +189,11 @@ async def enrutar_estado(
             orquestador.logger.info(
                 f"🤖 Conversación nueva, usando extracción IA pura para: '{limpio[:50]}...'"
             )
-            if getattr(orquestador, "extractor_ia", None):
-                extractor = orquestador.extractor_ia
-                extraer_servicio = getattr(
-                    extractor,
-                    "extraer_servicio_con_ia",
-                    extractor.extraer_servicio_con_ia_pura,
-                )
-                extraer_ubicacion = getattr(
-                    extractor,
-                    "extraer_ubicacion_con_ia",
-                    extractor._extraer_ubicacion_con_ia,
-                )
-                profesion = await extraer_servicio(limpio)
-                ubicacion_extraida = await extraer_ubicacion(limpio)
-            else:
-                profesion = await orquestador.extraer_servicio_con_ia_pura(limpio)
-                ubicacion_extraida = await orquestador._extraer_ubicacion_con_ia(limpio)
+            extractor = orquestador.extractor_ia
+            extraer_servicio = extractor.extraer_servicio_con_ia
+            extraer_ubicacion = extractor.extraer_ubicacion_con_ia
+            profesion = await extraer_servicio(limpio)
+            ubicacion_extraida = await extraer_ubicacion(limpio)
             valor_servicio = (profesion or "").strip()
             if not valor_servicio:
                 flujo.update({"state": "awaiting_service"})
@@ -417,10 +405,9 @@ async def enrutar_estado(
                     {
                         "response": (
                             "*¡Gracias por tu respuesta!*\n"
-                            "Tu feedback nos ayuda a mejorar."
+                            "Si necesitas otro apoyo, solo escríbeme."
                         )
-                    },
-                    {"response": mensaje_inicial_solicitud()},
+                    }
                 ]
             }
 

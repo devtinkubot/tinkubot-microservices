@@ -52,7 +52,7 @@ class ValidadorProveedoresIA:
         si tiene la capacidad y experiencia apropiada.
 
         Args:
-            necesidad_usuario: Necesidad del usuario (ej: "marketing", "community manager")
+            necesidad_usuario: Necesidad del usuario (ej: "marketing digital", "desarrollo web")
             descripcion_problema: Descripción completa del problema del cliente
             proveedores: Lista de proveedores a validar
 
@@ -104,7 +104,7 @@ class ValidadorProveedoresIA:
 
         prompt_sistema = f"""Eres un experto en servicios profesionales. Tu tarea es analizar si cada proveedor PUEDE ayudar con esta necesidad del usuario.
 
-IMPORTANTE: Los servicios pueden estar en español o inglés. Términos como "community manager", "social media manager", "community management" son EQUIVALENTES a "gestor de redes sociales", "manejo de redes sociales", "gestión de redes sociales".
+IMPORTANTE: Evalúa equivalencia semántica entre términos en distintos idiomas cuando representen el mismo servicio.
 
 NECESIDAD DETECTADA: "{necesidad_usuario}"
 PROBLEMA ESPECÍFICO DEL CLIENTE: "{problema}"
@@ -117,7 +117,7 @@ Criterios importantes:
 1. La profesión del proveedor debe ser APROPIADA para la necesidad
    - Ejemplo: Para "bug en página web", un DESARROLLADOR WEB es apropiado
    - Ejemplo: Para "arreglo de tubería", un PLOMERO es apropiado
-   - Ejemplo: Para "gestor de redes sociales", "community manager" o "social media" son APROPIADOS
+   - Considera equivalencias semánticas entre idiomas para la misma necesidad
 
 2. Los servicios que ofrece deben ser RELEVANTES y APLICABLES
    - No basta con mencionar palabras clave

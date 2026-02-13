@@ -199,171 +199,6 @@ def extraer_servicio_y_ubicacion(
     return profesion, ubicacion
 
 
-async def extraer_servicio_con_ia_pura(
-    mensaje_usuario: str,
-    semaforo_openai: Optional[asyncio.Semaphore],
-    cliente_openai: Optional[Any],
-    logger: logging.Logger,
-    tiempo_espera_openai: float = 5.0,
-) -> Optional[str]:
-    """
-    Extrae servicio usando IA.
-
-    Args:
-        mensaje_usuario: Mensaje del usuario para extraer el servicio
-        semaforo_openai: Semaphore para limitar concurrencia
-        cliente_openai: Cliente de OpenAI
-        logger: Logger para trazabilidad
-        tiempo_espera_openai: Timeout en segundos
-
-    Returns:
-        El servicio detectado o None si no se pudo detectar
-    """
-    if not cliente_openai:
-        logger.warning("⚠️ extraer_servicio_con_ia_pura: sin cliente OpenAI")
-        return None
-
-    if not mensaje_usuario or not mensaje_usuario.strip():
-        return None
-
-    prompt_sistema = """Eres un experto en servicios profesionales. Tu tarea es identificar el servicio que necesita el usuario.
-
-IMPORTANTE:
-- No estás limitado a una lista predefinida de servicios
-- Detecta el servicio más específico posible
-- Si el usuario menciona "bug en página web", responde "desarrollador web"
-- Si menciona "error en app", responde "desarrollador de aplicaciones"
-- Si menciona "problema con base de datos", responde "administrador de base de datos"
-- Términos en inglés como "community manager" o "developer" son válidos
-
-Responde SOLO con el nombre del servicio, sin explicaciones."""
-
-    prompt_usuario = f'¿Qué servicio necesita este usuario: "{mensaje_usuario[:200]}"'
-
-    try:
-        async with semaforo_openai:
-            respuesta = await asyncio.wait_for(
-                cliente_openai.chat.completions.create(
-                    model="gpt-3.5-turbo",
-                    messages=[
-                        {"role": "system", "content": prompt_sistema},
-                        {"role": "user", "content": prompt_usuario},
-                    ],
-                    temperature=0.3,
-                    max_tokens=50,
-                ),
-                timeout=tiempo_espera_openai,
-            )
-
-        if not respuesta.choices:
-            return None
-
-        servicio = (respuesta.choices[0].message.content or "").strip()
-        # Limpiar comillas si la IA las agregó
-        servicio = servicio.strip('"').strip("'").strip()
-
-        logger.info(f"✅ IA detectó servicio: '{servicio}' de: '{mensaje_usuario[:50]}...'")
-        return servicio if servicio else None
-
-    except asyncio.TimeoutError:
-        logger.warning("⚠️ Timeout extrayendo servicio con IA pura")
-        return None
-    except Exception as exc:
-        logger.warning(f"⚠️ Error extrayendo servicio con IA pura: {exc}")
-        return None
-
-
-async def _extraer_ubicacion_con_ia(
-    texto: str,
-    semaforo_openai: Optional[asyncio.Semaphore],
-    cliente_openai: Optional[Any],
-    logger: logging.Logger,
-    tiempo_espera_openai: float = 5.0,
-) -> Optional[str]:
-    """
-    Extrae la ciudad del texto usando IA.
-    """
-    ciudades = [
-        "Quito",
-        "Guayaquil",
-        "Cuenca",
-        "Santo Domingo",
-        "Manta",
-        "Portoviejo",
-        "Machala",
-        "Durán",
-        "Loja",
-        "Ambato",
-        "Riobamba",
-        "Esmeraldas",
-    ]
-
-    ciudades_str = ", ".join(ciudades)
-
-    if not cliente_openai:
-        return None
-
-    prompt_sistema = f"""Eres un experto en identificar ciudades de Ecuador. Tu tarea es extraer LA CIUDAD mencionada en el texto.
-
-Ciudades válidas: {ciudades_str}
-
-Reglas:
-1. Responde SOLO con el nombre de la ciudad si está en la lista
-2. Si no se menciona ninguna ciudad válida, responde "null"
-3. Normaliza el nombre (ej: "quito" → "Quito")
-
-Ejemplos:
-- "en Quito" → "Quito"
-- "lo necesito en cuenca" → "Cuenca"
-- "para guayaquil" → "Guayaquil"
-- "en mi ciudad" → "null"
-
-Responde SOLO con el nombre de la ciudad o "null", sin explicaciones."""
-
-    prompt_usuario = f'¿Qué ciudad de Ecuador se menciona en: "{texto[:200]}"'
-
-    try:
-        async with semaforo_openai:
-            respuesta = await asyncio.wait_for(
-                cliente_openai.chat.completions.create(
-                    model="gpt-3.5-turbo",
-                    messages=[
-                        {"role": "system", "content": prompt_sistema},
-                        {"role": "user", "content": prompt_usuario},
-                    ],
-                    temperature=0.3,
-                    max_tokens=30,
-                ),
-                timeout=tiempo_espera_openai,
-            )
-
-        if not respuesta.choices:
-            return None
-
-        ubicacion = (respuesta.choices[0].message.content or "").strip()
-        ubicacion = ubicacion.strip('"').strip("'").strip()
-
-        if ubicacion.lower() == "null" or not ubicacion:
-            return None
-
-        # Verificar que sea una ciudad válida
-        for ciudad in ciudades:
-            if ciudad.lower() == ubicacion.lower():
-                logger.info(
-                    f"✅ IA extrajo ciudad: '{ciudad}' del texto: '{texto[:50]}...'"
-                )
-                return ciudad
-
-        return None
-
-    except asyncio.TimeoutError:
-        logger.warning("⚠️ Timeout extrayendo ciudad con IA")
-        return None
-    except Exception as exc:
-        logger.warning(f"⚠️ Error extrayendo ciudad con IA: {exc}")
-        return None
-
-
 def normalizar_boton(valor: Optional[str]) -> Optional[str]:
     """Normaliza el valor de un botón/quick reply para comparaciones robustas."""
     if not valor:
@@ -405,7 +240,7 @@ class OrquestadorConversacional:
             gestor_sesiones: Gestor de sesiones para historial
             buscador: Servicio BuscadorProveedores (opcional, para backward compatibility)
             validador: Servicio ValidadorProveedoresIA (opcional, para backward compatibility)
-            extractor_ia: Servicio ExtractorNecesidadIA (opcional)
+            extractor_ia: Servicio ExtractorNecesidadIA (requerido)
             servicio_consentimiento: Servicio ServicioConsentimiento (opcional, para backward compatibility)
             repositorio_flujo: RepositorioFlujoRedis (opcional, para backward compatibility)
             repositorio_clientes: RepositorioClientesSupabase (opcional, para backward compatibility)
@@ -415,6 +250,8 @@ class OrquestadorConversacional:
         self.supabase = supabase
         self.gestor_sesiones = gestor_sesiones
         self.logger = logger or logging.getLogger(__name__)
+        if extractor_ia is None:
+            raise ValueError("extractor_ia es obligatorio en OrquestadorConversacional")
 
         # Nuevos servicios (inyectados opcionalmente para backward compatibility)
         self.buscador = buscador
@@ -431,42 +268,6 @@ class OrquestadorConversacional:
         self.max_confirm_attempts = MAX_CONFIRM_ATTEMPTS
         # Nombres en español para extracción de servicio
         self.extraer_servicio_y_ubicacion = extraer_servicio_y_ubicacion
-
-        # Wrapper para extracción IA pura con firma compatible
-        async def _extraer_servicio_wrapper(historial: str, mensaje: str):
-            # Usar extractor inyectado si está disponible.
-            if self.extractor_ia:
-                extraer_servicio = getattr(
-                    self.extractor_ia,
-                    "extraer_servicio_con_ia",
-                    self.extractor_ia.extraer_servicio_con_ia_pura,
-                )
-                extraer_ubicacion = getattr(
-                    self.extractor_ia,
-                    "extraer_ubicacion_con_ia",
-                    self.extractor_ia._extraer_ubicacion_con_ia,
-                )
-                servicio = await extraer_servicio(mensaje)
-                ubicacion = await extraer_ubicacion(mensaje)
-            else:
-                # Fallback a funciones globales
-                servicio = await extraer_servicio_con_ia_pura(
-                    mensaje_usuario=mensaje,
-                    semaforo_openai=None,
-                    cliente_openai=None,
-                    logger=self.logger,
-                    tiempo_espera_openai=5.0,
-                )
-                ubicacion = await _extraer_ubicacion_con_ia(
-                    texto=mensaje,
-                    semaforo_openai=None,
-                    cliente_openai=None,
-                    logger=self.logger,
-                    tiempo_espera_openai=5.0,
-                )
-            return servicio, ubicacion
-
-        self.extraer_servicio_con_ia_pura = _extraer_servicio_wrapper
 
         # Inyectar callbacks necesarios
         self._setup_callbacks()
@@ -680,12 +481,8 @@ class OrquestadorConversacional:
         if mensaje_advertencia:
             return await responder(flujo, {"response": mensaje_advertencia})
 
-        # 3. IA-only extraction - usar extractor inyectado si está disponible
-        funcion_extraccion = (
-            self.extractor_ia.extraer_servicio_con_ia_pura
-            if self.extractor_ia
-            else self.extraer_servicio_con_ia_pura
-        )
+        # 3. IA-only extraction (implementación canónica)
+        funcion_extraccion = self.extractor_ia.extraer_servicio_con_ia_pura
 
         flujo_actualizado, respuesta = await procesar_estado_esperando_servicio(
             flujo,

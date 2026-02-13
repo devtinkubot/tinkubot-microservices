@@ -12,8 +12,8 @@ Variables de entorno soportadas:
 - WHATSAPP_CLIENTES_PORT: Puerto del servicio WhatsApp clientes. Default: 5001
 - SUPABASE_URL: URL de Supabase para persistencia. Optional
 - SUPABASE_SERVICE_KEY: Clave de servicio de Supabase. Optional
-- FEEDBACK_DELAY_SECONDS: Delay para scheduler de feedback. Default: 300.0
-- TASK_POLL_INTERVAL_SECONDS: Intervalo de polling de tareas. Default: 60.0
+- FEEDBACK_DELAY_SECONDS: Delay para scheduler de feedback. Requerido
+- TASK_POLL_INTERVAL_SECONDS: Intervalo de polling de tareas. Requerido
 - FLOW_TTL_SECONDS: TTL del estado de conversación en Redis. Default: 86400
 - CLIENTES_INSTANCE_ID: ID de instancia del bot clientes. Default: "clientes"
 - CLIENTES_INSTANCE_NAME: Nombre de instancia del bot clientes. Default: "Bot Clientes"
@@ -53,8 +53,8 @@ class ConfiguracionServicio(BaseSettings):
     supabase_service_key: Optional[str] = None
 
     # Timing Configuration
-    feedback_delay_seconds: float = 300.0  # 5 minutos
-    task_poll_interval_seconds: float = 60.0  # 1 minuto
+    feedback_delay_seconds: float
+    task_poll_interval_seconds: float
     flow_ttl_seconds: int = 86400  # 24 horas
 
     # Instance Configuration

@@ -54,10 +54,10 @@ class ServicioDisponibilidad:
         ciudad_txt = ciudad or "tu ciudad"
         detalle = (descripcion_problema or "").strip() or servicio
         return (
-            f"Hola *{nombre or 'proveedor'}*,\n\n"
-            f"Se requiere el siguiente servicio en {ciudad_txt}: *{servicio}*.\n"
-            f"Para atender lo siguiente: *{detalle}*.\n\n"
-            "¿Estás disponible para atenderlo?"
+            f"¡Hola *{nombre or 'proveedor'}*!\n"
+            f"¿Estás disponible para atender en *{ciudad_txt}*?\n\n"
+            f"Servicio requerido: *{servicio}*\n\n"
+            f"Para atender: *{detalle}*"
         )
 
     @staticmethod

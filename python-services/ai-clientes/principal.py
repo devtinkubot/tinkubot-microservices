@@ -161,6 +161,7 @@ programador_retroalimentacion = ProgramadorRetroalimentacion(
 
 gestor_leads = GestorLeads(
     supabase=supabase,
+    feedback_delay_seconds=configuracion.feedback_delay_seconds,
     logger=logger,
 )
 

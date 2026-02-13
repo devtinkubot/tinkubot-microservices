@@ -6,9 +6,10 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
 import time
+import unicodedata
 from datetime import datetime
-from pathlib import Path
 from time import perf_counter
 from typing import Any, Dict, List, Optional
 
@@ -44,7 +45,6 @@ class SearchService:
         self.supabase: Optional[Client] = None
         self.openai_client: Optional[AsyncOpenAI] = None
         self.text_processor = TextProcessor()
-        self.intent_aliases: Dict[str, set[str]] = self._load_intent_aliases()
         self._openai_semaphore = asyncio.Semaphore(
             int(getattr(settings, "max_openai_concurrency", 5) or 5)
         )
@@ -93,45 +93,89 @@ class SearchService:
         if self.supabase:
             logger.info("🔌 Cliente Supabase cerrado")
 
+    @staticmethod
+    def _normalize_text(text: Optional[str]) -> str:
+        if not text:
+            return ""
+        normalized = unicodedata.normalize("NFD", text.lower().strip())
+        no_accents = "".join(ch for ch in normalized if unicodedata.category(ch) != "Mn")
+        clean = re.sub(r"[^a-z0-9\s]", " ", no_accents)
+        return re.sub(r"\s+", " ", clean).strip()
+
+    def _build_effective_query(self, request: SearchRequest) -> str:
+        context = request.context or {}
+        problem_description = str(context.get("problem_description") or "").strip()
+        service_candidate = str(context.get("service_candidate") or "").strip()
+
+        primary_text = problem_description or request.query
+
+        query_parts: List[str] = []
+        if primary_text.strip():
+            query_parts.append(primary_text.strip())
+        if request.query.strip():
+            query_parts.append(request.query.strip())
+        if service_candidate:
+            query_parts.append(service_candidate)
+
+        deduped_parts: List[str] = []
+        seen = set()
+        for part in query_parts:
+            normalized_part = self._normalize_text(part)
+            if not normalized_part or normalized_part in seen:
+                continue
+            seen.add(normalized_part)
+            deduped_parts.append(part)
+
+        return " ".join(deduped_parts) if deduped_parts else request.query
+
     def _generate_query_hash(
-        self, query: str, filters: Optional[SearchFilters] = None
+        self, request: SearchRequest, effective_query: str
     ) -> str:
         """Generar hash único para consulta."""
-        canonical = f"{query.lower().strip()}"
-        if filters:
+        canonical = f"{effective_query.lower().strip()}"
+        if request.filters:
             canonical += (
-                f":{filters.city}:{filters.profession}:"
-                f"{filters.min_rating}:{filters.verified_only}"
+                f":{request.filters.city}:{request.filters.profession}:"
+                f"{request.filters.min_rating}:{request.filters.verified_only}"
             )
+        context = request.context or {}
+        canonical += (
+            f":{str(context.get('problem_description') or '').lower().strip()}:"
+            f"{str(context.get('service_candidate') or '').lower().strip()}"
+        )
 
         return hashlib.sha256(canonical.encode()).hexdigest()[:16]
 
     async def search_providers(self, request: SearchRequest) -> SearchResult:
         """Búsqueda principal embeddings-only."""
         start_time = time.time()
-        query_hash = self._generate_query_hash(request.query, request.filters)
+        effective_query = self._build_effective_query(request)
+        query_hash = self._generate_query_hash(request, effective_query)
 
         cached_result = await cache_service.get_search_result(query_hash)
         if cached_result:
-            logger.info(f"🎯 Cache HIT para query: {request.query[:50]}...")
+            logger.info(
+                "🎯 Cache HIT para query efectiva: %s...",
+                effective_query[:50],
+            )
             await self._update_metrics_async(
                 request, cached_result.metadata, cache_hit=True
             )
             return cached_result
 
-        query_analysis = analyze_query(request.query)
-        logger.info(f"🔍 Análisis: {query_analysis}")
-        base_intent_tokens = query_analysis.get("service_tokens") or query_analysis.get(
-            "tokens", []
+        query_analysis = analyze_query(effective_query)
+        logger.info(
+            "🔍 Query original='%s' | efectiva='%s' | análisis=%s",
+            request.query,
+            effective_query,
+            query_analysis,
         )
-        base_city = query_analysis.get("city")
 
-        providers = await self._search_by_embeddings(request)
+        providers = await self._search_by_embeddings(request, effective_query)
 
         if request.filters:
             providers = await self._apply_filters(providers, request.filters)
 
-        providers = self._filter_by_intent(providers, base_intent_tokens, base_city)
         providers = await self._filter_by_billing_eligibility(providers)
 
         providers = self._sort_and_limit_results(
@@ -229,12 +273,14 @@ class SearchService:
         )
         return response.data[0].embedding
 
-    async def _search_by_embeddings(self, request: SearchRequest) -> List[ProviderInfo]:
+    async def _search_by_embeddings(
+        self, request: SearchRequest, effective_query: str
+    ) -> List[ProviderInfo]:
         """Búsqueda por embeddings usando provider_services."""
         if not self.supabase:
             raise RuntimeError("Supabase client not initialized")
 
-        embedding = await self._generate_embedding(request.query)
+        embedding = await self._generate_embedding(effective_query)
         if not embedding:
             raise EmbeddingUnavailableError(
                 "No fue posible generar embeddings para la consulta"
@@ -287,62 +333,6 @@ class SearchService:
             social_media_type=row.get("social_media_type"),
             face_photo_url=row.get("face_photo_url"),
         )
-
-    def _load_intent_aliases(self) -> Dict[str, set[str]]:
-        """Carga alias de intención desde archivo JSON (configurable)."""
-        config_path = (
-            Path(__file__).resolve().parents[1] / "app" / "config" / "intent_aliases.json"
-        )
-        if not config_path.exists():
-            return {}
-
-        try:
-            data = json.loads(config_path.read_text(encoding="utf-8"))
-            aliases: Dict[str, set[str]] = {}
-            for key, values in data.items():
-                if isinstance(values, list):
-                    aliases[key.lower()] = {v.lower() for v in values if v}
-            logger.info("🔧 Alias de intención cargados")
-            return aliases
-        except Exception as exc:  # pragma: no cover
-            logger.warning(f"No se pudieron cargar alias de intención: {exc}")
-            return {}
-
-    def _filter_by_intent(
-        self,
-        providers: List[ProviderInfo],
-        intent_tokens: List[str],
-        city: Optional[str],
-    ) -> List[ProviderInfo]:
-        """Filtra resultados que no coinciden con los tokens clave del servicio."""
-        if not intent_tokens:
-            return providers
-
-        tokens: set[str] = set()
-        for raw in intent_tokens:
-            if not raw:
-                continue
-            base = raw.lower()
-            if city and base == city.lower():
-                continue
-            aliases = self.intent_aliases.get(base, set())
-            tokens.update({base, *aliases})
-
-        tokens_to_match = [token for token in tokens if len(token) >= 4]
-
-        if not tokens_to_match:
-            return providers
-
-        filtered: List[ProviderInfo] = []
-        for provider in providers:
-            professions_text = " ".join(provider.professions or []).lower()
-            services = " ".join(provider.services or []).lower()
-            if any(
-                token in professions_text or token in services
-                for token in tokens_to_match
-            ):
-                filtered.append(provider)
-        return filtered
 
     async def _apply_filters(
         self, providers: List[ProviderInfo], filters: SearchFilters

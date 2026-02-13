@@ -62,6 +62,7 @@ class ClienteBusqueda:
         consulta: str,
         ciudad: Optional[str] = None,
         descripcion_problema: Optional[str] = None,
+        service_candidate: Optional[str] = None,
         limite: int = 10,
     ) -> Dict[str, Any]:
         """
@@ -71,6 +72,7 @@ class ClienteBusqueda:
             consulta: Texto de búsqueda
             ciudad: Ciudad para filtrar
             descripcion_problema: Contexto original del usuario (trazabilidad)
+            service_candidate: Servicio detectado por IA para contexto adicional
             limite: Límite de resultados
         Returns:
             Dict con resultados de búsqueda
@@ -101,8 +103,14 @@ class ClienteBusqueda:
                 "query": consulta,
                 "limit": limite,
             }
+            context_payload: Dict[str, Any] = {}
             if descripcion_problema:
-                carga["context"] = {"problem_description": descripcion_problema}
+                context_payload["problem_description"] = descripcion_problema
+            if service_candidate:
+                context_payload["service_candidate"] = service_candidate
+            if context_payload:
+                context_payload["language_hint"] = "es"
+                carga["context"] = context_payload
 
             # Agregar filtros si se proporcionan
             filtros: Dict[str, Any] = {"verified_only": True}
