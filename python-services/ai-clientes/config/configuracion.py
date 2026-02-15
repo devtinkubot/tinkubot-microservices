@@ -64,6 +64,11 @@ class ConfiguracionServicio(BaseSettings):
     # Redis Configuration
     redis_url: str = "redis://localhost:6379"
 
+    # OpenAI Model Configuration (centralizado)
+    modelo_extraccion: str = "gpt-4o-mini"  # Para extracción de necesidades
+    modelo_validacion: str = "gpt-4o-mini"  # Para validación de contenido
+    modelo_normalizacion: str = "gpt-4o-mini"  # Para normalización de servicios
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

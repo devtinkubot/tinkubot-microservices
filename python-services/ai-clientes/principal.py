@@ -16,27 +16,24 @@ from supabase import create_client
 from config.configuracion import configuracion
 from infrastructure.persistencia.cliente_redis import cliente_redis as redis_client
 from infrastructure.clientes.busqueda import ClienteBusqueda
-from services.sesiones.gestor_sesiones import gestor_sesiones
 from services.proveedores.disponibilidad import servicio_disponibilidad
-from services.orquestador_conversacion import OrquestadorConversacional
 from infrastructure.persistencia.repositorio_clientes import RepositorioClientesSupabase
 from infrastructure.persistencia.repositorio_flujo import RepositorioFlujoRedis
 from services.validacion.validador_proveedores_ia import ValidadorProveedoresIA
 from services.extraccion.extractor_necesidad_ia import ExtractorNecesidadIA
+from services.deteccion.validador_profesion_ia import ValidadorProfesionIA
 from services.buscador.buscador_proveedores import BuscadorProveedores
 from services.clientes.servicio_consentimiento import ServicioConsentimiento
 from services.programador_retroalimentacion import ProgramadorRetroalimentacion
 from services.leads import GestorLeads
 from services.seguridad.contenido import ModeradorContenido
-from services.orquestador_retrollamadas import OrquestadorRetrollamadas
+
+# Máquina de estados
+from state_machine import MaquinaEstados
 
 # Configurar logging
 logging.basicConfig(level=getattr(logging, configuracion.log_level))
 logger = logging.getLogger(__name__)
-
-# Feature flag para extracción IA
-USAR_EXTRACCION_IA = os.getenv("USE_AI_EXTRACTION", "true").lower() == "true"
-logger.info("🔧 Extracción IA habilitada: %s", USAR_EXTRACCION_IA)
 
 # Inicializar FastAPI
 app = FastAPI(
@@ -56,10 +53,6 @@ TIEMPO_ESPERA_OPENAI_SEGUNDOS = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "5"))
 MAX_CONCURRENCIA_OPENAI = int(os.getenv("MAX_OPENAI_CONCURRENCY", "5"))
 semaforo_openai = (
     asyncio.Semaphore(MAX_CONCURRENCIA_OPENAI) if cliente_openai else None
-)
-
-BUCKET_SUPABASE_PROVEEDORES = os.getenv(
-    "SUPABASE_PROVIDERS_BUCKET", "tinkubot-providers"
 )
 
 # WhatsApp Gateway URL para envíos salientes (scheduler)
@@ -113,6 +106,13 @@ extractor_ia = ExtractorNecesidadIA(
     logger=logger,
 )
 
+validador_profesion = ValidadorProfesionIA(
+    cliente_openai=cliente_openai,
+    semaforo_openai=semaforo_openai,
+    tiempo_espera_openai=TIEMPO_ESPERA_OPENAI_SEGUNDOS,
+    logger=logger,
+)
+
 # Cliente HTTP para Search Service
 cliente_busqueda = ClienteBusqueda()
 
@@ -123,20 +123,6 @@ buscador = BuscadorProveedores(
 )
 
 servicio_consentimiento = ServicioConsentimiento(
-    repositorio_clientes=repositorio_clientes,
-    logger=logger,
-)
-
-# Inicializar orquestador conversacional con nuevos servicios
-orquestador = OrquestadorConversacional(
-    redis_client=redis_client,
-    supabase=supabase,
-    gestor_sesiones=gestor_sesiones,
-    buscador=buscador,
-    validador=validador,
-    extractor_ia=extractor_ia,
-    servicio_consentimiento=servicio_consentimiento,
-    repositorio_flujo=repositorio_flujo,
     repositorio_clientes=repositorio_clientes,
     logger=logger,
 )
@@ -157,6 +143,7 @@ programador_retroalimentacion = ProgramadorRetroalimentacion(
     retraso_retroalimentacion_segundos=configuracion.feedback_delay_seconds,
     intervalo_sondeo_tareas_segundos=configuracion.task_poll_interval_seconds,
     logger=logger,
+    redis_client=redis_client,  # Para Redis Streams
 )
 
 gestor_leads = GestorLeads(
@@ -165,38 +152,22 @@ gestor_leads = GestorLeads(
     logger=logger,
 )
 
-retrollamadas = OrquestadorRetrollamadas(
-    supabase=supabase,
+# ============================================================================
+# MÁQUINA DE ESTADOS
+# ============================================================================
+maquina_estados = MaquinaEstados(
     repositorio_flujo=repositorio_flujo,
     repositorio_clientes=repositorio_clientes,
-    buscador=buscador,
+    buscador_proveedores=buscador,
+    extractor_necesidad=extractor_ia,
+    validador_profesion=validador_profesion,
     moderador_contenido=moderador_contenido,
-    programador_retroalimentacion=programador_retroalimentacion,
+    servicio_consentimiento=servicio_consentimiento,
     gestor_leads=gestor_leads,
     logger=logger,
-    supabase_bucket=BUCKET_SUPABASE_PROVEEDORES,
-    supabase_base_url=configuracion.supabase_url,
 )
+logger.info("✅ Máquina de estados inicializada")
 
-logger.info("🔧 Inyectando callbacks en el orquestador...")
-orquestador.inyectar_callbacks(**retrollamadas.build())
-logger.info("✅ Callbacks inyectados correctamente")
-
-async def buscar_proveedores(
-    servicio: str,
-    ciudad: str,
-    radio_km: float = 10.0,
-    descripcion_problema: str | None = None,
-):
-    """Wrapper de búsqueda para flujos en segundo plano."""
-    if orquestador.buscador:
-        return await orquestador.buscador.buscar(
-            profesion=servicio,
-            ciudad=ciudad,
-            radio_km=radio_km,
-            descripcion_problema=descripcion_problema or servicio,
-        )
-    return {"ok": False, "providers": [], "total": 0}
 
 @app.on_event("startup")
 async def startup_event():
@@ -215,6 +186,10 @@ async def startup_event():
 async def shutdown_event():
     """Limpiar conexiones al detener el servicio"""
     logger.info("🔴 Deteniendo AI Service Clientes...")
+
+    # Detener programador de retroalimentación
+    programador_retroalimentacion.detener()
+
     tarea_feedback = getattr(app.state, "feedback_scheduler_task", None)
     if tarea_feedback:
         tarea_feedback.cancel()
@@ -286,13 +261,28 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
     """
     Manejar mensaje entrante de WhatsApp.
 
-    Este endpoint ahora delega toda la lógica de orquestación al
-    OrquestadorConversacional, manteniendo solo la capa HTTP.
+    Este endpoint procesa los mensajes usando la Máquina de Estados.
     """
     try:
         if not payload.get("content") and payload.get("message"):
             payload["content"] = payload.get("message")
-        result = await orquestador.procesar_mensaje_whatsapp(payload)
+
+        # Extraer datos del payload para la máquina de estados
+        telefono = payload.get("from_number") or payload.get("from") or ""
+        texto = payload.get("content") or payload.get("message") or ""
+        tipo_mensaje = payload.get("message_type", "text")
+        ubicacion = payload.get("location") or {}
+
+        # Procesar con la máquina de estados
+        result = await maquina_estados.procesar_mensaje(
+            telefono=telefono,
+            texto=texto,
+            tipo_mensaje=tipo_mensaje,
+            ubicacion=ubicacion,
+            cliente_id=payload.get("customer_id"),
+            correlation_id=payload.get("correlation_id"),
+        )
+
         return normalizar_respuesta_whatsapp(result)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

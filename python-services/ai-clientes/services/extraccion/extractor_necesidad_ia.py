@@ -2,19 +2,21 @@
 
 import asyncio
 import logging
-import os
 import re
-import unicodedata
 from typing import Optional
 
 from openai import AsyncOpenAI
+
+from config.configuracion import configuracion
+from utils.texto import normalizar_texto_para_coincidencia
 
 
 class ExtractorNecesidadIA:
     """Servicio de extracción semántica de servicio y ciudad con IA."""
 
-    # Modelo configurable vía env para extracción (NO embeddings)
-    MODELO_EXTRACCION = os.getenv("MODELO_EXTRACCION_IA", "gpt-4o-mini")
+    # Modelos desde configuración centralizada
+    MODELO_EXTRACCION = configuracion.modelo_extraccion
+    MODELO_NORMALIZACION = configuracion.modelo_normalizacion
 
     # Sinónimos de ciudades de Ecuador para normalización local
     SINONIMOS_CIUDADES_ECUADOR = {
@@ -51,16 +53,6 @@ class ExtractorNecesidadIA:
         self.tiempo_espera_openai = tiempo_espera_openai
         self.logger = logger
 
-    def _normalizar_texto_para_coincidencia(self, texto: str) -> str:
-        """Normaliza texto para comparación flexible."""
-        base = (texto or "").lower()
-        normalizado = unicodedata.normalize("NFD", base)
-        sin_acentos = "".join(
-            ch for ch in normalizado if unicodedata.category(ch) != "Mn"
-        )
-        limpio = re.sub(r"[^a-z0-9\s]", " ", sin_acentos)
-        return re.sub(r"\s+", " ", limpio).strip()
-
     async def _normalizar_servicio_a_espanol(
         self, servicio_detectado: str
     ) -> Optional[str]:
@@ -86,7 +78,7 @@ Responde SOLO con el nombre del servicio."""
             async with self.semaforo_openai:
                 respuesta = await asyncio.wait_for(
                     self.cliente_openai.chat.completions.create(
-                        model="gpt-3.5-turbo",
+                        model=self.MODELO_NORMALIZACION,
                         messages=[
                             {"role": "system", "content": prompt_sistema},
                             {"role": "user", "content": servicio_base[:120]},
@@ -233,7 +225,7 @@ Responde SOLO con el nombre de la ciudad o "null", sin explicaciones."""
             async with self.semaforo_openai:
                 respuesta = await asyncio.wait_for(
                     self.cliente_openai.chat.completions.create(
-                        model="gpt-3.5-turbo",
+                        model=self.MODELO_NORMALIZACION,
                         messages=[
                             {"role": "system", "content": prompt_sistema},
                             {"role": "user", "content": prompt_usuario},

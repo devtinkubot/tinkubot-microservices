@@ -115,3 +115,6 @@ AGENTS.md
 
 # Tokens de autenticación
 .token
+
+# Grok local
+.grok/

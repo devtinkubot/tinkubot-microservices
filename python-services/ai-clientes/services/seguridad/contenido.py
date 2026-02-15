@@ -6,6 +6,7 @@ import re
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Tuple
 
+from config.configuracion import configuracion
 from templates.mensajes.validacion import (
     mensaje_advertencia_contenido_ilegal,
     mensaje_ban_usuario,
@@ -30,6 +31,9 @@ def _safe_json_loads(carga: str) -> Optional[Dict[str, Any]]:
 
 class ModeradorContenido:
     """Valida contenido con IA y aplica bans temporales."""
+
+    # Modelo configurable vía configuración centralizada
+    MODELO_VALIDACION = configuracion.modelo_validacion
 
     def __init__(
         self,
@@ -104,7 +108,7 @@ class ModeradorContenido:
                 async with self.semaforo_openai:
                     respuesta = await asyncio.wait_for(
                         self.cliente_openai.chat.completions.create(
-                            model="gpt-3.5-turbo",
+                            model=self.MODELO_VALIDACION,
                             messages=[
                                 {"role": "system", "content": prompt_sistema},
                                 {"role": "user", "content": prompt_usuario},
@@ -117,7 +121,7 @@ class ModeradorContenido:
             else:
                 respuesta = await asyncio.wait_for(
                     self.cliente_openai.chat.completions.create(
-                        model="gpt-3.5-turbo",
+                        model=self.MODELO_VALIDACION,
                         messages=[
                             {"role": "system", "content": prompt_sistema},
                             {"role": "user", "content": prompt_usuario},

@@ -1,8 +1,7 @@
 """Servicio de manejo de consentimiento."""
 
-import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 
 class ServicioConsentimiento:
@@ -47,11 +46,11 @@ class ServicioConsentimiento:
                     ]
                 }
         """
-        from flows.mensajes import mensajes_consentimiento
+        from templates.mensajes.consentimiento import mensajes_flujo_consentimiento
 
         self.logger.info(f"🔐 Solicitando consentimiento a cliente {telefono}")
 
-        mensajes = [msg for msg in mensajes_consentimiento()]
+        mensajes = [{"response": msg} for msg in mensajes_flujo_consentimiento()]
 
         self.logger.info(f"✅ Mensajes de consentimiento generados para {telefono}")
 
@@ -84,7 +83,7 @@ class ServicioConsentimiento:
         from templates.mensajes.consentimiento import (
             mensaje_rechazo_consentimiento,
         )
-        from flows.mensajes import mensaje_inicial_solicitud
+        from templates.mensajes.validacion import mensaje_inicial_solicitud_servicio
 
         # Mapear respuesta del botón o texto
         if seleccionado in ["1", "Acepto"]:
@@ -127,7 +126,7 @@ class ServicioConsentimiento:
                 )
 
             # Después de aceptar, continuar con el flujo normal mostrando el prompt inicial
-            return {"response": mensaje_inicial_solicitud(), "consent_status": "accepted"}
+            return {"response": mensaje_inicial_solicitud_servicio, "consent_status": "accepted"}
 
         else:  # "No acepto" o cualquier otra opción
             respuesta = "declined"
