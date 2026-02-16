@@ -31,6 +31,7 @@ async def procesar_estado_confirmar_servicio(
                 )
             }
         flujo["service"] = service_candidate
+        flujo["service_captured_after_consent"] = True
         flujo.pop("service_candidate", None)
         await guardar_flujo_fn(flujo)
         return await iniciar_busqueda_fn(flujo)

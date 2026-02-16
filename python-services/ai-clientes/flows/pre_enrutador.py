@@ -78,6 +78,21 @@ async def pre_enrutar_mensaje(
             telefono, perfil_cliente, carga
         )
         if resultado_consentimiento.get("consent_status") == "accepted":
+            # Limpiar contexto stale de servicio tras aceptar consentimiento
+            for key in (
+                "service",
+                "service_full",
+                "service_candidate",
+                "descripcion_problema",
+                "providers",
+                "searching_dispatched",
+                "searching_started_at",
+                "provider_detail_idx",
+                "chosen_provider",
+            ):
+                flujo.pop(key, None)
+            flujo["service_captured_after_consent"] = False
+
             ciudad_guardada = (perfil_cliente.get("city") or "").strip()
             if ciudad_guardada:
                 flujo["state"] = "awaiting_service"

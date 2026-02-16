@@ -65,7 +65,7 @@ class ValidadorProveedoresIA:
 
         if not self.cliente_openai:
             self.logger.warning("⚠️ validar_proveedores sin cliente OpenAI")
-            return proveedores
+            return []
 
         self.logger.info(
             f"🤖 Validando {len(proveedores)} proveedores con IA para '{necesidad_usuario}'"
@@ -163,7 +163,7 @@ NO incluyas explicaciones. Solo el array de booleanos."""
 
             if not respuesta.choices:
                 self.logger.warning("⚠️ OpenAI respondió sin choices en validar_proveedores")
-                return proveedores
+                return []
 
             contenido = (respuesta.choices[0].message.content or "").strip()
             if contenido.startswith("```"):
@@ -180,7 +180,7 @@ NO incluyas explicaciones. Solo el array de booleanos."""
                 self.logger.warning(
                     f"⚠️ Respuesta de validación no es array: {type(lista_validacion)}"
                 )
-                return proveedores
+                return []
 
             if len(lista_validacion) != len(proveedores):
                 self.logger.warning(
@@ -204,14 +204,14 @@ NO incluyas explicaciones. Solo el array de booleanos."""
             return proveedores_validados
 
         except asyncio.TimeoutError:
-            self.logger.warning("⚠️ Timeout en validar_proveedores, retornando todos")
-            return proveedores
+            self.logger.warning("⚠️ Timeout en validar_proveedores, fail-closed")
+            return []
         except json.JSONDecodeError as exc:
             self.logger.warning(f"⚠️ Error parseando JSON validación: {exc}")
-            return proveedores
+            return []
         except Exception as exc:
-            self.logger.warning(f"⚠️ Error en validación IA, retornando todos: {exc}")
-            return proveedores
+            self.logger.warning(f"⚠️ Error en validación IA, fail-closed: {exc}")
+            return []
     MODELO_VALIDACION = (
         configuracion.modelo_validacion
         or configuracion.openai_chat_model
