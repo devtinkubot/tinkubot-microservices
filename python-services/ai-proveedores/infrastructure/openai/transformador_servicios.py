@@ -18,6 +18,7 @@ import os
 from typing import List, Optional
 from openai import AsyncOpenAI
 
+from config.configuracion import configuracion
 from services.servicios_proveedor.constantes import SERVICIOS_MAXIMOS
 
 logger = logging.getLogger(__name__)
@@ -32,7 +33,11 @@ class TransformadorServicios:
     """
 
     # Modelo configurable vía env para transformación (NO embeddings)
-    MODELO_TRANSFORMACION = os.getenv("MODELO_TRANSFORMACION_IA", "gpt-4o-mini")
+    MODELO_TRANSFORMACION = (
+        os.getenv("MODELO_TRANSFORMACION_IA")
+        or configuracion.openai_chat_model
+        or "gpt-4o-mini"
+    )
 
     def __init__(self, cliente_openai: AsyncOpenAI, modelo: Optional[str] = None):
         """

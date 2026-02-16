@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from openai import AsyncOpenAI
+from config.configuracion import configuracion
 
 
 @dataclass
@@ -49,7 +50,11 @@ class ValidadorProfesionIA:
     """
 
     # Configuración vía variables de entorno
-    MODELO = os.getenv("DETECCION_PROFESION_MODELO", "gpt-4o-mini")
+    MODELO = (
+        os.getenv("DETECCION_PROFESION_MODELO")
+        or configuracion.openai_chat_model
+        or "gpt-4o-mini"
+    )
     TIMEOUT = float(os.getenv("DETECCION_PROFESION_TIMEOUT", "5"))
     UMBRAL_CONFIANZA = float(os.getenv("DETECCION_PROFESION_UMBRAL", "0.7"))
 

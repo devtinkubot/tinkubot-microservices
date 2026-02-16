@@ -33,7 +33,11 @@ class ModeradorContenido:
     """Valida contenido con IA y aplica bans temporales."""
 
     # Modelo configurable vía configuración centralizada
-    MODELO_VALIDACION = configuracion.modelo_validacion
+    MODELO_VALIDACION = (
+        configuracion.modelo_validacion
+        or configuracion.openai_chat_model
+        or "gpt-4o-mini"
+    )
 
     def __init__(
         self,

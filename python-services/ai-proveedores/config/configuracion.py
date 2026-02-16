@@ -62,6 +62,9 @@ class ConfiguracionServicio(BaseSettings):
     tiempo_espera_embeddings: int = 5  # segundos para llamadas a OpenAI
     embeddings_habilitados: bool = True  # habilitar/deshabilitar generación de embeddings
 
+    # Modelo global de chat/completions (fallback)
+    openai_chat_model: str = "gpt-4o-mini"
+
     # Seguridad interna (endpoints administrativos)
     internal_token: Optional[str] = Field(
         default=None,

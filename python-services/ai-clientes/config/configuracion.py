@@ -64,10 +64,12 @@ class ConfiguracionServicio(BaseSettings):
     # Redis Configuration
     redis_url: str = "redis://localhost:6379"
 
-    # OpenAI Model Configuration (centralizado)
-    modelo_extraccion: str = "gpt-4o-mini"  # Para extracción de necesidades
-    modelo_validacion: str = "gpt-4o-mini"  # Para validación de contenido
-    modelo_normalizacion: str = "gpt-4o-mini"  # Para normalización de servicios
+    # OpenAI Model Configuration (chat/completions)
+    openai_chat_model: str = "gpt-4o-mini"
+    # Overrides opcionales por proceso (prioridad sobre openai_chat_model)
+    modelo_extraccion: Optional[str] = None  # Para extracción de necesidades
+    modelo_validacion: Optional[str] = None  # Para validación de contenido
+    modelo_normalizacion: Optional[str] = None  # Para normalización de servicios
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -7,6 +7,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from openai import AsyncOpenAI
+from config.configuracion import configuracion
 
 
 class ValidadorProveedoresIA:
@@ -146,7 +147,7 @@ NO incluyas explicaciones. Solo el array de booleanos."""
             async with self.semaforo_openai:
                 respuesta = await asyncio.wait_for(
                     self.cliente_openai.chat.completions.create(
-                        model="gpt-3.5-turbo",
+                        model=self.MODELO_VALIDACION,
                         messages=[
                             {
                                 "role": "system",
@@ -211,3 +212,8 @@ NO incluyas explicaciones. Solo el array de booleanos."""
         except Exception as exc:
             self.logger.warning(f"⚠️ Error en validación IA, retornando todos: {exc}")
             return proveedores
+    MODELO_VALIDACION = (
+        configuracion.modelo_validacion
+        or configuracion.openai_chat_model
+        or "gpt-4o-mini"
+    )

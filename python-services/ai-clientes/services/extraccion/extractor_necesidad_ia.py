@@ -15,8 +15,16 @@ class ExtractorNecesidadIA:
     """Servicio de extracción semántica de servicio y ciudad con IA."""
 
     # Modelos desde configuración centralizada
-    MODELO_EXTRACCION = configuracion.modelo_extraccion
-    MODELO_NORMALIZACION = configuracion.modelo_normalizacion
+    MODELO_EXTRACCION = (
+        configuracion.modelo_extraccion
+        or configuracion.openai_chat_model
+        or "gpt-4o-mini"
+    )
+    MODELO_NORMALIZACION = (
+        configuracion.modelo_normalizacion
+        or configuracion.openai_chat_model
+        or "gpt-4o-mini"
+    )
 
     # Sinónimos de ciudades de Ecuador para normalización local
     SINONIMOS_CIUDADES_ECUADOR = {
