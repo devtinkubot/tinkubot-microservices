@@ -154,12 +154,13 @@ class FlujoConversacional(BaseModel):
 
     model_config = {"extra": "allow"}  # Permitir campos adicionales para backward compatibility
 
-    @field_validator("telefono")
+    @field_validator("telefono", mode="before")
     @classmethod
     def validar_telefono(cls, v: str) -> str:
         """Normaliza el formato del teléfono."""
+        valor = str(v or "")
         # Remover espacios y caracteres no numéricos excepto +
-        telefono_limpio = "".join(c for c in v if c.isdigit() or c == "+")
+        telefono_limpio = "".join(c for c in valor if c.isdigit() or c == "+")
         if not telefono_limpio:
             raise ValueError("Teléfono no puede estar vacío")
         return telefono_limpio

@@ -49,6 +49,11 @@ class TestFlujoConversacionalCreation:
         # Normalized to remove spaces
         assert " " not in flujo.telefono
 
+    def test_normalizacion_telefono_desde_jid(self):
+        """Test que un JID de WhatsApp se normaliza a teléfono."""
+        flujo = FlujoConversacional(telefono="593959091325@s.whatsapp.net")
+        assert flujo.telefono == "593959091325"
+
 
 class TestFlujoConversacionalTransitions:
     """Tests for state transitions."""

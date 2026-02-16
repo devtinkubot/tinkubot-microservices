@@ -1,0 +1,70 @@
+"""Módulo para el procesamiento del estado de espera de servicio."""
+
+import logging
+import re
+from typing import Any, Awaitable, Callable, Dict, Optional, Tuple
+
+logger = logging.getLogger(__name__)
+
+
+async def procesar_estado_esperando_servicio(
+    flujo: Dict[str, Any],
+    texto: Optional[str],
+    saludos: set[str],
+    prompt_inicial: str,
+    extraer_fn: Callable[[str], Awaitable[Optional[str]]],
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """Procesa el estado `awaiting_service`.
+
+    Retorna una tupla con el flujo actualizado y el payload de respuesta.
+    """
+
+    limpio = (texto or "").strip()
+    if not limpio or limpio.lower() in saludos:
+        return flujo, {"response": prompt_inicial}
+
+    # Evitar que números u opciones sueltas (ej: "1", "2", "a") se toman como servicio
+    # NOTA: Permitimos "4" y "5" porque ahora se usan números 1-5 para proveedores
+    if re.fullmatch(r"[6-9]\d*", limpio) or limpio.lower() in {
+        "a",
+        "b",
+        "c",
+        "d",
+        "e",
+    }:
+        return flujo, {
+            "response": (
+                "Para continuar necesito el nombre del servicio que buscas "
+                "(ej: plomero, electricista, manicure)."
+            )
+        }
+
+    try:
+        logger.info(
+            "🤖 Usando extracción IA para servicio: '%s...'",
+            limpio[:50],
+        )
+        profesion = await extraer_fn(limpio)
+    except Exception as exc:
+        logger.warning(f"⚠️ Error en extraer_fn: {exc}")
+        profesion = None
+
+    valor_servicio = (profesion or "").strip()
+    if not valor_servicio:
+        return flujo, {
+            "response": (
+                "No pude identificar con claridad el servicio. "
+                "Descríbelo de forma más concreta (ej: desarrollador web, "
+                "plomero, electricista, diseñador gráfico)."
+            )
+        }
+
+    flujo.update(
+        {
+            "service_candidate": valor_servicio,
+            "service_full": texto or valor_servicio,
+            "state": "confirm_service",
+        }
+    )
+    from templates.mensajes.validacion import mensaje_confirmar_servicio
+    return flujo, {"response": mensaje_confirmar_servicio(valor_servicio)}

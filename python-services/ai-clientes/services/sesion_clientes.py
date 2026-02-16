@@ -182,6 +182,8 @@ async def procesar_comando_reinicio(
     limpiar_consentimiento_cliente,
     mensaje_nueva_sesion_dict,
     reset_keywords: Set[str],
+    servicio_consentimiento=None,
+    solicitar_consentimiento=None,
 ) -> Optional[Dict[str, Any]]:
     """Procesa comandos de reinicio de flujo."""
     if texto and texto.strip().lower() in reset_keywords:
@@ -201,9 +203,38 @@ async def procesar_comando_reinicio(
         except Exception:
             pass
 
+        estado_limpio = {
+            "state": "awaiting_consent",
+            "service_captured_after_consent": False,
+        }
         if repositorio_flujo:
-            await repositorio_flujo.guardar(telefono, {"state": "awaiting_service"})
+            await repositorio_flujo.guardar(telefono, estado_limpio)
         else:
-            await guardar_flujo(telefono, {"state": "awaiting_service"})
-        return {"response": mensaje_nueva_sesion_dict()["response"]}
+            await guardar_flujo(telefono, estado_limpio)
+
+        # Reiniciar desde consentimiento de forma explícita
+        mensajes = [{"response": mensaje_nueva_sesion_dict()["response"]}]
+        try:
+            prompt_consentimiento = None
+            if servicio_consentimiento:
+                prompt_consentimiento = await servicio_consentimiento.solicitar_consentimiento(
+                    telefono
+                )
+            elif solicitar_consentimiento:
+                prompt_consentimiento = await solicitar_consentimiento(telefono)
+
+            if isinstance(prompt_consentimiento, dict):
+                if prompt_consentimiento.get("messages"):
+                    mensajes.extend(prompt_consentimiento["messages"])
+                elif prompt_consentimiento.get("response"):
+                    mensajes.append({"response": prompt_consentimiento["response"]})
+            elif prompt_consentimiento:
+                mensajes.append({"response": str(prompt_consentimiento)})
+        except Exception:
+            # Si falla la generación del prompt, al menos devolvemos el reinicio.
+            pass
+
+        if len(mensajes) == 1:
+            return {"response": mensajes[0]["response"]}
+        return {"messages": mensajes}
     return None

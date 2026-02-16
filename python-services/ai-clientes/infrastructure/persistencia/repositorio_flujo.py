@@ -91,10 +91,10 @@ class RepositorioFlujoRedis:
         try:
             # Validar con Pydantic antes de guardar
             try:
-                flujo = FlujoConversacional.from_dict(datos)
-                # Asegurar que el teléfono está en los datos
+                # Asegurar que el teléfono esté presente antes de validar
                 if "telefono" not in datos:
                     datos["telefono"] = telefono
+                flujo = FlujoConversacional.from_dict(datos)
                 datos_validados = flujo.to_dict()
             except Exception as validation_error:
                 self.logger.error(
