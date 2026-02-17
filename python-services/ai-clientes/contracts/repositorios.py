@@ -127,29 +127,22 @@ class IRepositorioClientes(Protocol):
     """
 
     async def obtener_o_crear(
-        self, telefono: str, nombre: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self,
+        telefono: str,
+        *,
+        nombre_completo: Optional[str] = None,
+        ciudad: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
         """
         Obtiene o crea un cliente por teléfono.
 
         Args:
             telefono: Número de teléfono del cliente
-            nombre: Nombre opcional del cliente
+            nombre_completo: Nombre completo opcional del cliente
+            ciudad: Ciudad opcional del cliente
 
         Returns:
-            Dict con los datos del cliente
-        """
-        ...
-
-    async def obtener(self, cliente_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Obtiene un cliente por ID.
-
-        Args:
-            cliente_id: ID del cliente
-
-        Returns:
-            Dict con los datos del cliente o None si no existe
+            Dict con los datos del cliente o None
         """
         ...
 
@@ -170,7 +163,7 @@ class IRepositorioClientes(Protocol):
 
     async def actualizar_consentimiento(
         self, cliente_id: str, tiene_consentimiento: bool
-    ) -> bool:
+    ) -> Optional[Dict[str, Any]]:
         """
         Actualiza el consentimiento GDPR del cliente.
 
@@ -179,11 +172,11 @@ class IRepositorioClientes(Protocol):
             tiene_consentimiento: True si acepta, False si no
 
         Returns:
-            True si la actualización fue exitosa
+            Dict con datos actualizados o None
         """
         ...
 
-    async def limpiar_ciudad(self, cliente_id: str) -> bool:
+    async def limpiar_ciudad(self, cliente_id: Optional[str]) -> None:
         """
         Limpia la ciudad del cliente.
 
@@ -191,11 +184,11 @@ class IRepositorioClientes(Protocol):
             cliente_id: ID del cliente
 
         Returns:
-            True si la limpieza fue exitosa
+            None
         """
         ...
 
-    async def limpiar_consentimiento(self, cliente_id: str) -> bool:
+    async def limpiar_consentimiento(self, cliente_id: Optional[str]) -> None:
         """
         Limpia el consentimiento del cliente.
 
@@ -203,6 +196,25 @@ class IRepositorioClientes(Protocol):
             cliente_id: ID del cliente
 
         Returns:
-            True si la limpieza fue exitosa
+            None
+        """
+        ...
+
+    async def registrar_consentimiento(
+        self,
+        usuario_id: str,
+        respuesta: str,
+        datos_consentimiento: Dict[str, Any],
+    ) -> bool:
+        """
+        Registra evidencia legal de consentimiento.
+
+        Args:
+            usuario_id: ID del usuario
+            respuesta: "accepted" o "declined"
+            datos_consentimiento: Metadata del consentimiento
+
+        Returns:
+            True si el registro fue exitoso, False en caso contrario
         """
         ...

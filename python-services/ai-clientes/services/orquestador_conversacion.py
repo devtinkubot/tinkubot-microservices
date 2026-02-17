@@ -14,6 +14,8 @@ import unicodedata
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+from contracts.repositorios import IRepositorioClientes, IRepositorioFlujo
+
 from flows.manejadores_estados import (
     procesar_estado_esperando_servicio,
     procesar_estado_esperando_ciudad,
@@ -227,8 +229,8 @@ class OrquestadorConversacional:
         validador=None,
         extractor_ia=None,
         servicio_consentimiento=None,
-        repositorio_flujo=None,
-        repositorio_clientes=None,
+        repositorio_flujo: Optional[IRepositorioFlujo] = None,
+        repositorio_clientes: Optional[IRepositorioClientes] = None,
         logger=None,
     ):
         """
@@ -485,6 +487,11 @@ class OrquestadorConversacional:
 
         # 3. IA-only extraction (implementación canónica)
         funcion_extraccion = self.extractor_ia.extraer_servicio_con_ia_pura
+        funcion_validacion_necesidad = getattr(
+            self.extractor_ia,
+            "es_necesidad_o_problema",
+            None,
+        )
 
         flujo_actualizado, respuesta = await procesar_estado_esperando_servicio(
             flujo,
@@ -492,6 +499,7 @@ class OrquestadorConversacional:
             GREETINGS,
             mensaje_inicial_solicitud(),
             funcion_extraccion,
+            funcion_validacion_necesidad,
         )
         flujo = flujo_actualizado
 

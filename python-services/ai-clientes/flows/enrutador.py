@@ -190,6 +190,20 @@ async def enrutar_estado(
                 f"🤖 Conversación nueva, usando extracción IA pura para: '{limpio[:50]}...'"
             )
             extractor = orquestador.extractor_ia
+            validar_necesidad = getattr(extractor, "es_necesidad_o_problema", None)
+            if validar_necesidad:
+                try:
+                    es_necesidad = await validar_necesidad(limpio)
+                except Exception as exc:
+                    orquestador.logger.warning(
+                        "⚠️ Error validando necesidad/problema (fallback a permitir): %s",
+                        exc,
+                    )
+                    es_necesidad = True
+                if not es_necesidad:
+                    flujo.update({"state": "awaiting_service"})
+                    return await responder(flujo, {"response": mensaje_inicial_solicitud()})
+
             extraer_servicio = extractor.extraer_servicio_con_ia
             extraer_ubicacion = extractor.extraer_ubicacion_con_ia
             profesion = await extraer_servicio(limpio)

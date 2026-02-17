@@ -188,6 +188,61 @@ Responde SOLO con el nombre del servicio, sin explicaciones."""
         """Alias de compatibilidad para extraer servicio con IA."""
         return await self.extraer_servicio_con_ia(mensaje_usuario)
 
+    async def es_necesidad_o_problema(self, mensaje_usuario: str) -> bool:
+        """
+        Determina si el mensaje describe una necesidad/problema concreto.
+
+        Fail-open: si no hay cliente OpenAI o falla la llamada, retorna True para
+        no bloquear el flujo por indisponibilidad del proveedor IA.
+        """
+        texto = (mensaje_usuario or "").strip()
+        if not texto:
+            return False
+
+        if not self.cliente_openai:
+            return True
+
+        prompt_sistema = """Clasifica si el mensaje del usuario describe una necesidad/problema concreto.
+
+Responde SOLO "si" o "no".
+
+Responde "si" cuando:
+- Explica qué pasó, qué necesita resolver o qué quiere lograr.
+- Ejemplos: "mi lavadora no enciende", "necesito arreglar una tubería rota".
+
+Responde "no" cuando:
+- Es solo una profesión/rol o palabra suelta sin contexto de problema.
+- Ejemplos: "plomero", "abogado", "electricista", "hola"."""
+        try:
+            async with self.semaforo_openai:
+                respuesta = await asyncio.wait_for(
+                    self.cliente_openai.chat.completions.create(
+                        model=self.MODELO_NORMALIZACION,
+                        messages=[
+                            {"role": "system", "content": prompt_sistema},
+                            {"role": "user", "content": texto[:250]},
+                        ],
+                        temperature=0.0,
+                        max_tokens=5,
+                    ),
+                    timeout=self.tiempo_espera_openai,
+                )
+            if not respuesta.choices:
+                return True
+
+            decision = (
+                (respuesta.choices[0].message.content or "")
+                .strip()
+                .lower()
+            )
+            return decision.startswith("si") or decision.startswith("sí")
+        except Exception as exc:
+            self.logger.warning(
+                "⚠️ Error validando necesidad/problema con IA (fail-open): %s",
+                exc,
+            )
+            return True
+
     async def extraer_ubicacion_con_ia(self, texto: str) -> Optional[str]:
         """Extrae la ciudad del texto usando IA."""
         ciudades = [

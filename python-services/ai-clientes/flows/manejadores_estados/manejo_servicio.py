@@ -13,6 +13,7 @@ async def procesar_estado_esperando_servicio(
     saludos: set[str],
     prompt_inicial: str,
     extraer_fn: Callable[[str], Awaitable[Optional[str]]],
+    validar_necesidad_fn: Optional[Callable[[str], Awaitable[bool]]] = None,
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """Procesa el estado `awaiting_service`.
 
@@ -38,6 +39,20 @@ async def procesar_estado_esperando_servicio(
                 "(ej: plomero, electricista, manicure)."
             )
         }
+
+    if validar_necesidad_fn:
+        try:
+            es_necesidad = await validar_necesidad_fn(limpio)
+        except Exception as exc:
+            logger.warning(
+                "⚠️ Error en validar_necesidad_fn (fallback a permitir): %s",
+                exc,
+            )
+            es_necesidad = True
+        if not es_necesidad:
+            flujo["state"] = "awaiting_service"
+            flujo.pop("service_candidate", None)
+            return flujo, {"response": prompt_inicial}
 
     try:
         logger.info(

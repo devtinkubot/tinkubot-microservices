@@ -30,6 +30,26 @@ class Colors:
     UNDERLINE = '\033[4m'
     END = '\033[0m'
 
+
+SERVICE_PATH_ALIASES = {
+    "search-token": "ai-search",
+}
+
+
+def resolve_service_path(service: str) -> Path:
+    """
+    Resuelve la ruta del servicio tanto si se ejecuta desde la raíz del repo
+    como desde el directorio python-services.
+    """
+    alias = SERVICE_PATH_ALIASES.get(service, service)
+    direct = Path(alias)
+    if direct.exists():
+        return direct
+    nested = Path("python-services") / alias
+    if nested.exists():
+        return nested
+    return direct
+
 def print_banner():
     """Muestra el banner del validador"""
     print(f"""
@@ -141,12 +161,12 @@ def validate_formatting(services: List[str], fix: bool = False) -> bool:
         print_info("Modo de verificación (sin cambios)")
 
     for service in services:
-        service_path = Path(service)
+        service_path = resolve_service_path(service)
         if not service_path.exists():
             print_warning(f"Servicio {service} no encontrado, omitiendo...")
             continue
 
-        print(f"\n{Colors.CYAN}Validando formato en: {service}{Colors.END}")
+        print(f"\n{Colors.CYAN}Validando formato en: {service_path}{Colors.END}")
         success, _ = run_command(black_cmd + [str(service_path)], f"Black - {service}")
         all_success = all_success and success
 
@@ -174,11 +194,11 @@ def validate_imports(services: List[str], fix: bool = False) -> bool:
         print_info("Modo de verificación (sin cambios)")
 
     for service in services:
-        service_path = Path(service)
+        service_path = resolve_service_path(service)
         if not service_path.exists():
             continue
 
-        print(f"\n{Colors.CYAN}Validando importaciones en: {service}{Colors.END}")
+        print(f"\n{Colors.CYAN}Validando importaciones en: {service_path}{Colors.END}")
         success, _ = run_command(isort_cmd + [str(service_path)], f"isort - {service}")
         all_success = all_success and success
 
@@ -221,11 +241,11 @@ max-complexity = 10
     all_success = True
 
     for service in services:
-        service_path = Path(service)
+        service_path = resolve_service_path(service)
         if not service_path.exists():
             continue
 
-        print(f"\n{Colors.CYAN}Validando linting en: {service}{Colors.END}")
+        print(f"\n{Colors.CYAN}Validando linting en: {service_path}{Colors.END}")
         success, _ = run_command([sys.executable, "-m", "flake8", str(service_path)],
                               f"Flake8 - {service}")
         all_success = all_success and success
@@ -250,7 +270,7 @@ def validate_types(services: List[str]) -> bool:
     all_success = True
 
     for service in services:
-        service_path = Path(service)
+        service_path = resolve_service_path(service)
         if not service_path.exists():
             continue
 
@@ -262,15 +282,30 @@ def validate_types(services: List[str]) -> bool:
 
         print(f"\n{Colors.CYAN}Validando tipos en: {service}{Colors.END}")
 
-        # MyPy configuration
-        mypy_cmd = [
+        # MyPy configuration base
+        mypy_cmd_base = [
             sys.executable, "-m", "mypy",
             "--ignore-missing-imports",
             "--no-strict-optional",
             "--warn-redundant-casts",
             "--warn-unused-ignores",
-            str(entry_py)
         ]
+
+        # Gate mínimo de contracts para ai-clientes (sin tocar flujos/templates)
+        if service == "ai-clientes":
+            targets = [
+                service_path / "services/orquestador_conversacion.py",
+                service_path / "services/orquestador_retrollamadas.py",
+                service_path / "contracts/repositorios.py",
+                service_path / "infrastructure/persistencia/repositorio_flujo.py",
+                service_path / "infrastructure/persistencia/repositorio_clientes.py",
+            ]
+            targets_existentes = [str(t) for t in targets if t.exists()]
+            if not targets_existentes:
+                continue
+            mypy_cmd = mypy_cmd_base + targets_existentes
+        else:
+            mypy_cmd = mypy_cmd_base + [str(entry_py)]
 
         success, _ = run_command(mypy_cmd, f"MyPy - {service}")
         all_success = all_success and success
@@ -292,11 +327,11 @@ def validate_security(services: List[str]) -> bool:
     all_success = True
 
     for service in services:
-        service_path = Path(service)
+        service_path = resolve_service_path(service)
         if not service_path.exists():
             continue
 
-        print(f"\n{Colors.CYAN}Validando seguridad en: {service}{Colors.END}")
+        print(f"\n{Colors.CYAN}Validando seguridad en: {service_path}{Colors.END}")
 
         bandit_cmd = [
             sys.executable, "-m", "bandit",
@@ -317,11 +352,11 @@ def validate_syntax(services: List[str]) -> bool:
     all_success = True
 
     for service in services:
-        service_path = Path(service)
+        service_path = resolve_service_path(service)
         if not service_path.exists():
             continue
 
-        print(f"\n{Colors.CYAN}Validando sintaxis en: {service}{Colors.END}")
+        print(f"\n{Colors.CYAN}Validando sintaxis en: {service_path}{Colors.END}")
 
         python_files = list(service_path.rglob("*.py"))
         for py_file in python_files:

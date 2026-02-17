@@ -1,8 +1,9 @@
 """Retrollamadas para el orquestador conversacional."""
 
 import asyncio
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
+from contracts.repositorios import IRepositorioClientes, IRepositorioFlujo
 from infrastructure.database import run_supabase
 from services.proveedores.conexion import (
     mensaje_conexion_formal as construir_mensaje_conexion_formal,
@@ -14,8 +15,8 @@ class OrquestadorRetrollamadas:
         self,
         *,
         supabase,
-        repositorio_flujo,
-        repositorio_clientes,
+        repositorio_flujo: Optional[IRepositorioFlujo],
+        repositorio_clientes: Optional[IRepositorioClientes],
         buscador,
         moderador_contenido,
         programador_retroalimentacion,
