@@ -7,13 +7,12 @@ PROMPT_INICIO_REGISTRO = (
 )
 PROMPT_NOMBRE = "*¿Cuál es tu nombre completo?*"
 PROMPT_REAL_PHONE = (
-    "*Para que los clientes puedan contactarte, comparte tu número real.*\n"
-    "Puedes incluir el prefijo, por ejemplo: +593991234567."
+    "*Para que los clientes puedan contactarte, comparte tu número real.*"
 )
 
 ERROR_REAL_PHONE_INVALIDO = (
     "*Ese número no parece válido.*\n"
-    "Envíalo con 10 a 20 dígitos. Ejemplos: +593991234567 o 0959091325."
+    "Por favor envía tu número de celular."
 )
 
 MENSAJE_GUIA = (

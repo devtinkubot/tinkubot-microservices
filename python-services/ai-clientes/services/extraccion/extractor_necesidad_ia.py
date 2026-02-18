@@ -72,12 +72,14 @@ class ExtractorNecesidadIA:
         if not servicio_base:
             return servicio_detectado
 
-        prompt_sistema = """Convierte nombres de servicios profesionales a español neutro.
+        prompt_sistema = """Convierte nombres de servicios profesionales a español neutro sin perder especificidad.
 
 Reglas:
-- Si ya está en español, devuélvelo en español neutro.
+- Si ya está en español, conserva la idea principal.
 - Si está en otro idioma, tradúcelo al español.
-- Devuelve una frase breve (2 a 5 palabras), en minúsculas.
+- Mantén un subservicio específico (ej: "elaboración de pliegos de contratación pública").
+- Evita generalizar a categorías paraguas (ej: "asesoría legal", "marketing digital") cuando haya detalle.
+- Devuelve una frase corta (4 a 10 palabras), en minúsculas.
 - No agregues explicaciones.
 
 Responde SOLO con el nombre del servicio."""
@@ -115,28 +117,17 @@ Responde SOLO con el nombre del servicio."""
         if not mensaje_usuario or not mensaje_usuario.strip():
             return None
 
-        prompt_sistema = """Eres un experto en servicios profesionales en Ecuador. Identifica el servicio que necesita el usuario y devuelve el NOMBRE ESTÁNDAR del servicio en español.
-
-MAPEOS DE TERMINOLOGÍA COLOQUIAL A SERVICIOS ESTÁNDAR:
-- "maneja redes sociales", "manejo de redes", "redes sociales", "community manager" → "gestión de redes sociales"
-- "bug en página web", "error en web", "página no funciona" → "desarrollo web"
-- "error en app", "aplicación falla", "mi app no abre" → "desarrollo de aplicaciones"
-- "problema con base de datos", "bd lenta", "datos corruptos" → "administración de base de datos"
-- "diseño de logo", "hacer un logo", "necesito un logo" → "diseño gráfico"
-- "fotos de producto", "sesión de fotos", "fotografía" → "fotografía"
-- "video promocional", "edición de video", "hacer un video" → "edición de video"
-- "traducir documentos", "traducción", "traductor" → "traducción"
-- "asesoría legal", "problema legal", "abogado" → "asesoría legal"
-- "contabilidad", "impuestos", "declaración de renta" → "contabilidad"
-- "marketing digital", "publicidad en internet", "anuncios" → "marketing digital"
-- "posicionar en google", "seo", "aparecer en búsquedas" → "posicionamiento web"
-- "campañas publicitarias", "anuncios facebook", "ads" → "publicidad digital"
+        prompt_sistema = """Eres un experto en servicios profesionales en Ecuador.
+Tu tarea es identificar el servicio MÁS ESPECÍFICO y accionable que necesita el usuario.
 
 REGLAS CRÍTICAS:
-1. Devuelve SIEMPRE el nombre del servicio en minúsculas y en español
-2. Usa el formato más estándar y común (2 a 5 palabras)
-3. NUNCA uses términos en inglés como "community manager", "seo", "ads"
-4. Si el usuario escribe en otro idioma, traduce al español neutro
+1. Devuelve SIEMPRE el nombre del servicio en minúsculas y en español.
+2. Prioriza subservicios concretos (ej: "elaboración de pliegos de contratación pública")
+   sobre categorías amplias (ej: "asesoría legal").
+3. Solo usa categoría general si el usuario fue ambiguo y no dio detalle suficiente.
+4. Conserva términos de dominio relevantes del usuario (pliegos, licitación, contratación pública, etc.).
+5. No uses términos en inglés cuando exista equivalente claro en español.
+6. Responde con una frase corta de 4 a 10 palabras.
 
 Responde SOLO con el nombre del servicio, sin explicaciones."""
 

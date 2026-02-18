@@ -1,26 +1,75 @@
 """
 Funciones de normalización de datos de proveedores.
 """
+
 import logging
+import re
 from typing import Any, Dict, Optional
 
 from models.proveedores import SolicitudCreacionProveedor
-
 from services.servicios_proveedor.constantes import SERVICIOS_MAXIMOS
 from services.servicios_proveedor.utilidades import (
     normalizar_texto_para_busqueda,
+)
+from services.servicios_proveedor.utilidades import (
     sanitizar_lista_servicios as sanitizar_servicios,
 )
 
 logger = logging.getLogger(__name__)
 
 
-def normalizar_datos_proveedor(datos_crudos: SolicitudCreacionProveedor) -> Dict[str, Any]:
+def _normalizar_telefono_ecuador(telefono: str) -> str:
+    """
+    Normaliza números ecuatorianos a formato internacional 593.
+
+    - 09xxxxxxxx → 5939xxxxxxxx (10 dígitos, empieza con 09)
+    - 593xxxxxxxx → sin cambios (ya normalizado)
+    - +593xxxxxxxx → 593xxxxxxxx (remueve prefijo +)
+    """
+    if not telefono:
+        return telefono
+
+    # Remover prefijo + si existe
+    if telefono.startswith("+"):
+        telefono = telefono[1:]
+
+    # Convertir formato local 09... a internacional 5939...
+    if len(telefono) == 10 and telefono.startswith("09"):
+        telefono = "5939" + telefono[2:]
+
+    return telefono
+
+
+def _normalizar_jid_whatsapp(telefono: str) -> str:
+    """
+    Normaliza identidad de WhatsApp a formato JID completo user@server.
+
+    Si no viene servidor, asume s.whatsapp.net para compatibilidad de registro.
+    """
+    valor = (telefono or "").strip()
+    if not valor:
+        return valor
+
+    if "@" in valor:
+        user, server = valor.split("@", 1)
+        user = user.strip()
+        server = server.strip().lower()
+        if user and server:
+            return f"{user}@{server}"
+        return valor
+
+    return f"{valor}@s.whatsapp.net"
+
+
+def normalizar_datos_proveedor(
+    datos_crudos: SolicitudCreacionProveedor,
+) -> Dict[str, Any]:
     """
     Normaliza datos del formulario para el esquema unificado.
 
     Fase 5: Eliminado campo 'profession' y actualizada lógica de servicios.
-    Ahora se retorna una lista de servicios normalizados en lugar de un string formateado.
+    Ahora se retorna una lista de servicios normalizados
+    en lugar de un string formateado.
 
     Args:
         datos_crudos: Datos crudos del proveedor desde el formulario
@@ -46,10 +95,16 @@ def normalizar_datos_proveedor(datos_crudos: SolicitudCreacionProveedor) -> Dict
     if len(servicios_normalizados) == 0:
         raise ValueError("Debe ingresar al menos 1 servicio válido")
 
-    telefono = datos_crudos.phone.strip()
-    real_phone = datos_crudos.real_phone.strip() if datos_crudos.real_phone else None
-    if not real_phone:
-        real_phone = telefono
+    telefono = _normalizar_jid_whatsapp(datos_crudos.phone.strip())
+    real_phone = (
+        _normalizar_telefono_ecuador(datos_crudos.real_phone.strip())
+        if datos_crudos.real_phone
+        else None
+    )
+    if not real_phone and telefono.endswith("@s.whatsapp.net"):
+        user = telefono.split("@", 1)[0]
+        if re.fullmatch(r"\+?\d{10,20}", user or ""):
+            real_phone = _normalizar_telefono_ecuador(user)
 
     return {
         "phone": telefono,

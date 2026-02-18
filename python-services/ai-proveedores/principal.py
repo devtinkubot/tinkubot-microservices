@@ -3,44 +3,40 @@ AI Service Proveedores - Versión mejorada con Supabase
 Servicio de gestión de proveedores con búsqueda y capacidad de recibir mensajes WhatsApp
 """
 
-import asyncio
 import json
 import logging
 import os
 import re
-import sys
-from pathlib import Path
-from time import perf_counter
-from datetime import datetime
-from typing import Any, Dict, Optional
 import unicodedata
-
-# Agregar el directorio raíz al sys.path para imports absolutos
-sys.path.insert(0, str(Path(__file__).parent))
+from datetime import datetime
+from time import perf_counter
+from typing import Any, Dict, Optional
 
 import uvicorn
+from config import configuracion
 from fastapi import FastAPI, Header
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from flows.interpretacion import interpretar_respuesta
+
 # Import de módulos especializados del flujo de proveedores
 from flows.router import manejar_mensaje
-from openai import AsyncOpenAI
-from supabase import Client, create_client
-
-from config import configuracion
-from models import RecepcionMensajeWhatsApp, RespuestaSalud
-from infrastructure.database import run_supabase
 
 # Gestores de sesión y perfil
 from flows.sesion import (
-    obtener_flujo,
     establecer_flujo,
-    obtener_perfil_proveedor_cacheado,
     invalidar_cache_perfil_proveedor,
+    obtener_flujo,
+    obtener_perfil_proveedor_cacheado,
 )
-from flows.interpretacion import interpretar_respuesta
-from infrastructure.storage import subir_medios_identidad
+from infrastructure.database import run_supabase, set_supabase_client
+from infrastructure.embeddings.servicio_embeddings import ServicioEmbeddings
 from infrastructure.redis import cliente_redis
+from infrastructure.storage import subir_medios_identidad
+from models import RecepcionMensajeWhatsApp, RespuestaSalud
+from openai import AsyncOpenAI
+from pydantic import BaseModel
+
+from supabase import Client, create_client
 
 # Configuración desde variables de entorno
 URL_SUPABASE = configuracion.supabase_url or os.getenv("SUPABASE_URL", "")
@@ -49,7 +45,9 @@ CLAVE_SERVICIO_SUPABASE = configuracion.supabase_service_key
 CLAVE_API_OPENAI = os.getenv("OPENAI_API_KEY", "")
 NIVEL_LOG = os.getenv("LOG_LEVEL", "INFO")
 TIEMPO_ESPERA_SUPABASE_SEGUNDOS = float(os.getenv("SUPABASE_TIMEOUT_SECONDS", "5"))
-REGISTRO_RENDIMIENTO_HABILITADO = os.getenv("PERF_LOG_ENABLED", "true").lower() == "true"
+REGISTRO_RENDIMIENTO_HABILITADO = (
+    os.getenv("PERF_LOG_ENABLED", "true").lower() == "true"
+)
 UMBRAL_LENTO_MS = int(os.getenv("SLOW_QUERY_THRESHOLD_MS", "800"))
 AVAILABILITY_RESULT_TTL_SECONDS = int(
     os.getenv("AVAILABILITY_RESULT_TTL_SECONDS", "300")
@@ -63,9 +61,6 @@ logger = logging.getLogger(__name__)
 supabase: Optional[Client] = None
 cliente_openai: Optional[AsyncOpenAI] = None
 
-# Fase 6: Inicializar servicio de embeddings
-from infrastructure.embeddings.servicio_embeddings import ServicioEmbeddings
-from infrastructure.database import set_supabase_client
 servicio_embeddings: Optional[ServicioEmbeddings] = None
 
 if URL_SUPABASE and CLAVE_SERVICIO_SUPABASE:
@@ -87,7 +82,10 @@ if CLAVE_API_OPENAI:
             cache_ttl=configuracion.ttl_cache_embeddings,
             timeout=configuracion.tiempo_espera_embeddings,
         )
-        logger.info(f"✅ Servicio de embeddings inicializado (modelo: {configuracion.modelo_embeddings})")
+        logger.info(
+            "✅ Servicio de embeddings inicializado (modelo: %s)",
+            configuracion.modelo_embeddings,
+        )
     else:
         logger.info("⚠️ Servicio de embeddings deshabilitado por configuración")
 else:
@@ -104,6 +102,7 @@ app = FastAPI(
 
 class SolicitudInvalidacionCache(BaseModel):
     phone: str
+
 
 # === FASTAPI LIFECYCLE EVENTS ===
 
@@ -130,10 +129,41 @@ CLAVE_FLUJO = "prov_flow:{}"  # telefono
 def _normalizar_texto_simple(texto: str) -> str:
     base = (texto or "").strip().lower()
     normalizado = unicodedata.normalize("NFD", base)
-    sin_acentos = "".join(
-        ch for ch in normalizado if unicodedata.category(ch) != "Mn"
-    )
+    sin_acentos = "".join(ch for ch in normalizado if unicodedata.category(ch) != "Mn")
     return re.sub(r"\s+", " ", sin_acentos).strip()
+
+
+def _normalizar_jid(valor: str) -> Optional[str]:
+    texto = (valor or "").strip()
+    if "@" not in texto:
+        return None
+
+    user, server = texto.split("@", 1)
+    user = user.strip()
+    server = server.strip().lower()
+    if not user or not server:
+        return None
+    return f"{user}@{server}"
+
+
+def _extraer_user_jid(valor: str) -> str:
+    texto = (valor or "").strip()
+    if not texto:
+        return ""
+    if "@" in texto:
+        return texto.split("@", 1)[0].strip()
+    return texto
+
+
+def _resolver_telefono_canonico(raw_from: str, raw_phone: str) -> str:
+    jid = _normalizar_jid(raw_from) or _normalizar_jid(raw_phone)
+    if jid:
+        return jid
+
+    user = _extraer_user_jid(raw_phone)
+    if not user:
+        return ""
+    return f"{user}@s.whatsapp.net"
 
 
 def _parsear_respuesta_disponibilidad(texto: str) -> Optional[str]:
@@ -170,7 +200,8 @@ async def _registrar_respuesta_disponibilidad_si_aplica(
     clave_pendientes = f"availability:provider:{telefono}:pending"
     pendientes = await cliente_redis.get(clave_pendientes)
 
-    # Mejora: Manejar casos donde pendientes puede venir como string JSON o no estar decodificado
+    # Mejora: manejar casos donde pendientes puede venir como string JSON
+    # o no estar decodificado.
     if pendientes is None:
         logger.info(f"📭 No hay solicitudes pendientes para {telefono}")
         return None
@@ -181,16 +212,21 @@ async def _registrar_respuesta_disponibilidad_si_aplica(
             pendientes = json.loads(pendientes)
         except (json.JSONDecodeError, TypeError) as e:
             logger.warning(
-                "⚠️ No se pudo decodificar pendientes de disponibilidad para %s: %s | Error: %s",
+                (
+                    "⚠️ No se pudo decodificar pendientes de disponibilidad "
+                    "para %s: %s | Error: %s"
+                ),
                 telefono,
                 str(pendientes)[:100] if pendientes else None,
-                e
+                e,
             )
             return None
 
     # Verificar que sea una lista después de la decodificación
     if not isinstance(pendientes, list) or not pendientes:
-        logger.info(f"📭 Pendientes vacío o inválido para {telefono}: {type(pendientes)}")
+        logger.info(
+            f"📭 Pendientes vacío o inválido para {telefono}: {type(pendientes)}"
+        )
         return None
 
     req_resuelto = None
@@ -241,6 +277,7 @@ async def _registrar_respuesta_disponibilidad_si_aplica(
         decision,
     )
     return {"success": True, "messages": [{"response": respuesta}]}
+
 
 @app.get("/health", response_model=RespuestaSalud)
 async def health_check() -> RespuestaSalud:
@@ -305,11 +342,9 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
     try:
         raw_phone = (solicitud.phone or "").strip()
         raw_from = (solicitud.from_number or "").strip()
-        is_lid = raw_from.endswith("@lid") or raw_phone.endswith("@lid")
-
-        telefono = raw_phone or raw_from or "unknown"
-        if "@" in telefono:
-            telefono = telefono.split("@", 1)[0]
+        telefono = _resolver_telefono_canonico(raw_from, raw_phone) or "unknown"
+        phone_user = _extraer_user_jid(telefono)
+        is_lid = telefono.endswith("@lid")
         texto_mensaje = solicitud.message or solicitud.content or ""
         carga = solicitud.model_dump()
         opcion_menu = interpretar_respuesta(texto_mensaje, "menu")
@@ -329,14 +364,14 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
             return normalizar_respuesta_whatsapp(respuesta_disponibilidad)
 
         flujo = await obtener_flujo(telefono)
-        if is_lid:
-            flujo["requires_real_phone"] = True
-        else:
-            flujo["requires_real_phone"] = False
-            if telefono and not flujo.get("real_phone"):
-                flujo["real_phone"] = telefono
-
         perfil_proveedor = await obtener_perfil_proveedor_cacheado(telefono)
+        tiene_real_phone = bool(
+            flujo.get("real_phone") or (perfil_proveedor or {}).get("real_phone")
+        )
+        flujo["phone_user"] = phone_user
+        flujo["requires_real_phone"] = bool(is_lid and not tiene_real_phone)
+        if not is_lid and phone_user and not flujo.get("real_phone"):
+            flujo["real_phone"] = phone_user
         resultado_manejo = await manejar_mensaje(
             flujo=flujo,
             telefono=telefono,
@@ -361,7 +396,10 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
 
     except Exception as error:
         import traceback
-        logger.error(f"❌ Error procesando mensaje WhatsApp: {error}\n{traceback.format_exc()}")
+
+        logger.error(
+            f"❌ Error procesando mensaje WhatsApp: {error}\n{traceback.format_exc()}"
+        )
         return {"success": False, "message": f"Error procesando mensaje: {str(error)}"}
     finally:
         if REGISTRO_RENDIMIENTO_HABILITADO:
@@ -377,7 +415,9 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
 
 
 def normalizar_respuesta_whatsapp(respuesta: Any) -> Dict[str, Any]:
-    """Normaliza la respuesta para que siempre use el esquema esperado por wa-gateway."""
+    """
+    Normaliza la respuesta para que siempre use el esquema esperado por wa-gateway.
+    """
     if respuesta is None:
         return {"success": True, "messages": []}
 

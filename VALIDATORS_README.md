@@ -33,9 +33,12 @@ Este directorio contiene scripts de validación de código para asegurar calidad
 
 **Uso:**
 ```bash
-python validate_quality.py                    # Validar todos
-python validate_quality.py --service ai-clientes  # Validar uno
-python validate_quality.py --fix                 # Corregir automáticamente
+python3 validate_quality.py                         # Validar Python cambiado (default)
+python3 validate_quality.py --scope all            # Validar todo el servicio
+python3 validate_quality.py --service ai-clientes  # Validar un servicio
+python3 validate_quality.py --fix                  # Corregir black/isort
+python3 validate_quality.py --strict               # Hacer mypy/bandit bloqueantes
+python3 validate_quality.py --include-templates    # Incluir templates en el scope
 ```
 
 ### 2. Go (`validate_go.sh`)

@@ -11,12 +11,13 @@ Responsabilidades:
 - Construcción de objetos de dominio
 - Lógica de negocio separada de la presentación
 """
+
 import logging
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
-from pydantic import ValidationError
 from models.proveedores import SolicitudCreacionProveedor
+from pydantic import ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,7 @@ def validar_y_construir_proveedor(
     try:
         proveedor = SolicitudCreacionProveedor(
             phone=telefono,
-            real_phone=flujo.get("real_phone") or telefono,
+            real_phone=flujo.get("real_phone") or flujo.get("phone_user"),
             full_name=flujo.get("name") or "",
             email=flujo.get("email"),
             city=flujo.get("city") or "",

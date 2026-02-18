@@ -271,7 +271,7 @@ mypy .
 CREATE TABLE providers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL,
-    phone VARCHAR(20) NOT NULL UNIQUE,
+    phone VARCHAR(50) NOT NULL UNIQUE,  -- WhatsApp JID format: 593959091325@s.whatsapp.net
     location_lat DECIMAL(10, 8),
     location_lng DECIMAL(11, 8),
     rating DECIMAL(3, 2) DEFAULT 0.0,

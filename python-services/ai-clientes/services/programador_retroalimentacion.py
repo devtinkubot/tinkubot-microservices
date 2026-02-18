@@ -1,10 +1,10 @@
 """Programador de retroalimentación diferida para clientes."""
 
 import asyncio
-import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -13,6 +13,7 @@ from templates.mensajes.retroalimentacion import mensaje_solicitud_retroalimenta
 
 # Feature flag para usar Redis Streams
 USAR_REDIS_STREAMS = os.getenv("USAR_REDIS_STREAMS", "false").lower() == "true"
+CLAVE_NOTIFICACION_RATE_LIMIT = "rate_limit_notification_scheduled_at"
 
 
 class ProgramadorRetroalimentacion:
@@ -206,7 +207,9 @@ class ProgramadorRetroalimentacion:
                     },
                 )
             if respuesta.status_code == 200:
+                await self._limpiar_marca_rate_limit(telefono)
                 return True
+            await self._manejar_rate_limit_si_aplica(telefono, respuesta)
             self.logger.warning(
                 f"WhatsApp send fallo status={respuesta.status_code} body={respuesta.text[:200]}"
             )
@@ -214,6 +217,140 @@ class ProgramadorRetroalimentacion:
         except Exception as exc:
             self.logger.error(f"Error enviando WhatsApp (scheduler): {exc}")
             return False
+
+    async def _manejar_rate_limit_si_aplica(
+        self, telefono: str, respuesta: httpx.Response
+    ) -> None:
+        retry_at = self._extraer_retry_at_rate_limit(respuesta)
+        if retry_at is None:
+            return
+        await self._agendar_notificacion_rate_limit(telefono, retry_at)
+
+    def _extraer_retry_at_rate_limit(
+        self, respuesta: httpx.Response
+    ) -> Optional[datetime]:
+        texto = (respuesta.text or "").lower()
+        try:
+            cuerpo = respuesta.json()
+        except Exception:
+            cuerpo = {}
+
+        mensaje = str(cuerpo.get("message") or "")
+        contenido = f"{texto} {mensaje}".lower()
+        if "rate limit" not in contenido and "limit exceeded" not in contenido:
+            return None
+
+        retry_at_raw = cuerpo.get("retry_at")
+        if isinstance(retry_at_raw, str):
+            try:
+                return datetime.fromisoformat(retry_at_raw.replace("Z", "+00:00")).astimezone(
+                    timezone.utc
+                )
+            except ValueError:
+                pass
+
+        retry_after = cuerpo.get("retry_after")
+        if isinstance(retry_after, int) and retry_after > 0:
+            return datetime.now(timezone.utc) + timedelta(seconds=retry_after)
+
+        if "hourly limit exceeded" in contenido:
+            return datetime.now(timezone.utc) + timedelta(hours=1)
+
+        if "daily limit exceeded" in contenido:
+            return datetime.now(timezone.utc) + timedelta(hours=24)
+
+        return datetime.now(timezone.utc) + timedelta(hours=1)
+
+    async def _agendar_notificacion_rate_limit(
+        self, telefono: str, retry_at_utc: datetime
+    ) -> None:
+        if not self.supabase:
+            return
+
+        if await self._ya_hay_notificacion_rate_limit_vigente(telefono, retry_at_utc):
+            return
+
+        retry_at_ec = retry_at_utc.astimezone(ZoneInfo("America/Guayaquil"))
+        fecha_ec = retry_at_ec.strftime("%d/%m/%Y")
+        hora_ec = retry_at_ec.strftime("%H:%M")
+        mensaje = (
+            "⚠️ Alcanzamos temporalmente el límite de mensajes de TinkuBot.\n\n"
+            f"Podrás volver a usar el servicio el {fecha_ec} a las {hora_ec} (hora Ecuador)."
+        )
+
+        try:
+            await run_supabase(
+                lambda: self.supabase.table("task_queue").insert(
+                    {
+                        "task_type": "send_whatsapp",
+                        "payload": {
+                            "phone": telefono,
+                            "message": mensaje,
+                            "type": "rate_limit_notification",
+                        },
+                        "status": "pending",
+                        "priority": 0,
+                        "scheduled_at": retry_at_utc.isoformat(),
+                        "retry_count": 0,
+                        "max_retries": 3,
+                    }
+                ).execute(),
+                etiqueta="task_queue.insert_rate_limit_notice",
+            )
+            await self._guardar_marca_rate_limit(telefono, retry_at_utc)
+            self.logger.info(
+                "⏰ Notificación de rate-limit agendada para %s en %s",
+                telefono,
+                retry_at_utc.isoformat(),
+            )
+        except Exception as exc:
+            self.logger.warning(
+                "No se pudo agendar notificación de rate-limit para %s: %s",
+                telefono,
+                exc,
+            )
+
+    async def _ya_hay_notificacion_rate_limit_vigente(
+        self, telefono: str, retry_at_utc: datetime
+    ) -> bool:
+        if not self.repositorio_flujo:
+            return False
+        try:
+            flujo = await self.repositorio_flujo.obtener(telefono) or {}
+            vigente_hasta = flujo.get(CLAVE_NOTIFICACION_RATE_LIMIT)
+            if not vigente_hasta:
+                return False
+            vigente_hasta_dt = datetime.fromisoformat(
+                str(vigente_hasta).replace("Z", "+00:00")
+            ).astimezone(timezone.utc)
+            return vigente_hasta_dt >= retry_at_utc
+        except Exception:
+            return False
+
+    async def _guardar_marca_rate_limit(
+        self, telefono: str, retry_at_utc: datetime
+    ) -> None:
+        if not self.repositorio_flujo:
+            return
+        try:
+            flujo = await self.repositorio_flujo.obtener(telefono) or {}
+            flujo[CLAVE_NOTIFICACION_RATE_LIMIT] = retry_at_utc.isoformat()
+            await self.repositorio_flujo.guardar(telefono, flujo)
+        except Exception as exc:
+            self.logger.warning(
+                "No se pudo guardar marca de rate-limit para %s: %s", telefono, exc
+            )
+
+    async def _limpiar_marca_rate_limit(self, telefono: str) -> None:
+        if not self.repositorio_flujo:
+            return
+        try:
+            flujo = await self.repositorio_flujo.obtener(telefono) or {}
+            if CLAVE_NOTIFICACION_RATE_LIMIT in flujo:
+                flujo.pop(CLAVE_NOTIFICACION_RATE_LIMIT, None)
+                await self.repositorio_flujo.guardar(telefono, flujo)
+        except Exception:
+            return
 
     async def procesar_tareas_pendientes(self) -> int:
         """

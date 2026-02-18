@@ -28,23 +28,23 @@ func NewHandlers(cm *whatsmeow.ClientManager, rl *ratelimit.Limiter, sseHub *SSE
 
 // Account represents an account with its state
 type Account struct {
-	ID               string       `json:"id"`
-	AccountID        string       `json:"account_id"`
-	AccountType      string       `json:"account_type"`
-	DisplayName      string       `json:"display_name"`
-	ConnectionStatus string       `json:"connection_status"`
-	QRCode           string       `json:"qr_code,omitempty"`
-	QRExpiresAt      *time.Time   `json:"qr_expires_at,omitempty"`
-	ConnectedAt      *time.Time   `json:"connected_at,omitempty"`
+	ID               string     `json:"id"`
+	AccountID        string     `json:"account_id"`
+	AccountType      string     `json:"account_type"`
+	DisplayName      string     `json:"display_name"`
+	ConnectionStatus string     `json:"connection_status"`
+	QRCode           string     `json:"qr_code,omitempty"`
+	QRExpiresAt      *time.Time `json:"qr_expires_at,omitempty"`
+	ConnectedAt      *time.Time `json:"connected_at,omitempty"`
 }
 
 // GetHealth returns health check information
 func (h *Handlers) GetHealth(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
-		"status":         "healthy",
-		"service":        "wa-gateway",
-		"version":        "1.0.0",
-		"timestamp":      time.Now().Format(time.RFC3339),
+		"status":    "healthy",
+		"service":   "wa-gateway",
+		"version":   "1.0.0",
+		"timestamp": time.Now().Format(time.RFC3339),
 		"dependencies": gin.H{
 			"sqlite": gin.H{
 				"status": "healthy",
@@ -119,9 +119,9 @@ func (h *Handlers) GetAccount(c *gin.Context) {
 	acc, exists := knownAccounts[accountID]
 	if !exists {
 		c.JSON(http.StatusNotFound, gin.H{
-			"error":    "Account not found",
-			"message":  "No account found with ID " + accountID,
-			"code":     "ACCOUNT_NOT_FOUND",
+			"error":   "Account not found",
+			"message": "No account found with ID " + accountID,
+			"code":    "ACCOUNT_NOT_FOUND",
 		})
 		return
 	}
@@ -164,8 +164,8 @@ func (h *Handlers) GetQR(c *gin.Context) {
 	// Check if client is already connected
 	if client, ok := h.clientManager.GetClient(accountID); ok && client.IsLoggedIn() {
 		c.JSON(http.StatusNotFound, gin.H{
-			"error":    "QR not available",
-			"message":  "Account is already connected",
+			"error":   "QR not available",
+			"message": "Account is already connected",
 		})
 		return
 	}
@@ -174,16 +174,16 @@ func (h *Handlers) GetQR(c *gin.Context) {
 	qrCode, expiresAt, exists := h.clientManager.GetQRCode(accountID)
 	if !exists {
 		c.JSON(http.StatusNotFound, gin.H{
-			"error":    "QR not available",
-			"message":  "Use POST /login to generate QR code",
+			"error":   "QR not available",
+			"message": "Use POST /login to generate QR code",
 		})
 		return
 	}
 
 	// Return QR code
 	c.JSON(http.StatusOK, gin.H{
-		"account_id":  accountID,
-		"qr_code":     qrCode,
+		"account_id":    accountID,
+		"qr_code":       qrCode,
 		"qr_expires_at": expiresAt,
 	})
 }
@@ -203,8 +203,8 @@ func (h *Handlers) PostLogin(c *gin.Context) {
 	// Check if account exists
 	if accountID != "bot-clientes" && accountID != "bot-proveedores" {
 		c.JSON(http.StatusNotFound, gin.H{
-			"error":    "Account not found",
-			"message":  "No account found with ID " + accountID,
+			"error":   "Account not found",
+			"message": "No account found with ID " + accountID,
 		})
 		return
 	}
@@ -212,8 +212,8 @@ func (h *Handlers) PostLogin(c *gin.Context) {
 	// Check if already connected
 	if client, ok := h.clientManager.GetClient(accountID); ok && client.IsLoggedIn() && !req.Force {
 		c.JSON(http.StatusConflict, gin.H{
-			"error":    "Already connected",
-			"message":  "Account is already connected. Use force=true to reconnect.",
+			"error":   "Already connected",
+			"message": "Account is already connected. Use force=true to reconnect.",
 		})
 		return
 	}
@@ -230,17 +230,17 @@ func (h *Handlers) PostLogin(c *gin.Context) {
 	// Start the client (will generate QR)
 	if err := h.clientManager.StartClient(accountID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":    "Failed to start client",
-			"message":  err.Error(),
+			"error":   "Failed to start client",
+			"message": err.Error(),
 		})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"success":   true,
+		"success":    true,
 		"account_id": accountID,
-		"status":    "qr_generating",
-		"message":   "Generando nuevo QR...",
+		"status":     "qr_generating",
+		"message":    "Generando nuevo QR...",
 	})
 }
 
@@ -250,8 +250,8 @@ func (h *Handlers) PostLogout(c *gin.Context) {
 
 	if err := h.clientManager.Logout(accountID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":    "Failed to logout",
-			"message":  err.Error(),
+			"error":   "Failed to logout",
+			"message": err.Error(),
 		})
 		return
 	}
@@ -274,8 +274,8 @@ func (h *Handlers) PostSend(c *gin.Context) {
 	var req SendMessageRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error":    "Invalid request",
-			"message":  err.Error(),
+			"error":   "Invalid request",
+			"message": err.Error(),
 		})
 		return
 	}
@@ -283,19 +283,34 @@ func (h *Handlers) PostSend(c *gin.Context) {
 	// Check rate limit
 	allowed, retryAfter, err := h.rateLimiter.Check(context.Background(), req.AccountID, req.To)
 	if err != nil {
+		// El limiter retorna error descriptivo cuando el límite fue alcanzado.
+		// Eso no es error interno: exponer 429 para que clientes puedan reintentar.
+		if !allowed {
+			retryAt := time.Now().Add(retryAfter).UTC().Format(time.RFC3339)
+			c.JSON(http.StatusTooManyRequests, gin.H{
+				"error":       "Rate limit exceeded",
+				"message":     err.Error(),
+				"code":        "RATE_LIMIT_EXCEEDED",
+				"retry_after": int(retryAfter.Seconds()),
+				"retry_at":    retryAt,
+			})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":    "Rate limit check failed",
-			"message":  err.Error(),
+			"error":   "Rate limit check failed",
+			"message": err.Error(),
 		})
 		return
 	}
 
 	if !allowed {
+		retryAt := time.Now().Add(retryAfter).UTC().Format(time.RFC3339)
 		c.JSON(http.StatusTooManyRequests, gin.H{
 			"error":       "Rate limit exceeded",
-			"message":     err.Error(),
+			"message":     "rate limit exceeded",
 			"code":        "RATE_LIMIT_EXCEEDED",
 			"retry_after": int(retryAfter.Seconds()),
+			"retry_at":    retryAt,
 		})
 		return
 	}
@@ -303,8 +318,8 @@ func (h *Handlers) PostSend(c *gin.Context) {
 	// Send message
 	if err := h.clientManager.SendTextMessage(req.AccountID, req.To, req.Message); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":    "Failed to send message",
-			"message":  err.Error(),
+			"error":   "Failed to send message",
+			"message": err.Error(),
 		})
 		return
 	}
@@ -316,7 +331,7 @@ func (h *Handlers) PostSend(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"success":   true,
+		"success":    true,
 		"message_id": "",
 		"timestamp":  time.Now().Format(time.RFC3339),
 		"to_phone":   req.To,

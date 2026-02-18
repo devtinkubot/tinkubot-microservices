@@ -2,45 +2,138 @@
 """
 Script de Validación de Calidad Local - TinkuBot Python Services
 
-Ejecuta todas las validaciones de calidad antes de subir a GitHub.
-Uso: python validate_quality.py [--fix] [--service nombre_servicio]
+Ejecuta validaciones de calidad antes de subir a GitHub.
+
+Uso:
+  python3 validate_quality.py
+  python3 validate_quality.py --scope all
+  python3 validate_quality.py --service ai-clientes
+  python3 validate_quality.py --fix
+  python3 validate_quality.py --strict
 
 Opciones:
---fix : Aplica correcciones automáticas (formato con black)
---service : Valida solo un servicio específico (ai-clientes, ai-proveedores, search-token)
+  --fix      Aplica correcciones automáticas (black/isort)
+  --service  Valida solo un servicio específico
+  --scope    changed (default) o all
+  --strict   Hace bloqueantes también mypy y bandit
 """
 
+from __future__ import annotations
+
+import argparse
 import subprocess
 import sys
-import os
-import argparse
+from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Tuple, Dict
+from typing import Dict, Iterable, List, Sequence, Tuple
 
-# Colores para salida
+
 class Colors:
-    RED = '\033[91m'
-    GREEN = '\033[92m'
-    YELLOW = '\033[93m'
-    BLUE = '\033[94m'
-    MAGENTA = '\033[95m'
-    CYAN = '\033[96m'
-    WHITE = '\033[97m'
-    BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
-    END = '\033[0m'
+    RED = "\033[91m"
+    GREEN = "\033[92m"
+    YELLOW = "\033[93m"
+    BLUE = "\033[94m"
+    MAGENTA = "\033[95m"
+    CYAN = "\033[96m"
+    WHITE = "\033[97m"
+    BOLD = "\033[1m"
+    END = "\033[0m"
 
 
 SERVICE_PATH_ALIASES = {
     "search-token": "ai-search",
 }
 
+CONFIG_FLAKE8 = Path(".flake8")
+CONFIG_MYPY = Path("mypy.ini")
+CONFIG_BANDIT = Path("bandit.yaml")
+
+
+@dataclass
+class CheckResult:
+    passed: bool
+    blocking: bool
+    note: str = ""
+
+
+def print_banner() -> None:
+    print(
+        f"""
+{Colors.CYAN}{Colors.BOLD}
+╔══════════════════════════════════════════════════════════════╗
+║          VALIDADOR DE CALIDAD - TINKUBOT PYTHON             ║
+║                 Antes de subir a GitHub                     ║
+╚══════════════════════════════════════════════════════════════╝{Colors.END}
+{Colors.WHITE}
+Este script ejecuta las siguientes validaciones:
+• Formato de código (Black)
+• Importaciones ordenadas (isort)
+• Linting (Flake8)
+• Type checking (MyPy)
+• Seguridad (Bandit)
+• Sintaxis Python
+{Colors.END}
+"""
+    )
+
+
+def print_success(message: str) -> None:
+    print(f"{Colors.GREEN}✅ {message}{Colors.END}")
+
+
+def print_error(message: str) -> None:
+    print(f"{Colors.RED}❌ {message}{Colors.END}")
+
+
+def print_warning(message: str) -> None:
+    print(f"{Colors.YELLOW}⚠️  {message}{Colors.END}")
+
+
+def print_info(message: str) -> None:
+    print(f"{Colors.BLUE}ℹ️  {message}{Colors.END}")
+
+
+def run_command(
+    cmd: Sequence[str], description: str, timeout: int = 120
+) -> Tuple[bool, str]:
+    print(f"\n{Colors.CYAN}🔍 Ejecutando: {description}{Colors.END}")
+    print(f"{Colors.MAGENTA}Comando: {' '.join(cmd)}{Colors.END}")
+
+    try:
+        result = subprocess.run(
+            list(cmd), capture_output=True, text=True, timeout=timeout
+        )
+    except subprocess.TimeoutExpired:
+        print_error(f"{description} - TIMEOUT ({timeout}s)")
+        return False, f"Timeout after {timeout} seconds"
+    except Exception as exc:
+        print_error(f"{description} - EXCEPTION: {exc}")
+        return False, str(exc)
+
+    output = (result.stdout or "") + (result.stderr or "")
+    if result.returncode == 0:
+        print_success(f"{description} - OK")
+        if output.strip():
+            print(f"{Colors.WHITE}{output}{Colors.END}")
+        return True, output
+
+    print_error(f"{description} - ERROR")
+    if output.strip():
+        print(f"{Colors.YELLOW}{output}{Colors.END}")
+    return False, output
+
+
+def check_tool_availability(tool_name: str) -> bool:
+    try:
+        result = subprocess.run(
+            [tool_name, "--version"], capture_output=True, text=True, timeout=10
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
 
 def resolve_service_path(service: str) -> Path:
-    """
-    Resuelve la ruta del servicio tanto si se ejecuta desde la raíz del repo
-    como desde el directorio python-services.
-    """
     alias = SERVICE_PATH_ALIASES.get(service, service)
     direct = Path(alias)
     if direct.exists():
@@ -50,405 +143,407 @@ def resolve_service_path(service: str) -> Path:
         return nested
     return direct
 
-def print_banner():
-    """Muestra el banner del validador"""
-    print(f"""
-{Colors.CYAN}{Colors.BOLD}
-╔══════════════════════════════════════════════════════════════╗
-║          🔍 VALIDADOR DE CALIDAD - TINKUBOT PYTHON          ║
-║                 Antes de subir a GitHub                    ║
-╚══════════════════════════════════════════════════════════════╝{Colors.END}
-{Colors.WHITE}
-Este script ejecuta las siguientes validaciones:
-• Formato de código (Black)
-• Linting (Flake8)
-• Type Checking (MyPy)
-• Seguridad (Bandit)
-• Importaciones ordenadas (isort)
-• Complejidad (McCabe)
-{Colors.END}
-""")
 
-def print_success(message: str):
-    """Imprime mensaje de éxito"""
-    print(f"{Colors.GREEN}✅ {message}{Colors.END}")
-
-def print_error(message: str):
-    """Imprime mensaje de error"""
-    print(f"{Colors.RED}❌ {message}{Colors.END}")
-
-def print_warning(message: str):
-    """Imprime mensaje de advertencia"""
-    print(f"{Colors.YELLOW}⚠️  {message}{Colors.END}")
-
-def print_info(message: str):
-    """Imprime mensaje informativo"""
-    print(f"{Colors.BLUE}ℹ️  {message}{Colors.END}")
-
-def run_command(cmd: List[str], description: str, cwd: str = None) -> Tuple[bool, str]:
-    """
-    Ejecuta un comando y retorna (éxito, salida)
-
-    Args:
-        cmd: Comando a ejecutar
-        description: Descripción para mostrar
-        cwd: Directorio de trabajo
-
-    Returns:
-        Tuple[bool, str]: (éxito, salida)
-    """
-    print(f"\n{Colors.CYAN}🔍 Ejecutando: {description}{Colors.END}")
-    print(f"{Colors.MAGENTA}Comando: {' '.join(cmd)}{Colors.END}")
-
+def _git_lines(cmd: Sequence[str]) -> List[str]:
     try:
         result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            cwd=cwd,
-            timeout=60  # 60 segundos timeout
+            list(cmd), capture_output=True, text=True, timeout=10, check=False
         )
+    except Exception:
+        return []
 
-        if result.returncode == 0:
-            print_success(f"{description} - OK")
-            if result.stdout.strip():
-                print(f"{Colors.WHITE}{result.stdout}{Colors.END}")
-            return True, result.stdout
-        else:
-            print_error(f"{description} - ERROR")
-            if result.stderr.strip():
-                print(f"{Colors.RED}{result.stderr}{Colors.END}")
-            if result.stdout.strip():
-                print(f"{Colors.YELLOW}{result.stdout}{Colors.END}")
-            return False, result.stderr
+    if result.returncode != 0:
+        return []
 
-    except subprocess.TimeoutExpired:
-        print_error(f"{description} - TIMEOUT (60s)")
-        return False, "Timeout after 60 seconds"
-    except Exception as e:
-        print_error(f"{description} - EXCEPTION: {str(e)}")
-        return False, str(e)
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
-def check_tool_availability(tool_name: str) -> bool:
-    """Verifica si una herramienta está disponible"""
-    try:
-        result = subprocess.run([tool_name, "--version"],
-                              capture_output=True, text=True, timeout=10)
-        return result.returncode == 0
-    except:
-        return False
 
-def validate_formatting(services: List[str], fix: bool = False) -> bool:
-    """Valida y opcionalmente corrige el formato con Black"""
-    print(f"\n{Colors.BOLD}{Colors.BLUE}📝 VALIDACIÓN DE FORMATO (BLACK){Colors.END}")
+def get_changed_python_files() -> List[Path]:
+    paths: set[Path] = set()
 
-    if not check_tool_availability("black"):
-        print_warning("Black no está instalado. Instalando...")
-        success, _ = run_command([sys.executable, "-m", "pip", "install", "black"],
-                              "Instalando Black")
-        if not success:
-            print_error("No se pudo instalar Black")
-            return False
+    # Unstaged changes
+    for line in _git_lines(["git", "diff", "--name-only", "--diff-filter=ACMRTUXB"]):
+        if line.endswith(".py"):
+            paths.add(Path(line))
 
-    all_success = True
-    black_cmd = [sys.executable, "-m", "black"]
+    # Staged changes
+    for line in _git_lines(
+        ["git", "diff", "--cached", "--name-only", "--diff-filter=ACMRTUXB"]
+    ):
+        if line.endswith(".py"):
+            paths.add(Path(line))
 
-    if fix:
-        black_cmd.append("--line-length=88")
-        print_info("Modo de corrección automática activado")
-    else:
-        black_cmd.extend(["--check", "--line-length=88"])
-        print_info("Modo de verificación (sin cambios)")
+    # Untracked files
+    for line in _git_lines(["git", "ls-files", "--others", "--exclude-standard"]):
+        if line.endswith(".py"):
+            paths.add(Path(line))
 
-    for service in services:
-        service_path = resolve_service_path(service)
-        if not service_path.exists():
-            print_warning(f"Servicio {service} no encontrado, omitiendo...")
+    return sorted(paths)
+
+
+def filter_targets_for_service(
+    service_path: Path, targets: Iterable[Path]
+) -> List[Path]:
+    service_prefix = str(service_path.resolve())
+    selected: List[Path] = []
+    for target in targets:
+        absolute = target.resolve()
+        if str(absolute).startswith(service_prefix) and absolute.exists():
+            selected.append(absolute)
+    return selected
+
+
+def discover_python_files(service_path: Path) -> List[Path]:
+    return sorted(service_path.rglob("*.py"))
+
+
+def ensure_tools(tools: Sequence[Tuple[str, str]]) -> bool:
+    all_ok = True
+    for tool, package in tools:
+        if check_tool_availability(tool):
             continue
+        print_warning(f"{tool} no está instalado. Instalando...")
+        ok, _ = run_command(
+            [sys.executable, "-m", "pip", "install", package], f"Instalando {tool}"
+        )
+        all_ok = all_ok and ok
+    return all_ok
 
-        print(f"\n{Colors.CYAN}Validando formato en: {service_path}{Colors.END}")
-        success, _ = run_command(black_cmd + [str(service_path)], f"Black - {service}")
-        all_success = all_success and success
 
-    return all_success
-
-def validate_imports(services: List[str], fix: bool = False) -> bool:
-    """Valida y ordena importaciones con isort"""
-    print(f"\n{Colors.BOLD}{Colors.BLUE}📦 VALIDACIÓN DE IMPORTACIONES (ISORT){Colors.END}")
-
-    if not check_tool_availability("isort"):
-        print_warning("isort no está instalado. Instalando...")
-        success, _ = run_command([sys.executable, "-m", "pip", "install", "isort"],
-                              "Instalando isort")
-        if not success:
-            print_error("No se pudo instalar isort")
-            return False
-
-    all_success = True
-    isort_cmd = [sys.executable, "-m", "isort", "--profile", "black", "--line-length", "88"]
-
-    if fix:
-        print_info("Modo de corrección automática activado")
-    else:
-        isort_cmd.append("--check-only")
-        print_info("Modo de verificación (sin cambios)")
-
-    for service in services:
-        service_path = resolve_service_path(service)
-        if not service_path.exists():
-            continue
-
-        print(f"\n{Colors.CYAN}Validando importaciones en: {service_path}{Colors.END}")
-        success, _ = run_command(isort_cmd + [str(service_path)], f"isort - {service}")
-        all_success = all_success and success
-
-    return all_success
-
-def validate_linting(services: List[str]) -> bool:
-    """Valida el código con Flake8"""
-    print(f"\n{Colors.BOLD}{Colors.BLUE}🔍 VALIDACIÓN LINTING (FLAKE8){Colors.END}")
-
-    if not check_tool_availability("flake8"):
-        print_warning("Flake8 no está instalado. Instalando...")
-        success, _ = run_command([sys.executable, "-m", "pip", "install", "flake8"],
-                              "Instalando Flake8")
-        if not success:
-            print_error("No se pudo instalar Flake8")
-            return False
-
-    # Crear configuración de Flake8
-    flake8_config = """
-[flake8]
-max-line-length = 88
-extend-ignore = E203, W503
-exclude =
-    __pycache__,
-    .git,
-    __pycache__,
-    .venv,
-    venv,
-    .eggs,
-    *.egg,
-    build,
-    dist
-max-complexity = 10
-"""
-
-    config_path = Path(".flake8")
-    with open(config_path, "w") as f:
-        f.write(flake8_config)
-
-    all_success = True
-
-    for service in services:
-        service_path = resolve_service_path(service)
-        if not service_path.exists():
-            continue
-
-        print(f"\n{Colors.CYAN}Validando linting en: {service_path}{Colors.END}")
-        success, _ = run_command([sys.executable, "-m", "flake8", str(service_path)],
-                              f"Flake8 - {service}")
-        all_success = all_success and success
-
-    # Limpiar archivo de configuración
-    config_path.unlink(missing_ok=True)
-
-    return all_success
-
-def validate_types(services: List[str]) -> bool:
-    """Valida tipos con MyPy"""
-    print(f"\n{Colors.BOLD}{Colors.BLUE}🔧 VALIDACIÓN DE TIPOS (MYPY){Colors.END}")
-
-    if not check_tool_availability("mypy"):
-        print_warning("MyPy no está instalado. Instalando...")
-        success, _ = run_command([sys.executable, "-m", "pip", "install", "mypy"],
-                              "Instalando MyPy")
-        if not success:
-            print_error("No se pudo instalar MyPy")
-            return False
-
-    all_success = True
-
-    for service in services:
-        service_path = resolve_service_path(service)
-        if not service_path.exists():
-            continue
-
-        main_py = service_path / "main.py"
-        principal_py = service_path / "principal.py"
-        entry_py = principal_py if principal_py.exists() else main_py
-        if not entry_py.exists():
-            continue
-
-        print(f"\n{Colors.CYAN}Validando tipos en: {service}{Colors.END}")
-
-        # MyPy configuration base
-        mypy_cmd_base = [
-            sys.executable, "-m", "mypy",
-            "--ignore-missing-imports",
-            "--no-strict-optional",
-            "--warn-redundant-casts",
-            "--warn-unused-ignores",
-        ]
-
-        # Gate mínimo de contracts para ai-clientes (sin tocar flujos/templates)
-        if service == "ai-clientes":
-            targets = [
-                service_path / "services/orquestador_conversacion.py",
-                service_path / "services/orquestador_retrollamadas.py",
-                service_path / "contracts/repositorios.py",
-                service_path / "infrastructure/persistencia/repositorio_flujo.py",
-                service_path / "infrastructure/persistencia/repositorio_clientes.py",
-            ]
-            targets_existentes = [str(t) for t in targets if t.exists()]
-            if not targets_existentes:
-                continue
-            mypy_cmd = mypy_cmd_base + targets_existentes
-        else:
-            mypy_cmd = mypy_cmd_base + [str(entry_py)]
-
-        success, _ = run_command(mypy_cmd, f"MyPy - {service}")
-        all_success = all_success and success
-
-    return all_success
-
-def validate_security(services: List[str]) -> bool:
-    """Valida seguridad con Bandit"""
-    print(f"\n{Colors.BOLD}{Colors.BLUE}🔒 VALIDACIÓN DE SEGURIDAD (BANDIT){Colors.END}")
-
-    if not check_tool_availability("bandit"):
-        print_warning("Bandit no está instalado. Instalando...")
-        success, _ = run_command([sys.executable, "-m", "pip", "install", "bandit"],
-                              "Instalando Bandit")
-        if not success:
-            print_error("No se pudo instalar Bandit")
-            return False
-
-    all_success = True
-
-    for service in services:
-        service_path = resolve_service_path(service)
-        if not service_path.exists():
-            continue
-
-        print(f"\n{Colors.CYAN}Validando seguridad en: {service_path}{Colors.END}")
-
-        bandit_cmd = [
-            sys.executable, "-m", "bandit",
-            "-r", str(service_path),
-            "-f", "json",
-            "-q"
-        ]
-
-        success, _ = run_command(bandit_cmd, f"Bandit - {service}")
-        all_success = all_success and success
-
-    return all_success
-
-def validate_syntax(services: List[str]) -> bool:
-    """Valida sintaxis básica de Python"""
+def validate_syntax(service_targets: Dict[str, List[Path]]) -> CheckResult:
     print(f"\n{Colors.BOLD}{Colors.BLUE}🐍 VALIDACIÓN DE SINTAXIS PYTHON{Colors.END}")
-
     all_success = True
 
-    for service in services:
-        service_path = resolve_service_path(service)
-        if not service_path.exists():
+    for service, files in service_targets.items():
+        if not files:
+            print_info(f"Sin archivos .py para validar sintaxis en {service}")
             continue
-
-        print(f"\n{Colors.CYAN}Validando sintaxis en: {service_path}{Colors.END}")
-
-        python_files = list(service_path.rglob("*.py"))
-        for py_file in python_files:
+        print(f"\n{Colors.CYAN}Validando sintaxis en: {service}{Colors.END}")
+        for py_file in files:
             success, _ = run_command(
                 [sys.executable, "-m", "py_compile", str(py_file)],
-                f"Python syntax - {py_file.name}"
+                f"Python syntax - {py_file.name}",
             )
             all_success = all_success and success
-            if not success:
-                print_error(f"Error de sintaxis en {py_file}")
 
-    return all_success
+    return CheckResult(passed=all_success, blocking=True)
 
-def main():
-    """Función principal"""
+
+def validate_formatting(
+    service_targets: Dict[str, List[Path]], fix: bool
+) -> CheckResult:
+    print(f"\n{Colors.BOLD}{Colors.BLUE}📝 VALIDACIÓN DE FORMATO (BLACK){Colors.END}")
+    if not ensure_tools([("black", "black")]):
+        return CheckResult(
+            passed=False, blocking=True, note="No se pudo instalar black"
+        )
+
+    all_success = True
+    for service, files in service_targets.items():
+        if not files:
+            print_info(f"Sin archivos para black en {service}")
+            continue
+
+        cmd = [sys.executable, "-m", "black", "--line-length=88"]
+        if not fix:
+            cmd.append("--check")
+        cmd.extend(str(f) for f in files)
+
+        success, _ = run_command(cmd, f"Black - {service}")
+        all_success = all_success and success
+
+    return CheckResult(passed=all_success, blocking=True)
+
+
+def validate_imports(service_targets: Dict[str, List[Path]], fix: bool) -> CheckResult:
+    print(
+        f"\n{Colors.BOLD}{Colors.BLUE}📦 VALIDACIÓN DE IMPORTACIONES (ISORT){Colors.END}"
+    )
+    if not ensure_tools([("isort", "isort")]):
+        return CheckResult(
+            passed=False, blocking=True, note="No se pudo instalar isort"
+        )
+
+    all_success = True
+    for service, files in service_targets.items():
+        if not files:
+            print_info(f"Sin archivos para isort en {service}")
+            continue
+
+        cmd = [
+            sys.executable,
+            "-m",
+            "isort",
+            "--profile",
+            "black",
+            "--line-length",
+            "88",
+        ]
+        if not fix:
+            cmd.append("--check-only")
+        cmd.extend(str(f) for f in files)
+
+        success, _ = run_command(cmd, f"isort - {service}")
+        all_success = all_success and success
+
+    return CheckResult(passed=all_success, blocking=True)
+
+
+def validate_linting(service_targets: Dict[str, List[Path]]) -> CheckResult:
+    print(f"\n{Colors.BOLD}{Colors.BLUE}🔍 VALIDACIÓN LINTING (FLAKE8){Colors.END}")
+    if not ensure_tools([("flake8", "flake8")]):
+        return CheckResult(
+            passed=False, blocking=True, note="No se pudo instalar flake8"
+        )
+
+    all_success = True
+    for service, files in service_targets.items():
+        if not files:
+            print_info(f"Sin archivos para flake8 en {service}")
+            continue
+
+        cmd = [
+            sys.executable,
+            "-m",
+            "flake8",
+            "--jobs",
+            "1",
+            "--config",
+            str(CONFIG_FLAKE8),
+        ]
+        cmd.extend(str(f) for f in files)
+
+        success, _ = run_command(cmd, f"Flake8 - {service}")
+        all_success = all_success and success
+
+    return CheckResult(passed=all_success, blocking=True)
+
+
+def validate_types(service_targets: Dict[str, List[Path]], strict: bool) -> CheckResult:
+    print(f"\n{Colors.BOLD}{Colors.BLUE}🔧 VALIDACIÓN DE TIPOS (MYPY){Colors.END}")
+    if not ensure_tools([("mypy", "mypy")]):
+        return CheckResult(
+            passed=False, blocking=strict, note="No se pudo instalar mypy"
+        )
+
+    all_success = True
+    any_files = False
+    for service, files in service_targets.items():
+        if not files:
+            continue
+        any_files = True
+
+        cmd = [
+            sys.executable,
+            "-m",
+            "mypy",
+            "--config-file",
+            str(CONFIG_MYPY),
+        ]
+        cmd.extend(str(f) for f in files)
+
+        success, _ = run_command(cmd, f"MyPy - {service}", timeout=180)
+        all_success = all_success and success
+
+    if not any_files:
+        print_info("Sin archivos para mypy")
+    return CheckResult(passed=all_success, blocking=strict)
+
+
+def validate_security(
+    service_targets: Dict[str, List[Path]], strict: bool
+) -> CheckResult:
+    print(
+        f"\n{Colors.BOLD}{Colors.BLUE}🔒 VALIDACIÓN DE SEGURIDAD (BANDIT){Colors.END}"
+    )
+    if not ensure_tools([("bandit", "bandit")]):
+        return CheckResult(
+            passed=False, blocking=strict, note="No se pudo instalar bandit"
+        )
+
+    all_success = True
+    any_files = False
+
+    for service, files in service_targets.items():
+        if not files:
+            continue
+        any_files = True
+        cmd = [
+            sys.executable,
+            "-m",
+            "bandit",
+            "-f",
+            "json",
+            "-q",
+            "-c",
+            str(CONFIG_BANDIT),
+        ]
+        cmd.extend(str(f) for f in files)
+
+        success, _ = run_command(cmd, f"Bandit - {service}", timeout=180)
+        all_success = all_success and success
+
+    if not any_files:
+        print_info("Sin archivos para bandit")
+    return CheckResult(passed=all_success, blocking=strict)
+
+
+def _exclude_templates(files: Iterable[Path], include_templates: bool) -> List[Path]:
+    if include_templates:
+        return sorted(files)
+    return sorted(path for path in files if "/templates/" not in str(path))
+
+
+def build_service_targets(
+    services: Sequence[str], scope: str, include_templates: bool
+) -> Dict[str, List[Path]]:
+    targets: Dict[str, List[Path]] = {}
+
+    if scope == "changed":
+        changed = get_changed_python_files()
+        if changed:
+            print_info(f"Scope changed: {len(changed)} archivos Python detectados")
+        else:
+            print_warning("Scope changed: no hay archivos Python cambiados")
+
+        for service in services:
+            service_path = resolve_service_path(service)
+            if not service_path.exists():
+                print_warning(f"Servicio {service} no encontrado, omitiendo")
+                targets[service] = []
+                continue
+            selected = filter_targets_for_service(service_path, changed)
+            targets[service] = _exclude_templates(selected, include_templates)
+    else:
+        for service in services:
+            service_path = resolve_service_path(service)
+            if not service_path.exists():
+                print_warning(f"Servicio {service} no encontrado, omitiendo")
+                targets[service] = []
+                continue
+            selected = discover_python_files(service_path)
+            targets[service] = _exclude_templates(selected, include_templates)
+
+    return targets
+
+
+def summarize_results(results: Dict[str, CheckResult]) -> int:
+    top = "╔══════════════════════════════════════════════════════════════╗"
+    mid = "║                        RESUMEN DE VALIDACIÓN                ║"
+    bot = "╚══════════════════════════════════════════════════════════════╝"
+    print(f"\n{Colors.BOLD}{Colors.CYAN}{top}{Colors.END}")
+    print(f"{Colors.BOLD}{Colors.CYAN}{mid}{Colors.END}")
+    print(f"{Colors.BOLD}{Colors.CYAN}{bot}{Colors.END}")
+
+    for check_name, result in results.items():
+        if result.passed:
+            status = "✅ PASÓ"
+            color = Colors.GREEN
+        else:
+            gate = "BLOCKING" if result.blocking else "ADVISORY"
+            status = f"❌ FALLÓ ({gate})"
+            color = Colors.RED if result.blocking else Colors.YELLOW
+        print(f"{color}{check_name.upper():<12}: {status}{Colors.END}")
+
+    blocking_failed = [
+        name
+        for name, result in results.items()
+        if result.blocking and not result.passed
+    ]
+    total_blocking = sum(1 for r in results.values() if r.blocking)
+    passed_blocking = sum(1 for r in results.values() if r.blocking and r.passed)
+
+    resumen = f"Resultados bloqueantes: {passed_blocking}/{total_blocking}"
+    print(f"\n{Colors.WHITE}{resumen}{Colors.END}")
+
+    if blocking_failed:
+        print_error(f"Checks bloqueantes fallidos: {', '.join(blocking_failed)}")
+        print_info("Corrige estos checks antes de subir cambios.")
+        return 1
+
+    print_success("Checks bloqueantes OK.")
+    advisory_failed = [
+        name
+        for name, result in results.items()
+        if not result.blocking and not result.passed
+    ]
+    if advisory_failed:
+        joined = ", ".join(advisory_failed)
+        print_warning(f"Checks informativos con fallos (deuda histórica): {joined}")
+    return 0
+
+
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Validador de calidad para TinkuBot Python Services",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Ejemplos:
-  python validate_quality.py                    # Validar todos los servicios
-  python validate_quality.py --service ai-clientes  # Validar solo ai-clientes
-  python validate_quality.py --fix                 # Corregir automáticamente
-        """
     )
 
     parser.add_argument(
         "--fix",
         action="store_true",
-        help="Aplica correcciones automáticas (formato con Black e isort)"
+        help="Aplica correcciones automáticas (black/isort)",
     )
-
     parser.add_argument(
         "--service",
         choices=["ai-clientes", "ai-proveedores", "search-token"],
-        help="Valida solo un servicio específico"
+        help="Valida solo un servicio específico",
+    )
+    parser.add_argument(
+        "--scope",
+        choices=["changed", "all"],
+        default="changed",
+        help="Alcance de archivos a validar (default: changed)",
+    )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Mypy y Bandit pasan a ser checks bloqueantes",
+    )
+    parser.add_argument(
+        "--include-templates",
+        action="store_true",
+        help="Incluye archivos dentro de templates en el scope validado",
     )
 
-    args = parser.parse_args()
+    return parser.parse_args()
 
+
+def main() -> int:
+    args = parse_args()
     print_banner()
 
-    # Determinar servicios a validar
-    if args.service:
-        services = [args.service]
-        print_info(f"Validando solo el servicio: {args.service}")
-    else:
-        services = ["ai-clientes", "ai-proveedores", "search-token"]
-        print_info("Validando todos los servicios Python")
+    services = (
+        [args.service]
+        if args.service
+        else ["ai-clientes", "ai-proveedores", "search-token"]
+    )
+    print_info(f"Servicios: {', '.join(services)}")
+    print_info(f"Scope: {args.scope}")
+    print_info(f"Strict: {'sí' if args.strict else 'no'}")
 
     if args.fix:
-        print_warning("Modo de corrección automática activado")
+        print_warning("Modo fix activado (black/isort)")
 
-    # Ejecutar validaciones
-    results = {}
+    for required_config in (CONFIG_FLAKE8, CONFIG_MYPY, CONFIG_BANDIT):
+        if not required_config.exists():
+            print_error(f"Falta archivo de configuración: {required_config}")
+            return 1
 
-    # 1. Validar sintaxis primero
-    results["syntax"] = validate_syntax(services)
+    service_targets = build_service_targets(
+        services, args.scope, include_templates=args.include_templates
+    )
 
-    # 2. Validar formato y orden
-    results["formatting"] = validate_formatting(services, fix=args.fix)
-    results["imports"] = validate_imports(services, fix=args.fix)
+    results: Dict[str, CheckResult] = {}
+    results["syntax"] = validate_syntax(service_targets)
+    results["formatting"] = validate_formatting(service_targets, fix=args.fix)
+    results["imports"] = validate_imports(service_targets, fix=args.fix)
+    results["linting"] = validate_linting(service_targets)
+    results["types"] = validate_types(service_targets, strict=args.strict)
+    results["security"] = validate_security(service_targets, strict=args.strict)
 
-    # 3. Validaciones estáticas
-    results["linting"] = validate_linting(services)
-    results["types"] = validate_types(services)
-    results["security"] = validate_security(services)
+    return summarize_results(results)
 
-    # Resumen final
-    print(f"\n{Colors.BOLD}{Colors.CYAN}╔══════════════════════════════════════════════════════════════╗{Colors.END}")
-    print(f"{Colors.BOLD}{Colors.CYAN}║                        RESUMEN DE VALIDACIÓN                    ║{Colors.END}")
-    print(f"{Colors.BOLD}{Colors.CYAN}╚══════════════════════════════════════════════════════════════╝{Colors.END}")
-
-    for check_name, success in results.items():
-        status = "✅ PASÓ" if success else "❌ FALLÓ"
-        color = Colors.GREEN if success else Colors.RED
-        print(f"{color}{check_name.upper():<12}: {status}{Colors.END}")
-
-    total_checks = len(results)
-    passed_checks = sum(results.values())
-
-    print(f"\n{Colors.WHITE}Resultados: {passed_checks}/{total_checks} validaciones pasaron{Colors.END}")
-
-    if passed_checks == total_checks:
-        print_success("🎉 Todas las validaciones pasaron. Código listo para GitHub!")
-        return 0
-    else:
-        print_error(f"⚠️  {total_checks - passed_checks} validaciones fallaron.")
-        print_info("Corrige los problemas antes de subir a GitHub.")
-        if not args.fix:
-            print_info("Sugerencia: Ejecuta con --fix para correcciones automáticas.")
-        return 1
 
 if __name__ == "__main__":
     sys.exit(main())

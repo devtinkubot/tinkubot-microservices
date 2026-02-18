@@ -3,10 +3,11 @@
 import re
 from typing import Any, Dict, Optional
 
+from services.registro.normalizacion import _normalizar_telefono_ecuador
 from services.servicios_proveedor.utilidades import limpiar_espacios
 from templates.registro import (
-    preguntar_ciudad,
     error_real_phone_invalido,
+    preguntar_ciudad,
 )
 
 
@@ -31,7 +32,8 @@ def _normalizar_real_phone(valor: str) -> Optional[str]:
     if len(digitos) < 10 or len(digitos) > 20:
         return None
 
-    return compactado
+    # Normalizar formato ecuatoriano (09... → 5939..., +593... → 593...)
+    return _normalizar_telefono_ecuador(compactado)
 
 
 def manejar_espera_real_phone(

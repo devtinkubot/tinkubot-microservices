@@ -1,0 +1,5 @@
+exclude_dirs:
+  - python-services/ai-clientes/tests
+  - python-services/ai-proveedores/tests
+skips:
+  - B101

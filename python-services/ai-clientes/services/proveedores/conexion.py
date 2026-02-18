@@ -13,6 +13,8 @@ def _construir_enlace_whatsapp(telefono: str) -> Optional[str]:
     bruto = telefono.strip()
     if bruto.endswith("@lid"):
         return None
+    if bruto.endswith("@s.whatsapp.net"):
+        bruto = bruto.replace("@s.whatsapp.net", "")
     if bruto.endswith("@c.us"):
         bruto = bruto.replace("@c.us", "")
     bruto = bruto.lstrip("+")

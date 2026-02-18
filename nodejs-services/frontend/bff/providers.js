@@ -219,6 +219,37 @@ const construirMensajeEntrevista = nombre => {
   return 'Para continuar con tu registro necesitamos una breve entrevista de validación. Responde a este mensaje para coordinar.';
 };
 
+/**
+ * Formatea teléfono para WhatsApp basándose en el patrón:
+ * - Teléfonos normales (ej: 5939xxx) → @s.whatsapp.net
+ * - LIDs largos (ej: 254429618032748) → @lid
+ * - Ya tiene @ → se usa tal cual
+ */
+const formatearTelefonoWhatsApp = phone => {
+  if (!phone) return null;
+
+  const phoneStr = String(phone).trim();
+  if (!phoneStr) return null;
+
+  // Ya tiene formato JID - usar tal cual
+  if (phoneStr.includes('@')) return phoneStr;
+
+  // Extraer solo dígitos
+  const digitos = phoneStr.replace(/\D/g, '');
+  if (!digitos) return null;
+
+  // LID: >= 15 dígitos y no empieza con código de país conocido
+  // (códigos de país típicos: 593 Ecuador, 54 Argentina, 52 México, etc.)
+  const codigosPais = ['593', '54', '52', '57', '56', '51', '507', '502', '503', '505'];
+  const esTelefonoNormal = codigosPais.some(c => digitos.startsWith(c)) && digitos.length <= 13;
+
+  if (digitos.length >= 15 && !esTelefonoNormal) {
+    return `${digitos}@lid`;
+  }
+
+  return `${digitos}@s.whatsapp.net`;
+};
+
 const enviarNotificacionWhatsapp = async ({ to, message, requestId }) => {
   if (!limpiarTexto(to)) {
     console.warn('⚠️ Notificación WhatsApp omitida: teléfono vacío');
@@ -647,8 +678,10 @@ async function aprobarProveedor(providerId, payload = {}, requestId = null) {
     const mensaje = 'Proveedor aprobado correctamente.';
 
     const approvalMessage = construirMensajeAprobacion(registro?.full_name);
+    const telefonoBruto = registro?.real_phone || registro?.phone;
+    const telefonoNotificacion = formatearTelefonoWhatsApp(telefonoBruto);
     await enviarNotificacionWhatsapp({
-      to: registro?.phone,
+      to: telefonoNotificacion,
       message: approvalMessage,
       requestId
     });
@@ -692,8 +725,10 @@ async function rechazarProveedor(providerId, payload = {}, requestId = null) {
       registro?.full_name,
       payload.notes
     );
+    const telefonoRechazoBruto = registro?.real_phone || registro?.phone;
+    const telefonoRechazo = formatearTelefonoWhatsApp(telefonoRechazoBruto);
     await enviarNotificacionWhatsapp({
-      to: registro?.phone,
+      to: telefonoRechazo,
       message: rejectionMessage,
       requestId
     });
@@ -771,8 +806,10 @@ async function revisarProveedor(providerId, payload = {}, requestId = null) {
       }
     }
 
+    const telefonoRevisarBruto = registro?.real_phone || registro?.phone || payload.phone;
+    const telefonoRevisar = formatearTelefonoWhatsApp(telefonoRevisarBruto);
     await enviarNotificacionWhatsapp({
-      to: registro?.phone || payload.phone,
+      to: telefonoRevisar,
       message: mensajeProveedor,
       requestId
     });

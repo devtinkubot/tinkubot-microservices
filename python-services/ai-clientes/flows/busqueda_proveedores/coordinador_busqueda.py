@@ -51,8 +51,8 @@ async def coordinar_busqueda_completa(
         ... )
     """
     try:
-        servicio = flujo.get("service", "").strip()
-        ciudad = flujo.get("city", "").strip()
+        servicio = (flujo.get("service") or "").strip()
+        ciudad = (flujo.get("city") or "").strip()
 
         if not servicio or not ciudad:
             logger.warning(
@@ -68,10 +68,13 @@ async def coordinar_busqueda_completa(
 
         # Actualizar estado a "searching" y marcar como despachado
         from datetime import datetime
+
         ahora_utc = datetime.utcnow()
         flujo["state"] = "searching"
         flujo["searching_dispatched"] = True
-        flujo["searching_started_at"] = ahora_utc.isoformat()  # NUEVO: para detectar búsquedas estancadas
+        flujo["searching_started_at"] = (
+            ahora_utc.isoformat()
+        )  # NUEVO: para detectar búsquedas estancadas
         await guardar_flujo_callback(telefono, flujo)
 
         # Ejecutar búsqueda en segundo plano
@@ -85,6 +88,7 @@ async def coordinar_busqueda_completa(
         )
 
         from templates.busqueda.confirmacion import mensaje_buscando_expertos
+
         return mensaje_buscando_expertos
 
     except Exception as exc:
@@ -127,14 +131,16 @@ async def transicionar_a_busqueda_desde_servicio(
         ... )
     """
     try:
-        servicio = flujo.get("service", "").strip()
+        servicio = (flujo.get("service") or "").strip()
 
         if not servicio:
             logger.warning("⚠️ No hay servicio para transicionar a búsqueda")
             return {"response": "¿Qué servicio necesitas?"}
 
         logger.info(
-            f"🔄 Transicionando desde awaiting_service: phone={telefono}, service='{servicio}'"
+            "🔄 Transicionando desde awaiting_service: phone=%s, service='%s'",
+            telefono,
+            servicio,
         )
 
         # Verificar ciudad y proceder según el caso
@@ -157,7 +163,11 @@ async def transicionar_a_busqueda_desde_servicio(
                 return {
                     "response": mensaje_confirmacion,
                     "messages": [
-                        {"response": respuesta_ciudad.get("response", mensaje_confirmacion)}
+                        {
+                            "response": respuesta_ciudad.get(
+                                "response", mensaje_confirmacion
+                            )
+                        }
                     ],
                 }
 
@@ -208,7 +218,7 @@ async def transicionar_a_busqueda_desde_ciudad(
         ... )
     """
     try:
-        servicio = flujo.get("service", "").strip()
+        servicio = (flujo.get("service") or "").strip()
 
         if not servicio:
             logger.warning("⚠️ No hay servicio para transicionar a búsqueda")
@@ -219,7 +229,10 @@ async def transicionar_a_busqueda_desde_ciudad(
             return {"response": "¿En qué ciudad lo necesitas?"}
 
         logger.info(
-            f"🔄 Transicionando desde awaiting_city: phone={telefono}, service='{servicio}', city='{ciudad_normalizada}'"
+            "🔄 Transicionando desde awaiting_city: phone=%s, service='%s', city='%s'",
+            telefono,
+            servicio,
+            ciudad_normalizada,
         )
 
         # Actualizar flujo con ciudad confirmada

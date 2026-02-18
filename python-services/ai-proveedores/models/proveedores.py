@@ -3,12 +3,11 @@ Modelos de Pydantic para gestión de proveedores
 Modelos compatibles con el esquema unificado de proveedores
 """
 
-from datetime import datetime
 import re
+from datetime import datetime
 from typing import List, Optional
 
 from pydantic import BaseModel, Field, field_validator
-
 from services.servicios_proveedor.constantes import SERVICIOS_MAXIMOS
 
 
@@ -52,7 +51,7 @@ class SolicitudCreacionProveedor(BaseModel):
         has_consent: Consentimiento de procesamiento de datos (default: False)
     """
 
-    phone: str = Field(..., min_length=10, max_length=20)
+    phone: str = Field(..., min_length=3, max_length=64)
     real_phone: Optional[str] = None
     full_name: str = Field(..., min_length=2, max_length=255)
     email: Optional[str] = None
@@ -72,7 +71,9 @@ class SolicitudCreacionProveedor(BaseModel):
     @field_validator("services_list")
     @classmethod
     def validate_services_list(cls, v: List[str]) -> List[str]:
-        """Valida que la lista de servicios tenga entre 1 y SERVICIOS_MAXIMOS elementos."""
+        """
+        Valida que la lista de servicios tenga entre 1 y SERVICIOS_MAXIMOS elementos.
+        """
         if len(v) < 1:
             raise ValueError("Debe ingresar al menos 1 servicio")
         if len(v) > SERVICIOS_MAXIMOS:
@@ -94,6 +95,15 @@ class SolicitudCreacionProveedor(BaseModel):
             digitos = valor
         if not re.fullmatch(r"\d{10,20}", digitos):
             raise ValueError("número real inválido")
+        return valor
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone_jid(cls, v: str) -> str:
+        """Valida formato JID completo user@server."""
+        valor = (v or "").strip()
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+", valor):
+            raise ValueError("phone debe tener formato user@server")
         return valor
 
 
