@@ -6,54 +6,47 @@ mensajes de WhatsApp, maneja la máquina de estados y coordina con
 otros servicios (disponibilidad, búsqueda, etc.).
 """
 
-import asyncio
 import logging
 import os
 import re
 import unicodedata
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from contracts.repositorios import IRepositorioClientes, IRepositorioFlujo
-
-from flows.manejadores_estados import (
-    procesar_estado_esperando_servicio,
-    procesar_estado_esperando_ciudad,
-)
-from flows.configuracion import (
-    GREETINGS,
-    RESET_KEYWORDS,
-    MAX_CONFIRM_ATTEMPTS,
-    FAREWELL_MESSAGE,
-)
-from flows.enrutador import manejar_mensaje as manejar_mensaje_enrutador
-from flows.enrutador import enrutar_estado as enrutar_estado_enrutador
-from flows.mensajes import (
-    mensaje_nueva_sesion_dict,
-    mensaje_cuenta_suspendida_dict,
-    mensaje_inicial_solicitud,
-    mensaje_error_ciudad_no_reconocida,
-    solicitar_ciudad_con_servicio,
-    verificar_ciudad_y_proceder,
-    mensajes_consentimiento,
-)
-from flows.validadores import validar_entrada_servicio
 from flows.busqueda_proveedores.coordinador_busqueda import (
     coordinar_busqueda_completa,
     transicionar_a_busqueda_desde_ciudad,
 )
+from flows.configuracion import (
+    FAREWELL_MESSAGE,
+    GREETINGS,
+    MAX_CONFIRM_ATTEMPTS,
+    RESET_KEYWORDS,
+)
+from flows.enrutador import enrutar_estado as enrutar_estado_enrutador
+from flows.enrutador import manejar_mensaje as manejar_mensaje_enrutador
+from flows.manejadores_estados import (
+    procesar_estado_esperando_ciudad,
+    procesar_estado_esperando_servicio,
+)
+from flows.mensajes import (
+    mensaje_cuenta_suspendida_dict,
+    mensaje_error_ciudad_no_reconocida,
+    mensaje_inicial_solicitud,
+    mensaje_nueva_sesion_dict,
+    solicitar_ciudad_con_servicio,
+    verificar_ciudad_y_proceder,
+)
+from flows.validadores import validar_entrada_servicio
+from services.sesion_clientes import (
+    procesar_comando_reinicio,
+    sincronizar_cliente,
+    validar_consentimiento,
+)
 from templates.mensajes.consentimiento import (
     opciones_consentimiento_textos,
 )
-from templates.mensajes.sesion import (
-    mensaje_reinicio_por_inactividad,
-)
-from services.sesion_clientes import (
-    validar_consentimiento,
-    sincronizar_cliente,
-    procesar_comando_reinicio,
-)
-
 
 # Constantes y configuración
 SINONIMOS_CIUDADES_ECUADOR = {
@@ -108,9 +101,7 @@ USAR_EXTRACCION_IA = os.getenv("USE_AI_EXTRACTION", "true").lower() == "true"
 def _normalizar_token(texto: str) -> str:
     texto_limpio = (texto or "").strip().lower()
     normalizado = unicodedata.normalize("NFD", texto_limpio)
-    sin_acentos = "".join(
-        ch for ch in normalizado if unicodedata.category(ch) != "Mn"
-    )
+    sin_acentos = "".join(ch for ch in normalizado if unicodedata.category(ch) != "Mn")
     limpio = sin_acentos.replace("!", "").replace("?", "").replace(",", "")
     return limpio
 
@@ -118,9 +109,7 @@ def _normalizar_token(texto: str) -> str:
 def _normalizar_texto_para_coincidencia(texto: str) -> str:
     base = (texto or "").lower()
     normalizado = unicodedata.normalize("NFD", base)
-    sin_acentos = "".join(
-        ch for ch in normalizado if unicodedata.category(ch) != "Mn"
-    )
+    sin_acentos = "".join(ch for ch in normalizado if unicodedata.category(ch) != "Mn")
     limpio = re.sub(r"[^a-z0-9\s]", " ", sin_acentos)
     return re.sub(r"\s+", " ", limpio).strip()
 
@@ -149,7 +138,9 @@ def interpretar_si_no(texto: Optional[str]) -> Optional[bool]:
     if not base:
         return None
     tokens = base.split()
-    afirmativos_normalizados = {_normalizar_token(word) for word in PALABRAS_AFIRMATIVAS}
+    afirmativos_normalizados = {
+        _normalizar_token(word) for word in PALABRAS_AFIRMATIVAS
+    }
     negativos_normalizados = {_normalizar_token(word) for word in PALABRAS_NEGATIVAS}
 
     if base in afirmativos_normalizados:
@@ -240,12 +231,17 @@ class OrquestadorConversacional:
             redis_client: Cliente Redis para persistencia de flujo
             supabase: Cliente Supabase para datos de clientes
             gestor_sesiones: Gestor de sesiones para historial
-            buscador: Servicio BuscadorProveedores (opcional, para backward compatibility)
-            validador: Servicio ValidadorProveedoresIA (opcional, para backward compatibility)
+            buscador: Servicio BuscadorProveedores
+                (opcional, para backward compatibility)
+            validador: Servicio ValidadorProveedoresIA
+                (opcional, para backward compatibility)
             extractor_ia: Servicio ExtractorNecesidadIA (requerido)
-            servicio_consentimiento: Servicio ServicioConsentimiento (opcional, para backward compatibility)
-            repositorio_flujo: RepositorioFlujoRedis (opcional, para backward compatibility)
-            repositorio_clientes: RepositorioClientesSupabase (opcional, para backward compatibility)
+            servicio_consentimiento: Servicio ServicioConsentimiento
+                (opcional, para backward compatibility)
+            repositorio_flujo: RepositorioFlujoRedis
+                (opcional, para backward compatibility)
+            repositorio_clientes: RepositorioClientesSupabase
+                (opcional, para backward compatibility)
             logger: Logger opcional (usa __name__ si None)
         """
         self.redis_client = redis_client
@@ -315,7 +311,9 @@ class OrquestadorConversacional:
         for name, func in callbacks.items():
             setattr(self, name, func)
 
-    async def procesar_mensaje_whatsapp(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    async def procesar_mensaje_whatsapp(
+        self, payload: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Punto de entrada principal que procesa un mensaje de WhatsApp.
 
@@ -328,7 +326,8 @@ class OrquestadorConversacional:
         6. Persiste flujo y guarda sesión
 
         Args:
-            payload: Dict con from_number, content, selected_option, message_type, location
+            payload: Dict con from_number, content, selected_option, message_type,
+                location
 
         Returns:
             Dict con "response" o "messages" para enviar a WhatsApp
@@ -384,9 +383,11 @@ class OrquestadorConversacional:
             if ciudad_normalizada.lower() != ciudad_actual.lower():
                 # Usar repositorio si está disponible, sino callback
                 if self.repositorio_clientes:
-                    perfil_actualizado = await self.repositorio_clientes.actualizar_ciudad(
-                        flujo.get("customer_id") or cliente_id,
-                        ciudad_normalizada,
+                    perfil_actualizado = (
+                        await self.repositorio_clientes.actualizar_ciudad(
+                            flujo.get("customer_id") or cliente_id,
+                            ciudad_normalizada,
+                        )
                     )
                 else:
                     perfil_actualizado = await self.actualizar_ciudad_cliente(
@@ -394,10 +395,11 @@ class OrquestadorConversacional:
                         ciudad_normalizada,
                     )
                 if perfil_actualizado:
-                    perfil_cliente = perfil_actualizado
                     flujo["city"] = perfil_actualizado.get("city")
                     flujo["city_confirmed"] = True
-                    flujo["city_confirmed_at"] = perfil_actualizado.get("city_confirmed_at")
+                    flujo["city_confirmed_at"] = perfil_actualizado.get(
+                        "city_confirmed_at"
+                    )
                     cliente_id = perfil_actualizado.get("id")
                     flujo["customer_id"] = cliente_id
                 else:
@@ -466,13 +468,19 @@ class OrquestadorConversacional:
             )
 
         # 1. Validación estructurada básica
-        # NOTA: Ya no usamos catálogo estático de servicios - IA detecta cualquier servicio
+        # NOTA: Ya no usamos catálogo estático de servicios.
+        # IA detecta cualquier servicio.
         es_valido, mensaje_error = validar_entrada_servicio(
-            texto or "", GREETINGS, {}  # Catálogo vacío - IA detecta servicios dinámicamente
+            texto or "",
+            GREETINGS,
+            {},  # Catálogo vacío - IA detecta servicios dinámicamente
         )
 
         if not es_valido:
-            return await responder(flujo, {"response": mensaje_error})
+            return await responder(
+                flujo,
+                {"response": mensaje_error},
+            )
 
         # 2. Validación IA de contenido
         mensaje_advertencia, mensaje_ban = await self.validar_contenido_con_ia(
@@ -504,6 +512,16 @@ class OrquestadorConversacional:
         flujo = flujo_actualizado
 
         if flujo.get("state") == "confirm_service":
+            return await responder(flujo, respuesta)
+
+        servicio_confirmado = (flujo.get("service") or "").strip()
+        if not servicio_confirmado:
+            self.logger.info(
+                "🔒 Flujo detenido en awaiting_service por falta de servicio: "
+                "phone=%s state=%s",
+                telefono,
+                flujo.get("state"),
+            )
             return await responder(flujo, respuesta)
 
         # 4. Verificar ciudad existente (optimización)
@@ -546,11 +564,9 @@ class OrquestadorConversacional:
         cliente_id = flujo.get("customer_id")
         # Usar repositorio si está disponible, sino callback
         if self.repositorio_clientes:
-            perfil_cliente = await self.repositorio_clientes.obtener_o_crear(
-                telefono=telefono
-            )
+            await self.repositorio_clientes.obtener_o_crear(telefono=telefono)
         else:
-            perfil_cliente = await self.obtener_o_crear_cliente(telefono)
+            await self.obtener_o_crear_cliente(telefono)
 
         # Si no hay servicio previo y el usuario escribe un servicio aquí, reencaminarlo
         if texto and not flujo.get("service"):
@@ -581,7 +597,8 @@ class OrquestadorConversacional:
                         {
                             "response": (
                                 "No pude identificar el servicio con claridad. "
-                                "Por favor descríbelo nuevamente antes de indicar la ciudad."
+                                "Por favor descríbelo nuevamente antes de "
+                                "indicar la ciudad."
                             )
                         },
                     )
@@ -624,9 +641,11 @@ class OrquestadorConversacional:
             flujo_actualizado["city_confirmed"] = True
             # Usar repositorio si está disponible, sino callback
             if self.repositorio_clientes:
-                resultado_actualizacion = await self.repositorio_clientes.actualizar_ciudad(
-                    flujo_actualizado.get("customer_id") or cliente_id,
-                    entrada_normalizada,
+                resultado_actualizacion = (
+                    await self.repositorio_clientes.actualizar_ciudad(
+                        flujo_actualizado.get("customer_id") or cliente_id,
+                        entrada_normalizada,
+                    )
                 )
             else:
                 resultado_actualizacion = await self.actualizar_ciudad_cliente(
@@ -649,9 +668,10 @@ class OrquestadorConversacional:
             )
 
         # Usar transicionar_a_busqueda_desde_ciudad
-        ciudad_del_flujo = flujo_actualizado.get("city") or (
-            ciudad_normalizada_entrada or texto
-        ).strip().title()
+        ciudad_del_flujo = (
+            flujo_actualizado.get("city")
+            or (ciudad_normalizada_entrada or texto).strip().title()
+        )
         resultado = await transicionar_a_busqueda_desde_ciudad(
             telefono=telefono,
             flujo=flujo_actualizado,
@@ -686,7 +706,6 @@ class OrquestadorConversacional:
 
             if searching_started_at:
                 try:
-                    from datetime import datetime
                     ahora_utc = datetime.utcnow()
                     inicio_dt = datetime.fromisoformat(searching_started_at)
                     segundos_transcurridos = (ahora_utc - inicio_dt).total_seconds()
@@ -708,8 +727,8 @@ class OrquestadorConversacional:
 
                         return {
                             "response": (
-                                f"⚠️ La búsqueda tomó demasiado tiempo. "
-                                f"Por favor intenta nuevamente."
+                                "⚠️ La búsqueda tomó demasiado tiempo. "
+                                "Por favor intenta nuevamente."
                             )
                         }
                 except Exception as e:
@@ -722,7 +741,10 @@ class OrquestadorConversacional:
                         await self.guardar_flujo(telefono, flujo)
 
             return {
-                "response": f"Estoy buscando {flujo.get('service')} en {flujo.get('city')}, espera un momento."
+                "response": (
+                    f"Estoy buscando {flujo.get('service')} "
+                    f"en {flujo.get('city')}, espera un momento."
+                )
             }
 
         # Si no se despachó, lanzarla ahora

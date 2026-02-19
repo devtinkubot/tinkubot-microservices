@@ -30,16 +30,10 @@ Has sido suspendido por 15 minutos por infringir nuestras políticas de contenid
 
 Podrás reanudar el servicio después de las {hora_reinicio}."""
 
-mensaje_error_input_sin_sentido = """❌ *NO PUEDO PROCESAR ESE MENSAJE*
-
-No parece una solicitud de servicio real o válida.
-
-📝 *Ejemplos de lo que sí puedo hacer:*
-• "tubería rota" → conectaré con plomeros
-• "diseño de marca" → conectaré con diseñadores
-• "cuidado de piel" → conectaré con esteticistas
-
-Por favor, describe tu necesidad real."""
+mensaje_error_input_sin_sentido = (
+    "Para ayudarte mejor, cuéntame un poco más: "
+    "*¿qué quieres resolver y para qué lo necesitas?*"
+)
 
 
 def solicitar_reformulacion() -> str:

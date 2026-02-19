@@ -1,10 +1,10 @@
 """Tests para la compuerta de necesidad/problema en awaiting_service."""
 
 import pytest
-
 from flows.manejadores_estados.manejo_servicio import (
     procesar_estado_esperando_servicio,
 )
+from templates.mensajes.validacion import mensaje_error_input_sin_sentido
 
 
 @pytest.mark.asyncio
@@ -27,7 +27,7 @@ async def test_rechaza_profesion_aislada_y_repite_prompt():
         validar_necesidad_fn=validar_necesidad_fn,
     )
 
-    assert respuesta["response"] == prompt
+    assert respuesta["response"] == mensaje_error_input_sin_sentido
     assert flujo_actualizado["state"] == "awaiting_service"
     assert "service_candidate" not in flujo_actualizado
 

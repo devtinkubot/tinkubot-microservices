@@ -2,12 +2,10 @@
 
 import asyncio
 import logging
-import re
 from typing import Optional
 
-from openai import AsyncOpenAI
-
 from config.configuracion import configuracion
+from openai import AsyncOpenAI
 from utils.texto import normalizar_texto_para_coincidencia
 
 
@@ -72,13 +70,16 @@ class ExtractorNecesidadIA:
         if not servicio_base:
             return servicio_detectado
 
-        prompt_sistema = """Convierte nombres de servicios profesionales a español neutro sin perder especificidad.
+        prompt_sistema = """Convierte nombres de servicios profesionales a
+español neutro sin perder especificidad.
 
 Reglas:
 - Si ya está en español, conserva la idea principal.
 - Si está en otro idioma, tradúcelo al español.
-- Mantén un subservicio específico (ej: "elaboración de pliegos de contratación pública").
-- Evita generalizar a categorías paraguas (ej: "asesoría legal", "marketing digital") cuando haya detalle.
+- Mantén un subservicio específico
+  (ej: "elaboración de pliegos de contratación pública").
+- Evita generalizar a categorías paraguas
+  (ej: "asesoría legal", "marketing digital") cuando haya detalle.
 - Devuelve una frase corta (4 a 10 palabras), en minúsculas.
 - No agregues explicaciones.
 
@@ -122,10 +123,12 @@ Tu tarea es identificar el servicio MÁS ESPECÍFICO y accionable que necesita e
 
 REGLAS CRÍTICAS:
 1. Devuelve SIEMPRE el nombre del servicio en minúsculas y en español.
-2. Prioriza subservicios concretos (ej: "elaboración de pliegos de contratación pública")
+2. Prioriza subservicios concretos
+   (ej: "elaboración de pliegos de contratación pública")
    sobre categorías amplias (ej: "asesoría legal").
 3. Solo usa categoría general si el usuario fue ambiguo y no dio detalle suficiente.
-4. Conserva términos de dominio relevantes del usuario (pliegos, licitación, contratación pública, etc.).
+4. Conserva términos de dominio relevantes del usuario
+   (pliegos, licitación, contratación pública, etc.).
 5. No uses términos en inglés cuando exista equivalente claro en español.
 6. Responde con una frase corta de 4 a 10 palabras.
 
@@ -193,7 +196,8 @@ Responde SOLO con el nombre del servicio, sin explicaciones."""
         if not self.cliente_openai:
             return True
 
-        prompt_sistema = """Clasifica si el mensaje del usuario describe una necesidad/problema concreto.
+        prompt_sistema = """Clasifica si el mensaje del usuario describe
+una necesidad/problema concreto.
 
 Responde SOLO "si" o "no".
 
@@ -221,12 +225,14 @@ Responde "no" cuando:
             if not respuesta.choices:
                 return True
 
-            decision = (
-                (respuesta.choices[0].message.content or "")
-                .strip()
-                .lower()
-            )
-            return decision.startswith("si") or decision.startswith("sí")
+            decision = (respuesta.choices[0].message.content or "").strip().lower()
+            es_necesidad = decision.startswith("si") or decision.startswith("sí")
+            if not es_necesidad:
+                self.logger.info(
+                    "ℹ️ gate_rejected necesidad: normalized_input='%s'",
+                    normalizar_texto_para_coincidencia(texto)[:120],
+                )
+            return es_necesidad
         except Exception as exc:
             self.logger.warning(
                 "⚠️ Error validando necesidad/problema con IA (fail-open): %s",
@@ -256,7 +262,8 @@ Responde "no" cuando:
         if not self.cliente_openai:
             return None
 
-        prompt_sistema = f"""Eres un experto en identificar ciudades de Ecuador. Tu tarea es extraer LA CIUDAD mencionada en el texto.
+        prompt_sistema = f"""Eres un experto en identificar ciudades de Ecuador.
+Tu tarea es extraer LA CIUDAD mencionada en el texto.
 
 Ciudades válidas: {ciudades_str}
 

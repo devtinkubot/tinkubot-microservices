@@ -52,7 +52,9 @@ async def procesar_estado_esperando_servicio(
         if not es_necesidad:
             flujo["state"] = "awaiting_service"
             flujo.pop("service_candidate", None)
-            return flujo, {"response": prompt_inicial}
+            from templates.mensajes.validacion import mensaje_error_input_sin_sentido
+
+            return flujo, {"response": mensaje_error_input_sin_sentido}
 
     try:
         logger.info(
@@ -82,4 +84,5 @@ async def procesar_estado_esperando_servicio(
         }
     )
     from templates.mensajes.validacion import mensaje_confirmar_servicio
+
     return flujo, {"response": mensaje_confirmar_servicio(valor_servicio)}

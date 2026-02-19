@@ -44,6 +44,16 @@ async def verificar_ciudad_y_transicionar(
         >>> result["state"]
         'searching'
     """
+    servicio = (flujo.get("service") or "").strip()
+    if not servicio:
+        logger.warning(
+            "⚠️ Transición a búsqueda bloqueada: missing_service state=%s",
+            flujo.get("state"),
+        )
+        from templates.mensajes.validacion import mensaje_error_input_sin_sentido
+
+        return {"response": mensaje_error_input_sin_sentido}
+
     if not perfil_cliente:
         logger.info("📍 Sin perfil de cliente, solicitando ciudad")
         return {"response": "*Perfecto, ¿en qué ciudad lo necesitas?*"}
@@ -54,12 +64,15 @@ async def verificar_ciudad_y_transicionar(
     if ciudad_existente and ciudad_confirmada_en:
         # Tiene ciudad confirmada: usarla automáticamente
         from datetime import datetime
+
         ahora_utc = datetime.utcnow()
         flujo["city"] = ciudad_existente
         flujo["city_confirmed"] = True
         flujo["state"] = "searching"
         flujo["searching_dispatched"] = True
-        flujo["searching_started_at"] = ahora_utc.isoformat()  # NUEVO: para detectar búsquedas estancadas
+        flujo["searching_started_at"] = (
+            ahora_utc.isoformat()
+        )  # NUEVO: para detectar búsquedas estancadas
 
         logger.info(
             f"✅ Ciudad confirmada encontrada: '{ciudad_existente}', "
@@ -67,6 +80,7 @@ async def verificar_ciudad_y_transicionar(
         )
 
         from templates.busqueda.confirmacion import mensaje_buscando_expertos
+
         return {
             "response": mensaje_buscando_expertos,
             "ui": {"type": "silent"},
@@ -134,7 +148,9 @@ async def inicializar_busqueda_con_ciudad_confirmada(
         await guardar_flujo_callback(telefono, flujo)
 
         logger.info(
-            f"✅ Búsqueda inicializada: service='{servicio}', city='{ciudad_normalizada}'"
+            "✅ Búsqueda inicializada: service='%s', city='%s'",
+            servicio,
+            ciudad_normalizada,
         )
 
         # Actualizar ciudad en perfil del cliente si se proporcionó callback
@@ -155,11 +171,10 @@ async def inicializar_busqueda_con_ciudad_confirmada(
                         f"customer_id='{cliente_id}'"
                     )
             except Exception as exc:
-                logger.warning(
-                    f"⚠️ No se pudo actualizar ciudad en BD: {exc}"
-                )
+                logger.warning(f"⚠️ No se pudo actualizar ciudad en BD: {exc}")
 
         from templates.busqueda.confirmacion import mensaje_buscando_expertos
+
         return {
             "response": mensaje_buscando_expertos,
             "state": "searching",
@@ -168,14 +183,14 @@ async def inicializar_busqueda_con_ciudad_confirmada(
     except Exception as exc:
         logger.error(f"❌ Error en inicializar_busqueda_con_ciudad_confirmada: {exc}")
         return {
-            "response": "Ocurrió un error inicializando la búsqueda. Intenta nuevamente.",
+            "response": (
+                "Ocurrió un error inicializando la búsqueda. " "Intenta nuevamente."
+            ),
             "state": "awaiting_city",
         }
 
 
-def validar_datos_para_busqueda(
-    flujo: Dict[str, Any]
-) -> tuple[bool, Optional[str]]:
+def validar_datos_para_busqueda(flujo: Dict[str, Any]) -> tuple[bool, Optional[str]]:
     """
     Valida que el flujo tenga los datos mínimos para iniciar una búsqueda.
 

@@ -56,8 +56,11 @@ async def coordinar_busqueda_completa(
 
         if not servicio or not ciudad:
             logger.warning(
-                f"⚠️ Búsqueda cancelada: falta service o city "
-                f"(service='{servicio}', city='{ciudad}')"
+                "⚠️ Búsqueda cancelada: missing_service_or_city "
+                "phone=%s service='%s' city='%s'",
+                telefono,
+                servicio,
+                ciudad,
             )
             return None
 
