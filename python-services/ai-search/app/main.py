@@ -2,20 +2,18 @@
 Aplicación principal de Search Service
 """
 
-import os
-import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 
 import structlog
 from app.api.endpoints import router as api_router
+from app.config import settings
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from services.cache_service import cache_service
 from services.search_service import search_service
-
-from app.config import settings
 
 # Configurar logging
 logging.basicConfig(
@@ -35,11 +33,7 @@ structlog.configure(
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,
         structlog.processors.UnicodeDecoder(),
-        (
-            structlog.processors.JSONRenderer()
-            if False
-            else structlog.dev.ConsoleRenderer()
-        ),
+        structlog.dev.ConsoleRenderer(),
     ],
     context_class=dict,
     logger_factory=structlog.stdlib.LoggerFactory(),

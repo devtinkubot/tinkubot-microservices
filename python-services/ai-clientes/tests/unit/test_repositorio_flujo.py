@@ -5,9 +5,9 @@ Tests the Redis-based flow repository with Pydantic validation.
 """
 
 import json
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from models.estados import EstadoConversacion, FlujoConversacional
 
 
@@ -34,6 +34,7 @@ class MockRedis:
     async def set(self, key: str, value, ex: int = None, expire: int = None):
         """Set stores as JSON string like ClienteRedis does."""
         self.set_called = True
+        _ = ex, expire
         if isinstance(value, (dict, list)):
             value = json.dumps(value)
         self._data[key] = value
@@ -107,10 +108,12 @@ class TestRepositorioFlujo:
         """Test resetting a flow."""
         import json
 
-        mock_redis._data["flow:+593999999999"] = json.dumps({
-            "telefono": "+593999999999",
-            "state": "searching",
-        })
+        mock_redis._data["flow:+593999999999"] = json.dumps(
+            {
+                "telefono": "+593999999999",
+                "state": "searching",
+            }
+        )
 
         await repositorio.resetear("+593999999999")
 
@@ -121,10 +124,12 @@ class TestRepositorioFlujo:
         """Test updating a single field."""
         import json
 
-        mock_redis._data["flow:+593999999999"] = json.dumps({
-            "telefono": "+593999999999",
-            "state": "awaiting_service",
-        })
+        mock_redis._data["flow:+593999999999"] = json.dumps(
+            {
+                "telefono": "+593999999999",
+                "state": "awaiting_service",
+            }
+        )
 
         resultado = await repositorio.actualizar_campo(
             "+593999999999",
@@ -200,11 +205,13 @@ class TestRepositorioFlujoTransiciones:
         import json
 
         mock_redis = repositorio.redis
-        mock_redis._data["flow:+593999999999"] = json.dumps({
-            "telefono": "+593999999999",
-            "state": "awaiting_service",
-            "service": "plomero",
-        })
+        mock_redis._data["flow:+593999999999"] = json.dumps(
+            {
+                "telefono": "+593999999999",
+                "state": "awaiting_service",
+                "service": "plomero",
+            }
+        )
 
         flujo = await repositorio.transicionar_estado(
             "+593999999999",
@@ -219,10 +226,12 @@ class TestRepositorioFlujoTransiciones:
         import json
 
         mock_redis = repositorio.redis
-        mock_redis._data["flow:+593999999999"] = json.dumps({
-            "telefono": "+593999999999",
-            "state": "awaiting_service",
-        })
+        mock_redis._data["flow:+593999999999"] = json.dumps(
+            {
+                "telefono": "+593999999999",
+                "state": "awaiting_service",
+            }
+        )
 
         # Can't go directly to presenting_results
         flujo = await repositorio.transicionar_estado(

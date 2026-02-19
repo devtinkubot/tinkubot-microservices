@@ -1,0 +1,6 @@
+apps/admin-dashboard/dist/
+node_modules/
+*.min.js
+*.map
+**/*.ts
+**/*.tsx

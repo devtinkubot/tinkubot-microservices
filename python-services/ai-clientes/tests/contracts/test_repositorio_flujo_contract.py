@@ -3,7 +3,6 @@
 import json
 
 import pytest
-
 from contracts.repositorios import IRepositorioFlujo
 from infrastructure.persistencia.repositorio_flujo import RepositorioFlujoRedis
 from models.estados import EstadoConversacion
@@ -23,6 +22,7 @@ class _MockRedis:
             return value
 
     async def set(self, key: str, value, ex: int = None, expire: int = None):
+        _ = ex, expire
         if isinstance(value, (dict, list)):
             value = json.dumps(value)
         self._data[key] = value
@@ -78,8 +78,6 @@ async def test_contrato_transicion_estado(repo: RepositorioFlujoRedis):
         },
     )
 
-    flujo = await repo.transicionar_estado(
-        telefono, EstadoConversacion.AWAITING_CITY
-    )
+    flujo = await repo.transicionar_estado(telefono, EstadoConversacion.AWAITING_CITY)
     assert flujo is not None
     assert flujo.state == EstadoConversacion.AWAITING_CITY

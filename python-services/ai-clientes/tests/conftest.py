@@ -11,7 +11,7 @@ This module provides fixtures for:
 import asyncio
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -30,6 +30,7 @@ def event_loop():
 # ============================================================
 # TEST DATA FACTORIES
 # ============================================================
+
 
 @dataclass
 class FlujoFactory:
@@ -162,6 +163,7 @@ class ProveedorFactory:
 # MOCK REPOSITORIES
 # ============================================================
 
+
 class MockRepositorioFlujo:
     """Mock implementation of IRepositorioFlujo."""
 
@@ -240,6 +242,7 @@ class MockRepositorioClientes:
 # MOCK SERVICES
 # ============================================================
 
+
 class MockExtractorNecesidad:
     """Mock AI need extractor."""
 
@@ -299,9 +302,7 @@ class MockServicioConsentimiento:
     def __init__(self):
         self._consents: Dict[str, bool] = {}
 
-    async def registrar_consentimiento(
-        self, cliente_id: str, aceptado: bool
-    ) -> None:
+    async def registrar_consentimiento(self, cliente_id: str, aceptado: bool) -> None:
         """Records consent."""
         self._consents[cliente_id] = aceptado
 
@@ -313,6 +314,7 @@ class MockServicioConsentimiento:
 # ============================================================
 # FIXTURES
 # ============================================================
+
 
 @pytest.fixture
 def flujo_factory() -> FlujoFactory:
@@ -377,5 +379,3 @@ def mock_enviar_mensaje() -> AsyncMock:
 def mock_actualizar_ciudad() -> AsyncMock:
     """Provides a mock update city callback."""
     return AsyncMock()
-
-

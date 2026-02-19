@@ -3,7 +3,6 @@ Configuración local de AI Search Service
 Usa pydantic-settings para cargar variables de entorno
 """
 
-import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,10 +10,7 @@ class Settings(BaseSettings):
     """Configuración del servicio de búsqueda"""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=False,
-        extra="ignore"
+        env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore"
     )
 
     # OpenAI Configuration
