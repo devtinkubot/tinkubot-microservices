@@ -33,9 +33,6 @@ def informar_timeout_inactividad() -> str:
     """Informa que la sesión expiró por inactividad y se reinició.
 
     Returns:
-        Mensaje explicando el timeout por inactividad y disponibilidad del bot.
+        Mensaje explicando el timeout por inactividad.
     """
-    return (
-        "No tuve respuesta y reinicié la conversación para ayudarte mejor. "
-        "Gracias por usar TinkuBot; escríbeme cuando quieras."
-    )
+    return "No tuve respuesta y *reinicié la conversación* para ayudarte mejor."

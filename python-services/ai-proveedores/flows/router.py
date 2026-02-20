@@ -3,9 +3,19 @@
 from datetime import datetime
 from typing import Any, Dict, Optional
 
+from flows.consentimiento import solicitar_consentimiento
 from flows.constructores import construir_menu_principal
 from flows.gestores_estados import (
+    manejar_accion_servicios,
+    manejar_actualizacion_redes_sociales,
+    manejar_actualizacion_selfie,
+    manejar_agregar_servicios,
     manejar_confirmacion,
+    manejar_confirmacion_agregar_servicios,
+    manejar_confirmacion_eliminacion,
+    manejar_dni_frontal,
+    manejar_dni_trasera,
+    manejar_eliminar_servicio,
     manejar_espera_ciudad,
     manejar_espera_correo,
     manejar_espera_especialidad,
@@ -15,37 +25,31 @@ from flows.gestores_estados import (
     manejar_espera_red_social,
     manejar_estado_consentimiento,
     manejar_estado_menu,
-    manejar_actualizacion_redes_sociales,
-    manejar_accion_servicios,
-    manejar_agregar_servicios,
-    manejar_confirmacion_agregar_servicios,
-    manejar_eliminar_servicio,
-    manejar_actualizacion_selfie,
-    manejar_confirmacion_eliminacion,
     manejar_inicio_documentos,
-    manejar_dni_frontal,
-    manejar_dni_trasera,
     manejar_selfie_registro,
 )
 from flows.gestores_estados.gestor_confirmacion_servicios import (
     manejar_confirmacion_servicios,
 )
-from flows.consentimiento import solicitar_consentimiento
 from flows.sesion import reiniciar_flujo
+from services import eliminar_registro_proveedor, registrar_proveedor_en_base_datos
 from services.sesion_proveedor import (
-    sincronizar_flujo_con_perfil,
-    resolver_estado_registro,
-    manejar_pendiente_revision,
     manejar_aprobacion_reciente,
     manejar_estado_inicial,
+    manejar_pendiente_revision,
+    resolver_estado_registro,
+    sincronizar_flujo_con_perfil,
 )
-from services import registrar_proveedor_en_base_datos, eliminar_registro_proveedor
-from templates.registro import preguntar_correo_opcional
+from templates.registro import (
+    PROMPT_INICIO_REGISTRO,
+    preguntar_correo_opcional,
+    preguntar_real_phone,
+)
 from templates.sesion import (
-    informar_reinicio_conversacion,
-    informar_reinicio_con_eliminacion,
-    informar_timeout_inactividad,
     informar_reinicio_completo,
+    informar_reinicio_con_eliminacion,
+    informar_reinicio_conversacion,
+    informar_timeout_inactividad,
 )
 
 RESET_KEYWORDS = {
@@ -77,7 +81,8 @@ async def manejar_mensaje(
     """Procesa el mensaje y devuelve respuesta + control de persistencia."""
     texto_normalizado = (texto_mensaje or "").strip().lower()
     logger.info(
-        "🧭 router.manejar_mensaje inicio telefono=%s state=%s has_consent=%s opcion_menu=%s texto='%s'",
+        "🧭 router.manejar_mensaje inicio telefono=%s state=%s "
+        "has_consent=%s opcion_menu=%s texto='%s'",
         telefono,
         flujo.get("state"),
         flujo.get("has_consent"),
@@ -120,7 +125,7 @@ async def manejar_mensaje(
                         "last_seen_at_prev": ahora_iso,
                     }
                 )
-                # Sincronizar con perfil y resolver estado de registro ANUES de decidir el menú
+                # Sincronizar perfil y resolver estado antes de decidir salida.
                 flujo = sincronizar_flujo_con_perfil(flujo, perfil_proveedor)
                 (
                     tiene_consentimiento_timeout,
@@ -140,8 +145,21 @@ async def manejar_mensaje(
                         prompt_consentimiento_timeout.get("messages", [])
                     )
                 else:
-                    # Establecer el estado correcto según si está registrado
-                    if esta_pendiente_timeout and not esta_verificado_timeout:
+                    # Verificar si tiene consentimiento pero NO completó registro
+                    if not esta_registrado_timeout:
+                        # Tiene consentimiento pero no completó registro.
+                        flujo["state"] = "awaiting_consent"
+                        flujo["has_consent"] = False
+                        prompt_consentimiento_timeout = await solicitar_consentimiento(
+                            telefono
+                        )
+                        mensajes_timeout = [
+                            {"response": informar_timeout_inactividad()}
+                        ]
+                        mensajes_timeout.extend(
+                            prompt_consentimiento_timeout.get("messages", [])
+                        )
+                    elif esta_pendiente_timeout and not esta_verificado_timeout:
                         flujo["state"] = "pending_verification"
                         mensajes_timeout = [
                             {"response": informar_timeout_inactividad()},
@@ -178,7 +196,8 @@ async def manejar_mensaje(
         resolver_estado_registro(flujo, perfil_proveedor)
     )
     logger.info(
-        "🧭 router.estado_resuelto telefono=%s state=%s consent=%s registrado=%s verificado=%s pendiente=%s",
+        "🧭 router.estado_resuelto telefono=%s state=%s consent=%s "
+        "registrado=%s verificado=%s pendiente=%s",
         telefono,
         flujo.get("state"),
         tiene_consentimiento,
@@ -251,7 +270,7 @@ async def manejar_mensaje(
     }
 
 
-async def enrutar_estado(
+async def enrutar_estado(  # noqa: C901
     *,
     estado: Optional[str],
     flujo: Dict[str, Any],
@@ -303,6 +322,29 @@ async def enrutar_estado(
         return {"response": respuesta, "persist_flow": True}
 
     if estado == "awaiting_menu_option":
+        if not esta_registrado:
+            requiere_real_phone = bool(
+                flujo.get("requires_real_phone") and not flujo.get("real_phone")
+            )
+            flujo["state"] = (
+                "awaiting_real_phone" if requiere_real_phone else "awaiting_city"
+            )
+            return {
+                "response": {
+                    "success": True,
+                    "messages": [
+                        {
+                            "response": (
+                                preguntar_real_phone()
+                                if requiere_real_phone
+                                else PROMPT_INICIO_REGISTRO
+                            )
+                        }
+                    ],
+                },
+                "persist_flow": True,
+            }
+
         respuesta = await manejar_estado_menu(
             flujo=flujo,
             texto_mensaje=texto_mensaje,

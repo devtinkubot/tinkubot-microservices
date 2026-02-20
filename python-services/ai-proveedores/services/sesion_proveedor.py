@@ -3,13 +3,12 @@
 from typing import Any, Dict, Optional, Tuple
 
 from flows.consentimiento import solicitar_consentimiento
-from flows.registro import determinar_estado_registro
 from flows.constructores import (
     construir_menu_principal,
-    construir_respuesta_menu_registro,
-    construir_respuesta_verificado,
     construir_respuesta_revision,
+    construir_respuesta_verificado,
 )
+from flows.registro import determinar_estado_registro
 
 
 def sincronizar_flujo_con_perfil(
@@ -106,20 +105,18 @@ async def manejar_estado_inicial(
         nuevo_flujo = {"state": "awaiting_consent", "has_consent": False}
         if not esta_registrado and flujo.get("requires_real_phone"):
             nuevo_flujo["post_consent_state"] = "awaiting_real_phone"
+        elif not esta_registrado:
+            nuevo_flujo["post_consent_state"] = "awaiting_city"
         flujo.clear()
         flujo.update(nuevo_flujo)
         return await solicitar_consentimiento(telefono)
 
     if not esta_registrado:
-        # NO está registrado: establecer estado para menú de NO registrados
-        flujo.update(
-            {
-                "state": "awaiting_menu_option",
-                "has_consent": True,
-                "esta_registrado": False,
-            }
-        )
-        return construir_respuesta_menu_registro()
+        # NO está registrado: resetear consentimiento y mostrarlo de nuevo
+        # (el menú solo se muestra cuando el registro está completo)
+        flujo.clear()
+        flujo.update({"state": "awaiting_consent", "has_consent": False})
+        return await solicitar_consentimiento(telefono)
 
     if not esta_verificado:
         flujo.update(

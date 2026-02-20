@@ -3,7 +3,7 @@
 # ==================== MENSAJES ====================
 
 mensaje_confirmando_disponibilidad = (
-    "⏳ Estoy confirmando disponibilidad. Te aviso en breve."
+    "⏳ Estoy confirmando disponibilidad. En máximo 2 minutos te confirmo."
 )
 
 mensaje_buscando_expertos = (
