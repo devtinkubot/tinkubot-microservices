@@ -17,6 +17,14 @@ app.set('trust proxy', 1);
 
 const ADMIN_USER = process.env.ADMIN_USER || 'hvillalba';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+const NODE_ENV = process.env.NODE_ENV || 'development';
+
+// Security: Require ADMIN_PASSWORD in production
+if (NODE_ENV === 'production' && !ADMIN_PASSWORD) {
+  console.error('🚨 ERROR DE SEGURIDAD: ADMIN_PASSWORD es obligatorio en producción.');
+  console.error('   Configure la variable de entorno ADMIN_PASSWORD antes de iniciar.');
+  process.exit(1);
+}
 
 const parsearPuerto = valor => {
   const numero = Number(valor);
@@ -112,7 +120,8 @@ const authEnabled = !!ADMIN_PASSWORD;
 if (authEnabled) {
   console.warn('🔒 Autenticación básica habilitada para el panel.');
 } else {
-  console.warn('⚠️ ADMIN_PASSWORD no configurado; panel sin autenticación.');
+  console.warn('⚠️ MODO DESARROLLO: ADMIN_PASSWORD no configurado; panel sin autenticación.');
+  console.warn('   Esto es aceptable solo en desarrollo. En producción, configure ADMIN_PASSWORD.');
 }
 
 // Middleware

@@ -14,7 +14,11 @@ def solicitar_foto_dni_frontal() -> str:
     Returns:
         Mensaje solicitando la foto frontal del DNI como adjunto
     """
-    return "*Necesito la foto frontal de la Cédula. Envía la imagen como adjunto.*"
+    return (
+        "*Para validar tu identidad y mantener la confianza en la plataforma*, "
+        "necesito una foto clara de la parte frontal de tu cédula. "
+        "*Envíala como imagen adjunta.*"
+    )
 
 
 def solicitar_foto_dni_trasera() -> str:
@@ -24,8 +28,9 @@ def solicitar_foto_dni_trasera() -> str:
         Mensaje solicitando la foto trasera con tono positivo
     """
     return (
-        "*Excelente. Ahora envía la foto de la parte posterior de la Cédula "
-        "(parte de atrás). Envía la imagen como adjunto.*"
+        "*Para validar tu identidad y mantener la confianza en la plataforma*, "
+        "necesito una foto clara de la parte posterior de tu cédula. "
+        "*Envíala como imagen adjunta.*"
     )
 
 
@@ -36,8 +41,8 @@ def solicitar_foto_dni_trasera_requerida() -> str:
         Mensaje solicitando la foto trasera de forma directa
     """
     return (
-        "*Necesito la foto de la parte posterior de la Cédula (parte de atrás). "
-        "Envía la imagen como adjunto.*"
+        "Necesito la foto clara de la parte posterior de tu cédula para continuar. "
+        "Envíala como imagen adjunta."
     )
 
 
@@ -50,7 +55,10 @@ def solicitar_selfie_registro() -> str:
     Returns:
         Mensaje solicitando la selfie con tono de agradecimiento
     """
-    return "*Gracias. Finalmente envía una selfie (rostro visible).*"
+    return (
+        "*Para completar la validación de identidad*, necesito una selfie clara "
+        "donde se vea bien tu rostro. *Envíala como imagen adjunta.*"
+    )
 
 
 def solicitar_selfie_requerida_registro() -> str:
@@ -59,4 +67,7 @@ def solicitar_selfie_requerida_registro() -> str:
     Returns:
         Mensaje indicando que la selfie es necesaria para finalizar
     """
-    return "Necesito una selfie clara para finalizar. Envía la foto como adjunto."
+    return (
+        "Necesito una selfie clara (rostro visible) para finalizar. "
+        "Envíala como imagen adjunta."
+    )

@@ -14,10 +14,11 @@ Responsabilidades:
 
 import logging
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 from models.proveedores import SolicitudCreacionProveedor
 from pydantic import ValidationError
+from services.registro.parser_ubicacion import validar_y_normalizar_ubicacion
 
 logger = logging.getLogger(__name__)
 
@@ -46,13 +47,27 @@ def validar_y_construir_proveedor(
     especialidad = flujo.get("specialty")
     servicios_lista = _procesar_lista_servicios(especialidad)
 
+    ciudad_cruda = flujo.get("city") or ""
+    ciudad_canonica, estado_ciudad = validar_y_normalizar_ubicacion(ciudad_cruda)
+    if not ciudad_canonica:
+        logger.warning(
+            "Ciudad inválida en flujo de registro: valor=%r estado=%s",
+            ciudad_cruda,
+            estado_ciudad,
+        )
+        return (
+            False,
+            "ciudad: ubicación no reconocida (usa ciudad o cantón de Ecuador)",
+            None,
+        )
+
     try:
         proveedor = SolicitudCreacionProveedor(
             phone=telefono,
             real_phone=flujo.get("real_phone") or flujo.get("phone_user"),
             full_name=flujo.get("name") or "",
             email=flujo.get("email"),
-            city=flujo.get("city") or "",
+            city=ciudad_canonica,
             # Fase 4: Eliminado campo profession - ya no existe en el modelo
             services_list=servicios_lista,
             experience_years=flujo.get("experience_years"),
@@ -64,7 +79,8 @@ def validar_y_construir_proveedor(
 
     except ValidationError as exc:
         logger.error("Error de validación en datos de registro: %s", exc)
-        primer_error = exc.errors()[0] if exc.errors() else {}
+        errores = exc.errors()
+        primer_error = cast(Dict[str, Any], errores[0]) if errores else {}
         mensaje_error = _formatear_mensaje_error_validacion(primer_error)
         return False, mensaje_error, None
 

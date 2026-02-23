@@ -1,7 +1,6 @@
 """Programador de retroalimentación diferida para clientes."""
 
 import asyncio
-import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 from zoneinfo import ZoneInfo
@@ -11,18 +10,12 @@ import httpx
 from infrastructure.database import run_supabase
 from templates.mensajes.retroalimentacion import mensaje_solicitud_retroalimentacion
 
-# Feature flag para usar Redis Streams
-USAR_REDIS_STREAMS = os.getenv("USAR_REDIS_STREAMS", "false").lower() == "true"
 CLAVE_NOTIFICACION_RATE_LIMIT = "rate_limit_notification_scheduled_at"
 
 
 class ProgramadorRetroalimentacion:
     """
-    Programador de retroalimentación con soporte dual:
-    - Legacy: Polling de task_queue en Supabase
-    - Nuevo: Redis Streams con consumer groups
-
-    El modo se controla con la variable de entorno USAR_REDIS_STREAMS
+    Programador de retroalimentación usando polling de task_queue en Supabase.
     """
 
     def __init__(
@@ -35,7 +28,6 @@ class ProgramadorRetroalimentacion:
         retraso_retroalimentacion_segundos: float,
         intervalo_sondeo_tareas_segundos: float,
         logger,
-        redis_client=None,  # Cliente Redis para streams
     ) -> None:
         self.supabase = supabase
         self.repositorio_flujo = repositorio_flujo
@@ -44,71 +36,8 @@ class ProgramadorRetroalimentacion:
         self.retraso_retroalimentacion_segundos = retraso_retroalimentacion_segundos
         self.intervalo_sondeo_tareas_segundos = intervalo_sondeo_tareas_segundos
         self.logger = logger
-        self.redis_client = redis_client
 
-        # Procesador de streams (lazy initialization)
-        self._procesador_streams = None
-        self._tarea_procesador = None
-
-        # Determinar modo de operación
-        self.usar_streams = USAR_REDIS_STREAMS and redis_client is not None
-        if self.usar_streams:
-            self.logger.info("🔄 Programador usando Redis Streams")
-        else:
-            self.logger.info("📋 Programador usando polling de Supabase")
-
-    def _obtener_procesador_streams(self):
-        """Lazy initialization del procesador de streams."""
-        if self._procesador_streams is None and self.redis_client:
-            from services.procesador_eventos_stream import ProcesadorEventosRedisStreams
-
-            self._procesador_streams = ProcesadorEventosRedisStreams(
-                redis_client=self.redis_client,
-                procesar_evento_callback=self._procesar_evento_stream,
-                logger=self.logger,
-                block_timeout_ms=int(self.intervalo_sondeo_tareas_segundos * 1000),
-            )
-        return self._procesador_streams
-
-    async def _procesar_evento_stream(
-        self, tipo: str, carga: Dict[str, Any], event_id: str
-    ) -> bool:
-        """
-        Callback para procesar eventos desde Redis Streams.
-
-        Args:
-            tipo: Tipo del evento
-            carga: Payload del evento
-            event_id: ID del evento en el stream
-
-        Returns:
-            True si el procesamiento fue exitoso
-        """
-        try:
-            if tipo == "send_whatsapp":
-                telefono = carga.get("phone")
-                mensaje = carga.get("message")
-
-                if not telefono or not mensaje:
-                    self.logger.warning(f"Evento {event_id} sin phone/message")
-                    return False
-
-                exito = await self.enviar_texto_whatsapp(telefono, mensaje)
-
-                if exito:
-                    # Si es encuesta de contratación, preparar estado
-                    if carga.get("type") == "request_hiring_feedback":
-                        await self._preparar_estado_retroalimentacion(telefono, carga)
-
-                return exito
-
-            # Tipo de evento no reconocido
-            self.logger.warning(f"Tipo de evento desconocido: {tipo}")
-            return True  # ACK para evitar reprocesamiento
-
-        except Exception as e:
-            self.logger.error(f"Error procesando evento {event_id}: {e}")
-            return False
+        self.logger.info("📋 Programador usando polling de Supabase")
 
     async def _preparar_estado_retroalimentacion(
         self, telefono: str, carga: Dict[str, Any]
@@ -134,9 +63,7 @@ class ProgramadorRetroalimentacion:
         self, telefono: str, proveedor: Dict[str, Any], lead_event_id: str = ""
     ):
         """
-        Programa una solicitud de retroalimentación.
-
-        Usa Redis Streams si está habilitado, sino Supabase task_queue.
+        Programa una solicitud de retroalimentación en Supabase task_queue.
         """
         try:
             retraso = self.retraso_retroalimentacion_segundos
@@ -150,25 +77,6 @@ class ProgramadorRetroalimentacion:
                 "provider_name": nombre,
             }
 
-            if self.usar_streams and self.redis_client:
-                # Usar Redis Streams
-                from datetime import timedelta
-
-                programado_para = datetime.now(timezone.utc) + timedelta(seconds=retraso)
-
-                procesador = self._obtener_procesador_streams()
-                if procesador:
-                    await procesador.publicar_evento(
-                        tipo_evento="send_whatsapp",
-                        carga=carga,
-                        scheduled_at=programado_para,
-                    )
-                    self.logger.info(
-                        f"🕒 Retroalimentación agendada via Streams en {retraso}s para {telefono}"
-                    )
-                    return
-
-            # Fallback a Supabase
             if not self.supabase:
                 return
 
@@ -355,7 +263,6 @@ class ProgramadorRetroalimentacion:
     async def procesar_tareas_pendientes(self) -> int:
         """
         Procesa tareas pendientes del task_queue de Supabase.
-        Usado solo en modo legacy (sin Redis Streams).
         """
         if not self.supabase:
             return 0
@@ -446,36 +353,15 @@ class ProgramadorRetroalimentacion:
 
     async def bucle_programador_retroalimentacion(self):
         """
-        Bucle principal del programador.
-
-        Usa Redis Streams si está habilitado, sino polling de Supabase.
+        Bucle principal del programador con polling de Supabase.
         """
-        if self.usar_streams:
-            # Modo Redis Streams
-            procesador = self._obtener_procesador_streams()
-            if procesador:
-                try:
-                    await procesador.bucle_procesamiento()
-                except asyncio.CancelledError:
-                    self.logger.info("🛑 Procesador de streams cancelado")
-                except Exception as exc:
-                    self.logger.error(f"Error en procesador de streams: {exc}")
-            else:
-                self.logger.error("No se pudo inicializar procesador de streams")
-        else:
-            # Modo legacy: polling de Supabase
-            try:
-                while True:
-                    n = await self.procesar_tareas_pendientes()
-                    if n:
-                        self.logger.info(f"📬 Tareas procesadas: {n}")
-                    await asyncio.sleep(self.intervalo_sondeo_tareas_segundos)
-            except asyncio.CancelledError:
-                pass
-            except Exception as exc:
-                self.logger.error(f"Scheduler loop error: {exc}")
-
-    def detener(self):
-        """Detiene el procesador de streams si está activo."""
-        if self._procesador_streams:
-            self._procesador_streams.detener()
+        try:
+            while True:
+                n = await self.procesar_tareas_pendientes()
+                if n:
+                    self.logger.info(f"📬 Tareas procesadas: {n}")
+                await asyncio.sleep(self.intervalo_sondeo_tareas_segundos)
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:
+            self.logger.error(f"Scheduler loop error: {exc}")

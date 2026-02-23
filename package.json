@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "@arikusi/deepseek-mcp-server": "^1.1.1"
+  }
+}

@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-import os
 from typing import Any, Callable, Dict, Optional
 
 import redis.asyncio as redis
@@ -9,10 +8,6 @@ import redis.asyncio as redis
 from config.configuracion import configuracion
 
 logger = logging.getLogger(__name__)
-
-# Fallback en memoria local si Redis no está disponible
-_memory_storage: Dict[str, Any] = {}
-_memory_expiry: Dict[str, float] = {}
 
 
 class ClienteRedis:
@@ -22,12 +17,6 @@ class ClienteRedis:
         self._connected = False
         self._retry_count = 0
         self._max_retries = 3
-        self._memory_fallback_enabled = (
-            os.getenv("REDIS_MEMORY_FALLBACK_ENABLED", "false").lower() == "true"
-        )
-
-    def _can_use_memory_fallback(self) -> bool:
-        return self._memory_fallback_enabled
 
     async def connect(self):
         """Conectar a Redis usando la configuración de Upstash con reintentos"""
@@ -36,7 +25,7 @@ class ClienteRedis:
                 self.redis_client = redis.from_url(
                     configuracion.redis_url,
                     decode_responses=True,
-                    socket_timeout=10,  # Aumentado timeout
+                    socket_timeout=10,
                     socket_connect_timeout=10,
                 )
                 # Test connection
@@ -53,34 +42,18 @@ class ClienteRedis:
                 else:
                     logger.error(f"❌ No se pudo conectar a Redis después de {self._max_retries} intentos")
                     self._connected = False
-                    if self._can_use_memory_fallback():
-                        logger.warning("⚠️ Modo fallback activado: usando memoria local para sesiones")
-                    else:
-                        logger.error(
-                            "❌ Redis no disponible y fallback en memoria deshabilitado "
-                            "(REDIS_MEMORY_FALLBACK_ENABLED=false)"
-                        )
 
     async def disconnect(self):
         """Desconectar de Redis"""
         if self.redis_client:
             try:
-                await self.redis_client.aclose()  # Corregido: close() → aclose()
+                await self.redis_client.aclose()
                 logger.info("🔌 Desconectado de Redis")
             except Exception as e:
                 logger.warning(f"⚠️ Error desconectando de Redis: {e}")
             finally:
                 self.redis_client = None
                 self._connected = False
-
-    def _cleanup_expired_memory(self):
-        """Limpiar claves expiradas de la memoria local"""
-        import time
-        current_time = time.time()
-        expired_keys = [key for key, expiry_time in _memory_expiry.items() if current_time > expiry_time]
-        for key in expired_keys:
-            _memory_storage.pop(key, None)
-            _memory_expiry.pop(key, None)
 
     async def publish(self, channel: str, message: Dict[str, Any]):
         """Publicar mensaje en canal Redis Pub/Sub"""
@@ -103,11 +76,7 @@ class ClienteRedis:
                 except Exception as retry_error:
                     logger.error(f"❌ Error en reintento de publicación: {retry_error}")
 
-        # Fallback: Pub/Sub no tiene equivalente local, solo log
-        if self._can_use_memory_fallback():
-            logger.warning(f"⚠️ Pub/Sub no disponible en modo fallback: canal '{channel}' ignorado")
-            return
-        raise RuntimeError("Redis Pub/Sub no disponible y fallback en memoria deshabilitado")
+        raise RuntimeError("Redis Pub/Sub no disponible")
 
     async def subscribe(self, channel: str, callback: Callable):
         """Suscribirse a canal Redis Pub/Sub"""
@@ -132,11 +101,10 @@ class ClienteRedis:
             raise
 
     async def set(self, key: str, value: Any, expire: Optional[int] = None):
-        """Guardar valor en Redis con TTL opcional (con fallback a memoria local)"""
+        """Guardar valor en Redis con TTL opcional"""
         if not self._connected and not self.redis_client:
             await self.connect()
 
-        # Intentar guardar en Redis primero
         if self._connected and self.redis_client:
             try:
                 if isinstance(value, (dict, list)):
@@ -147,32 +115,14 @@ class ClienteRedis:
                 return
             except Exception as e:
                 logger.warning(f"⚠️ Error guardando en Redis: {e}")
-                # Continuar con fallback local
 
-        # Fallback: guardar en memoria local
-        if not self._can_use_memory_fallback():
-            raise RuntimeError(
-                "Redis no disponible para set y fallback en memoria deshabilitado"
-            )
-        try:
-            if isinstance(value, (dict, list)):
-                value = json.dumps(value)
-
-            _memory_storage[key] = value
-            if expire:
-                import time
-                _memory_expiry[key] = time.time() + expire
-            logger.debug(f"💾 Guardado en memoria local (fallback): {key}")
-        except Exception as e:
-            logger.error(f"❌ Error crítico: ni Redis ni memoria local funcionan: {e}")
-            raise
+        raise RuntimeError("Redis no disponible para set")
 
     async def get(self, key: str) -> Optional[Any]:
-        """Obtener valor de Redis (con fallback a memoria local)"""
+        """Obtener valor de Redis"""
         if not self._connected and not self.redis_client:
             await self.connect()
 
-        # Intentar obtener de Redis primero
         if self._connected and self.redis_client:
             try:
                 value = await self.redis_client.get(key)
@@ -184,48 +134,20 @@ class ClienteRedis:
                 return None
             except Exception as e:
                 logger.warning(f"⚠️ Error obteniendo de Redis: {e}")
-                # Continuar con fallback local
 
-        # Fallback: obtener de memoria local
-        if not self._can_use_memory_fallback():
-            return None
-        try:
-            self._cleanup_expired_memory()
-            value = _memory_storage.get(key)
-            if value:
-                try:
-                    return json.loads(value)
-                except json.JSONDecodeError:
-                    return value
-            return None
-        except Exception as e:
-            logger.error(f"❌ Error crítico obteniendo de memoria local: {e}")
-            return None
+        return None
 
     async def delete(self, key: str):
-        """Eliminar clave de Redis (con fallback a memoria local)"""
+        """Eliminar clave de Redis"""
         if not self._connected and not self.redis_client:
             await self.connect()
 
-        # Intentar eliminar de Redis primero
         if self._connected and self.redis_client:
             try:
                 await self.redis_client.delete(key)
                 logger.debug(f"🗑️ Eliminado de Redis: {key}")
             except Exception as e:
-                logger.warning(f"⚠️ Error eliminando de Redis, eliminando solo localmente: {e}")
-
-        if not self._can_use_memory_fallback():
-            return
-
-        # Siempre eliminar de memoria local (fallback)
-        try:
-            _memory_storage.pop(key, None)
-            _memory_expiry.pop(key, None)
-            logger.debug(f"🗑️ Eliminado de memoria local: {key}")
-        except Exception as e:
-            logger.error(f"❌ Error eliminando de memoria local: {e}")
-            # No lanzar excepción para delete
+                logger.warning(f"⚠️ Error eliminando de Redis: {e}")
 
     async def keys(self, pattern: str) -> list[str]:
         """
@@ -249,16 +171,7 @@ class ClienteRedis:
             except Exception as e:
                 logger.warning(f"⚠️ Error escaneando claves en Redis: {e}")
 
-        if not self._can_use_memory_fallback():
-            return []
-
-        # Fallback: claves de memoria local que coinciden con el patrón
-        self._cleanup_expired_memory()
-        if pattern == "*":
-            return list(_memory_storage.keys())
-        # Conversión simple de patrón Redis a glob pattern
-        import fnmatch
-        return [k for k in _memory_storage.keys() if fnmatch.fnmatch(k, pattern)]
+        return []
 
     async def get_many(self, keys: list[str]) -> Dict[str, Any]:
         """
@@ -285,22 +198,9 @@ class ClienteRedis:
                             resultado[key] = json.loads(value)
                         except json.JSONDecodeError:
                             resultado[key] = value
-                return resultado
             except Exception as e:
                 logger.warning(f"⚠️ Error obteniendo múltiples valores de Redis: {e}")
 
-        if not self._can_use_memory_fallback():
-            return resultado
-
-        # Fallback: obtener de memoria local
-        self._cleanup_expired_memory()
-        for key in keys:
-            value = _memory_storage.get(key)
-            if value:
-                try:
-                    resultado[key] = json.loads(value)
-                except json.JSONDecodeError:
-                    resultado[key] = value
         return resultado
 
 

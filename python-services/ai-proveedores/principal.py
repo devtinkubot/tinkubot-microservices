@@ -35,7 +35,6 @@ from infrastructure.storage import subir_medios_identidad
 from models import RecepcionMensajeWhatsApp, RespuestaSalud
 from openai import AsyncOpenAI
 from pydantic import BaseModel
-
 from supabase import Client, create_client
 
 # Configuración desde variables de entorno
@@ -45,13 +44,38 @@ CLAVE_SERVICIO_SUPABASE = configuracion.supabase_service_key
 CLAVE_API_OPENAI = os.getenv("OPENAI_API_KEY", "")
 NIVEL_LOG = os.getenv("LOG_LEVEL", "INFO")
 TIEMPO_ESPERA_SUPABASE_SEGUNDOS = float(os.getenv("SUPABASE_TIMEOUT_SECONDS", "5"))
-REGISTRO_RENDIMIENTO_HABILITADO = (
-    os.getenv("PERF_LOG_ENABLED", "true").lower() == "true"
-)
 UMBRAL_LENTO_MS = int(os.getenv("SLOW_QUERY_THRESHOLD_MS", "800"))
 AVAILABILITY_RESULT_TTL_SECONDS = int(
     os.getenv("AVAILABILITY_RESULT_TTL_SECONDS", "300")
 )
+ONBOARDING_STATES = {
+    None,
+    "awaiting_consent",
+    "awaiting_real_phone",
+    "awaiting_city",
+    "awaiting_name",
+    "awaiting_specialty",
+    "awaiting_services_confirmation",
+    "awaiting_experience",
+    "awaiting_email",
+    "awaiting_social_media",
+    "awaiting_dni_front_photo",
+    "awaiting_dni_back_photo",
+    "awaiting_face_photo",
+    "confirm",
+}
+
+# Estados de menú post-registro (deben ignorar flujo de disponibilidad)
+MENU_STATES = {
+    "awaiting_menu_option",
+    "awaiting_deletion_confirmation",
+    "awaiting_social_media_update",
+    "awaiting_service_action",
+    "awaiting_service_add",
+    "awaiting_service_add_confirmation",
+    "awaiting_service_remove",
+    "awaiting_face_photo_update",
+}
 
 # Configurar logging
 logging.basicConfig(level=getattr(logging, NIVEL_LOG))
@@ -74,20 +98,17 @@ if CLAVE_API_OPENAI:
     cliente_openai = AsyncOpenAI(api_key=CLAVE_API_OPENAI)
     logger.info("✅ Conectado a OpenAI (Async)")
 
-    # Fase 6: Inicializar servicio de embeddings si OpenAI está disponible
-    if configuracion.embeddings_habilitados:
-        servicio_embeddings = ServicioEmbeddings(
-            cliente_openai=cliente_openai,
-            modelo=configuracion.modelo_embeddings,
-            cache_ttl=configuracion.ttl_cache_embeddings,
-            timeout=configuracion.tiempo_espera_embeddings,
-        )
-        logger.info(
-            "✅ Servicio de embeddings inicializado (modelo: %s)",
-            configuracion.modelo_embeddings,
-        )
-    else:
-        logger.info("⚠️ Servicio de embeddings deshabilitado por configuración")
+    # Inicializar servicio de embeddings
+    servicio_embeddings = ServicioEmbeddings(
+        cliente_openai=cliente_openai,
+        modelo=configuracion.modelo_embeddings,
+        cache_ttl=configuracion.ttl_cache_embeddings,
+        timeout=configuracion.tiempo_espera_embeddings,
+    )
+    logger.info(
+        "✅ Servicio de embeddings inicializado (modelo: %s)",
+        configuracion.modelo_embeddings,
+    )
 else:
     logger.warning("⚠️ No se configuró OpenAI - embeddings no disponibles")
 
@@ -109,8 +130,7 @@ class SolicitudInvalidacionCache(BaseModel):
 
 @app.on_event("startup")
 async def startup_event():
-    if configuracion.timeout_sesion_habilitado:
-        logger.info("✅ Session Timeout simple habilitado (5 minutos de inactividad)")
+    logger.info("✅ Session Timeout simple habilitado (5 minutos de inactividad)")
 
 
 # Configurar CORS
@@ -191,7 +211,7 @@ def _parsear_respuesta_disponibilidad(texto: str) -> Optional[str]:
 
 
 async def _registrar_respuesta_disponibilidad_si_aplica(
-    telefono: str, texto_mensaje: str
+    telefono: str, texto_mensaje: str, estado_actual: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
     decision = _parsear_respuesta_disponibilidad(texto_mensaje)
     if not decision:
@@ -199,12 +219,27 @@ async def _registrar_respuesta_disponibilidad_si_aplica(
 
     clave_pendientes = f"availability:provider:{telefono}:pending"
     pendientes = await cliente_redis.get(clave_pendientes)
+    mensaje_expirado = (
+        "*El tiempo de respuesta ha caducado y tu respuesta ya no contará para este requerimiento*"
+    )
 
     # Mejora: manejar casos donde pendientes puede venir como string JSON
     # o no estar decodificado.
     if pendientes is None:
         logger.info(f"📭 No hay solicitudes pendientes para {telefono}")
-        return None
+        if estado_actual in (ONBOARDING_STATES | MENU_STATES):
+            logger.info(
+                "availability_response_skipped_no_pending provider=%s state=%s",
+                telefono,
+                estado_actual,
+            )
+            return None
+        logger.info(
+            "availability_response_expired_no_pending provider=%s state=%s",
+            telefono,
+            estado_actual,
+        )
+        return {"success": True, "messages": [{"response": mensaje_expirado}]}
 
     # Si es string JSON, intentar decodificar
     if isinstance(pendientes, str):
@@ -220,14 +255,32 @@ async def _registrar_respuesta_disponibilidad_si_aplica(
                 str(pendientes)[:100] if pendientes else None,
                 e,
             )
-            return None
+            logger.info("availability_response_expired provider=%s", telefono)
+            return {"success": True, "messages": [{"response": mensaje_expirado}]}
 
     # Verificar que sea una lista después de la decodificación
-    if not isinstance(pendientes, list) or not pendientes:
+    if isinstance(pendientes, list) and not pendientes:
+        logger.info(f"📭 Pendientes vacío para {telefono}")
+        if estado_actual in (ONBOARDING_STATES | MENU_STATES):
+            logger.info(
+                "availability_response_skipped_no_pending provider=%s state=%s",
+                telefono,
+                estado_actual,
+            )
+            return None
+        logger.info(
+            "availability_response_expired_no_pending provider=%s state=%s",
+            telefono,
+            estado_actual,
+        )
+        return {"success": True, "messages": [{"response": mensaje_expirado}]}
+
+    if not isinstance(pendientes, list):
         logger.info(
             f"📭 Pendientes vacío o inválido para {telefono}: {type(pendientes)}"
         )
-        return None
+        logger.info("availability_response_expired provider=%s", telefono)
+        return {"success": True, "messages": [{"response": mensaje_expirado}]}
 
     req_resuelto = None
     for req_id in pendientes:
@@ -258,7 +311,8 @@ async def _registrar_respuesta_disponibilidad_si_aplica(
 
     if not req_resuelto:
         logger.info(f"📭 No se encontró solicitud pendiente válida para {telefono}")
-        return None
+        logger.info("availability_response_expired provider=%s", telefono)
+        return {"success": True, "messages": [{"response": mensaje_expirado}]}
 
     nuevos_pendientes = [rid for rid in pendientes if rid != req_resuelto]
     await cliente_redis.set(
@@ -357,13 +411,13 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
             bool(cliente_openai),
         )
 
+        flujo = await obtener_flujo(telefono)
         respuesta_disponibilidad = await _registrar_respuesta_disponibilidad_si_aplica(
-            telefono, texto_mensaje
+            telefono, texto_mensaje, flujo.get("state")
         )
         if respuesta_disponibilidad:
             return normalizar_respuesta_whatsapp(respuesta_disponibilidad)
 
-        flujo = await obtener_flujo(telefono)
         perfil_proveedor = await obtener_perfil_proveedor_cacheado(telefono)
         tiene_real_phone = bool(
             flujo.get("real_phone") or (perfil_proveedor or {}).get("real_phone")
@@ -402,16 +456,15 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
         )
         return {"success": False, "message": f"Error procesando mensaje: {str(error)}"}
     finally:
-        if REGISTRO_RENDIMIENTO_HABILITADO:
-            ms_transcurridos = (perf_counter() - inicio_tiempo) * 1000
-            if ms_transcurridos >= UMBRAL_LENTO_MS:
-                logger.info(
-                    "perf_handler_whatsapp",
-                    extra={
-                        "elapsed_ms": round(ms_transcurridos, 2),
-                        "threshold_ms": UMBRAL_LENTO_MS,
-                    },
-                )
+        ms_transcurridos = (perf_counter() - inicio_tiempo) * 1000
+        if ms_transcurridos >= UMBRAL_LENTO_MS:
+            logger.info(
+                "perf_handler_whatsapp",
+                extra={
+                    "elapsed_ms": round(ms_transcurridos, 2),
+                    "threshold_ms": UMBRAL_LENTO_MS,
+                },
+            )
 
 
 def normalizar_respuesta_whatsapp(respuesta: Any) -> Dict[str, Any]:
@@ -463,6 +516,6 @@ if __name__ == "__main__":
         "principal:app",
         host=servidor_host,
         port=servidor_puerto,
-        reload=os.getenv("UVICORN_RELOAD", "false").lower() == "true",
+        reload=os.getenv("ENVIRONMENT", "development") != "production",
         log_level=NIVEL_LOG.lower(),
     )

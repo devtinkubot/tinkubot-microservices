@@ -21,7 +21,7 @@ class ServicioDisponibilidad:
         self.account_id = os.getenv(
             "WHATSAPP_PROVEEDORES_ACCOUNT_ID", "bot-proveedores"
         )
-        self.timeout_seconds = int(os.getenv("AVAILABILITY_TIMEOUT_SECONDS", "60"))
+        self.timeout_seconds = int(os.getenv("AVAILABILITY_TIMEOUT_SECONDS", "90"))
         self.ttl_seconds = int(os.getenv("AVAILABILITY_TTL_SECONDS", "120"))
         self.send_timeout_seconds = float(
             os.getenv("AVAILABILITY_SEND_TIMEOUT_SECONDS", "10")
@@ -106,12 +106,12 @@ class ServicioDisponibilidad:
             f"Para atender: *{detalle}*"
         )
 
-    @staticmethod
-    def _mensaje_disponibilidad_opciones() -> str:
+    def _mensaje_disponibilidad_opciones(self) -> str:
         return (
             "*Responde con el número de tu opción:*\n\n"
             "*1.* Sí, estoy disponible\n"
-            "*2.* No disponible"
+            "*2.* No disponible\n\n"
+            f"*Tiempo límite de respuesta: {self.timeout_seconds} segundos.*"
         )
 
     async def _enviar_whatsapp(self, *, telefono: str, mensaje: str) -> bool:
@@ -284,7 +284,7 @@ class ServicioDisponibilidad:
                 estado = await cliente_redis.get(clave_solicitud)
                 estado = self._decode_if_json_string(estado)
                 if not isinstance(estado, dict):
-                    # Puede ser una lectura transitoria; mantener pendiente hasta timeout.
+                    # Lectura transitoria: mantener pendiente hasta el timeout.
                     continue
 
                 status = str(estado.get("status") or "").strip().lower()
@@ -314,7 +314,9 @@ class ServicioDisponibilidad:
         if pendientes_telefono and self.grace_seconds > 0:
             await asyncio.sleep(self.grace_seconds)
             for telefono in list(pendientes_telefono):
-                clave_solicitud = f"availability:request:{req_id_real}:provider:{telefono}"
+                clave_solicitud = (
+                    f"availability:request:{req_id_real}:provider:{telefono}"
+                )
                 estado = await cliente_redis.get(clave_solicitud)
                 estado = self._decode_if_json_string(estado)
                 if not isinstance(estado, dict):

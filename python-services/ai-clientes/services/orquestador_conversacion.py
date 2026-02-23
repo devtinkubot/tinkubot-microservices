@@ -95,8 +95,6 @@ PALABRAS_NEGATIVAS = {
     "prefiero no",
 }
 
-USAR_EXTRACCION_IA = os.getenv("USE_AI_EXTRACTION", "true").lower() == "true"
-
 
 def _normalizar_token(texto: str) -> str:
     texto_limpio = (texto or "").strip().lower()
@@ -261,7 +259,6 @@ class OrquestadorConversacional:
 
         # Constantes/config usadas por el router
         self.greetings = GREETINGS
-        self.usar_extraccion_ia = USAR_EXTRACCION_IA
         self.farewell_message = FAREWELL_MESSAGE
         self.max_confirm_attempts = MAX_CONFIRM_ATTEMPTS
         # Nombres en español para extracción de servicio

@@ -34,10 +34,6 @@ from services.orquestador_retrollamadas import OrquestadorRetrollamadas
 logging.basicConfig(level=getattr(logging, configuracion.log_level))
 logger = logging.getLogger(__name__)
 
-# Feature flag para extracción IA
-USAR_EXTRACCION_IA = os.getenv("USE_AI_EXTRACTION", "true").lower() == "true"
-logger.info("🔧 Extracción IA habilitada: %s", USAR_EXTRACCION_IA)
-
 # Inicializar FastAPI
 app = FastAPI(
     title="AI Service Clientes",
@@ -317,7 +313,7 @@ if __name__ == "__main__":
         "app": "principal:app",
         "host": server_host,
         "port": server_port,
-        "reload": os.getenv("UVICORN_RELOAD", "true").lower() == "true",
+        "reload": os.getenv("ENVIRONMENT", "development") != "production",
         "log_level": configuracion.log_level.lower(),
     }
     uvicorn.run(**config)

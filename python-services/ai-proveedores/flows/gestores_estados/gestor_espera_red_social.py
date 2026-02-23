@@ -27,8 +27,9 @@ def manejar_espera_red_social(
         "messages": [
             {
                 "response": (
-                    "*Perfecto. Ahora necesito la foto de la Cédula (parte frontal). "
-                    "Envia la imagen como adjunto.*"
+                    "*Para validar tu identidad y mantener la confianza en la "
+                    "plataforma*, necesito una foto clara de la parte frontal de "
+                    "tu cédula. *Envíala como imagen adjunta.*"
                 )
             }
         ],

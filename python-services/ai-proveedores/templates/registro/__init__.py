@@ -38,6 +38,7 @@ from .validacion_ciudad import (
     error_ciudad_caracteres_invalidos,
     error_ciudad_multiple,
     error_ciudad_frase,
+    error_ciudad_no_reconocida,
 )
 
 __all__ = [
@@ -71,4 +72,5 @@ __all__ = [
     "error_ciudad_caracteres_invalidos",
     "error_ciudad_multiple",
     "error_ciudad_frase",
+    "error_ciudad_no_reconocida",
 ]

@@ -6,13 +6,12 @@ Maneja las variables de entorno necesarias para el funcionamiento del servicio, 
 
 - Conexión a Supabase (URL y clave de servicio)
 - Configuración de caché y tiempos de vida
-- Gestión de timeouts de sesiones y flujos conversacionales
+- Gestión de timeouts de flujos conversacionales
 - Configuración de puertos de comunicación
 
 Las variables se cargan desde el archivo .env o desde variables de entorno del sistema.
 """
 
-import os
 from typing import Optional
 
 from pydantic import Field
@@ -27,7 +26,6 @@ class ConfiguracionServicio(BaseSettings):
         supabase_url: URL de conexión a Supabase (opcional, usa defaults si no se proporciona)
         supabase_service_key: Clave de servicio JWT para Supabase con permisos elevados (opcional)
         ttl_cache_segundos: Tiempo de vida del caché en segundos (default: 300)
-        timeout_sesion_habilitado: Habilita/deshabilita el timeout de sesiones (default: True)
         ttl_flujo_segundos: Tiempo de vida del estado de flujo conversacional en Redis (default: 3600)
         proveedores_service_port: Puerto donde escucha el servicio de proveedores (default: 8002)
     """
@@ -40,10 +38,6 @@ class ConfiguracionServicio(BaseSettings):
     ttl_cache_segundos: int = 300
 
     # Configuración de timeouts
-    timeout_sesion_habilitado: bool = Field(
-        True,
-        validation_alias="SESSION_TIMEOUT_ENABLED",
-    )
     ttl_flujo_segundos: int = 3600
 
     # Configuración de puertos
@@ -60,7 +54,6 @@ class ConfiguracionServicio(BaseSettings):
     modelo_embeddings: str = "text-embedding-3-small"
     ttl_cache_embeddings: int = 3600  # 1 hora en segundos
     tiempo_espera_embeddings: int = 5  # segundos para llamadas a OpenAI
-    embeddings_habilitados: bool = True  # habilitar/deshabilitar generación de embeddings
 
     # Modelo global de chat/completions (fallback)
     openai_chat_model: str = "gpt-4o-mini"

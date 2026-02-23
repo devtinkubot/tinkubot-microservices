@@ -12,7 +12,6 @@ logger = logging.getLogger(__name__)
 
 # Configuración desde variables de entorno
 SUPABASE_TIMEOUT_SECONDS = float(os.getenv("SUPABASE_TIMEOUT_SECONDS", "5"))
-PERF_LOG_ENABLED = os.getenv("PERF_LOG_ENABLED", "true").lower() == "true"
 SLOW_QUERY_THRESHOLD_MS = int(os.getenv("SLOW_QUERY_THRESHOLD_MS", "800"))
 
 
@@ -47,18 +46,17 @@ async def ejecutar_operacion_supabase(
         # Ejecutar en thread pool para no bloquear el event loop
         return await asyncio.wait_for(loop.run_in_executor(None, op), timeout=timeout)
     finally:
-        # Logging de performance si está habilitado
-        if PERF_LOG_ENABLED:
-            elapsed_ms = (perf_counter() - start) * 1000
-            if elapsed_ms >= SLOW_QUERY_THRESHOLD_MS:
-                logger.info(
-                    "perf_supabase",
-                    extra={
-                        "op": label,
-                        "elapsed_ms": round(elapsed_ms, 2),
-                        "threshold_ms": SLOW_QUERY_THRESHOLD_MS,
-                    },
-                )
+        # Logging de performance
+        elapsed_ms = (perf_counter() - start) * 1000
+        if elapsed_ms >= SLOW_QUERY_THRESHOLD_MS:
+            logger.info(
+                "perf_supabase",
+                extra={
+                    "op": label,
+                    "elapsed_ms": round(elapsed_ms, 2),
+                    "threshold_ms": SLOW_QUERY_THRESHOLD_MS,
+                },
+            )
 
 
 # Alias para backward compatibility

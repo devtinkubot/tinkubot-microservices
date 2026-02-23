@@ -36,6 +36,11 @@ ERROR_CIUDAD_FRASE = (
     "Ejemplo: Cuenca, Quito, Guayaquil."
 )
 
+ERROR_CIUDAD_NO_RECONOCIDA = (
+    "*No reconocí esa ubicación.*\n"
+    "Escribe una ciudad o cantón de Ecuador (ej: Cuenca, Nabón)."
+)
+
 
 # ==================== FUNCIONES ====================
 
@@ -67,3 +72,8 @@ def error_ciudad_multiple() -> str:
 def error_ciudad_frase() -> str:
     """Error cuando el usuario ingresa una frase en lugar de una ciudad."""
     return ERROR_CIUDAD_FRASE
+
+
+def error_ciudad_no_reconocida() -> str:
+    """Error cuando la ubicación no coincide con ciudad/cantón válido."""
+    return ERROR_CIUDAD_NO_RECONOCIDA
