@@ -193,7 +193,6 @@ class ClienteBusqueda:
                 "rating": proveedor.get("rating", 0.0),
                 "available": proveedor.get("available", True),
                 "verified": proveedor.get("verified", False),
-                "professions": proveedor.get("professions", []),
                 "services": proveedor.get("services", []),
                 "years_of_experience": proveedor.get("years_of_experience"),
                 "created_at": proveedor.get("created_at"),

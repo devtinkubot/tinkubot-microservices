@@ -48,6 +48,10 @@ UMBRAL_LENTO_MS = int(os.getenv("SLOW_QUERY_THRESHOLD_MS", "800"))
 AVAILABILITY_RESULT_TTL_SECONDS = int(
     os.getenv("AVAILABILITY_RESULT_TTL_SECONDS", "300")
 )
+CLAVE_CONTEXTO_DISPONIBILIDAD = "availability:provider:{}:context"
+CLAVE_PENDIENTES_DISPONIBILIDAD = "availability:provider:{}:pending"
+CLAVE_CICLO_SOLICITUD = "availability:lifecycle:{}"
+ESTADO_ESPERANDO_DISPONIBILIDAD = "awaiting_availability_response"
 ONBOARDING_STATES = {
     None,
     "awaiting_consent",
@@ -210,6 +214,30 @@ def _parsear_respuesta_disponibilidad(texto: str) -> Optional[str]:
     return None
 
 
+async def _hay_contexto_disponibilidad_activo(telefono: str) -> bool:
+    contexto = await cliente_redis.get(CLAVE_CONTEXTO_DISPONIBILIDAD.format(telefono))
+    return bool(isinstance(contexto, dict) and contexto.get("expecting_response"))
+
+
+async def _actualizar_ciclo_solicitud(
+    request_id: str,
+    nuevo_estado: str,
+    datos: Optional[Dict[str, Any]] = None,
+) -> None:
+    if not request_id:
+        return
+
+    clave = CLAVE_CICLO_SOLICITUD.format(request_id)
+    actual = await cliente_redis.get(clave) or {}
+    if not isinstance(actual, dict):
+        actual = {}
+
+    actual.update(datos or {})
+    actual["state"] = nuevo_estado
+    actual["updated_at"] = datetime.utcnow().isoformat()
+    await cliente_redis.set(clave, actual, expire=AVAILABILITY_RESULT_TTL_SECONDS)
+
+
 async def _registrar_respuesta_disponibilidad_si_aplica(
     telefono: str, texto_mensaje: str, estado_actual: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
@@ -218,7 +246,13 @@ async def _registrar_respuesta_disponibilidad_si_aplica(
         return None
 
     clave_pendientes = f"availability:provider:{telefono}:pending"
+    clave_contexto = f"availability:provider:{telefono}:context"
     pendientes = await cliente_redis.get(clave_pendientes)
+    contexto_disponibilidad = await cliente_redis.get(clave_contexto)
+    esperando_disponibilidad = bool(
+        isinstance(contexto_disponibilidad, dict)
+        and contexto_disponibilidad.get("expecting_response")
+    )
     mensaje_expirado = (
         "*El tiempo de respuesta ha caducado y tu respuesta ya no contará para este requerimiento*"
     )
@@ -227,6 +261,24 @@ async def _registrar_respuesta_disponibilidad_si_aplica(
     # o no estar decodificado.
     if pendientes is None:
         logger.info(f"📭 No hay solicitudes pendientes para {telefono}")
+        if esperando_disponibilidad:
+            request_id_contexto = str(contexto_disponibilidad.get("request_id") or "")
+            if request_id_contexto:
+                await _actualizar_ciclo_solicitud(
+                    request_id_contexto,
+                    "expired",
+                    datos={
+                        "expired_by_provider_phone": telefono,
+                        "expired_at": datetime.utcnow().isoformat(),
+                    },
+                )
+            await cliente_redis.delete(clave_contexto)
+            logger.info(
+                "availability_response_expired_context provider=%s state=%s",
+                telefono,
+                estado_actual,
+            )
+            return {"success": True, "messages": [{"response": mensaje_expirado}]}
         if estado_actual in (ONBOARDING_STATES | MENU_STATES):
             logger.info(
                 "availability_response_skipped_no_pending provider=%s state=%s",
@@ -261,6 +313,24 @@ async def _registrar_respuesta_disponibilidad_si_aplica(
     # Verificar que sea una lista después de la decodificación
     if isinstance(pendientes, list) and not pendientes:
         logger.info(f"📭 Pendientes vacío para {telefono}")
+        if esperando_disponibilidad:
+            request_id_contexto = str(contexto_disponibilidad.get("request_id") or "")
+            if request_id_contexto:
+                await _actualizar_ciclo_solicitud(
+                    request_id_contexto,
+                    "expired",
+                    datos={
+                        "expired_by_provider_phone": telefono,
+                        "expired_at": datetime.utcnow().isoformat(),
+                    },
+                )
+            await cliente_redis.delete(clave_contexto)
+            logger.info(
+                "availability_response_expired_context provider=%s state=%s",
+                telefono,
+                estado_actual,
+            )
+            return {"success": True, "messages": [{"response": mensaje_expirado}]}
         if estado_actual in (ONBOARDING_STATES | MENU_STATES):
             logger.info(
                 "availability_response_skipped_no_pending provider=%s state=%s",
@@ -279,6 +349,18 @@ async def _registrar_respuesta_disponibilidad_si_aplica(
         logger.info(
             f"📭 Pendientes vacío o inválido para {telefono}: {type(pendientes)}"
         )
+        if esperando_disponibilidad:
+            request_id_contexto = str(contexto_disponibilidad.get("request_id") or "")
+            if request_id_contexto:
+                await _actualizar_ciclo_solicitud(
+                    request_id_contexto,
+                    "expired",
+                    datos={
+                        "expired_by_provider_phone": telefono,
+                        "expired_at": datetime.utcnow().isoformat(),
+                    },
+                )
+            await cliente_redis.delete(clave_contexto)
         logger.info("availability_response_expired provider=%s", telefono)
         return {"success": True, "messages": [{"response": mensaje_expirado}]}
 
@@ -311,12 +393,37 @@ async def _registrar_respuesta_disponibilidad_si_aplica(
 
     if not req_resuelto:
         logger.info(f"📭 No se encontró solicitud pendiente válida para {telefono}")
+        if esperando_disponibilidad:
+            request_id_contexto = str(contexto_disponibilidad.get("request_id") or "")
+            if request_id_contexto:
+                await _actualizar_ciclo_solicitud(
+                    request_id_contexto,
+                    "expired",
+                    datos={
+                        "expired_by_provider_phone": telefono,
+                        "expired_at": datetime.utcnow().isoformat(),
+                    },
+                )
+            await cliente_redis.delete(clave_contexto)
         logger.info("availability_response_expired provider=%s", telefono)
         return {"success": True, "messages": [{"response": mensaje_expirado}]}
 
     nuevos_pendientes = [rid for rid in pendientes if rid != req_resuelto]
     await cliente_redis.set(
         clave_pendientes, nuevos_pendientes, expire=AVAILABILITY_RESULT_TTL_SECONDS
+    )
+    if not nuevos_pendientes:
+        await cliente_redis.delete(clave_contexto)
+
+    estado_ciclo = "provider_accepted" if decision == "accepted" else "provider_rejected"
+    await _actualizar_ciclo_solicitud(
+        req_resuelto,
+        estado_ciclo,
+        datos={
+            "last_provider_response_phone": telefono,
+            "last_provider_response_status": decision,
+            "last_provider_response_at": datetime.utcnow().isoformat(),
+        },
     )
 
     if decision == "accepted":
@@ -385,6 +492,73 @@ async def invalidate_provider_cache(
     return {"success": ok, "phone": telefono}
 
 
+@app.get("/admin/availability-lifecycle/{request_id}")
+async def obtener_ciclo_disponibilidad(
+    request_id: str,
+    token: Optional[str] = Header(default=None, alias="x-internal-token"),
+) -> Dict[str, Any]:
+    """Consulta el estado del ciclo de una solicitud de disponibilidad por request_id."""
+    token_esperado = configuracion.internal_token
+    if token_esperado and token != token_esperado:
+        return {"success": False, "message": "Unauthorized"}
+
+    request_id_limpio = (request_id or "").strip()
+    if not request_id_limpio:
+        return {"success": False, "message": "request_id is required"}
+
+    ciclo = await cliente_redis.get(CLAVE_CICLO_SOLICITUD.format(request_id_limpio))
+    return {
+        "success": True,
+        "request_id": request_id_limpio,
+        "exists": bool(ciclo),
+        "lifecycle": ciclo or {},
+    }
+
+
+@app.get("/admin/availability-provider-state")
+async def obtener_estado_disponibilidad_proveedor(
+    phone: str,
+    token: Optional[str] = Header(default=None, alias="x-internal-token"),
+) -> Dict[str, Any]:
+    """
+    Consulta estado de disponibilidad por proveedor (pendientes, contexto y ciclos asociados).
+    """
+    token_esperado = configuracion.internal_token
+    if token_esperado and token != token_esperado:
+        return {"success": False, "message": "Unauthorized"}
+
+    telefono_crudo = (phone or "").strip()
+    if not telefono_crudo:
+        return {"success": False, "message": "phone is required"}
+
+    telefono = _resolver_telefono_canonico(telefono_crudo, telefono_crudo)
+    if not telefono:
+        return {"success": False, "message": "invalid phone format"}
+
+    contexto = await cliente_redis.get(CLAVE_CONTEXTO_DISPONIBILIDAD.format(telefono))
+    pendientes = await cliente_redis.get(CLAVE_PENDIENTES_DISPONIBILIDAD.format(telefono))
+    if not isinstance(pendientes, list):
+        pendientes = []
+
+    request_ids = []
+    if isinstance(contexto, dict) and contexto.get("request_id"):
+        request_ids.append(str(contexto["request_id"]))
+    request_ids.extend([str(rid) for rid in pendientes if rid])
+    request_ids_unicos = list(dict.fromkeys(request_ids))
+
+    ciclos = {}
+    for rid in request_ids_unicos:
+        ciclos[rid] = await cliente_redis.get(CLAVE_CICLO_SOLICITUD.format(rid)) or {}
+
+    return {
+        "success": True,
+        "provider_phone": telefono,
+        "context": contexto or {},
+        "pending_request_ids": request_ids_unicos,
+        "lifecycles": ciclos,
+    }
+
+
 @app.post("/handle-whatsapp-message")
 async def manejar_mensaje_whatsapp(  # noqa: C901
     solicitud: RecepcionMensajeWhatsApp,
@@ -412,10 +586,21 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
         )
 
         flujo = await obtener_flujo(telefono)
+        hay_contexto_disponibilidad = await _hay_contexto_disponibilidad_activo(telefono)
+        if hay_contexto_disponibilidad and flujo.get("state") in MENU_STATES:
+            flujo["state"] = ESTADO_ESPERANDO_DISPONIBILIDAD
+        elif (
+            not hay_contexto_disponibilidad
+            and flujo.get("state") == ESTADO_ESPERANDO_DISPONIBILIDAD
+        ):
+            flujo["state"] = "awaiting_menu_option"
         respuesta_disponibilidad = await _registrar_respuesta_disponibilidad_si_aplica(
             telefono, texto_mensaje, flujo.get("state")
         )
         if respuesta_disponibilidad:
+            if flujo.get("state") == ESTADO_ESPERANDO_DISPONIBILIDAD:
+                flujo["state"] = "awaiting_menu_option"
+                await establecer_flujo(telefono, flujo)
             return normalizar_respuesta_whatsapp(respuesta_disponibilidad)
 
         perfil_proveedor = await obtener_perfil_proveedor_cacheado(telefono)

@@ -497,6 +497,10 @@ class OrquestadorConversacional:
             "es_necesidad_o_problema",
             None,
         )
+        gate_needs_context_v2_enabled = (
+            os.getenv("GATE_NEEDS_CONTEXT_V2_ENABLED", "false").strip().lower()
+            in {"1", "true", "yes", "on"}
+        )
 
         flujo_actualizado, respuesta = await procesar_estado_esperando_servicio(
             flujo,
@@ -505,6 +509,7 @@ class OrquestadorConversacional:
             mensaje_inicial_solicitud(),
             funcion_extraccion,
             funcion_validacion_necesidad,
+            gate_needs_context_v2_enabled=gate_needs_context_v2_enabled,
         )
         flujo = flujo_actualizado
 

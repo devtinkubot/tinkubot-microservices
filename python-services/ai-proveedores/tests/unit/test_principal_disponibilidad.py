@@ -20,6 +20,9 @@ class RedisFalso:
     async def set(self, key, value, expire=None):
         self.data[key] = value
 
+    async def delete(self, key):
+        self.data.pop(key, None)
+
 
 def test_respuesta_disponibilidad_sin_pendientes_no_intercepta(monkeypatch):
     redis_falso = RedisFalso()
@@ -54,6 +57,7 @@ def test_respuesta_disponibilidad_pendiente_valida_registra_accepted(monkeypatch
     req_id = "search-test-123"
     clave_pendientes = f"availability:provider:{telefono}:pending"
     clave_req = f"availability:request:{req_id}:provider:{telefono}"
+    clave_ciclo = f"availability:lifecycle:{req_id}"
     redis_falso = RedisFalso(
         {
             clave_pendientes: [req_id],
@@ -70,6 +74,7 @@ def test_respuesta_disponibilidad_pendiente_valida_registra_accepted(monkeypatch
     assert "Disponibilidad confirmada" in resultado["messages"][0]["response"]
     assert redis_falso.data[clave_req]["status"] == "accepted"
     assert redis_falso.data[clave_pendientes] == []
+    assert redis_falso.data[clave_ciclo]["state"] == "provider_accepted"
 
 
 def test_respuesta_disponibilidad_sin_pendientes_en_menu_devuelve_caducado(monkeypatch):
@@ -103,6 +108,34 @@ def test_respuesta_disponibilidad_en_menu_option_no_intercepta(monkeypatch):
 
     # No debe interceptar - debe dejar que el flujo de menú continúe
     assert resultado is None
+
+
+def test_respuesta_disponibilidad_en_menu_con_contexto_devuelve_caducado(monkeypatch):
+    """Si había contexto de disponibilidad, una respuesta 1/2 no debe entrar al menú."""
+    telefono = "593999111228@s.whatsapp.net"
+    clave_contexto = f"availability:provider:{telefono}:context"
+    clave_ciclo = "availability:lifecycle:search-vencido"
+    redis_falso = RedisFalso(
+        {
+            clave_contexto: {
+                "expecting_response": True,
+                "request_id": "search-vencido",
+            }
+        }
+    )
+    monkeypatch.setattr(principal, "cliente_redis", redis_falso)
+
+    resultado = asyncio.run(
+        principal._registrar_respuesta_disponibilidad_si_aplica(
+            telefono, "1", "awaiting_menu_option"
+        )
+    )
+
+    assert resultado is not None
+    assert "tiempo de respuesta ha caducado" in resultado["messages"][0][
+        "response"
+    ].lower()
+    assert redis_falso.data[clave_ciclo]["state"] == "expired"
 
 
 def test_respuesta_disponibilidad_en_face_photo_update_no_intercepta(monkeypatch):

@@ -187,10 +187,27 @@ async def ejecutar_busqueda_y_notificar_en_segundo_plano(
                 cliente_redis=redis_client,
             )
             aceptados = resultado_disponibilidad.get("aceptados") or []
+            request_id = resultado_disponibilidad.get("request_id")
+            if request_id:
+                flujo["availability_request_id"] = request_id
             logger.info(
                 f"✅ Disponibilidad: {len(aceptados)} proveedores aceptados"
             )
             proveedores_finales = aceptados[:5]
+
+            if proveedores_finales:
+                await servicio_disponibilidad.marcar_solicitud_como_presentada(
+                    request_id=request_id,
+                    cliente_redis=redis_client,
+                    telefono_cliente=telefono,
+                    proveedores_presentados=len(proveedores_finales),
+                )
+            else:
+                await servicio_disponibilidad.cerrar_solicitud(
+                    request_id=request_id,
+                    cliente_redis=redis_client,
+                    motivo="no_provider_available",
+                )
 
         # Construir mensajes para enviar
         mensajes_por_enviar = await _construir_mensajes_resultados(

@@ -76,13 +76,6 @@ class ValidadorProveedoresIA:
         proveedores_info = []
         for i, p in enumerate(proveedores):
             # Extraer información relevante del proveedor
-            # Manejar tanto "profession" (singular) como "professions" (plural lista)
-            profesion_cruda = p.get("profession") or p.get("professions")
-            if isinstance(profesion_cruda, list):
-                profesion = ", ".join(str(prof) for prof in profesion_cruda[:3])
-            else:
-                profesion = str(profesion_cruda) if profesion_cruda else "N/A"
-
             servicios = p.get("services", "N/A")
             lista_servicios = p.get("services_list", [])
             experiencia = p.get("experience_years") or p.get("years_of_experience", "N/A")
@@ -95,7 +88,6 @@ class ValidadorProveedoresIA:
                 texto_servicios = str(servicios)
 
             texto_proveedor = f"""Proveedor {i+1}:
-- Profesión: {profesion}
 - Servicios: {texto_servicios}
 - Experiencia: {experiencia} años
 - Rating: {calificacion}"""
@@ -115,18 +107,13 @@ PROBLEMA ESPECÍFICO DEL CLIENTE: "{problema}"
 Para CADA proveedor, responde si PUEDE ayudar o NO ayudar.
 
 Criterios importantes:
-1. La profesión del proveedor debe ser APROPIADA para la necesidad
-   - Ejemplo: Para "bug en página web", un DESARROLLADOR WEB es apropiado
-   - Ejemplo: Para "arreglo de tubería", un PLOMERO es apropiado
-   - Considera equivalencias semánticas entre idiomas para la misma necesidad
-
-2. Los servicios que ofrece deben ser RELEVANTES y APLICABLES
+1. Los servicios que ofrece deben ser RELEVANTES y APLICABLES
    - No basta con mencionar palabras clave
    - Los servicios deben demostrar capacidad real de atender la necesidad
    - "Desarrollo Software Backend" NO es automáticamente adecuado para "bugs de página web"
    - Un desarrollador backend probablemente NO puede ayudar con problemas frontend
 
-3. Considera el contexto específico proporcionado
+2. Considera el contexto específico proporcionado
    - "Bug en página web" requiere conocimiento de HTML/CSS/JavaScript
    - "Error en base de datos" requiere conocimiento SQL/Base de datos
    - "App no funciona" requiere debugging de aplicaciones
@@ -151,7 +138,7 @@ NO incluyas explicaciones. Solo el array de booleanos."""
                         messages=[
                             {
                                 "role": "system",
-                                "content": "Eres un experto analista de servicios profesionales. Analizas si un proveedor tiene la capacidad real de ayudar con una necesidad específica basándote en su profesión y servicios.",
+                                "content": "Eres un experto analista de servicios profesionales. Analizas si un proveedor puede ayudar con una necesidad específica basándote en los servicios que ofrece y el contexto del problema.",
                             },
                             {"role": "user", "content": prompt_sistema},
                         ],

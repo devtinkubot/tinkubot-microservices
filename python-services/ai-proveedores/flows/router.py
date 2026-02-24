@@ -64,6 +64,16 @@ RESET_KEYWORDS = {
 }
 
 
+def _es_salida_a_menu(texto_mensaje: str, opcion_menu: Optional[str]) -> bool:
+    texto = (texto_mensaje or "").strip().lower()
+    return bool(
+        opcion_menu == "5"
+        or "menu" in texto
+        or "volver" in texto
+        or "salir" in texto
+    )
+
+
 async def manejar_mensaje(
     *,
     flujo: Dict[str, Any],
@@ -352,6 +362,37 @@ async def enrutar_estado(  # noqa: C901
             esta_registrado=esta_registrado,
         )
         return {"response": respuesta, "persist_flow": True}
+
+    if estado == "awaiting_availability_response":
+        if _es_salida_a_menu(texto_mensaje, opcion_menu):
+            flujo["state"] = "awaiting_menu_option"
+            return {
+                "response": {
+                    "success": True,
+                    "messages": [
+                        {"response": construir_menu_principal(esta_registrado=True)}
+                    ],
+                },
+                "persist_flow": True,
+            }
+
+        return {
+            "response": {
+                "success": True,
+                "messages": [
+                    {
+                        "response": (
+                            "📌 Tienes una solicitud pendiente de disponibilidad.\n"
+                            "Responde:\n"
+                            "*1.* Sí, estoy disponible\n"
+                            "*2.* No disponible\n\n"
+                            "Si deseas volver al menú, escribe *menu*."
+                        )
+                    }
+                ],
+            },
+            "persist_flow": True,
+        }
 
     if estado == "awaiting_deletion_confirmation":
         respuesta = await manejar_confirmacion_eliminacion(

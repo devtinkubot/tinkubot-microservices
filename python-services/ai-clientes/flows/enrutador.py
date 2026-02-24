@@ -327,12 +327,21 @@ async def enrutar_estado(
                     cliente_redis=orquestador.redis_client,
                 )
                 aceptados = resultado_disponibilidad.get("aceptados") or []
+                request_id = resultado_disponibilidad.get("request_id")
+                if request_id:
+                    flujo["availability_request_id"] = request_id
 
                 if aceptados:
                     flujo["providers"] = aceptados
                     await orquestador.guardar_flujo(telefono, flujo)
                     respuesta_prompt = await orquestador.enviar_prompt_proveedor(
                         telefono, flujo, ciudad
+                    )
+                    await servicio_disponibilidad.marcar_solicitud_como_presentada(
+                        request_id=request_id,
+                        cliente_redis=orquestador.redis_client,
+                        telefono_cliente=telefono,
+                        proveedores_presentados=len(aceptados),
                     )
                     if respuesta_prompt.get("messages"):
                         return {"messages": respuesta_prompt["messages"]}
@@ -345,6 +354,11 @@ async def enrutar_estado(
                 )
                 flujo["confirm_include_city_option"] = True
                 await orquestador.guardar_flujo(telefono, flujo)
+                await servicio_disponibilidad.cerrar_solicitud(
+                    request_id=request_id,
+                    cliente_redis=orquestador.redis_client,
+                    motivo="no_provider_available",
+                )
                 titulo_confirmacion = flujo.get("confirm_title") or titulo_confirmacion_repetir_busqueda
                 mensajes_confirmacion = mensajes_confirmacion_busqueda(
                     titulo_confirmacion, incluir_opcion_ciudad=True

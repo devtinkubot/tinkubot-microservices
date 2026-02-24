@@ -62,7 +62,7 @@ class BuscadorProveedores:
         """
         consulta = (descripcion_problema or profesion or "").strip() or profesion
         self.logger.info(
-            "🔍 Búsqueda embeddings + validación IA: profession='%s', query='%s', location='%s'",
+            "🔍 Búsqueda embeddings + validación IA: service='%s', query='%s', location='%s'",
             profesion,
             consulta,
             ciudad,

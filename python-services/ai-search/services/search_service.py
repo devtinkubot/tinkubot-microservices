@@ -135,7 +135,7 @@ class SearchService:
         canonical = f"{effective_query.lower().strip()}"
         if request.filters:
             canonical += (
-                f":{request.filters.city}:{request.filters.profession}:"
+                f":{request.filters.city}:"
                 f"{request.filters.min_rating}:{request.filters.verified_only}"
             )
         context = request.context or {}
@@ -323,7 +323,6 @@ class SearchService:
                 row.get("available"), row.get("verified")
             ),
             verified=row.get("verified", False),
-            professions=[],
             services=services,
             years_of_experience=row.get("experience_years"),
             created_at=row.get("created_at", datetime.now()),
@@ -347,11 +346,6 @@ class SearchService:
 
             if filters.city and provider.city and provider.city.lower() != filters.city.lower():
                 continue
-
-            if filters.profession:
-                profession_lower = filters.profession.lower()
-                if not any(profession_lower in p.lower() for p in provider.professions):
-                    continue
 
             filtered_providers.append(provider)
 

@@ -14,7 +14,6 @@ class SearchFilters(BaseModel):
     verified_only: bool = False
     min_rating: float = Field(default=0.0, ge=0.0, le=5.0)
     city: Optional[str] = None
-    profession: Optional[str] = None
     max_distance_km: Optional[int] = None
 
     class Config:
@@ -42,7 +41,6 @@ class ProviderInfo(BaseModel):
     rating: float
     available: bool
     verified: bool
-    professions: List[str]
     services: List[str]
     years_of_experience: Optional[int] = None
     created_at: datetime
