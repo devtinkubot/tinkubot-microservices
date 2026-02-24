@@ -14,7 +14,6 @@ async def procesar_estado_esperando_servicio(
     prompt_inicial: str,
     extraer_fn: Callable[[str], Awaitable[Optional[str]]],
     validar_necesidad_fn: Optional[Callable[[str], Awaitable[bool]]] = None,
-    gate_needs_context_v2_enabled: bool = False,
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """Procesa el estado `awaiting_service`.
 
@@ -51,37 +50,36 @@ async def procesar_estado_esperando_servicio(
             )
             es_necesidad = True
         if not es_necesidad:
-            if gate_needs_context_v2_enabled:
+            logger.info(
+                "gate_v2_rejected_try_extract normalized_input='%s'",
+                limpio.lower()[:120],
+            )
+            try:
+                extraido = await extraer_fn(limpio)
+            except Exception as exc:
+                logger.warning("⚠️ Error en extraer_fn (gate_v2): %s", exc)
+                extraido = None
+            valor_extraido = (extraido or "").strip()
+            if valor_extraido:
                 logger.info(
-                    "gate_v2_rejected_try_extract normalized_input='%s'",
+                    "gate_v2_rejected_but_extracted normalized_input='%s' service='%s'",
                     limpio.lower()[:120],
+                    valor_extraido,
                 )
-                try:
-                    extraido = await extraer_fn(limpio)
-                except Exception as exc:
-                    logger.warning("⚠️ Error en extraer_fn (gate_v2): %s", exc)
-                    extraido = None
-                valor_extraido = (extraido or "").strip()
-                if valor_extraido:
-                    logger.info(
-                        "gate_v2_rejected_but_extracted normalized_input='%s' service='%s'",
-                        limpio.lower()[:120],
-                        valor_extraido,
-                    )
-                    flujo.update(
-                        {
-                            "service_candidate": valor_extraido,
-                            "service_full": texto or valor_extraido,
-                            "state": "confirm_service",
-                        }
-                    )
-                    from templates.mensajes.validacion import mensaje_confirmar_servicio
+                flujo.update(
+                    {
+                        "service_candidate": valor_extraido,
+                        "service_full": texto or valor_extraido,
+                        "state": "confirm_service",
+                    }
+                )
+                from templates.mensajes.validacion import mensaje_confirmar_servicio
 
-                    return flujo, {"response": mensaje_confirmar_servicio(valor_extraido)}
-                logger.info(
-                    "gate_v2_rejected_and_blocked normalized_input='%s'",
-                    limpio.lower()[:120],
-                )
+                return flujo, {"response": mensaje_confirmar_servicio(valor_extraido)}
+            logger.info(
+                "gate_v2_rejected_and_blocked normalized_input='%s'",
+                limpio.lower()[:120],
+            )
             flujo["state"] = "awaiting_service"
             flujo.pop("service_candidate", None)
             from templates.mensajes.validacion import mensaje_error_input_sin_sentido
