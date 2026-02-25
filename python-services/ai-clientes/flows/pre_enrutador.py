@@ -123,8 +123,9 @@ async def pre_enrutar_mensaje(
         telefono, flujo, texto
     )
     if resultado_reinicio:
-        # Actualizar timestamps en retorno por reinicio
-        await actualizar_y_guardar_flujo()
+        # IMPORTANTE: no persistir `flujo` local aquí.
+        # `_procesar_comando_reinicio` ya guarda un estado limpio (awaiting_consent)
+        # y volver a guardar este `flujo` puede sobrescribir ese estado con datos stale.
         return {"response": resultado_reinicio}
 
     if texto:

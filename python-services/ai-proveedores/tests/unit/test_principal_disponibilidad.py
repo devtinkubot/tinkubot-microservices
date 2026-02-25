@@ -77,7 +77,9 @@ def test_respuesta_disponibilidad_pendiente_valida_registra_accepted(monkeypatch
     assert redis_falso.data[clave_ciclo]["state"] == "provider_accepted"
 
 
-def test_respuesta_disponibilidad_sin_pendientes_en_menu_devuelve_caducado(monkeypatch):
+def test_respuesta_disponibilidad_sin_pendientes_pending_verification_no_intercepta(
+    monkeypatch,
+):
     telefono = "593999111225@s.whatsapp.net"
     redis_falso = RedisFalso()
     monkeypatch.setattr(principal, "cliente_redis", redis_falso)
@@ -88,10 +90,7 @@ def test_respuesta_disponibilidad_sin_pendientes_en_menu_devuelve_caducado(monke
         )
     )
 
-    assert resultado is not None
-    assert "tiempo de respuesta ha caducado" in resultado["messages"][0][
-        "response"
-    ].lower()
+    assert resultado is None
 
 
 def test_respuesta_disponibilidad_en_menu_option_no_intercepta(monkeypatch):
@@ -110,11 +109,10 @@ def test_respuesta_disponibilidad_en_menu_option_no_intercepta(monkeypatch):
     assert resultado is None
 
 
-def test_respuesta_disponibilidad_en_menu_con_contexto_devuelve_caducado(monkeypatch):
-    """Si había contexto de disponibilidad, una respuesta 1/2 no debe entrar al menú."""
+def test_respuesta_disponibilidad_en_menu_con_contexto_no_intercepta(monkeypatch):
+    """En menú/onboarding, una respuesta 1/2 no debe mostrar mensaje de timeout."""
     telefono = "593999111228@s.whatsapp.net"
     clave_contexto = f"availability:provider:{telefono}:context"
-    clave_ciclo = "availability:lifecycle:search-vencido"
     redis_falso = RedisFalso(
         {
             clave_contexto: {
@@ -131,11 +129,22 @@ def test_respuesta_disponibilidad_en_menu_con_contexto_devuelve_caducado(monkeyp
         )
     )
 
+    assert resultado is None
+
+
+def test_respuesta_disponibilidad_fuera_onboarding_devuelve_caducado(monkeypatch):
+    telefono = "593999111229@s.whatsapp.net"
+    redis_falso = RedisFalso()
+    monkeypatch.setattr(principal, "cliente_redis", redis_falso)
+
+    resultado = asyncio.run(
+        principal._registrar_respuesta_disponibilidad_si_aplica(telefono, "1", "searching")
+    )
+
     assert resultado is not None
     assert "tiempo de respuesta ha caducado" in resultado["messages"][0][
         "response"
     ].lower()
-    assert redis_falso.data[clave_ciclo]["state"] == "expired"
 
 
 def test_respuesta_disponibilidad_en_face_photo_update_no_intercepta(monkeypatch):

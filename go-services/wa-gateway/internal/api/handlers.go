@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/tinkubot/wa-gateway/internal/metawebhook"
 	"github.com/tinkubot/wa-gateway/internal/ratelimit"
 	"github.com/tinkubot/wa-gateway/internal/whatsmeow"
 )
@@ -15,14 +16,21 @@ type Handlers struct {
 	clientManager *whatsmeow.ClientManager
 	rateLimiter   *ratelimit.Limiter
 	sseHub        *SSEHub
+	metaWebhook   *metawebhook.Service
 }
 
 // NewHandlers creates a new Handlers instance
-func NewHandlers(cm *whatsmeow.ClientManager, rl *ratelimit.Limiter, sseHub *SSEHub) *Handlers {
+func NewHandlers(
+	cm *whatsmeow.ClientManager,
+	rl *ratelimit.Limiter,
+	sseHub *SSEHub,
+	metaWebhook *metawebhook.Service,
+) *Handlers {
 	return &Handlers{
 		clientManager: cm,
 		rateLimiter:   rl,
 		sseHub:        sseHub,
+		metaWebhook:   metaWebhook,
 	}
 }
 

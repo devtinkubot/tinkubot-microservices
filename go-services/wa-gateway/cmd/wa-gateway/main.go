@@ -8,14 +8,16 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/tinkubot/wa-gateway/internal/api"
+	"github.com/tinkubot/wa-gateway/internal/metawebhook"
 	"github.com/tinkubot/wa-gateway/internal/ratelimit"
-	"github.com/tinkubot/wa-gateway/internal/whatsmeow"
 	"github.com/tinkubot/wa-gateway/internal/webhook"
+	"github.com/tinkubot/wa-gateway/internal/whatsmeow"
 )
 
 func main() {
@@ -93,7 +95,41 @@ func main() {
 	})
 
 	// Create API handlers
-	handlers := api.NewHandlers(cm, rl, sseHub)
+	metaEnabled := parseBoolEnv("WA_META_WEBHOOK_ENABLED", false)
+	metaVerifyToken := strings.TrimSpace(os.Getenv("META_WEBHOOK_VERIFY_TOKEN"))
+	metaAppSecret := strings.TrimSpace(os.Getenv("META_APP_SECRET"))
+	metaClientesPhoneNumberID := strings.TrimSpace(os.Getenv("META_PHONE_NUMBER_ID_CLIENTES"))
+	metaEnabledAccounts := parseEnabledAccounts(os.Getenv("WA_META_ENABLED_ACCOUNTS"))
+
+	if metaEnabled {
+		if metaVerifyToken == "" {
+			log.Fatal("❌ WA_META_WEBHOOK_ENABLED=true but META_WEBHOOK_VERIFY_TOKEN is empty")
+		}
+		if metaAppSecret == "" {
+			log.Fatal("❌ WA_META_WEBHOOK_ENABLED=true but META_APP_SECRET is empty")
+		}
+		if metaClientesPhoneNumberID == "" {
+			log.Fatal("❌ WA_META_WEBHOOK_ENABLED=true but META_PHONE_NUMBER_ID_CLIENTES is empty")
+		}
+	}
+
+	phoneNumberToAccount := map[string]string{}
+	if metaClientesPhoneNumberID != "" {
+		phoneNumberToAccount[metaClientesPhoneNumberID] = "bot-clientes"
+	}
+
+	metaSvc := metawebhook.NewService(
+		metawebhook.Config{
+			Enabled:              metaEnabled,
+			VerifyToken:          metaVerifyToken,
+			AppSecret:            metaAppSecret,
+			EnabledAccounts:      metaEnabledAccounts,
+			PhoneNumberToAccount: phoneNumberToAccount,
+		},
+		webhookClient,
+	)
+
+	handlers := api.NewHandlers(cm, rl, sseHub, metaSvc)
 
 	// Start WhatsApp clients
 	log.Println("📱 Starting WhatsApp clients...")
@@ -110,6 +146,8 @@ func main() {
 
 	// Health check (no auth)
 	router.GET("/health", handlers.GetHealth)
+	router.GET("/meta/webhook", handlers.GetMetaWebhook)
+	router.POST("/meta/webhook", handlers.PostMetaWebhook)
 
 	// API routes
 	apiGroup := router.Group("/api")
@@ -180,6 +218,39 @@ func parseIntEnv(key string, defaultValue int) int {
 		return defaultValue
 	}
 	return result
+}
+
+func parseBoolEnv(key string, defaultValue bool) bool {
+	val := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	if val == "" {
+		return defaultValue
+	}
+	switch val {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		log.Printf("⚠️ Invalid bool value for %s: %s, using default: %v", key, val, defaultValue)
+		return defaultValue
+	}
+}
+
+func parseEnabledAccounts(raw string) map[string]bool {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return map[string]bool{}
+	}
+
+	allowed := make(map[string]bool)
+	for _, item := range strings.Split(raw, ",") {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		allowed[item] = true
+	}
+	return allowed
 }
 
 // runHealthcheck performs a health check and exits with appropriate code

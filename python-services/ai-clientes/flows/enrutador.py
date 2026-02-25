@@ -183,6 +183,12 @@ async def enrutar_estado(
 
     estado = flujo.get("state")
     if not estado or es_opcion_reinicio(seleccionado):
+        ciudad_en_flujo = (flujo.get("city") or "").strip()
+        if not ciudad_en_flujo:
+            flujo["state"] = "awaiting_city"
+            flujo["city_confirmed"] = False
+            return await responder(flujo, solicitar_ciudad())
+
         limpio = texto.strip().lower() if texto else ""
         if texto and limpio and limpio not in orquestador.greetings:
             # IA-only extraction - no static categories

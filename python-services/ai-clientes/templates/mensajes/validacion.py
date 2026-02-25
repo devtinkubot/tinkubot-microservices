@@ -6,15 +6,7 @@ mensaje_inicial_solicitud_servicio = (
     '*¿Qué necesitas resolver?*\nDescribe qué pasó o qué necesitas (ej: "mi lavadora no enciende").'
 )
 
-mensaje_error_input_invalido = """Para continuar, por favor describe el servicio que buscas, la necesidad o el problema que quieres resolver.
-
-📝 *Ejemplos válidos:*
-• "tubería rota" → conectaré con plomeros
-• "diseño de marca" → conectaré con diseñadores
-• "cuidado de piel" → conectaré con esteticistas
-• "computadora no enciende" → conectaré con técnicos
-
-Describe tu situación con tus propias palabras."""
+mensaje_error_input_invalido = mensaje_inicial_solicitud_servicio
 
 mensaje_advertencia_contenido_ilegal = """⚠️ *ADVERTENCIA*
 
@@ -30,10 +22,7 @@ Has sido suspendido por 15 minutos por infringir nuestras políticas de contenid
 
 Podrás reanudar el servicio después de las {hora_reinicio}."""
 
-mensaje_error_input_sin_sentido = (
-    "Para ayudarte mejor, cuéntame un poco más: "
-    "*¿qué quieres resolver y para qué lo necesitas?*"
-)
+mensaje_error_input_sin_sentido = mensaje_inicial_solicitud_servicio
 
 
 def solicitar_reformulacion() -> str:

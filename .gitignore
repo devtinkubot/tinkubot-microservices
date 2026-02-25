@@ -110,7 +110,9 @@ CLAUDE.md
 .windsurf/
 
 # Documentación local
-docs/
+docs/*
+!docs/.gitignore
+!docs/plan-meta-webhook-wa-gateway.md
 AGENTS.md
 
 # Tokens de autenticación

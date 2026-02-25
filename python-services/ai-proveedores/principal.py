@@ -54,6 +54,7 @@ CLAVE_CICLO_SOLICITUD = "availability:lifecycle:{}"
 ESTADO_ESPERANDO_DISPONIBILIDAD = "awaiting_availability_response"
 ONBOARDING_STATES = {
     None,
+    "pending_verification",
     "awaiting_consent",
     "awaiting_real_phone",
     "awaiting_city",
@@ -249,6 +250,19 @@ async def _registrar_respuesta_disponibilidad_si_aplica(
     clave_contexto = f"availability:provider:{telefono}:context"
     pendientes = await cliente_redis.get(clave_pendientes)
     contexto_disponibilidad = await cliente_redis.get(clave_contexto)
+    if estado_actual is not None and estado_actual in (ONBOARDING_STATES | MENU_STATES):
+        logger.info(
+            (
+                "availability_response_ignored_in_onboarding "
+                "provider=%s state=%s has_context=%s has_pending=%s"
+            ),
+            telefono,
+            estado_actual,
+            isinstance(contexto_disponibilidad, dict),
+            pendientes is not None,
+        )
+        return None
+
     esperando_disponibilidad = bool(
         isinstance(contexto_disponibilidad, dict)
         and contexto_disponibilidad.get("expecting_response")
@@ -279,13 +293,6 @@ async def _registrar_respuesta_disponibilidad_si_aplica(
                 estado_actual,
             )
             return {"success": True, "messages": [{"response": mensaje_expirado}]}
-        if estado_actual in (ONBOARDING_STATES | MENU_STATES):
-            logger.info(
-                "availability_response_skipped_no_pending provider=%s state=%s",
-                telefono,
-                estado_actual,
-            )
-            return None
         logger.info(
             "availability_response_expired_no_pending provider=%s state=%s",
             telefono,
@@ -331,13 +338,6 @@ async def _registrar_respuesta_disponibilidad_si_aplica(
                 estado_actual,
             )
             return {"success": True, "messages": [{"response": mensaje_expirado}]}
-        if estado_actual in (ONBOARDING_STATES | MENU_STATES):
-            logger.info(
-                "availability_response_skipped_no_pending provider=%s state=%s",
-                telefono,
-                estado_actual,
-            )
-            return None
         logger.info(
             "availability_response_expired_no_pending provider=%s state=%s",
             telefono,
