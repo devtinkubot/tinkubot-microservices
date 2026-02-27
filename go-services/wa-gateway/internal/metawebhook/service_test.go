@@ -14,6 +14,7 @@ import (
 type fakeSender struct {
 	payloads []*webhook.WebhookPayload
 	err      error
+	resp     *webhook.WebhookResponse
 }
 
 func (f *fakeSender) Send(_ context.Context, payload *webhook.WebhookPayload) (*webhook.WebhookResponse, error) {
@@ -21,14 +22,40 @@ func (f *fakeSender) Send(_ context.Context, payload *webhook.WebhookPayload) (*
 		return nil, f.err
 	}
 	f.payloads = append(f.payloads, payload)
+	if f.resp != nil {
+		return f.resp, nil
+	}
 	return &webhook.WebhookResponse{Success: true}, nil
+}
+
+type fakeOutboundSender struct {
+	requests []outboundRequest
+	err      error
+}
+
+type outboundRequest struct {
+	phoneNumberID string
+	to            string
+	body          string
+}
+
+func (f *fakeOutboundSender) SendText(_ context.Context, phoneNumberID, to, body string) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.requests = append(f.requests, outboundRequest{
+		phoneNumberID: phoneNumberID,
+		to:            to,
+		body:          body,
+	})
+	return nil
 }
 
 func TestVerifyChallenge(t *testing.T) {
 	svc := NewService(Config{
 		Enabled:     true,
 		VerifyToken: "token-123",
-	}, &fakeSender{})
+	}, &fakeSender{}, nil)
 
 	status, body := svc.VerifyChallenge("subscribe", "token-123", "abc")
 	if status != 200 || body != "abc" {
@@ -44,7 +71,7 @@ func TestVerifyChallenge(t *testing.T) {
 func TestVerifyChallengeDisabled(t *testing.T) {
 	svc := NewService(Config{
 		Enabled: false,
-	}, &fakeSender{})
+	}, &fakeSender{}, nil)
 
 	status, _ := svc.VerifyChallenge("subscribe", "x", "abc")
 	if status != 404 {
@@ -61,7 +88,7 @@ func TestProcessEventValidSignatureRoutesToClientes(t *testing.T) {
 		PhoneNumberToAccount: map[string]string{
 			"123456789": "bot-clientes",
 		},
-	}, fs)
+	}, fs, nil)
 
 	body := []byte(`{
 		"object":"whatsapp_business_account",
@@ -104,7 +131,7 @@ func TestProcessEventInvalidSignature(t *testing.T) {
 	svc := NewService(Config{
 		Enabled:   true,
 		AppSecret: "secret-1",
-	}, &fakeSender{})
+	}, &fakeSender{}, nil)
 
 	body := []byte(`{"object":"whatsapp_business_account"}`)
 	err := svc.ProcessEvent(context.Background(), "sha256=deadbeef", body)
@@ -116,11 +143,60 @@ func TestProcessEventInvalidSignature(t *testing.T) {
 func TestProcessEventDisabled(t *testing.T) {
 	svc := NewService(Config{
 		Enabled: false,
-	}, &fakeSender{})
+	}, &fakeSender{}, nil)
 
 	err := svc.ProcessEvent(context.Background(), "sha256=deadbeef", []byte(`{}`))
 	if !errors.Is(err, ErrForbidden) {
 		t.Fatalf("expected ErrForbidden, got %v", err)
+	}
+}
+
+func TestProcessEventOutboundEnabledSendsReplies(t *testing.T) {
+	fs := &fakeSender{}
+	fo := &fakeOutboundSender{}
+	svc := NewService(Config{
+		Enabled:         true,
+		AppSecret:       "secret-1",
+		OutboundEnabled: true,
+		PhoneNumberToAccount: map[string]string{
+			"123456789": "bot-clientes",
+		},
+	}, fs, fo)
+
+	body := []byte(`{
+		"object":"whatsapp_business_account",
+		"entry":[
+			{
+				"id":"waba-1",
+				"changes":[
+					{
+						"field":"messages",
+						"value":{
+							"metadata":{"phone_number_id":"123456789"},
+							"messages":[{"from":"593999111222","id":"wamid.1","timestamp":"1730000000","type":"text","text":{"body":"hola"}}]
+						}
+					}
+				]
+			}
+		]
+	}`)
+	sig := buildSignature("secret-1", body)
+	fs.resp = &webhook.WebhookResponse{
+		Success: true,
+		Messages: []webhook.ResponseMessage{
+			{Response: "respuesta 1"},
+			{Response: "respuesta 2"},
+		},
+	}
+
+	if err := svc.ProcessEvent(context.Background(), sig, body); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if len(fo.requests) != 2 {
+		t.Fatalf("expected 2 outbound sends, got %d", len(fo.requests))
+	}
+	if fo.requests[0].phoneNumberID != "123456789" || fo.requests[0].to != "593999111222" || fo.requests[0].body != "respuesta 1" {
+		t.Fatalf("unexpected first outbound request: %+v", fo.requests[0])
 	}
 }
 

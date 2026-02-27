@@ -2,11 +2,13 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/tinkubot/wa-gateway/internal/metawebhook"
+	"github.com/tinkubot/wa-gateway/internal/outbound"
 	"github.com/tinkubot/wa-gateway/internal/ratelimit"
 	"github.com/tinkubot/wa-gateway/internal/whatsmeow"
 )
@@ -17,6 +19,7 @@ type Handlers struct {
 	rateLimiter   *ratelimit.Limiter
 	sseHub        *SSEHub
 	metaWebhook   *metawebhook.Service
+	outbound      *outbound.Router
 }
 
 // NewHandlers creates a new Handlers instance
@@ -25,12 +28,14 @@ func NewHandlers(
 	rl *ratelimit.Limiter,
 	sseHub *SSEHub,
 	metaWebhook *metawebhook.Service,
+	outboundRouter *outbound.Router,
 ) *Handlers {
 	return &Handlers{
 		clientManager: cm,
 		rateLimiter:   rl,
 		sseHub:        sseHub,
 		metaWebhook:   metaWebhook,
+		outbound:      outboundRouter,
 	}
 }
 
@@ -323,11 +328,16 @@ func (h *Handlers) PostSend(c *gin.Context) {
 		return
 	}
 
-	// Send message
-	if err := h.clientManager.SendTextMessage(req.AccountID, req.To, req.Message); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
+	// Send message through configured outbound transport.
+	sendErr := h.outbound.SendText(context.Background(), req.AccountID, req.To, req.Message)
+	if sendErr != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(sendErr, outbound.ErrMetaNotConfigured) {
+			status = http.StatusServiceUnavailable
+		}
+		c.JSON(status, gin.H{
 			"error":   "Failed to send message",
-			"message": err.Error(),
+			"message": sendErr.Error(),
 		})
 		return
 	}

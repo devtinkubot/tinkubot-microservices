@@ -29,12 +29,16 @@ services:
       - META_WEBHOOK_VERIFY_TOKEN=${META_WEBHOOK_VERIFY_TOKEN:-}
       - META_APP_SECRET=${META_APP_SECRET:-}
       - META_PHONE_NUMBER_ID_CLIENTES=${META_PHONE_NUMBER_ID_CLIENTES:-}
+      - WA_META_OUTBOUND_ENABLED=${WA_META_OUTBOUND_ENABLED:-false}
+      - META_GRAPH_BASE_URL=${META_GRAPH_BASE_URL:-https://graph.facebook.com}
+      - META_GRAPH_API_VERSION=${META_GRAPH_API_VERSION:-v25.0}
+      - META_CLIENTES_ACCESS_TOKEN=${META_CLIENTES_ACCESS_TOKEN:-}
       - WA_CLIENTES_DEVICE_JID=${WA_CLIENTES_DEVICE_JID}
       - WA_PROVEEDORES_DEVICE_JID=${WA_PROVEEDORES_DEVICE_JID}
     volumes:
       - ./wa-data:/app/data
     networks:
-      - tinkubot-network
+      - wa-gateway-ipv4
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "/app/wa-gateway", "--healthcheck"]
@@ -71,7 +75,7 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       - NODE_ENV=production
     networks:
-      - tinkubot-network
+      - wa-gateway-ipv4
     restart: unless-stopped
     healthcheck:
       test:
@@ -99,7 +103,7 @@ services:
       timeout: 3s
       retries: 5
     networks:
-      - tinkubot-network
+      - wa-gateway-ipv4
     restart: unless-stopped
 
   # AI Service Clientes - Procesamiento con sesiones integradas
@@ -141,7 +145,7 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - tinkubot-network
+      - wa-gateway-ipv4
     restart: unless-stopped
 
   # AI Service Proveedores - Procesamiento con sesiones integradas
@@ -171,7 +175,7 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - tinkubot-network
+      - wa-gateway-ipv4
     restart: unless-stopped
 
   # AI Search Service - Servicio de búsqueda optimizado con IA
@@ -199,21 +203,18 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - tinkubot-network
+      - wa-gateway-ipv4
     restart: unless-stopped
 
 
 networks:
-  tinkubot-network:
+  wa-gateway-ipv4:
     driver: bridge
-    enable_ipv6: true
     ipam:
       driver: default
       config:
-        - subnet: 172.18.0.0/16
-          gateway: 172.18.0.1
-        - subnet: 2001:db8:dead:beef::/64
-          gateway: 2001:db8:dead:beef::1
+        - subnet: 172.28.0.0/16
+          gateway: 172.28.0.1
 
 volumes:
   redis-data:

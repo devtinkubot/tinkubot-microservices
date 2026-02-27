@@ -14,7 +14,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/tinkubot/wa-gateway/internal/api"
+	"github.com/tinkubot/wa-gateway/internal/metaoutbound"
 	"github.com/tinkubot/wa-gateway/internal/metawebhook"
+	"github.com/tinkubot/wa-gateway/internal/outbound"
 	"github.com/tinkubot/wa-gateway/internal/ratelimit"
 	"github.com/tinkubot/wa-gateway/internal/webhook"
 	"github.com/tinkubot/wa-gateway/internal/whatsmeow"
@@ -99,7 +101,11 @@ func main() {
 	metaVerifyToken := strings.TrimSpace(os.Getenv("META_WEBHOOK_VERIFY_TOKEN"))
 	metaAppSecret := strings.TrimSpace(os.Getenv("META_APP_SECRET"))
 	metaClientesPhoneNumberID := strings.TrimSpace(os.Getenv("META_PHONE_NUMBER_ID_CLIENTES"))
+	metaOutboundEnabled := parseBoolEnv("WA_META_OUTBOUND_ENABLED", false)
 	metaEnabledAccounts := parseEnabledAccounts(os.Getenv("WA_META_ENABLED_ACCOUNTS"))
+	metaGraphBaseURL := strings.TrimSpace(os.Getenv("META_GRAPH_BASE_URL"))
+	metaGraphAPIVersion := strings.TrimSpace(os.Getenv("META_GRAPH_API_VERSION"))
+	metaClientesAccessToken := strings.TrimSpace(os.Getenv("META_CLIENTES_ACCESS_TOKEN"))
 
 	if metaEnabled {
 		if metaVerifyToken == "" {
@@ -112,10 +118,29 @@ func main() {
 			log.Fatal("❌ WA_META_WEBHOOK_ENABLED=true but META_PHONE_NUMBER_ID_CLIENTES is empty")
 		}
 	}
+	if metaOutboundEnabled {
+		if metaClientesAccessToken == "" {
+			log.Fatal("❌ WA_META_OUTBOUND_ENABLED=true but META_CLIENTES_ACCESS_TOKEN is empty")
+		}
+	}
 
 	phoneNumberToAccount := map[string]string{}
+	accountToPhoneNumber := map[string]string{}
 	if metaClientesPhoneNumberID != "" {
 		phoneNumberToAccount[metaClientesPhoneNumberID] = "bot-clientes"
+		accountToPhoneNumber["bot-clientes"] = metaClientesPhoneNumberID
+	}
+
+	var metaOutboundClient *metaoutbound.Client
+	if metaOutboundEnabled {
+		metaOutboundClient = metaoutbound.NewClient(metaoutbound.Config{
+			BaseURL:       metaGraphBaseURL,
+			APIVersion:    metaGraphAPIVersion,
+			AccessToken:   metaClientesAccessToken,
+			Timeout:       15 * time.Second,
+			RetryAttempts: 2,
+		})
+		log.Printf("✅ Meta outbound enabled (base_url=%s api_version=%s)", valueOrDefault(metaGraphBaseURL, "https://graph.facebook.com"), valueOrDefault(metaGraphAPIVersion, "v25.0"))
 	}
 
 	metaSvc := metawebhook.NewService(
@@ -123,13 +148,21 @@ func main() {
 			Enabled:              metaEnabled,
 			VerifyToken:          metaVerifyToken,
 			AppSecret:            metaAppSecret,
+			OutboundEnabled:      metaOutboundEnabled,
 			EnabledAccounts:      metaEnabledAccounts,
 			PhoneNumberToAccount: phoneNumberToAccount,
 		},
 		webhookClient,
+		metaOutboundClient,
 	)
 
-	handlers := api.NewHandlers(cm, rl, sseHub, metaSvc)
+	outboundRouter := outbound.NewRouter(cm, metaOutboundClient, outbound.RouterConfig{
+		MetaOutboundEnabled: metaOutboundEnabled,
+		MetaEnabledAccounts: metaEnabledAccounts,
+		AccountPhoneNumber:  accountToPhoneNumber,
+	})
+
+	handlers := api.NewHandlers(cm, rl, sseHub, metaSvc, outboundRouter)
 
 	// Start WhatsApp clients
 	log.Println("📱 Starting WhatsApp clients...")
@@ -205,6 +238,13 @@ func main() {
 	}
 
 	log.Println("✅ Server shutdown complete")
+}
+
+func valueOrDefault(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
 }
 
 func parseIntEnv(key string, defaultValue int) int {
