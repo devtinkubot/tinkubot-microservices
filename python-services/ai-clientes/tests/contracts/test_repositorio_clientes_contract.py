@@ -76,6 +76,9 @@ class _FakeQuery:
                     "full_name": payload.get("full_name"),
                     "city": payload.get("city"),
                     "city_confirmed_at": payload.get("city_confirmed_at"),
+                    "location_lat": payload.get("location_lat"),
+                    "location_lng": payload.get("location_lng"),
+                    "location_updated_at": payload.get("location_updated_at"),
                     "has_consent": False,
                     "notes": None,
                     "created_at": None,
@@ -143,6 +146,14 @@ async def test_contrato_obtener_o_crear_y_actualizar(repo: RepositorioClientesSu
     assert updated_city is not None
     assert updated_city["city"] == "Quito"
 
+    updated_location = await repo.actualizar_ubicacion(
+        created["id"], -0.180653, -78.467834
+    )
+    assert updated_location is not None
+    assert updated_location["location_lat"] == -0.180653
+    assert updated_location["location_lng"] == -78.467834
+    assert updated_location["location_updated_at"] is not None
+
     updated_consent = await repo.actualizar_consentimiento(created["id"], True)
     assert updated_consent is not None
     assert updated_consent["has_consent"] is True
@@ -155,7 +166,9 @@ async def test_contrato_limpieza_y_registro_consentimiento(repo: RepositorioClie
     )
     assert created is not None
 
+    _ = await repo.actualizar_ubicacion(created["id"], -3.99313, -79.20422)
     await repo.limpiar_ciudad(created["id"])
+    await repo.limpiar_ubicacion(created["id"])
     await repo.limpiar_consentimiento(created["id"])
     await asyncio.sleep(0)
 
@@ -163,6 +176,9 @@ async def test_contrato_limpieza_y_registro_consentimiento(repo: RepositorioClie
     assert refreshed is not None
     assert refreshed["city"] is None
     assert refreshed["city_confirmed_at"] is None
+    assert refreshed["location_lat"] is None
+    assert refreshed["location_lng"] is None
+    assert refreshed["location_updated_at"] is None
     assert refreshed["has_consent"] is False
 
     ok = await repo.registrar_consentimiento(

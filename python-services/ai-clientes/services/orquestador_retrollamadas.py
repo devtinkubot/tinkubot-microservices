@@ -64,7 +64,7 @@ class OrquestadorRetrollamadas:
             return {}
 
     async def solicitar_consentimiento(self, telefono: str):
-        from templates.mensajes.consentimiento import mensajes_flujo_consentimiento
+        from templates.mensajes.consentimiento import payload_consentimiento_resumen
 
         flujo = (
             await self.repositorio_flujo.obtener(telefono)
@@ -74,10 +74,10 @@ class OrquestadorRetrollamadas:
         flujo["state"] = "awaiting_consent"
         if self.repositorio_flujo:
             await self.repositorio_flujo.guardar(telefono, flujo)
-        mensajes = mensajes_flujo_consentimiento()
-        return {
-            "messages": [{"response": msg} for msg in mensajes]
-        }
+        payload = payload_consentimiento_resumen()
+        if isinstance(payload, dict) and isinstance(payload.get("messages"), list):
+            return {"messages": payload["messages"]}
+        return {"messages": [payload]}
 
     async def manejar_respuesta_consentimiento(
         self,
@@ -238,6 +238,16 @@ class OrquestadorRetrollamadas:
                 return None
         return None
 
+    def limpiar_ubicacion_cliente(self, cliente_id: str):
+        if self.repositorio_clientes and cliente_id:
+            try:
+                asyncio.create_task(
+                    self.repositorio_clientes.limpiar_ubicacion(cliente_id)
+                )
+            except Exception:
+                return None
+        return None
+
     def limpiar_consentimiento_cliente(self, cliente_id: str):
         if self.repositorio_clientes and cliente_id:
             try:
@@ -333,6 +343,7 @@ class OrquestadorRetrollamadas:
             "enviar_prompt_proveedor": self.enviar_prompt_proveedor,
             "enviar_prompt_confirmacion": self.enviar_prompt_confirmacion,
             "limpiar_ciudad_cliente": self.limpiar_ciudad_cliente,
+            "limpiar_ubicacion_cliente": self.limpiar_ubicacion_cliente,
             "limpiar_consentimiento_cliente": self.limpiar_consentimiento_cliente,
             "mensaje_conexion_formal": self.mensaje_conexion_formal,
             "programar_solicitud_retroalimentacion": self.programar_solicitud_retroalimentacion,

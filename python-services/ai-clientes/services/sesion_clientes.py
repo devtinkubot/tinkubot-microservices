@@ -3,6 +3,8 @@
 from datetime import datetime
 from typing import Any, Dict, Optional, Set
 
+from templates.mensajes.consentimiento import onboarding_precontractual_habilitado
+from templates.mensajes.validacion import construir_prompt_lista_servicios
 
 async def validar_consentimiento(
     *,
@@ -24,6 +26,19 @@ async def validar_consentimiento(
     seleccionado_minusculas = (
         seleccionado.lower() if isinstance(seleccionado, str) else None
     )
+
+    if seleccionado_minusculas in {
+        "consent_accept",
+        "consent_decline",
+    }:
+        opcion_a_procesar = "1" if seleccionado_minusculas == "consent_accept" else "2"
+        if servicio_consentimiento:
+            return await servicio_consentimiento.procesar_respuesta(
+                telefono, perfil_cliente, opcion_a_procesar, carga
+            )
+        return await manejar_respuesta_consentimiento(
+            telefono, perfil_cliente, opcion_a_procesar, carga
+        )
 
     if seleccionado in {"1", "2"}:
         if servicio_consentimiento:
@@ -56,6 +71,15 @@ async def validar_consentimiento(
             )
         return await manejar_respuesta_consentimiento(
             telefono, perfil_cliente, opcion_numerica_texto, carga
+        )
+
+    if opcion_numerica_texto in {"cancelar", "no acepto"}:
+        if servicio_consentimiento:
+            return await servicio_consentimiento.procesar_respuesta(
+                telefono, perfil_cliente, "2", carga
+            )
+        return await manejar_respuesta_consentimiento(
+            telefono, perfil_cliente, "2", carga
         )
 
     es_texto_consentimiento = interpretar_si_no_fn(texto_contenido_crudo) is True
@@ -93,6 +117,7 @@ async def manejar_inactividad(
     mensajes_consentimiento,
 ) -> Optional[Dict[str, Any]]:
     """Reinicia el flujo si hay inactividad > 5 minutos."""
+    usa_onboarding_precontractual = onboarding_precontractual_habilitado()
     ultima_vista_cruda = flujo.get("last_seen_at_prev") or flujo.get("last_seen_at")
     try:
         ultima_vista_dt = datetime.fromisoformat(ultima_vista_cruda) if ultima_vista_cruda else None
@@ -100,6 +125,20 @@ async def manejar_inactividad(
         ultima_vista_dt = None
 
     if ultima_vista_dt and (ahora_utc - ultima_vista_dt).total_seconds() > 300:
+        if usa_onboarding_precontractual:
+            flujo.update(
+                {
+                    "state": "awaiting_city",
+                    "onboarding_intro_sent": False,
+                    "last_seen_at": ahora_utc.isoformat(),
+                    "last_seen_at_prev": ahora_utc.isoformat(),
+                }
+            )
+            if repositorio_flujo:
+                await repositorio_flujo.guardar(telefono, flujo)
+            else:
+                await guardar_flujo(telefono, flujo)
+            return {"messages": mensajes_consentimiento()}
         if flujo.get("state") == "awaiting_consent":
             flujo.update(
                 {
@@ -136,7 +175,7 @@ async def manejar_inactividad(
         return {
             "messages": [
                 {"response": mensaje_reinicio_por_inactividad()},
-                {"response": mensaje_inicial_solicitud()},
+                construir_prompt_lista_servicios(),
             ]
         }
     return None
@@ -180,12 +219,14 @@ async def procesar_comando_reinicio(
     repositorio_clientes,
     limpiar_ciudad_cliente,
     limpiar_consentimiento_cliente,
+    limpiar_ubicacion_cliente=None,
     mensaje_nueva_sesion_dict,
     reset_keywords: Set[str],
     servicio_consentimiento=None,
     solicitar_consentimiento=None,
 ) -> Optional[Dict[str, Any]]:
     """Procesa comandos de reinicio de flujo."""
+    usa_onboarding_precontractual = onboarding_precontractual_habilitado()
     if texto and texto.strip().lower() in reset_keywords:
         if repositorio_flujo:
             await repositorio_flujo.resetear(telefono)
@@ -195,18 +236,35 @@ async def procesar_comando_reinicio(
         try:
             cliente_id_para_reinicio = flujo.get("customer_id")
             if repositorio_clientes:
+                # El flow puede no tener customer_id (stale o incompleto).
+                # Resolver por teléfono evita dejar ciudad/consentimiento sin limpiar.
+                if not cliente_id_para_reinicio:
+                    perfil = await repositorio_clientes.obtener_o_crear(
+                        telefono=telefono
+                    )
+                    if isinstance(perfil, dict):
+                        cliente_id_para_reinicio = perfil.get("id")
                 await repositorio_clientes.limpiar_ciudad(cliente_id_para_reinicio)
+                await repositorio_clientes.limpiar_ubicacion(cliente_id_para_reinicio)
                 await repositorio_clientes.limpiar_consentimiento(cliente_id_para_reinicio)
             else:
                 limpiar_ciudad_cliente(cliente_id_para_reinicio)
+                if callable(limpiar_ubicacion_cliente):
+                    limpiar_ubicacion_cliente(cliente_id_para_reinicio)
                 limpiar_consentimiento_cliente(cliente_id_para_reinicio)
         except Exception:
             pass
 
-        estado_limpio = {
-            "state": "awaiting_consent",
-            "service_captured_after_consent": False,
-        }
+        if usa_onboarding_precontractual:
+            estado_limpio = {
+                "state": "awaiting_city",
+                "onboarding_intro_sent": False,
+            }
+        else:
+            estado_limpio = {
+                "state": "awaiting_consent",
+                "service_captured_after_consent": False,
+            }
         if repositorio_flujo:
             await repositorio_flujo.guardar(telefono, estado_limpio)
         else:

@@ -161,6 +161,25 @@ class IRepositorioClientes(Protocol):
         """
         ...
 
+    async def actualizar_ubicacion(
+        self,
+        cliente_id: str,
+        latitud: float,
+        longitud: float,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Actualiza coordenadas geográficas del cliente.
+
+        Args:
+            cliente_id: ID del cliente
+            latitud: Latitud en grados decimales
+            longitud: Longitud en grados decimales
+
+        Returns:
+            Dict con los datos actualizados o None si falla
+        """
+        ...
+
     async def actualizar_consentimiento(
         self, cliente_id: str, tiene_consentimiento: bool
     ) -> Optional[Dict[str, Any]]:
@@ -179,6 +198,18 @@ class IRepositorioClientes(Protocol):
     async def limpiar_ciudad(self, cliente_id: Optional[str]) -> None:
         """
         Limpia la ciudad del cliente.
+
+        Args:
+            cliente_id: ID del cliente
+
+        Returns:
+            None
+        """
+        ...
+
+    async def limpiar_ubicacion(self, cliente_id: Optional[str]) -> None:
+        """
+        Limpia la ubicación geográfica del cliente.
 
         Args:
             cliente_id: ID del cliente

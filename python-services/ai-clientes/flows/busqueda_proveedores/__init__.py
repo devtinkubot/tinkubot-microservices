@@ -19,7 +19,6 @@ from .ejecutor_busqueda_en_segundo_plano import (
     ejecutar_busqueda_y_notificar_en_segundo_plano,
 )
 from .transiciones_estados import (
-    inicializar_busqueda_con_ciudad_confirmada,
     verificar_ciudad_y_transicionar,
 )
 
@@ -31,6 +30,5 @@ __all__ = [
     # Ejecutor
     "ejecutar_busqueda_y_notificar_en_segundo_plano",
     # Transiciones
-    "inicializar_busqueda_con_ciudad_confirmada",
     "verificar_ciudad_y_transicionar",
 ]

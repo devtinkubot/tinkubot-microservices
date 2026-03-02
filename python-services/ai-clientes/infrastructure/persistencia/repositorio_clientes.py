@@ -43,7 +43,9 @@ class RepositorioClientesSupabase:
             existente = await run_supabase(
                 lambda: self.supabase.table("customers")
                 .select(
-                    "id, phone_number, full_name, city, city_confirmed_at, has_consent, notes, created_at, updated_at"
+                    "id, phone_number, full_name, city, city_confirmed_at, "
+                    "location_lat, location_lng, location_updated_at, "
+                    "has_consent, notes, created_at, updated_at"
                 )
                 .eq("phone_number", telefono)
                 .limit(1)
@@ -106,7 +108,10 @@ class RepositorioClientesSupabase:
                 return respuesta_actualizacion.data[0]
             respuesta_seleccion = await run_supabase(
                 lambda: self.supabase.table("customers")
-                .select("id, phone_number, full_name, city, city_confirmed_at, updated_at")
+                .select(
+                    "id, phone_number, full_name, city, city_confirmed_at, "
+                    "location_lat, location_lng, location_updated_at, updated_at"
+                )
                 .eq("id", cliente_id)
                 .limit(1)
                 .execute(),
@@ -116,6 +121,65 @@ class RepositorioClientesSupabase:
                 return respuesta_seleccion.data[0]
         except Exception as exc:
             self.logger.warning(f"No se pudo actualizar city para customer {cliente_id}: {exc}")
+        return None
+
+    async def actualizar_ubicacion(
+        self,
+        cliente_id: Optional[str],
+        latitud: float,
+        longitud: float,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Actualiza coordenadas de ubicación de un cliente.
+
+        Args:
+            cliente_id: ID del cliente
+            latitud: Latitud en grados decimales
+            longitud: Longitud en grados decimales
+
+        Returns:
+            Dict con los datos actualizados del cliente o None si hay error
+        """
+        if (
+            not self.supabase
+            or not cliente_id
+            or latitud is None
+            or longitud is None
+        ):
+            return None
+        try:
+            respuesta_actualizacion = await run_supabase(
+                lambda: self.supabase.table("customers")
+                .update(
+                    {
+                        "location_lat": latitud,
+                        "location_lng": longitud,
+                        "location_updated_at": datetime.utcnow().isoformat(),
+                    }
+                )
+                .eq("id", cliente_id)
+                .execute(),
+                etiqueta="customers.update_location",
+            )
+            if respuesta_actualizacion.data:
+                return respuesta_actualizacion.data[0]
+            respuesta_seleccion = await run_supabase(
+                lambda: self.supabase.table("customers")
+                .select(
+                    "id, phone_number, full_name, city, city_confirmed_at, "
+                    "location_lat, location_lng, location_updated_at, updated_at"
+                )
+                .eq("id", cliente_id)
+                .limit(1)
+                .execute(),
+                etiqueta="customers.by_id",
+            )
+            if respuesta_seleccion.data:
+                return respuesta_seleccion.data[0]
+        except Exception as exc:
+            self.logger.warning(
+                f"No se pudo actualizar ubicación para customer {cliente_id}: {exc}"
+            )
         return None
 
     async def limpiar_ciudad(self, cliente_id: Optional[str]) -> None:
@@ -142,6 +206,39 @@ class RepositorioClientesSupabase:
             self.logger.info(f"🧼 Ciudad eliminada para customer {cliente_id}")
         except Exception as exc:
             self.logger.warning(f"No se pudo limpiar city para customer {cliente_id}: {exc}")
+
+    async def limpiar_ubicacion(self, cliente_id: Optional[str]) -> None:
+        """
+        Limpia la ubicación geográfica de un cliente (fire-and-forget).
+
+        Args:
+            cliente_id: ID del cliente
+        """
+        import asyncio
+
+        if not self.supabase or not cliente_id:
+            return
+        try:
+            asyncio.create_task(
+                run_supabase(
+                    lambda: self.supabase.table("customers")
+                    .update(
+                        {
+                            "location_lat": None,
+                            "location_lng": None,
+                            "location_updated_at": None,
+                        }
+                    )
+                    .eq("id", cliente_id)
+                    .execute(),
+                    etiqueta="customers.clear_location",
+                )
+            )
+            self.logger.info(f"📍 Ubicación eliminada para customer {cliente_id}")
+        except Exception as exc:
+            self.logger.warning(
+                f"No se pudo limpiar ubicación para customer {cliente_id}: {exc}"
+            )
 
     async def limpiar_consentimiento(self, cliente_id: Optional[str]) -> None:
         """

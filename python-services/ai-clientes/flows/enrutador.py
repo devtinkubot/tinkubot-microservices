@@ -18,7 +18,6 @@ from flows.mensajes import (
     es_opcion_reinicio,
 )
 from flows.busqueda_proveedores.coordinador_busqueda import (
-    coordinar_busqueda_completa,
     transicionar_a_busqueda_desde_servicio,
 )
 from templates.busqueda.confirmacion import mensaje_sin_disponibilidad
@@ -31,7 +30,19 @@ from templates.proveedores.detalle import (
     menu_opciones_detalle_proveedor,
 )
 from templates.mensajes.sesion import informar_timeout_inactividad
+from templates.mensajes.consentimiento import onboarding_precontractual_habilitado
+from templates.mensajes.validacion import (
+    OTHER_SERVICE_OPTION_ID,
+    construir_prompt_lista_servicios,
+    extraer_servicio_desde_opcion_lista,
+    mensaje_otro_servicio_texto_libre,
+)
 from flows.pre_enrutador import pre_enrutar_mensaje
+
+async def _prompt_inicial_servicio(orquestador) -> Dict[str, Any]:
+    if hasattr(orquestador, "construir_prompt_inicial_servicio"):
+        return await orquestador.construir_prompt_inicial_servicio()
+    return construir_prompt_lista_servicios()
 
 
 async def manejar_mensaje(orquestador, carga: Dict[str, Any]) -> Dict[str, Any]:
@@ -82,7 +93,20 @@ async def manejar_mensaje(orquestador, carga: Dict[str, Any]) -> Dict[str, Any]:
 
                 # Determinar mensaje según estado de consentimiento
                 tiene_consent = contexto.get("has_consent", False)
-                if not tiene_consent:
+                if onboarding_precontractual_habilitado():
+                    flujo["state"] = "awaiting_city"
+                    flujo["onboarding_intro_sent"] = False
+                    if orquestador.servicio_consentimiento:
+                        prompt_onboarding = await orquestador.servicio_consentimiento.solicitar_consentimiento(
+                            telefono
+                        )
+                    else:
+                        prompt_onboarding = await orquestador.solicitar_consentimiento(
+                            telefono
+                        )
+                    mensajes_timeout = [{"response": informar_timeout_inactividad()}]
+                    mensajes_timeout.extend(prompt_onboarding.get("messages", [prompt_onboarding]))
+                elif not tiene_consent:
                     flujo["state"] = "awaiting_consent"
                     # Obtener prompt de consentimiento
                     if orquestador.servicio_consentimiento:
@@ -97,9 +121,10 @@ async def manejar_mensaje(orquestador, carga: Dict[str, Any]) -> Dict[str, Any]:
                     mensajes_timeout.extend(prompt_consentimiento.get("messages", [prompt_consentimiento]))
                 else:
                     flujo["state"] = "awaiting_service"
+                    prompt_servicio = await _prompt_inicial_servicio(orquestador)
                     mensajes_timeout = [
                         {"response": informar_timeout_inactividad()},
-                        {"response": mensaje_inicial_solicitud()},
+                        prompt_servicio,
                     ]
 
                 # Guardar flujo reseteado
@@ -208,7 +233,9 @@ async def enrutar_estado(
                     es_necesidad = True
                 if not es_necesidad:
                     flujo.update({"state": "awaiting_service"})
-                    return await responder(flujo, {"response": mensaje_inicial_solicitud()})
+                    return await responder(
+                        flujo, await _prompt_inicial_servicio(orquestador)
+                    )
 
             extraer_servicio = extractor.extraer_servicio_con_ia
             extraer_ubicacion = extractor.extraer_ubicacion_con_ia
@@ -236,25 +263,28 @@ async def enrutar_estado(
             })
 
             if flujo.get("service") and flujo.get("city"):
-                mensaje_confirmacion = await coordinar_busqueda_completa(
-                    telefono=telefono,
-                    flujo=flujo,
-                    enviar_mensaje_callback=orquestador.enviar_texto_whatsapp,
-                    guardar_flujo_callback=orquestador.guardar_flujo,
+                from templates.mensajes.validacion import (
+                    mensaje_confirmar_servicio,
+                    ui_confirmar_servicio,
                 )
-                if mensaje_confirmacion:
-                    return {"response": mensaje_confirmacion}
-                from templates.busqueda.confirmacion import mensaje_buscando_expertos
-                return {
-                    "response": mensaje_buscando_expertos
-                }
+
+                flujo["service_candidate"] = valor_servicio
+                flujo["state"] = "confirm_service"
+                flujo.pop("service", None)
+                return await responder(
+                    flujo,
+                    {
+                        "response": mensaje_confirmar_servicio(valor_servicio),
+                        "ui": ui_confirmar_servicio(),
+                    },
+                )
 
             flujo["state"] = "awaiting_city"
             flujo["city_confirmed"] = False
             return await responder(flujo, solicitar_ciudad())
 
         flujo.update({"state": "awaiting_service"})
-        return await responder(flujo, {"response": mensaje_inicial_solicitud()})
+        return await responder(flujo, await _prompt_inicial_servicio(orquestador))
 
     if seleccionado == "No, por ahora está bien":
         if orquestador.repositorio_flujo:
@@ -264,13 +294,50 @@ async def enrutar_estado(
         return {"response": mensaje_despedida_dict()["response"]}
 
     if estado == "awaiting_service":
+        if tipo_mensaje == "interactive_list_reply" and seleccionado:
+            if seleccionado.lower() == OTHER_SERVICE_OPTION_ID:
+                flujo["state"] = "awaiting_service"
+                return await responder(
+                    flujo,
+                    {"response": mensaje_otro_servicio_texto_libre()},
+                )
+
+            servicio_lista = extraer_servicio_desde_opcion_lista(
+                seleccionado,
+            )
+            if servicio_lista:
+                flujo["service"] = servicio_lista
+                flujo["service_full"] = servicio_lista
+                flujo["service_captured_after_consent"] = True
+                flujo.pop("service_candidate", None)
+                flujo.pop("descripcion_problema", None)
+
+                if orquestador.repositorio_clientes:
+                    perfil_cliente = await orquestador.repositorio_clientes.obtener_o_crear(
+                        telefono=telefono
+                    )
+                else:
+                    perfil_cliente = await orquestador.obtener_o_crear_cliente(telefono)
+
+                return await responder(
+                    flujo,
+                    await transicionar_a_busqueda_desde_servicio(
+                        telefono=telefono,
+                        flujo=flujo,
+                        perfil_cliente=perfil_cliente,
+                        enviar_mensaje_callback=orquestador.enviar_texto_whatsapp,
+                        guardar_flujo_callback=lambda _telefono, data: orquestador.guardar_flujo(
+                            _telefono, data
+                        ),
+                    ),
+                )
         return await orquestador._procesar_awaiting_service(
             telefono, flujo, texto, responder, cliente_id
         )
 
     if estado == "awaiting_city":
         return await orquestador._procesar_awaiting_city(
-            telefono, flujo, texto, responder, guardar_mensaje_bot
+            telefono, flujo, texto, ubicacion, responder, guardar_mensaje_bot
         )
 
     if estado == "searching":
@@ -447,9 +514,7 @@ async def enrutar_estado(
 
         return {
             "response": (
-                "*Responde con el número de tu opción:*\n\n"
-                "*1.* Sí\n"
-                "*2.* No"
+                "Por favor elige una opción: Sí o No."
             )
         }
 
@@ -547,7 +612,7 @@ async def enrutar_estado(
     if not helper.get("service"):
         return await responder(
             {"state": "awaiting_service"},
-            {"response": mensaje_inicial_solicitud()},
+            await _prompt_inicial_servicio(orquestador),
         )
     if not helper.get("city"):
         helper["state"] = "awaiting_city"

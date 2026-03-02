@@ -32,6 +32,9 @@ def mensajes_consentimiento() -> list[dict]:
         list[dict]: Lista de diccionarios con la clave 'response'
             conteniendo cada mensaje del flujo de consentimiento.
     """
-    from templates.mensajes.consentimiento import mensajes_flujo_consentimiento
+    from templates.mensajes.consentimiento import payload_consentimiento_resumen
 
-    return [{"response": msg} for msg in mensajes_flujo_consentimiento()]
+    payload = payload_consentimiento_resumen()
+    if isinstance(payload, dict) and isinstance(payload.get("messages"), list):
+        return payload["messages"]
+    return [payload]

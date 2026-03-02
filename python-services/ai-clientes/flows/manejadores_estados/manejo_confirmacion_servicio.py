@@ -14,11 +14,16 @@ async def procesar_estado_confirmar_servicio(
     mensaje_inicial_solicitud: str,
 ) -> Dict[str, Any]:
     """Confirma el servicio detectado antes de iniciar búsqueda."""
+    from templates.mensajes.validacion import ui_confirmar_servicio
+
     eleccion = (seleccionado or texto or "").strip()
     eleccion_norm = eleccion.lower().strip().strip("*").rstrip(".)")
     service_candidate = (flujo.get("service_candidate") or "").strip()
 
-    if eleccion_norm in {"1", "si", "sí", "s"} or interpretar_si_no_fn(eleccion) is True:
+    if (
+        eleccion_norm in {"1", "si", "sí", "s", "problem_confirm_yes"}
+        or interpretar_si_no_fn(eleccion) is True
+    ):
         if not service_candidate:
             for key in ["service", "service_full", "service_candidate"]:
                 flujo.pop(key, None)
@@ -36,7 +41,10 @@ async def procesar_estado_confirmar_servicio(
         await guardar_flujo_fn(flujo)
         return await iniciar_busqueda_fn(flujo)
 
-    if eleccion_norm in {"2", "no"} or interpretar_si_no_fn(eleccion) is False:
+    if (
+        eleccion_norm in {"2", "no", "problem_confirm_no"}
+        or interpretar_si_no_fn(eleccion) is False
+    ):
         for key in ["service", "service_full", "service_candidate"]:
             flujo.pop(key, None)
         flujo["state"] = "awaiting_service"
@@ -44,7 +52,6 @@ async def procesar_estado_confirmar_servicio(
         return {"response": mensaje_inicial_solicitud}
 
     return {
-        "response": (
-            f"Por favor responde *1.* Sí o *2.* No para confirmar {service_candidate}."
-        )
+        "response": "Por favor confirma con un botón: Sí o No.",
+        "ui": ui_confirmar_servicio(),
     }

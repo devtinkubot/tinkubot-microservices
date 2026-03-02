@@ -30,6 +30,12 @@ type Sender interface {
 // OutboundSender abstracts outbound Meta Cloud API sends.
 type OutboundSender interface {
 	SendText(ctx context.Context, phoneNumberID, to, body string) error
+	SendImage(ctx context.Context, phoneNumberID, to, imageURL, caption string) error
+	SendButtons(ctx context.Context, phoneNumberID, to, body string, ui webhook.UIConfig) error
+	SendList(ctx context.Context, phoneNumberID, to, body string, ui webhook.UIConfig) error
+	SendLocationRequest(ctx context.Context, phoneNumberID, to, body string) error
+	SendFlow(ctx context.Context, phoneNumberID, to, body string, ui webhook.UIConfig) error
+	SendTemplate(ctx context.Context, phoneNumberID, to string, ui webhook.UIConfig) error
 }
 
 // Config contains runtime settings for Meta webhook processing.
@@ -109,11 +115,23 @@ func (s *Service) ProcessEvent(ctx context.Context, signature string, body []byt
 		}
 
 		payload := &webhook.WebhookPayload{
-			Phone:      msg.From,
-			FromNumber: msg.From + "@s.whatsapp.net",
-			Message:    msg.Message,
-			Timestamp:  time.Now().Format(time.RFC3339),
-			AccountID:  accountID,
+			Phone:          msg.From,
+			FromNumber:     msg.From + "@s.whatsapp.net",
+			Content:        msg.Content,
+			Message:        msg.Content,
+			MessageType:    msg.MessageType,
+			SelectedOption: msg.SelectedOption,
+			FlowPayload:    msg.FlowPayload,
+			Timestamp:      time.Now().Format(time.RFC3339),
+			AccountID:      accountID,
+		}
+		if msg.Location != nil {
+			payload.Location = &webhook.LocationPayload{
+				Latitude:  msg.Location.Latitude,
+				Longitude: msg.Location.Longitude,
+				Name:      msg.Location.Name,
+				Address:   msg.Location.Address,
+			}
 		}
 
 		sendCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -126,8 +144,9 @@ func (s *Service) ProcessEvent(ctx context.Context, signature string, body []byt
 		if !resp.Success {
 			log.Printf("[MetaWebhook] Downstream returned error account=%s from=%s err=%s", accountID, msg.From, resp.Error)
 		}
-		if len(resp.Messages) > 0 && s.cfg.OutboundEnabled {
-			s.dispatchOutboundReplies(ctx, accountID, msg.PhoneNumberID, msg.From, resp.Messages)
+		outboundMessages := normalizeOutboundMessages(resp)
+		if len(outboundMessages) > 0 && s.cfg.OutboundEnabled {
+			s.dispatchOutboundReplies(ctx, accountID, msg.PhoneNumberID, msg.From, outboundMessages)
 		}
 	}
 
@@ -145,6 +164,98 @@ func (s *Service) dispatchOutboundReplies(
 	}
 	for idx, reply := range messages {
 		body := strings.TrimSpace(reply.Response)
+		imageURL := strings.TrimSpace(reply.MediaURL)
+		imageCaption := strings.TrimSpace(reply.MediaCaption)
+		mediaType := strings.ToLower(strings.TrimSpace(reply.MediaType))
+		if imageURL != "" && (mediaType == "" || mediaType == "image") {
+			if imageCaption == "" {
+				imageCaption = body
+			}
+			sendCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+			err := s.outboundSender.SendImage(sendCtx, phoneNumberID, to, imageURL, imageCaption)
+			cancel()
+			if err != nil {
+				log.Printf("[MetaWebhook] Outbound image send failed account=%s phone_number_id=%s to=%s index=%d err=%v", accountID, phoneNumberID, to, idx, err)
+				continue
+			}
+			log.Printf("[MetaWebhook] Outbound image send ok account=%s phone_number_id=%s to=%s index=%d", accountID, phoneNumberID, to, idx)
+			if reply.UI == nil {
+				if imageCaption == body {
+					continue
+				}
+				if body == "" {
+					continue
+				}
+			}
+		}
+		if reply.UI != nil {
+			uiType := strings.TrimSpace(reply.UI.Type)
+			switch uiType {
+			case "buttons":
+				if body == "" {
+					log.Printf("[MetaWebhook] Skipping buttons outbound with empty body account=%s index=%d", accountID, idx)
+					continue
+				}
+				sendCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+				err := s.outboundSender.SendButtons(sendCtx, phoneNumberID, to, body, *reply.UI)
+				cancel()
+				if err != nil {
+					log.Printf("[MetaWebhook] Outbound buttons send failed account=%s phone_number_id=%s to=%s index=%d err=%v", accountID, phoneNumberID, to, idx, err)
+					continue
+				}
+				log.Printf("[MetaWebhook] Outbound buttons send ok account=%s phone_number_id=%s to=%s index=%d", accountID, phoneNumberID, to, idx)
+				continue
+			case "list":
+				if body == "" {
+					log.Printf("[MetaWebhook] Skipping list outbound with empty body account=%s index=%d", accountID, idx)
+					continue
+				}
+				sendCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+				err := s.outboundSender.SendList(sendCtx, phoneNumberID, to, body, *reply.UI)
+				cancel()
+				if err != nil {
+					log.Printf("[MetaWebhook] Outbound list send failed account=%s phone_number_id=%s to=%s index=%d err=%v", accountID, phoneNumberID, to, idx, err)
+					continue
+				}
+				log.Printf("[MetaWebhook] Outbound list send ok account=%s phone_number_id=%s to=%s index=%d", accountID, phoneNumberID, to, idx)
+				continue
+			case "location_request":
+				if body == "" {
+					body = "Comparte tu ubicación para continuar."
+				}
+				sendCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+				err := s.outboundSender.SendLocationRequest(sendCtx, phoneNumberID, to, body)
+				cancel()
+				if err != nil {
+					log.Printf("[MetaWebhook] Outbound location request send failed account=%s phone_number_id=%s to=%s index=%d err=%v", accountID, phoneNumberID, to, idx, err)
+					continue
+				}
+				log.Printf("[MetaWebhook] Outbound location request send ok account=%s phone_number_id=%s to=%s index=%d", accountID, phoneNumberID, to, idx)
+				continue
+			case "flow":
+				sendCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+				err := s.outboundSender.SendFlow(sendCtx, phoneNumberID, to, body, *reply.UI)
+				cancel()
+				if err != nil {
+					log.Printf("[MetaWebhook] Outbound flow send failed account=%s phone_number_id=%s to=%s index=%d err=%v", accountID, phoneNumberID, to, idx, err)
+					continue
+				}
+				log.Printf("[MetaWebhook] Outbound flow send ok account=%s phone_number_id=%s to=%s index=%d", accountID, phoneNumberID, to, idx)
+				continue
+			case "template":
+				sendCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+				err := s.outboundSender.SendTemplate(sendCtx, phoneNumberID, to, *reply.UI)
+				cancel()
+				if err != nil {
+					log.Printf("[MetaWebhook] Outbound template send failed account=%s phone_number_id=%s to=%s index=%d err=%v", accountID, phoneNumberID, to, idx, err)
+					continue
+				}
+				log.Printf("[MetaWebhook] Outbound template send ok account=%s phone_number_id=%s to=%s index=%d", accountID, phoneNumberID, to, idx)
+				continue
+			default:
+				log.Printf("[MetaWebhook] Unsupported ui.type=%s account=%s index=%d, fallback text", uiType, accountID, idx)
+			}
+		}
 		if body == "" {
 			log.Printf("[MetaWebhook] Skipping empty outbound response account=%s index=%d", accountID, idx)
 			continue
@@ -158,6 +269,29 @@ func (s *Service) dispatchOutboundReplies(
 		}
 		log.Printf("[MetaWebhook] Outbound send ok account=%s phone_number_id=%s to=%s index=%d", accountID, phoneNumberID, to, idx)
 	}
+}
+
+func normalizeOutboundMessages(resp *webhook.WebhookResponse) []webhook.ResponseMessage {
+	if resp == nil || len(resp.Messages) == 0 {
+		return nil
+	}
+	out := make([]webhook.ResponseMessage, len(resp.Messages))
+	copy(out, resp.Messages)
+
+	if resp.UI == nil {
+		return out
+	}
+	hasMessageUI := false
+	for _, msg := range out {
+		if msg.UI != nil {
+			hasMessageUI = true
+			break
+		}
+	}
+	if !hasMessageUI {
+		out[0].UI = resp.UI
+	}
+	return out
 }
 
 func validSignature(header string, body []byte, appSecret string) bool {

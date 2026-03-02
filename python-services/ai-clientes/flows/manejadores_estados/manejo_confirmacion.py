@@ -2,7 +2,7 @@
 
 from typing import Any, Awaitable, Callable, Dict, Optional
 
-from templates.mensajes.ubicacion import preguntar_ciudad_cambio
+from templates.mensajes.ubicacion import preguntar_ciudad_cambio, ui_solicitud_ubicacion
 
 
 async def procesar_estado_confirmar_nueva_busqueda(
@@ -88,7 +88,10 @@ async def procesar_estado_confirmar_nueva_busqueda(
         flujo.pop("confirm_include_city_option", None)
         return await responder_fn(
             flujo,
-            {"response": preguntar_ciudad_cambio()},
+            {
+                "response": preguntar_ciudad_cambio(),
+                "ui": ui_solicitud_ubicacion("location_request_city_change"),
+            },
         )
 
     titulo_confirmacion = flujo.get("confirm_title")

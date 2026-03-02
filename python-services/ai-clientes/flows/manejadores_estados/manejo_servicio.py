@@ -73,9 +73,15 @@ async def procesar_estado_esperando_servicio(
                         "state": "confirm_service",
                     }
                 )
-                from templates.mensajes.validacion import mensaje_confirmar_servicio
+                from templates.mensajes.validacion import (
+                    mensaje_confirmar_servicio,
+                    ui_confirmar_servicio,
+                )
 
-                return flujo, {"response": mensaje_confirmar_servicio(valor_extraido)}
+                return flujo, {
+                    "response": mensaje_confirmar_servicio(valor_extraido),
+                    "ui": ui_confirmar_servicio(),
+                }
             logger.info(
                 "gate_v2_rejected_and_blocked normalized_input='%s'",
                 limpio.lower()[:120],
@@ -113,6 +119,12 @@ async def procesar_estado_esperando_servicio(
             "state": "confirm_service",
         }
     )
-    from templates.mensajes.validacion import mensaje_confirmar_servicio
+    from templates.mensajes.validacion import (
+        mensaje_confirmar_servicio,
+        ui_confirmar_servicio,
+    )
 
-    return flujo, {"response": mensaje_confirmar_servicio(valor_servicio)}
+    return flujo, {
+        "response": mensaje_confirmar_servicio(valor_servicio),
+        "ui": ui_confirmar_servicio(),
+    }

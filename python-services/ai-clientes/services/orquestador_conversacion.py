@@ -9,8 +9,10 @@ otros servicios (disponibilidad, búsqueda, etc.).
 import logging
 import re
 import unicodedata
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
+
+import httpx
 
 from contracts.repositorios import IRepositorioClientes, IRepositorioFlujo
 from flows.busqueda_proveedores.coordinador_busqueda import (
@@ -38,6 +40,7 @@ from flows.mensajes import (
     verificar_ciudad_y_proceder,
 )
 from flows.validadores import validar_entrada_servicio
+from infrastructure.database import run_supabase
 from services.sesion_clientes import (
     procesar_comando_reinicio,
     sincronizar_cliente,
@@ -93,6 +96,13 @@ PALABRAS_NEGATIVAS = {
     "negativo",
     "prefiero no",
 }
+
+GEOCODING_CACHE_TTL_SECONDS = 60 * 60 * 24 * 30  # 30 días
+GEOCODING_COORD_PRECISION = 4
+GEOCODING_TIMEOUT_SECONDS = 2.5
+GEOCODING_MAX_RETRIES = 1
+NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse"
+NOMINATIM_USER_AGENT = "tinkubot-ai-clientes/1.0 (support@tinkubot.com)"
 
 
 def _normalizar_token(texto: str) -> str:
@@ -187,6 +197,41 @@ def extraer_servicio_y_ubicacion(
             break
 
     return profesion, ubicacion
+
+
+def _parsear_coordenada(valor: Any) -> Optional[float]:
+    """Convierte una coordenada a float de forma segura."""
+    if valor is None:
+        return None
+    try:
+        return float(valor)
+    except (TypeError, ValueError):
+        return None
+
+
+def extraer_ciudad_desde_payload_ubicacion(
+    ubicacion: Optional[Dict[str, Any]],
+) -> Optional[str]:
+    """Intenta inferir ciudad desde metadatos de ubicación recibidos por WhatsApp."""
+    if not isinstance(ubicacion, dict):
+        return None
+
+    if isinstance(ubicacion.get("city"), str) and ubicacion["city"].strip():
+        ciudad_directa = normalizar_entrada_ciudad(ubicacion["city"])
+        if ciudad_directa:
+            return ciudad_directa
+
+    candidatos = [
+        ubicacion.get("address"),
+        ubicacion.get("name"),
+    ]
+    texto = " ".join(
+        parte.strip() for parte in candidatos if isinstance(parte, str) and parte.strip()
+    )
+    if not texto:
+        return None
+    _, ciudad_detectada = extraer_servicio_y_ubicacion("", texto)
+    return ciudad_detectada
 
 
 def normalizar_boton(valor: Optional[str]) -> Optional[str]:
@@ -299,6 +344,7 @@ class OrquestadorConversacional:
                 - enviar_prompt_proveedor
                 - enviar_prompt_confirmacion
                 - limpiar_ciudad_cliente
+                - limpiar_ubicacion_cliente
                 - limpiar_consentimiento_cliente
                 - mensaje_conexion_formal
                 - programar_solicitud_retroalimentacion
@@ -364,15 +410,235 @@ class OrquestadorConversacional:
         ubicacion = carga.get("location") or {}
         return texto, seleccionado, tipo_mensaje, ubicacion
 
+    async def obtener_servicios_populares_recientes(self, limite: int = 5) -> list[str]:
+        """Obtiene servicios más solicitados en los últimos 30 días."""
+        if not self.supabase:
+            return []
+        try:
+            desde = (datetime.utcnow() - timedelta(days=30)).isoformat()
+            respuesta = await run_supabase(
+                lambda: self.supabase.table("lead_events")
+                .select("service,created_at")
+                .gte("created_at", desde)
+                .order("created_at", desc=True)
+                .limit(500)
+                .execute(),
+                etiqueta="lead_events.popular_30d",
+            )
+            filas = respuesta.data or []
+            conteo: Dict[str, int] = {}
+            etiqueta_por_clave: Dict[str, str] = {}
+            for fila in filas:
+                servicio = ((fila or {}).get("service") or "").strip()
+                if not servicio:
+                    continue
+                clave = servicio.lower()
+                conteo[clave] = conteo.get(clave, 0) + 1
+                etiqueta_por_clave.setdefault(clave, servicio)
+            ordenadas = sorted(
+                conteo.items(),
+                key=lambda item: (-item[1], item[0]),
+            )
+            return [etiqueta_por_clave[k] for k, _ in ordenadas[:limite]]
+        except Exception as exc:
+            self.logger.warning("No se pudo obtener servicios populares: %s", exc)
+            return []
+
+    async def construir_prompt_inicial_servicio(self) -> Dict[str, Any]:
+        """Construye payload inicial de servicio con lista interactiva."""
+        from templates.mensajes.validacion import construir_prompt_lista_servicios
+
+        servicios = await self.obtener_servicios_populares_recientes(limite=5)
+        return construir_prompt_lista_servicios(servicios)
+
+    async def _obtener_ciudad_cache_geocoding(
+        self, latitud: float, longitud: float
+    ) -> Optional[str]:
+        """Obtiene ciudad resuelta desde cache Redis si existe."""
+        if not self.redis_client:
+            return None
+
+        cache_key = (
+            f"geo:rev:{latitud:.{GEOCODING_COORD_PRECISION}f}:"
+            f"{longitud:.{GEOCODING_COORD_PRECISION}f}"
+        )
+        try:
+            cache_valor = await self.redis_client.get(cache_key)
+        except Exception as exc:
+            self.logger.warning(
+                "⚠️ geocode_cache_read_error key=%s error=%s",
+                cache_key,
+                exc,
+            )
+            return None
+
+        if not cache_valor:
+            return None
+
+        ciudad_cache = None
+        if isinstance(cache_valor, dict):
+            ciudad_cache = cache_valor.get("city")
+        elif isinstance(cache_valor, str):
+            ciudad_cache = cache_valor
+
+        ciudad_normalizada = normalizar_entrada_ciudad(ciudad_cache)
+        if ciudad_normalizada:
+            self.logger.info(
+                "📦 geocode_cache_hit key=%s city=%s",
+                cache_key,
+                ciudad_normalizada,
+            )
+        return ciudad_normalizada
+
+    async def _guardar_ciudad_cache_geocoding(
+        self, latitud: float, longitud: float, ciudad: str
+    ) -> None:
+        """Guarda ciudad resuelta en cache Redis."""
+        if not self.redis_client:
+            return
+        cache_key = (
+            f"geo:rev:{latitud:.{GEOCODING_COORD_PRECISION}f}:"
+            f"{longitud:.{GEOCODING_COORD_PRECISION}f}"
+        )
+        try:
+            await self.redis_client.set(
+                cache_key,
+                {"city": ciudad, "provider": "nominatim"},
+                expire=GEOCODING_CACHE_TTL_SECONDS,
+            )
+        except Exception as exc:
+            self.logger.warning(
+                "⚠️ geocode_cache_write_error key=%s error=%s",
+                cache_key,
+                exc,
+            )
+
+    async def _resolver_ciudad_desde_coordenadas(
+        self, latitud: float, longitud: float
+    ) -> Optional[str]:
+        """Resuelve ciudad desde lat/lng usando reverse geocoding."""
+        ciudad_cache = await self._obtener_ciudad_cache_geocoding(latitud, longitud)
+        if ciudad_cache:
+            return ciudad_cache
+
+        params = {
+            "format": "jsonv2",
+            "lat": latitud,
+            "lon": longitud,
+            "zoom": 10,
+            "addressdetails": 1,
+            "accept-language": "es",
+        }
+        headers = {"User-Agent": NOMINATIM_USER_AGENT}
+        timeout = httpx.Timeout(GEOCODING_TIMEOUT_SECONDS)
+
+        for intento in range(1, GEOCODING_MAX_RETRIES + 2):
+            try:
+                self.logger.info(
+                    "🌐 geocode_provider_call provider=nominatim attempt=%s lat=%s lng=%s",
+                    intento,
+                    latitud,
+                    longitud,
+                )
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    respuesta = await client.get(
+                        NOMINATIM_REVERSE_URL, params=params, headers=headers
+                    )
+                if respuesta.status_code != 200:
+                    self.logger.warning(
+                        "⚠️ geocode_provider_status provider=nominatim attempt=%s status=%s",
+                        intento,
+                        respuesta.status_code,
+                    )
+                    continue
+
+                payload = respuesta.json()
+                direccion = payload.get("address") or {}
+                candidatos = [
+                    direccion.get("city"),
+                    direccion.get("town"),
+                    direccion.get("village"),
+                    direccion.get("municipality"),
+                    direccion.get("county"),
+                ]
+                for candidato in candidatos:
+                    ciudad_normalizada = normalizar_entrada_ciudad(candidato)
+                    if ciudad_normalizada:
+                        await self._guardar_ciudad_cache_geocoding(
+                            latitud, longitud, ciudad_normalizada
+                        )
+                        return ciudad_normalizada
+
+                display_name = payload.get("display_name") or ""
+                _, ciudad_display = extraer_servicio_y_ubicacion("", display_name)
+                if ciudad_display:
+                    await self._guardar_ciudad_cache_geocoding(
+                        latitud, longitud, ciudad_display
+                    )
+                    return ciudad_display
+            except Exception as exc:
+                self.logger.warning(
+                    "⚠️ geocode_provider_timeout provider=nominatim attempt=%s error=%s",
+                    intento,
+                    exc,
+                )
+
+        return None
+
     async def _detectar_y_actualizar_ciudad(
         self,
         flujo: Dict[str, Any],
         texto: str,
         cliente_id: Optional[str],
         perfil_cliente: Dict[str, Any],
+        ubicacion: Optional[Dict[str, Any]] = None,
     ):
         """Detecta ciudad en el texto y la actualiza si es necesario."""
-        profesion_detectada, ciudad_detectada = extraer_servicio_y_ubicacion("", texto)
+        ciudad_detectada = None
+        _profesion_detectada, ciudad_detectada_texto = extraer_servicio_y_ubicacion(
+            "", texto
+        )
+        if ciudad_detectada_texto:
+            ciudad_detectada = ciudad_detectada_texto
+        elif ubicacion:
+            ciudad_detectada = extraer_ciudad_desde_payload_ubicacion(ubicacion)
+
+        latitud = _parsear_coordenada((ubicacion or {}).get("latitude"))
+        longitud = _parsear_coordenada((ubicacion or {}).get("longitude"))
+        cliente_id_resuelto = flujo.get("customer_id") or cliente_id
+
+        if (
+            cliente_id_resuelto
+            and latitud is not None
+            and longitud is not None
+            and self.repositorio_clientes
+        ):
+            perfil_con_ubicacion = await self.repositorio_clientes.actualizar_ubicacion(
+                cliente_id_resuelto, latitud, longitud
+            )
+            if perfil_con_ubicacion:
+                flujo["customer_id"] = perfil_con_ubicacion.get(
+                    "id", cliente_id_resuelto
+                )
+
+        if not ciudad_detectada and latitud is not None and longitud is not None:
+            ciudad_detectada = await self._resolver_ciudad_desde_coordenadas(
+                latitud, longitud
+            )
+            if ciudad_detectada:
+                self.logger.info(
+                    "📍 geocode_city_resolved lat=%s lng=%s city=%s",
+                    latitud,
+                    longitud,
+                    ciudad_detectada,
+                )
+            else:
+                self.logger.info(
+                    "⚠️ geocode_fallback_to_text lat=%s lng=%s",
+                    latitud,
+                    longitud,
+                )
+
         if ciudad_detectada:
             ciudad_normalizada = ciudad_detectada
             ciudad_actual = (flujo.get("city") or "").strip()
@@ -381,13 +647,13 @@ class OrquestadorConversacional:
                 if self.repositorio_clientes:
                     perfil_actualizado = (
                         await self.repositorio_clientes.actualizar_ciudad(
-                            flujo.get("customer_id") or cliente_id,
+                            flujo.get("customer_id") or cliente_id_resuelto,
                             ciudad_normalizada,
                         )
                     )
                 else:
                     perfil_actualizado = await self.actualizar_ciudad_cliente(
-                        flujo.get("customer_id") or cliente_id,
+                        flujo.get("customer_id") or cliente_id_resuelto,
                         ciudad_normalizada,
                     )
                 if perfil_actualizado:
@@ -417,6 +683,7 @@ class OrquestadorConversacional:
             guardar_flujo=self.guardar_flujo,
             repositorio_clientes=self.repositorio_clientes,
             limpiar_ciudad_cliente=self.limpiar_ciudad_cliente,
+            limpiar_ubicacion_cliente=getattr(self, "limpiar_ubicacion_cliente", None),
             limpiar_consentimiento_cliente=self.limpiar_consentimiento_cliente,
             mensaje_nueva_sesion_dict=mensaje_nueva_sesion_dict,
             reset_keywords=RESET_KEYWORDS,
@@ -507,6 +774,15 @@ class OrquestadorConversacional:
         )
         flujo = flujo_actualizado
 
+        # Si el manejador devuelve solo el prompt inicial sin UI, convertirlo a lista.
+        if (
+            flujo.get("state") == "awaiting_service"
+            and isinstance(respuesta, dict)
+            and not respuesta.get("ui")
+            and (respuesta.get("response") or "").strip() == mensaje_inicial_solicitud()
+        ):
+            respuesta = await self.construir_prompt_inicial_servicio()
+
         if flujo.get("state") == "confirm_service":
             return await responder(flujo, respuesta)
 
@@ -553,6 +829,7 @@ class OrquestadorConversacional:
         telefono: str,
         flujo: Dict[str, Any],
         texto: str,
+        ubicacion: Optional[Dict[str, Any]],
         responder,
         guardar_mensaje_bot,
     ) -> Dict[str, Any]:
@@ -617,7 +894,18 @@ class OrquestadorConversacional:
                 )
 
         ciudad_normalizada_entrada = normalizar_entrada_ciudad(texto)
-        if texto and not ciudad_normalizada_entrada:
+        ciudad_desde_ubicacion = extraer_ciudad_desde_payload_ubicacion(ubicacion)
+        ciudad_entrada = ciudad_normalizada_entrada or ciudad_desde_ubicacion
+        if (
+            not ciudad_entrada
+            and ubicacion
+            and flujo.get("city_confirmed")
+            and isinstance(flujo.get("city"), str)
+            and flujo.get("city").strip()
+        ):
+            ciudad_entrada = flujo["city"].strip()
+
+        if texto and not ciudad_entrada:
             return await responder(
                 flujo,
                 mensaje_error_ciudad_no_reconocida(),
@@ -627,12 +915,12 @@ class OrquestadorConversacional:
 
         flujo_actualizado, respuesta = procesar_estado_esperando_ciudad(
             flujo,
-            ciudad_normalizada_entrada or texto,
+            ciudad_entrada or texto,
             solicitar_ciudad_formato(),
         )
 
-        if texto:
-            entrada_normalizada = (ciudad_normalizada_entrada or texto).strip().title()
+        if ciudad_entrada:
+            entrada_normalizada = ciudad_entrada.strip().title()
             flujo_actualizado["city"] = entrada_normalizada
             flujo_actualizado["city_confirmed"] = True
             # Usar repositorio si está disponible, sino callback
@@ -660,13 +948,13 @@ class OrquestadorConversacional:
             flujo_actualizado["state"] = "awaiting_service"
             return await responder(
                 flujo_actualizado,
-                {"response": mensaje_inicial_solicitud()},
+                await self.construir_prompt_inicial_servicio(),
             )
 
         # Usar transicionar_a_busqueda_desde_ciudad
         ciudad_del_flujo = (
             flujo_actualizado.get("city")
-            or (ciudad_normalizada_entrada or texto).strip().title()
+            or (ciudad_entrada or texto).strip().title()
         )
         resultado = await transicionar_a_busqueda_desde_ciudad(
             telefono=telefono,

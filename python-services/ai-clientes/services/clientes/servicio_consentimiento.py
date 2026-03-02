@@ -46,11 +46,16 @@ class ServicioConsentimiento:
                     ]
                 }
         """
-        from templates.mensajes.consentimiento import mensajes_flujo_consentimiento
+        from templates.mensajes.consentimiento import payload_consentimiento_resumen
 
         self.logger.info(f"🔐 Solicitando consentimiento a cliente {telefono}")
 
-        mensajes = [{"response": msg} for msg in mensajes_flujo_consentimiento()]
+        # Formato principal: consentimiento resumido + botones.
+        payload = payload_consentimiento_resumen()
+        if isinstance(payload, dict) and isinstance(payload.get("messages"), list):
+            mensajes = payload["messages"]
+        else:
+            mensajes = [payload]
 
         self.logger.info(f"✅ Mensajes de consentimiento generados para {telefono}")
 
@@ -80,13 +85,12 @@ class ServicioConsentimiento:
                 - Si acepta: {"response": "mensaje_inicial"}
                 - Si rechaza: {"response": "mensaje_rechazo"}
         """
-        from templates.mensajes.consentimiento import (
-            mensaje_rechazo_consentimiento,
-        )
-        from templates.mensajes.validacion import mensaje_inicial_solicitud_servicio
+        from templates.mensajes.consentimiento import mensaje_rechazo_consentimiento
+        from templates.mensajes.validacion import construir_prompt_lista_servicios
 
-        # Mapear respuesta del botón o texto
-        if seleccionado in ["1", "Acepto"]:
+        # Mapear respuesta del botón o texto.
+        seleccionado_norm = (str(seleccionado or "")).strip().lower()
+        if seleccionado_norm in {"1", "acepto", "consent_accept"}:
             respuesta = "accepted"
 
             self.logger.info(f"✅ Cliente {telefono} ACEPTÓ consentimiento")
@@ -125,10 +129,12 @@ class ServicioConsentimiento:
                     f"❌ Error guardando consentimiento para {telefono}: {exc}"
                 )
 
-            # Después de aceptar, continuar con el flujo normal mostrando el prompt inicial
-            return {"response": mensaje_inicial_solicitud_servicio, "consent_status": "accepted"}
+            # Después de aceptar, continuar con prompt inicial + lista interactiva.
+            payload = construir_prompt_lista_servicios()
+            payload["consent_status"] = "accepted"
+            return payload
 
-        else:  # "No acepto" o cualquier otra opción
+        else:  # "No acepto" / "Cancelar" u otra negativa
             respuesta = "declined"
             mensaje = mensaje_rechazo_consentimiento()
 

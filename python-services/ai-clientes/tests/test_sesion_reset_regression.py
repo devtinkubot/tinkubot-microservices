@@ -18,13 +18,22 @@ class _RepoFlujoStub:
 class _RepoClientesStub:
     def __init__(self):
         self.city_cleared_for = None
+        self.location_cleared_for = None
         self.consent_cleared_for = None
+        self.lookup_phone = None
 
     async def limpiar_ciudad(self, cliente_id):
         self.city_cleared_for = cliente_id
 
+    async def limpiar_ubicacion(self, cliente_id):
+        self.location_cleared_for = cliente_id
+
     async def limpiar_consentimiento(self, cliente_id):
         self.consent_cleared_for = cliente_id
+
+    async def obtener_o_crear(self, telefono: str):
+        self.lookup_phone = telefono
+        return {"id": "cust-from-phone", "phone_number": telefono}
 
 
 @pytest.mark.asyncio
@@ -49,10 +58,11 @@ async def test_reset_command_saves_clean_state_with_guard_flag_disabled():
     assert result == {"response": "Nueva sesión iniciada."}
     assert repo_flujo.was_reset is True
     assert repo_clientes.city_cleared_for == "cust-1"
+    assert repo_clientes.location_cleared_for == "cust-1"
     assert repo_clientes.consent_cleared_for == "cust-1"
     assert repo_flujo.last_saved == {
-        "state": "awaiting_consent",
-        "service_captured_after_consent": False,
+        "state": "awaiting_city",
+        "onboarding_intro_sent": False,
     }
 
 
@@ -77,3 +87,29 @@ async def test_only_reset_and_reiniciar_are_valid_reset_keywords():
 
     assert result is None
     assert repo_flujo.was_reset is False
+
+
+@pytest.mark.asyncio
+async def test_reset_resolves_customer_by_phone_when_flow_has_no_customer_id():
+    repo_flujo = _RepoFlujoStub()
+    repo_clientes = _RepoClientesStub()
+
+    result = await procesar_comando_reinicio(
+        telefono="+593700000001",
+        flujo={"service": "plomero"},
+        texto="reset",
+        repositorio_flujo=repo_flujo,
+        resetear_flujo=None,
+        guardar_flujo=None,
+        repositorio_clientes=repo_clientes,
+        limpiar_ciudad_cliente=lambda *_: None,
+        limpiar_consentimiento_cliente=lambda *_: None,
+        mensaje_nueva_sesion_dict=lambda: {"response": "Nueva sesión iniciada."},
+        reset_keywords={"reset", "reiniciar"},
+    )
+
+    assert result == {"response": "Nueva sesión iniciada."}
+    assert repo_clientes.lookup_phone == "+593700000001"
+    assert repo_clientes.city_cleared_for == "cust-from-phone"
+    assert repo_clientes.location_cleared_for == "cust-from-phone"
+    assert repo_clientes.consent_cleared_for == "cust-from-phone"

@@ -1,8 +1,11 @@
 """Solicitudes de ciudad y ubicación al usuario."""
 
+from typing import Any, Dict
+
+
 def preguntar_ciudad() -> str:
     """Pregunta la ciudad al usuario."""
-    return "*¿En qué ciudad lo necesitas?*"
+    return "*¿En qué ciudad lo necesitas?*. Puedes ingresar manualmente la ciudad o compartir tu ubicación."
 
 def preguntar_ciudad_con_servicio(servicio: str) -> str:
     """Pregunta la ciudad dado un servicio específico."""
@@ -22,3 +25,8 @@ def solicitar_ciudad_formato() -> str:
 def preguntar_ciudad_cambio() -> str:
     """Pregunta ciudad cuando el usuario quiere cambiar."""
     return "¿En qué ciudad necesitas {service}?"
+
+
+def ui_solicitud_ubicacion(request_id: str = "location_request_city") -> Dict[str, Any]:
+    """Config de UI para solicitar ubicación al cliente."""
+    return {"type": "location_request", "id": request_id}

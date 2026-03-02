@@ -4,6 +4,7 @@ from templates.mensajes.ubicacion import (
     error_ciudad_no_reconocida,
     preguntar_ciudad,
     preguntar_ciudad_con_servicio,
+    ui_solicitud_ubicacion,
 )
 
 
@@ -22,7 +23,10 @@ def solicitar_ciudad() -> dict:
     Returns:
         dict: Respuesta con mensaje solicitando la ciudad.
     """
-    return {"response": preguntar_ciudad()}
+    return {
+        "response": preguntar_ciudad(),
+        "ui": ui_solicitud_ubicacion("location_request_city_initial"),
+    }
 
 
 def solicitar_ciudad_con_servicio(servicio: str) -> dict:
@@ -34,4 +38,7 @@ def solicitar_ciudad_con_servicio(servicio: str) -> dict:
     Returns:
         dict: Respuesta con mensaje solicitando la ciudad para el servicio dado.
     """
-    return {"response": preguntar_ciudad_con_servicio(servicio)}
+    return {
+        "response": preguntar_ciudad_con_servicio(servicio),
+        "ui": ui_solicitud_ubicacion("location_request_city_with_service"),
+    }

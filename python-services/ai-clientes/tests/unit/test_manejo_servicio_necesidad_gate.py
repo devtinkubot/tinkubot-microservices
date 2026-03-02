@@ -29,7 +29,12 @@ async def test_rechazo_semantico_con_extraccion_pasa_a_confirmacion():
 
     assert flujo_actualizado["state"] == "confirm_service"
     assert flujo_actualizado["service_candidate"] == "plomero"
-    assert "Entendí que necesitas" in respuesta["response"]
+    assert "¿Es este el servicio que buscas:" in respuesta["response"]
+    assert respuesta["ui"]["type"] == "buttons"
+    assert [opt["id"] for opt in respuesta["ui"]["options"]] == [
+        "problem_confirm_yes",
+        "problem_confirm_no",
+    ]
 
 
 @pytest.mark.asyncio
@@ -53,7 +58,8 @@ async def test_acepta_necesidad_concreta_y_pasa_a_confirmacion():
 
     assert flujo_actualizado["state"] == "confirm_service"
     assert flujo_actualizado["service_candidate"] == "reparación de lavadoras"
-    assert "Entendí que necesitas" in respuesta["response"]
+    assert "¿Es este el servicio que buscas:" in respuesta["response"]
+    assert respuesta["ui"]["type"] == "buttons"
 
 
 @pytest.mark.asyncio
@@ -77,7 +83,8 @@ async def test_gate_v2_rechaza_pero_extrae_y_confirma():
 
     assert flujo_actualizado["state"] == "confirm_service"
     assert flujo_actualizado["service_candidate"] == "servicio de capitán de embarcación"
-    assert "Entendí que necesitas" in respuesta["response"]
+    assert "¿Es este el servicio que buscas:" in respuesta["response"]
+    assert respuesta["ui"]["type"] == "buttons"
 
 
 @pytest.mark.asyncio

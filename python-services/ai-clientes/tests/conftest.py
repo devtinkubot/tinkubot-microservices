@@ -208,14 +208,22 @@ class MockRepositorioClientes:
         self._clientes: Dict[str, Dict[str, Any]] = {}
 
     async def obtener_o_crear(
-        self, telefono: str, nombre: Optional[str] = None
+        self,
+        telefono: str,
+        *,
+        nombre_completo: Optional[str] = None,
+        ciudad: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Gets or creates a customer."""
         if telefono not in self._clientes:
             self._clientes[telefono] = {
                 "id": f"cliente-{telefono}",
                 "telefono": telefono,
-                "nombre": nombre,
+                "nombre": nombre_completo,
+                "city": ciudad,
+                "location_lat": None,
+                "location_lng": None,
+                "location_updated_at": None,
             }
         return self._clientes[telefono]
 
@@ -226,6 +234,27 @@ class MockRepositorioClientes:
                 cliente["city"] = ciudad
                 return cliente
         return {}
+
+    async def actualizar_ubicacion(
+        self, cliente_id: str, latitud: float, longitud: float
+    ) -> Dict[str, Any]:
+        """Updates customer coordinates."""
+        for cliente in self._clientes.values():
+            if cliente.get("id") == cliente_id:
+                cliente["location_lat"] = latitud
+                cliente["location_lng"] = longitud
+                cliente["location_updated_at"] = "2026-01-01T00:00:00"
+                return cliente
+        return {}
+
+    async def limpiar_ubicacion(self, cliente_id: str) -> None:
+        """Clears customer coordinates."""
+        for cliente in self._clientes.values():
+            if cliente.get("id") == cliente_id:
+                cliente["location_lat"] = None
+                cliente["location_lng"] = None
+                cliente["location_updated_at"] = None
+                return
 
     async def actualizar_consentimiento(
         self, cliente_id: str, tiene_consentimiento: bool
