@@ -26,7 +26,7 @@ def mensaje_reinicio_por_inactividad() -> str:
     Returns:
         Mensaje explicativo de reinicio por timeout.
     """
-    return "No tuve respuesta y reinicié la conversación para ayudarte mejor."
+    return "La sesión se reinició por *inactividad*. Continuemos."
 
 
 def informar_timeout_inactividad() -> str:
@@ -35,4 +35,4 @@ def informar_timeout_inactividad() -> str:
     Returns:
         Mensaje explicando el timeout por inactividad.
     """
-    return "No tuve respuesta y *reinicié la conversación* para ayudarte mejor."
+    return "La sesión se reinició por *inactividad*. Continuemos."

@@ -3,11 +3,11 @@
 # ==================== MENSAJES ====================
 
 mensaje_confirmando_disponibilidad = (
-    "⏳ Estoy confirmando disponibilidad. En máximo 2 minutos te confirmo."
+    "⏳ *Confirmo disponibilidad...* Te aviso en 2 min."
 )
 
 mensaje_buscando_expertos = (
-    "⏳ Estoy buscando expertos. Te aviso en breve."
+    "⏳ *Busco expertos.* Te aviso en breve."
 )
 
 texto_opcion_buscar_otro_servicio = "Buscar otro servicio"
@@ -45,8 +45,8 @@ def mensaje_expertos_encontrados(cantidad: int, ciudad: str) -> str:
         Mensaje con singular/plural correcto.
     """
     if cantidad == 1:
-        return f"✅ He encontrado 1 experto en {ciudad}."
-    return f"✅ He encontrado {cantidad} expertos en {ciudad}."
+        return f"✅ Encontre 1 experto en *{ciudad}*."
+    return f"✅ Encontre {cantidad} expertos en *{ciudad}*."
 
 
 def menu_opciones_confirmacion(incluir_opcion_ciudad: bool = False) -> str:

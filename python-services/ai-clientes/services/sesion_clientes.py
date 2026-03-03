@@ -247,6 +247,18 @@ async def procesar_comando_reinicio(
                 await repositorio_clientes.limpiar_ciudad(cliente_id_para_reinicio)
                 await repositorio_clientes.limpiar_ubicacion(cliente_id_para_reinicio)
                 await repositorio_clientes.limpiar_consentimiento(cliente_id_para_reinicio)
+                if cliente_id_para_reinicio:
+                    await repositorio_clientes.registrar_consentimiento(
+                        usuario_id=cliente_id_para_reinicio,
+                        respuesta="declined",
+                        datos_consentimiento={
+                            "reason": "reset",
+                            "consent_type": "provider_contact",
+                            "platform": "whatsapp",
+                            "phone": telefono,
+                            "trigger_text": texto.strip(),
+                        },
+                    )
             else:
                 limpiar_ciudad_cliente(cliente_id_para_reinicio)
                 if callable(limpiar_ubicacion_cliente):

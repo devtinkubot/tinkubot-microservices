@@ -21,6 +21,7 @@ class _RepoClientesStub:
         self.location_cleared_for = None
         self.consent_cleared_for = None
         self.lookup_phone = None
+        self.last_consent_event = None
 
     async def limpiar_ciudad(self, cliente_id):
         self.city_cleared_for = cliente_id
@@ -34,6 +35,14 @@ class _RepoClientesStub:
     async def obtener_o_crear(self, telefono: str):
         self.lookup_phone = telefono
         return {"id": "cust-from-phone", "phone_number": telefono}
+
+    async def registrar_consentimiento(self, usuario_id, respuesta, datos_consentimiento):
+        self.last_consent_event = {
+            "usuario_id": usuario_id,
+            "respuesta": respuesta,
+            "datos_consentimiento": dict(datos_consentimiento or {}),
+        }
+        return True
 
 
 @pytest.mark.asyncio
@@ -60,6 +69,12 @@ async def test_reset_command_saves_clean_state_with_guard_flag_disabled():
     assert repo_clientes.city_cleared_for == "cust-1"
     assert repo_clientes.location_cleared_for == "cust-1"
     assert repo_clientes.consent_cleared_for == "cust-1"
+    assert repo_clientes.last_consent_event is not None
+    assert repo_clientes.last_consent_event["usuario_id"] == "cust-1"
+    assert repo_clientes.last_consent_event["respuesta"] == "declined"
+    assert (
+        repo_clientes.last_consent_event["datos_consentimiento"]["reason"] == "reset"
+    )
     assert repo_flujo.last_saved == {
         "state": "awaiting_city",
         "onboarding_intro_sent": False,
@@ -113,3 +128,9 @@ async def test_reset_resolves_customer_by_phone_when_flow_has_no_customer_id():
     assert repo_clientes.city_cleared_for == "cust-from-phone"
     assert repo_clientes.location_cleared_for == "cust-from-phone"
     assert repo_clientes.consent_cleared_for == "cust-from-phone"
+    assert repo_clientes.last_consent_event is not None
+    assert repo_clientes.last_consent_event["usuario_id"] == "cust-from-phone"
+    assert repo_clientes.last_consent_event["respuesta"] == "declined"
+    assert (
+        repo_clientes.last_consent_event["datos_consentimiento"]["reason"] == "reset"
+    )

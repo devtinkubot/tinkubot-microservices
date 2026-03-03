@@ -30,12 +30,9 @@ from templates.proveedores.detalle import (
     menu_opciones_detalle_proveedor,
 )
 from templates.mensajes.sesion import informar_timeout_inactividad
-from templates.mensajes.consentimiento import onboarding_precontractual_habilitado
 from templates.mensajes.validacion import (
-    OTHER_SERVICE_OPTION_ID,
     construir_prompt_lista_servicios,
     extraer_servicio_desde_opcion_lista,
-    mensaje_otro_servicio_texto_libre,
 )
 from flows.pre_enrutador import pre_enrutar_mensaje
 
@@ -79,6 +76,10 @@ async def manejar_mensaje(orquestador, carga: Dict[str, Any]) -> Dict[str, Any]:
                     round(delta_segundos, 2),
                     ultima_vista_cruda,
                 )
+                ciudad_conocida = (
+                    (flujo.get("city") or "").strip()
+                    or (contexto.get("customer_city") or "").strip()
+                )
                 # Timeout detectado - reiniciar flujo
                 if orquestador.repositorio_flujo:
                     await orquestador.repositorio_flujo.resetear(telefono)
@@ -91,22 +92,10 @@ async def manejar_mensaje(orquestador, carga: Dict[str, Any]) -> Dict[str, Any]:
                     "last_seen_at_prev": ahora_iso,
                 })
 
-                # Determinar mensaje según estado de consentimiento
-                tiene_consent = contexto.get("has_consent", False)
-                if onboarding_precontractual_habilitado():
-                    flujo["state"] = "awaiting_city"
-                    flujo["onboarding_intro_sent"] = False
-                    if orquestador.servicio_consentimiento:
-                        prompt_onboarding = await orquestador.servicio_consentimiento.solicitar_consentimiento(
-                            telefono
-                        )
-                    else:
-                        prompt_onboarding = await orquestador.solicitar_consentimiento(
-                            telefono
-                        )
-                    mensajes_timeout = [{"response": informar_timeout_inactividad()}]
-                    mensajes_timeout.extend(prompt_onboarding.get("messages", [prompt_onboarding]))
-                elif not tiene_consent:
+                # Determinar mensaje según estado real de consentimiento/ciudad
+                tiene_consent = bool(contexto.get("has_consent", False))
+
+                if not tiene_consent:
                     flujo["state"] = "awaiting_consent"
                     # Obtener prompt de consentimiento
                     if orquestador.servicio_consentimiento:
@@ -119,12 +108,21 @@ async def manejar_mensaje(orquestador, carga: Dict[str, Any]) -> Dict[str, Any]:
                         )
                     mensajes_timeout = [{"response": informar_timeout_inactividad()}]
                     mensajes_timeout.extend(prompt_consentimiento.get("messages", [prompt_consentimiento]))
-                else:
+                elif ciudad_conocida:
                     flujo["state"] = "awaiting_service"
+                    flujo["city"] = ciudad_conocida
+                    flujo["city_confirmed"] = True
                     prompt_servicio = await _prompt_inicial_servicio(orquestador)
                     mensajes_timeout = [
                         {"response": informar_timeout_inactividad()},
                         prompt_servicio,
+                    ]
+                else:
+                    flujo["state"] = "awaiting_city"
+                    flujo["onboarding_intro_sent"] = False
+                    mensajes_timeout = [
+                        {"response": informar_timeout_inactividad()},
+                        solicitar_ciudad(),
                     ]
 
                 # Guardar flujo reseteado
@@ -295,13 +293,6 @@ async def enrutar_estado(
 
     if estado == "awaiting_service":
         if tipo_mensaje == "interactive_list_reply" and seleccionado:
-            if seleccionado.lower() == OTHER_SERVICE_OPTION_ID:
-                flujo["state"] = "awaiting_service"
-                return await responder(
-                    flujo,
-                    {"response": mensaje_otro_servicio_texto_libre()},
-                )
-
             servicio_lista = extraer_servicio_desde_opcion_lista(
                 seleccionado,
             )

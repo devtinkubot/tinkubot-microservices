@@ -740,6 +740,11 @@ class OrquestadorConversacional:
         )
 
         if not es_valido:
+            if (mensaje_error or "").strip() == mensaje_inicial_solicitud():
+                return await responder(
+                    flujo,
+                    await self.construir_prompt_inicial_servicio(),
+                )
             return await responder(
                 flujo,
                 {"response": mensaje_error},

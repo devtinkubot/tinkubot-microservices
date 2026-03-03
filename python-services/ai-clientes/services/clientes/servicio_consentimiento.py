@@ -105,11 +105,15 @@ class ServicioConsentimiento:
                 # Guardar registro legal en tabla consents con metadata completa
                 datos_consentimiento = {
                     "consent_timestamp": carga.get("timestamp"),
-                    "phone": carga.get("from_number"),
-                    "message_id": carga.get("message_id"),
-                    "exact_response": carga.get("content"),
+                    "phone": carga.get("from_number") or carga.get("phone"),
+                    "message_id": carga.get("message_id") or carga.get("id"),
+                    "exact_response": (
+                        carga.get("content")
+                        or carga.get("message")
+                        or carga.get("selected_option")
+                    ),
                     "consent_type": "provider_contact",
-                    "platform": "whatsapp",
+                    "platform": carga.get("platform") or "whatsapp",
                     "message_type": carga.get("message_type"),
                     "device_type": carga.get("device_type"),
                 }
@@ -144,11 +148,15 @@ class ServicioConsentimiento:
             try:
                 datos_consentimiento = {
                     "consent_timestamp": carga.get("timestamp"),
-                    "phone": carga.get("from_number"),
-                    "message_id": carga.get("message_id"),
-                    "exact_response": carga.get("content"),
+                    "phone": carga.get("from_number") or carga.get("phone"),
+                    "message_id": carga.get("message_id") or carga.get("id"),
+                    "exact_response": (
+                        carga.get("content")
+                        or carga.get("message")
+                        or carga.get("selected_option")
+                    ),
                     "consent_type": "provider_contact",
-                    "platform": "whatsapp",
+                    "platform": carga.get("platform") or "whatsapp",
                     "message_type": carga.get("message_type"),
                     "device_type": carga.get("device_type"),
                 }

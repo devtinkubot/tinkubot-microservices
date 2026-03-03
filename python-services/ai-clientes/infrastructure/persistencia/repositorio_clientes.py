@@ -322,6 +322,24 @@ class RepositorioClientesSupabase:
         if not self.supabase:
             return False
         try:
+            if usuario_id and respuesta == "accepted":
+                consentimiento_existente = await run_supabase(
+                    lambda: self.supabase.table("consents")
+                    .select("id")
+                    .eq("user_id", usuario_id)
+                    .eq("user_type", "customer")
+                    .eq("response", "accepted")
+                    .limit(1)
+                    .execute(),
+                    etiqueta="consents.exists_accepted",
+                )
+                if consentimiento_existente.data:
+                    self.logger.info(
+                        "ℹ️ Consentimiento accepted ya registrado para customer %s",
+                        usuario_id,
+                    )
+                    return True
+
             registro_consentimiento = {
                 "user_id": usuario_id,
                 "user_type": "customer",

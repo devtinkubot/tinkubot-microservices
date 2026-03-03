@@ -1,14 +1,18 @@
 """Mensajes de validación y error para entrada de usuario."""
 
 import re
+import unicodedata
 from typing import Any, Dict, List, Optional
 
 # ==================== MENSAJES ====================
 
-mensaje_inicial_solicitud_servicio = "*¿Qué necesitas resolver?*. Describe lo que necesitas."
+mensaje_inicial_solicitud_servicio = (
+    "*¿Qué necesitas resolver?*. Puedes ver un *listado de servicios populares* "
+    "o escribir directamente el *problema o necesidad*."
+)
+mensaje_error_solicitud_servicio_corto = "*¿Qué necesitas resolver?*."
 
 POPULAR_SERVICE_PREFIX = "popular_service::"
-OTHER_SERVICE_OPTION_ID = "other_service"
 DEFAULT_POPULAR_SERVICES = [
     "Plomero",
     "Electricista",
@@ -17,7 +21,7 @@ DEFAULT_POPULAR_SERVICES = [
     "Limpieza del hogar",
 ]
 
-mensaje_error_input_invalido = mensaje_inicial_solicitud_servicio
+mensaje_error_input_invalido = mensaje_error_solicitud_servicio_corto
 
 mensaje_advertencia_contenido_ilegal = """⚠️ *ADVERTENCIA*
 
@@ -33,7 +37,7 @@ Has sido suspendido por 15 minutos por infringir nuestras políticas de contenid
 
 Podrás reanudar el servicio después de las {hora_reinicio}."""
 
-mensaje_error_input_sin_sentido = mensaje_inicial_solicitud_servicio
+mensaje_error_input_sin_sentido = mensaje_error_solicitud_servicio_corto
 
 
 def solicitar_reformulacion() -> str:
@@ -42,33 +46,40 @@ def solicitar_reformulacion() -> str:
 
 
 def _slug_servicio(texto: str) -> str:
-    base = re.sub(r"[^a-z0-9]+", "_", (texto or "").strip().lower())
+    normalizado = unicodedata.normalize("NFD", (texto or "").strip().lower())
+    sin_acentos = "".join(
+        ch for ch in normalizado if unicodedata.category(ch) != "Mn"
+    )
+    base = re.sub(r"[^a-z0-9]+", "_", sin_acentos)
     return base.strip("_")[:64] or "servicio"
 
 
 def construir_opciones_servicios_populares(
     servicios: Optional[List[str]] = None,
-) -> List[Dict[str, str]]:
+) -> List[Dict[str, Any]]:
     """Construye opciones de lista para servicios populares."""
     lista = []
     vistos = set()
-    for item in (servicios or DEFAULT_POPULAR_SERVICES):
-        titulo = (item or "").strip()
+    for idx, item in enumerate((servicios or DEFAULT_POPULAR_SERVICES), start=1):
+        servicio = (item or "").strip()
+        if not servicio:
+            continue
+        titulo = f"Top {idx}"
         if not titulo:
             continue
-        clave = titulo.lower()
+        clave = servicio.lower()
         if clave in vistos:
             continue
         vistos.add(clave)
         lista.append(
             {
-                "id": f"{POPULAR_SERVICE_PREFIX}{_slug_servicio(titulo)}",
+                "id": f"{POPULAR_SERVICE_PREFIX}{_slug_servicio(servicio)}",
                 "title": titulo[:24],
+                "description": servicio[:72],
             }
         )
         if len(lista) == 5:
             break
-    lista.append({"id": OTHER_SERVICE_OPTION_ID, "title": "Otro servicio"})
     return lista
 
 
@@ -93,27 +104,33 @@ def extraer_servicio_desde_opcion_lista(
     servicios: Optional[List[str]] = None,
 ) -> Optional[str]:
     """Resuelve el servicio elegido desde el id de opción de lista."""
+    def _resolver_servicio_por_slug(slug: str) -> str:
+        catalogo = (servicios or []) + DEFAULT_POPULAR_SERVICES
+        for item in catalogo:
+            nombre = (item or "").strip()
+            if not nombre:
+                continue
+            if _slug_servicio(nombre) == slug:
+                return nombre
+        return slug.replace("_", " ").strip().title()
+
     selected = (selected_option or "").strip().lower()
-    if not selected or selected == OTHER_SERVICE_OPTION_ID:
+    if not selected:
         return None
     if selected.startswith(POPULAR_SERVICE_PREFIX):
         slug = selected[len(POPULAR_SERVICE_PREFIX) :].strip("_ ")
         if not slug:
             return None
-        return slug.replace("_", " ").strip().title()
+        return _resolver_servicio_por_slug(slug)
     if servicios:
         mapa = {
-            opcion["id"].strip().lower(): opcion["title"]
+            opcion["id"].strip().lower(): opcion.get("description") or opcion["title"]
             for opcion in construir_opciones_servicios_populares(servicios)
             if opcion.get("id") and opcion.get("title")
         }
         return mapa.get(selected)
     return None
 
-
-def mensaje_otro_servicio_texto_libre() -> str:
-    """Prompt para que el usuario escriba un servicio fuera de la lista."""
-    return "Perfecto. Escribe el servicio que necesitas."
 
 def mensaje_confirmar_servicio(servicio: str) -> str:
     """Confirma el servicio detectado antes de continuar la búsqueda."""

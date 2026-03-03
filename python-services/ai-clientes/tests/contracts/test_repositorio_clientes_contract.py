@@ -100,6 +100,11 @@ class _FakeQuery:
         return _Resp(data=[])
 
     def _execute_consents(self):
+        if self.op == "select":
+            registros = list(self.db.consents)
+            for field, value in self.filters.items():
+                registros = [row for row in registros if row.get(field) == value]
+            return _Resp(data=registros[:1])
         if self.op == "insert":
             self.db.consents.append(dict(self.payload or {}))
             return _Resp(data=[self.db.consents[-1]])
@@ -187,3 +192,10 @@ async def test_contrato_limpieza_y_registro_consentimiento(repo: RepositorioClie
         datos_consentimiento={"source": "contract-test"},
     )
     assert ok is True
+    ok_duplicado = await repo.registrar_consentimiento(
+        usuario_id=created["id"],
+        respuesta="accepted",
+        datos_consentimiento={"source": "contract-test-2"},
+    )
+    assert ok_duplicado is True
+    assert len(repo.supabase.consents) == 1

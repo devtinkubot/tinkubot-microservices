@@ -134,8 +134,9 @@ type interactiveSection struct {
 }
 
 type interactiveRow struct {
-	ID    string `json:"id"`
-	Title string `json:"title"`
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	Description string `json:"description,omitempty"`
 }
 
 type interactiveButton struct {
@@ -386,10 +387,15 @@ func (c *Client) SendList(
 	for _, opt := range ui.Options {
 		id := strings.TrimSpace(opt.ID)
 		title := strings.TrimSpace(opt.Title)
+		description := strings.TrimSpace(opt.Description)
 		if id == "" || title == "" {
 			continue
 		}
-		rows = append(rows, interactiveRow{ID: id, Title: title})
+		rows = append(rows, interactiveRow{
+			ID:          id,
+			Title:       title,
+			Description: description,
+		})
 		if len(rows) == 10 {
 			break
 		}

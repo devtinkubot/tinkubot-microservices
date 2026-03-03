@@ -85,22 +85,52 @@ async def pre_enrutar_mensaje(
             await orquestador.guardar_flujo(telefono, flujo)
 
     if usa_onboarding_precontractual:
-        if _es_accion_continuar(carga) and not tiene_consentimiento:
+        if not tiene_consentimiento:
+            flujo["state"] = "awaiting_consent"
+            flujo["onboarding_intro_sent"] = True
+
+            if not _es_accion_continuar(carga):
+                await actualizar_y_guardar_flujo()
+                if orquestador.servicio_consentimiento:
+                    return {
+                        "response": await orquestador.servicio_consentimiento.solicitar_consentimiento(
+                            telefono
+                        )
+                    }
+                return {"response": await orquestador.solicitar_consentimiento(telefono)}
+
             carga_consent = dict(carga)
             if not (carga_consent.get("content") or "").strip():
                 carga_consent["content"] = "Continuar"
+
             if orquestador.servicio_consentimiento and perfil_cliente:
                 resultado_consent = (
                     await orquestador.servicio_consentimiento.procesar_respuesta(
                         telefono, perfil_cliente, "1", carga_consent
                     )
                 )
-                if resultado_consent.get("consent_status") == "accepted":
-                    tiene_consentimiento = True
-                    perfil_cliente["has_consent"] = True
-                    flujo["has_consent"] = True
+            elif perfil_cliente:
+                resultado_consent = await orquestador._validar_consentimiento(
+                    telefono, perfil_cliente, carga_consent
+                )
+            else:
+                resultado_consent = {"consent_status": "declined"}
 
-        if _es_accion_continuar(carga):
+            if resultado_consent.get("consent_status") != "accepted":
+                await actualizar_y_guardar_flujo()
+                if orquestador.servicio_consentimiento:
+                    return {
+                        "response": await orquestador.servicio_consentimiento.solicitar_consentimiento(
+                            telefono
+                        )
+                    }
+                return {"response": await orquestador.solicitar_consentimiento(telefono)}
+
+            tiene_consentimiento = True
+            if isinstance(perfil_cliente, dict):
+                perfil_cliente["has_consent"] = True
+            flujo["has_consent"] = True
+
             ciudad_actual = (flujo.get("city") or "").strip() or ciudad_perfil
             if ciudad_actual:
                 flujo["state"] = "awaiting_service"
@@ -108,6 +138,7 @@ async def pre_enrutar_mensaje(
                 flujo["city"] = ciudad_actual
                 await actualizar_y_guardar_flujo()
                 return {"response": await _prompt_inicial_servicio(orquestador)}
+
             flujo["state"] = "awaiting_city"
             flujo["onboarding_intro_sent"] = True
             await actualizar_y_guardar_flujo()
@@ -116,23 +147,7 @@ async def pre_enrutar_mensaje(
         ciudad_actual = (flujo.get("city") or "").strip() or ciudad_perfil
         tipo_mensaje = (carga.get("message_type") or "").strip().lower()
         if (
-            not tiene_consentimiento
-            and not flujo.get("onboarding_intro_sent")
-            and tipo_mensaje != "location"
-        ):
-            flujo["state"] = "awaiting_consent"
-            flujo["onboarding_intro_sent"] = True
-            await actualizar_y_guardar_flujo()
-            if orquestador.servicio_consentimiento:
-                return {
-                    "response": await orquestador.servicio_consentimiento.solicitar_consentimiento(
-                        telefono
-                    )
-                }
-            return {"response": await orquestador.solicitar_consentimiento(telefono)}
-        if (
-            tiene_consentimiento
-            and not ciudad_actual
+            not ciudad_actual
             and not flujo.get("onboarding_intro_sent")
             and tipo_mensaje != "location"
         ):
@@ -237,5 +252,6 @@ async def pre_enrutar_mensaje(
             "location": ubicacion,
             "customer_id": cliente_id,
             "has_consent": tiene_consentimiento,
+            "customer_city": ciudad_perfil,
         }
     }

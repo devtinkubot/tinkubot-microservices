@@ -58,18 +58,38 @@ class _OrquestadorStub:
 
     async def construir_prompt_inicial_servicio(self):
         return {
-            "response": "*¿Qué necesitas resolver?*. Describe lo que necesitas.",
+            "response": (
+                "*¿Qué necesitas resolver?*. Describe lo que necesitas.\n"
+                "Si no está en la lista, escríbelo directamente."
+            ),
             "ui": {
                 "type": "list",
                 "options": [
                     {"id": "popular_service::plomero", "title": "Plomero"},
-                    {"id": "other_service", "title": "Otro servicio"},
                 ],
             },
         }
 
     async def obtener_servicios_populares_recientes(self, limite: int = 5):
         return ["Plomero", "Electricista", "Cerrajero", "Limpieza del hogar", "Pintor"]
+
+    async def _procesar_awaiting_service(
+        self, _telefono, flujo, texto, _responder, _cliente_id
+    ):
+        from flows.manejadores_estados.manejo_servicio import (
+            procesar_estado_esperando_servicio,
+        )
+
+        return (
+            await procesar_estado_esperando_servicio(
+                flujo=flujo,
+                texto=texto,
+                saludos=self.greetings,
+                prompt_inicial="*¿Qué necesitas resolver?*. Describe lo que necesitas.",
+                extraer_fn=self.extractor_ia.extraer_servicio_con_ia,
+                validar_necesidad_fn=self.extractor_ia.es_necesidad_o_problema,
+            )
+        )[1]
 
 
 @pytest.mark.asyncio
@@ -159,11 +179,11 @@ async def test_awaiting_service_list_reply_salta_confirmacion_y_busca_directo():
     assert flujo["state"] == "searching"
     assert flujo["service"] == "Plomero"
     assert "confirm_service" != flujo["state"]
-    assert "buscando" in respuesta["response"].lower()
+    assert "busco expertos" in respuesta["response"].lower()
 
 
 @pytest.mark.asyncio
-async def test_awaiting_service_list_reply_otro_servicio_pide_texto_libre():
+async def test_awaiting_service_texto_libre_sigue_flujo_normal():
     orquestador = _OrquestadorStub()
     flujo = {"state": "awaiting_service", "city": "Cuenca"}
 
@@ -171,12 +191,12 @@ async def test_awaiting_service_list_reply_otro_servicio_pide_texto_libre():
         orquestador,
         telefono="+593999000555",
         flujo=flujo,
-        texto="",
-        seleccionado="other_service",
-        tipo_mensaje="interactive_list_reply",
+        texto="necesito pintor",
+        seleccionado=None,
+        tipo_mensaje="text",
         ubicacion={},
         cliente_id="cust-5",
     )
 
-    assert flujo["state"] == "awaiting_service"
-    assert "Escribe el servicio que necesitas" in respuesta["response"]
+    assert flujo["state"] == "confirm_service"
+    assert "¿Es este el servicio que buscas:" in respuesta["response"]

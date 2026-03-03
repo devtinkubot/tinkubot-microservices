@@ -127,8 +127,8 @@ func TestSendListSuccess(t *testing.T) {
 			ListButtonText:   "Ver servicios populares",
 			ListSectionTitle: "Más solicitados",
 			Options: []webhook.UIOption{
-				{ID: "plomero", Title: "Plomero"},
-				{ID: "electricista", Title: "Electricista"},
+				{ID: "plomero", Title: "Top 1:", Description: "Plomero"},
+				{ID: "electricista", Title: "Top 2:", Description: "Electricista"},
 			},
 		},
 	)
@@ -150,6 +150,9 @@ func TestSendListSuccess(t *testing.T) {
 	}
 	if len(gotPayload.Interactive.Action.Sections[0].Rows) != 2 {
 		t.Fatalf("expected 2 rows, got %+v", gotPayload.Interactive.Action.Sections[0].Rows)
+	}
+	if gotPayload.Interactive.Action.Sections[0].Rows[0].Description != "Plomero" {
+		t.Fatalf("unexpected row description: %+v", gotPayload.Interactive.Action.Sections[0].Rows[0])
 	}
 }
 
