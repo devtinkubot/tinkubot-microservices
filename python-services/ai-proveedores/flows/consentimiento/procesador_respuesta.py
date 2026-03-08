@@ -24,11 +24,40 @@ from flows.interpretacion import interpretar_respuesta  # noqa: E402
 from flows.sesion import establecer_flujo, reiniciar_flujo  # noqa: E402
 from infrastructure.database import run_supabase  # noqa: E402
 from templates.registro import (  # noqa: E402
-    PROMPT_INICIO_REGISTRO,
     preguntar_real_phone,
+    solicitar_ciudad_registro,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _resolver_opcion_consentimiento(carga: Dict[str, Any]) -> Optional[str]:
+    """Mapea respuesta interactiva o textual a 1/2 para consentimiento."""
+    seleccionado = str(carga.get("selected_option") or "").strip().lower()
+    texto_mensaje = str(carga.get("message") or carga.get("content") or "").strip()
+    texto_min = texto_mensaje.lower()
+
+    if seleccionado in {
+        "continue_provider_onboarding",
+        "continuar",
+        "continue",
+        "1",
+    }:
+        return "1"
+    if seleccionado in {"2", "rechazar", "decline", "cancelar"}:
+        return "2"
+
+    if texto_min.startswith("1"):
+        return "1"
+    if texto_min.startswith("2"):
+        return "2"
+
+    interpretado = interpretar_respuesta(texto_min, "consentimiento")
+    if interpretado is True:
+        return "1"
+    if interpretado is False:
+        return "2"
+    return None
 
 
 async def procesar_respuesta_consentimiento(  # noqa: C901
@@ -56,26 +85,14 @@ async def procesar_respuesta_consentimiento(  # noqa: C901
     from services.sesion_proveedor import perfil_tiene_menu_limitado
 
     texto_mensaje = (carga.get("message") or carga.get("content") or "").strip()
-    texto_min = texto_mensaje.lower()
-    opcion = None
+    opcion = _resolver_opcion_consentimiento(carga)
 
-    # Debug: Log para ver qué recibimos
     logger.info(
-        "📝 Procesando respuesta consentimiento. Texto: '%s', Carga keys: %s",
+        "📝 Procesando respuesta consentimiento. Texto: '%s', selected_option='%s', Carga keys: %s",
         texto_mensaje,
+        carga.get("selected_option"),
         list(carga.keys()),
     )
-
-    if texto_min.startswith("1"):
-        opcion = "1"
-    elif texto_min.startswith("2"):
-        opcion = "2"
-    else:
-        interpretado = interpretar_respuesta(texto_min, "consentimiento")
-        if interpretado is True:
-            opcion = "1"
-        elif interpretado is False:
-            opcion = "2"
 
     if opcion not in {"1", "2"}:
         logger.info(
@@ -159,7 +176,7 @@ async def procesar_respuesta_consentimiento(  # noqa: C901
             return {
                 "success": True,
                 "messages": [
-                    {"response": PROMPT_INICIO_REGISTRO},
+                    solicitar_ciudad_registro(),
                 ],
             }
 

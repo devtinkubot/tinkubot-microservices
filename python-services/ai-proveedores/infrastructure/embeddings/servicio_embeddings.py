@@ -166,7 +166,7 @@ class ServicioEmbeddings:
                         await redis.set(
                             clave_cache,
                             json.dumps(embedding),
-                            ex=self.cache_ttl,
+                            expire=self.cache_ttl,
                         )
                         logger.debug(f"💾 Embedding cacheado: {clave_cache}")
                 except Exception as e:

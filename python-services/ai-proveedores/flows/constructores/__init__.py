@@ -16,7 +16,11 @@ from .construidor_menu import (
     construir_respuesta_menu_registro,
 )
 from .construidor_resumen import construir_resumen_confirmacion
-from .construidor_servicios import construir_menu_servicios
+from .construidor_servicios import (
+    construir_menu_servicios,
+    construir_menu_servicios_activos,
+    construir_menu_servicios_pendientes,
+)
 
 __all__ = [
     "construir_menu_desde_flujo",
@@ -29,5 +33,7 @@ __all__ = [
     "construir_respuesta_consentimiento_aceptado",
     "construir_respuesta_consentimiento_rechazado",
     "construir_menu_servicios",
+    "construir_menu_servicios_activos",
+    "construir_menu_servicios_pendientes",
     "construir_resumen_confirmacion",
 ]

@@ -11,7 +11,7 @@ from templates.interfaz import (
     solicitar_dni_actualizacion,
 )
 from templates.registro import (
-    preguntar_actualizar_ciudad,
+    solicitar_ciudad_actualizacion,
     pedir_confirmacion_resumen,
     solicitar_foto_dni_frontal,
     solicitar_foto_dni_trasera,
@@ -27,7 +27,7 @@ def manejar_inicio_documentos(flujo: Dict[str, Any]) -> Dict[str, Any]:
     flujo["state"] = "awaiting_city"
     return {
         "success": True,
-        "messages": [{"response": preguntar_actualizar_ciudad()}],
+        "messages": [solicitar_ciudad_actualizacion()],
     }
 
 

@@ -48,6 +48,43 @@ def mensaje_solicitar_detalle_servicio(servicio_hint: Optional[str] = None) -> s
     return "Por favor, cuéntame brevemente qué necesitas."
 
 
+def mensaje_solicitar_precision_servicio(servicio: str) -> str:
+    """Pide mayor precisión cuando el servicio detectado es demasiado general."""
+    servicio_norm = _slug_servicio(servicio).replace("_", " ")
+    if servicio_norm in {
+        "transporte mercancias",
+        "transporte mercaderia",
+        "transporte de mercancias",
+        "transporte de mercaderia",
+        "transporte carga",
+        "transporte de carga",
+        "transporte terrestre",
+        "transporte maritimo",
+        "transporte aereo",
+    }:
+        return (
+            "Para ubicar el servicio correcto, dime si el transporte es "
+            "*terrestre, marítimo o aéreo*, y si es *local, nacional o internacional*."
+        )
+    if servicio_norm in {"asesoria legal", "servicio legal", "legal"}:
+        return (
+            "Para ubicar el servicio correcto, dime el *trámite o área legal exacta* "
+            "(ej: laboral, familia, tributario, penal, contratación pública)."
+        )
+    if servicio_norm in {
+        "servicios tecnologicos",
+        "servicio tecnologico",
+        "consultoria tecnologica",
+        "consultoria tecnologia",
+        "desarrollo tecnologico",
+    }:
+        return (
+            "Para ubicar el servicio correcto, dime el *tipo exacto de solución* "
+            "(ej: desarrollo web, redes, soporte técnico, cableado estructurado)."
+        )
+    return "Por favor, cuéntame con más precisión qué necesitas."
+
+
 def solicitar_reformulacion() -> str:
     """Solicita al usuario reformular su mensaje."""
     return "¿Podrías reformular tu mensaje?"

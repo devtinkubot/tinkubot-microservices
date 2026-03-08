@@ -15,6 +15,9 @@ class RecepcionMensajeWhatsApp(BaseModel):
     id: Optional[str] = None
     from_number: Optional[str] = None
     content: Optional[str] = None
+    message_type: Optional[str] = None
+    selected_option: Optional[str] = None
+    location: Optional[Dict[str, Any]] = None
     timestamp: Optional[str] = None
     status: Optional[str] = None
     # Compatibilidad con versiones previas

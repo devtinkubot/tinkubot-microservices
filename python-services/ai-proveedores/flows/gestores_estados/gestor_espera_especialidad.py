@@ -4,8 +4,12 @@ import logging
 from typing import Any, Dict, Optional
 
 from services.servicios_proveedor.constantes import SERVICIOS_MAXIMOS
-from services.servicios_proveedor.utilidades import sanitizar_lista_servicios
-from services.servicios_proveedor.utilidades import limpiar_espacios
+from services.servicios_proveedor.utilidades import (
+    es_servicio_critico_generico,
+    limpiar_espacios,
+    mensaje_pedir_precision_servicio,
+    sanitizar_lista_servicios,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +130,25 @@ async def manejar_espera_especialidad(
                             "*No pude interpretar tus servicios.* "
                             "Por favor reescríbelos de forma más simple, separados por comas."
                         )
+                    }
+                ],
+            }
+
+        servicio_generico = next(
+            (servicio for servicio in servicios_transformados if es_servicio_critico_generico(servicio)),
+            None,
+        )
+        if servicio_generico:
+            logger.info(
+                "critical_generic_provider_service_blocked service='%s' raw='%s'",
+                servicio_generico,
+                especialidad_texto[:120],
+            )
+            return {
+                "success": True,
+                "messages": [
+                    {
+                        "response": mensaje_pedir_precision_servicio(servicio_generico),
                     }
                 ],
             }

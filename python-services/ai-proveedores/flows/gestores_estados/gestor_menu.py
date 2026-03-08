@@ -6,7 +6,10 @@ from typing import Any, Dict, Optional
 from flows.constructores import construir_menu_principal, construir_menu_servicios
 
 logger = logging.getLogger(__name__)
-from templates.registro import PROMPT_INICIO_REGISTRO, preguntar_real_phone
+from templates.registro import (
+    preguntar_real_phone,
+    solicitar_ciudad_registro,
+)
 from templates.interfaz import (
     error_opcion_no_reconocida,
     informar_cierre_sesion,
@@ -16,6 +19,14 @@ from templates.interfaz import (
     solicitar_confirmacion_eliminacion,
 )
 from services.servicios_proveedor.constantes import SERVICIOS_MAXIMOS
+
+
+def _servicios_pendientes_genericos(flujo: Dict[str, Any]) -> list[str]:
+    return [
+        servicio.strip()
+        for servicio in (flujo.get("generic_services_removed") or [])
+        if str(servicio or "").strip()
+    ]
 
 
 async def manejar_estado_menu(
@@ -47,7 +58,7 @@ async def manejar_estado_menu(
                 flujo["state"] = "awaiting_city"
                 respuesta = {
                     "success": True,
-                    "messages": [{"response": PROMPT_INICIO_REGISTRO}],
+                    "messages": [solicitar_ciudad_registro()],
                 }
             logger.info(f"📦 Response completo: {respuesta}")
             return respuesta
@@ -68,12 +79,19 @@ async def manejar_estado_menu(
         }
 
     servicios_actuales = flujo.get("services") or []
+    servicios_pendientes = _servicios_pendientes_genericos(flujo)
     if opcion == "1" or "servicio" in texto_minusculas:
         flujo["state"] = "awaiting_service_action"
         return {
             "success": True,
             "messages": [
-                {"response": construir_menu_servicios(servicios_actuales, SERVICIOS_MAXIMOS)}
+                {
+                    "response": construir_menu_servicios(
+                        servicios_actuales,
+                        SERVICIOS_MAXIMOS,
+                        servicios_pendientes_genericos=servicios_pendientes,
+                    )
+                }
             ],
         }
     if opcion == "2" or "selfie" in texto_minusculas or "foto" in texto_minusculas:

@@ -74,6 +74,8 @@ def validar_y_construir_proveedor(
             has_consent=flujo.get("has_consent", False),
             social_media_url=flujo.get("social_media_url"),
             social_media_type=flujo.get("social_media_type"),
+            location_lat=flujo.get("location_lat"),
+            location_lng=flujo.get("location_lng"),
         )
         return True, None, proveedor
 

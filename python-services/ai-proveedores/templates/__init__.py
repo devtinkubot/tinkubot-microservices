@@ -8,11 +8,10 @@ from templates.interfaz.componentes import pie_instrucciones_respuesta_numerica
 
 # ==================== DOMINIO: CONSENTIMIENTO ====================
 from templates.consentimiento import (
-    OPCIONES_CONSENTIMIENTO,
+    OPCION_CONTINUAR,
     PROMPT_CONSENTIMIENTO,
-    BLOQUE_ALCANCE_CONSENTIMIENTO,
+    payload_consentimiento_proveedor,
     mensaje_consentimiento_rechazado,
-    bloque_opciones_consentimiento,
     mensajes_prompt_consentimiento,
 )
 
@@ -23,6 +22,8 @@ from templates.interfaz import (
     mensaje_menu_principal_proveedor,
     mensaje_menu_post_registro_proveedor,
     mensaje_menu_servicios_proveedor,
+    mensaje_menu_servicios_activos,
+    mensaje_menu_servicios_pendientes,
     informar_cierre_sesion,
     error_opcion_no_reconocida,
     solicitar_selfie_actualizacion,
@@ -93,9 +94,8 @@ __all__ = [
     "PIE_CONSENTIMIENTO",
     # Consentimiento
     "PROMPT_CONSENTIMIENTO",
-    "BLOQUE_ALCANCE_CONSENTIMIENTO",
-    "OPCIONES_CONSENTIMIENTO",
-    "bloque_opciones_consentimiento",
+    "OPCION_CONTINUAR",
+    "payload_consentimiento_proveedor",
     "mensajes_prompt_consentimiento",
     "mensaje_consentimiento_rechazado",
     # Registro
@@ -119,6 +119,8 @@ __all__ = [
     "mensaje_menu_principal_proveedor",
     "mensaje_menu_post_registro_proveedor",
     "mensaje_menu_servicios_proveedor",
+    "mensaje_menu_servicios_activos",
+    "mensaje_menu_servicios_pendientes",
     # Interfaz - mensajes comunes
     "informar_cierre_sesion",
     "error_opcion_no_reconocida",

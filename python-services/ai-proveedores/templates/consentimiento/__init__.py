@@ -2,18 +2,16 @@
 
 from .mensajes import (
     PROMPT_CONSENTIMIENTO,
-    BLOQUE_ALCANCE_CONSENTIMIENTO,
-    OPCIONES_CONSENTIMIENTO,
-    bloque_opciones_consentimiento,
+    OPCION_CONTINUAR,
+    payload_consentimiento_proveedor,
     mensajes_prompt_consentimiento,
     mensaje_consentimiento_rechazado,
 )
 
 __all__ = [
     "PROMPT_CONSENTIMIENTO",
-    "BLOQUE_ALCANCE_CONSENTIMIENTO",
-    "OPCIONES_CONSENTIMIENTO",
-    "bloque_opciones_consentimiento",
+    "OPCION_CONTINUAR",
+    "payload_consentimiento_proveedor",
     "mensajes_prompt_consentimiento",
     "mensaje_consentimiento_rechazado",
 ]

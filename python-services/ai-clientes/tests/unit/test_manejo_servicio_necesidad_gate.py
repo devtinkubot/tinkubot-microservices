@@ -5,6 +5,7 @@ from flows.manejadores_estados.manejo_servicio import (
     procesar_estado_esperando_servicio,
 )
 from templates.mensajes.validacion import (
+    mensaje_solicitar_precision_servicio,
     mensaje_solicitar_detalle_servicio,
 )
 
@@ -176,3 +177,30 @@ async def test_hint_previsto_se_combina_con_detalle_para_extraer_servicio():
     )
     assert "service_candidate_hint" not in flujo_actualizado
     assert "¿Es este el servicio que buscas:" in respuesta["response"]
+
+
+@pytest.mark.asyncio
+async def test_servicio_generico_critico_pide_precision_y_no_busca():
+    flujo = {"state": "awaiting_service"}
+
+    async def extraer_fn(_texto: str):
+        return "transporte de mercancías"
+
+    async def validar_necesidad_fn(_texto: str):
+        return True
+
+    flujo_actualizado, respuesta = await procesar_estado_esperando_servicio(
+        flujo=flujo,
+        texto="necesito llevar mercaderia",
+        saludos=set(),
+        prompt_inicial="¿Qué necesitas resolver?",
+        extraer_fn=extraer_fn,
+        validar_necesidad_fn=validar_necesidad_fn,
+    )
+
+    assert flujo_actualizado["state"] == "awaiting_service"
+    assert flujo_actualizado["service_candidate_hint"] == "transporte de mercancías"
+    assert "service_candidate" not in flujo_actualizado
+    assert respuesta["response"] == mensaje_solicitar_precision_servicio(
+        "transporte de mercancías"
+    )

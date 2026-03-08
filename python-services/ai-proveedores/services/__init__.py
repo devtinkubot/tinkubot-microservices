@@ -20,6 +20,7 @@ from .registro import (
 from .servicios_proveedor import (
     actualizar_documentos_identidad,
     actualizar_servicios,
+    actualizar_servicios_pendientes_genericos,
     actualizar_redes_sociales,
     actualizar_selfie,
 )
@@ -34,6 +35,7 @@ __all__ = [
     "eliminar_registro_proveedor",
     # Módulo servicios de proveedor
     "actualizar_servicios",
+    "actualizar_servicios_pendientes_genericos",
     "actualizar_redes_sociales",
     "actualizar_selfie",
     "actualizar_documentos_identidad",

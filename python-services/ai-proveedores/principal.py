@@ -8,7 +8,7 @@ import logging
 import os
 import re
 import unicodedata
-from datetime import datetime
+from datetime import datetime, timezone
 from time import perf_counter
 from typing import Any, Dict, Optional
 
@@ -52,6 +52,8 @@ CLAVE_CONTEXTO_DISPONIBILIDAD = "availability:provider:{}:context"
 CLAVE_PENDIENTES_DISPONIBILIDAD = "availability:provider:{}:pending"
 CLAVE_CICLO_SOLICITUD = "availability:lifecycle:{}"
 ESTADO_ESPERANDO_DISPONIBILIDAD = "awaiting_availability_response"
+CLAVE_DEDUPE_MEDIA = "prov_media_dedupe:{}:{}"
+TTL_DEDUPE_MEDIA_SEGUNDOS = int(os.getenv("PROVIDER_MEDIA_DEDUPE_TTL_SECONDS", "900"))
 ONBOARDING_STATES = {
     None,
     "pending_verification",
@@ -76,12 +78,25 @@ MENU_STATES = {
     "awaiting_deletion_confirmation",
     "awaiting_social_media_update",
     "awaiting_service_action",
+    "awaiting_active_service_action",
+    "awaiting_pending_service_action",
     "awaiting_service_add",
     "awaiting_service_add_confirmation",
     "awaiting_service_remove",
+    "awaiting_pending_service_select",
+    "awaiting_pending_service_add",
+    "awaiting_pending_service_add_confirmation",
     "awaiting_face_photo_update",
     "awaiting_dni_front_photo_update",
     "awaiting_dni_back_photo_update",
+}
+MEDIA_STATES = {
+    "awaiting_dni_front_photo",
+    "awaiting_dni_back_photo",
+    "awaiting_face_photo",
+    "awaiting_dni_front_photo_update",
+    "awaiting_dni_back_photo_update",
+    "awaiting_face_photo_update",
 }
 
 # Configurar logging
@@ -220,6 +235,41 @@ def _parsear_respuesta_disponibilidad(texto: str) -> Optional[str]:
 async def _hay_contexto_disponibilidad_activo(telefono: str) -> bool:
     contexto = await cliente_redis.get(CLAVE_CONTEXTO_DISPONIBILIDAD.format(telefono))
     return bool(isinstance(contexto, dict) and contexto.get("expecting_response"))
+
+
+def _resolver_message_id(carga: Dict[str, Any]) -> str:
+    return str(carga.get("id") or carga.get("message_id") or "").strip()
+
+
+def _es_evento_multimedia(carga: Dict[str, Any]) -> bool:
+    if any(carga.get(campo) for campo in ("image_base64", "media_base64", "file_base64")):
+        return True
+    if carga.get("attachments") or carga.get("media"):
+        return True
+    contenido = carga.get("content") or carga.get("message")
+    return isinstance(contenido, str) and contenido.startswith("data:image/")
+
+
+async def _es_mensaje_multimedia_duplicado(
+    telefono: str,
+    estado: Optional[str],
+    carga: Dict[str, Any],
+) -> bool:
+    if estado not in MEDIA_STATES:
+        return False
+    if not _es_evento_multimedia(carga):
+        return False
+
+    message_id = _resolver_message_id(carga)
+    if not message_id:
+        return False
+
+    creado = await cliente_redis.set_if_absent(
+        CLAVE_DEDUPE_MEDIA.format(telefono, message_id),
+        {"state": estado, "processed_at": datetime.now(timezone.utc).isoformat()},
+        expire=TTL_DEDUPE_MEDIA_SEGUNDOS,
+    )
+    return not creado
 
 
 async def _actualizar_ciclo_solicitud(
@@ -588,6 +638,14 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
         )
 
         flujo = await obtener_flujo(telefono)
+        if await _es_mensaje_multimedia_duplicado(telefono, flujo.get("state"), carga):
+            logger.info(
+                "media_message_duplicate_ignored provider=%s state=%s message_id=%s",
+                telefono,
+                flujo.get("state"),
+                _resolver_message_id(carga),
+            )
+            return {"success": True, "messages": []}
         hay_contexto_disponibilidad = await _hay_contexto_disponibilidad_activo(telefono)
         if hay_contexto_disponibilidad and flujo.get("state") in MENU_STATES:
             flujo["state"] = ESTADO_ESPERANDO_DISPONIBILIDAD

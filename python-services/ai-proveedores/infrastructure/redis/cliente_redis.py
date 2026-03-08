@@ -82,6 +82,31 @@ class ClienteRedis:
                 logger.error(f"❌ Error guardando en Redis: {e}")
                 raise
 
+    async def set_if_absent(
+        self, key: str, value: Any, expire: Optional[int] = None
+    ) -> bool:
+        """Guardar valor solo si la clave no existe."""
+        if not self._connected and not self.redis_client:
+            await self.connect()
+
+        if self._connected and self.redis_client:
+            try:
+                if isinstance(value, (dict, list)):
+                    value = json.dumps(value)
+
+                creado = await self.redis_client.set(
+                    key,
+                    value,
+                    ex=expire,
+                    nx=True,
+                )
+                return bool(creado)
+            except Exception as e:
+                logger.error(f"❌ Error guardando condicional en Redis: {e}")
+                raise
+
+        return False
+
     async def get(self, key: str) -> Optional[Any]:
         """Obtener valor de Redis"""
         if not self._connected and not self.redis_client:

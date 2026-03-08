@@ -58,7 +58,11 @@ def sincronizar_flujo_con_perfil(
     flujo: Dict[str, Any],
     perfil_proveedor: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
-    """Sincroniza datos del flujo con el perfil persistido."""
+    """Sincroniza datos del flujo con el perfil persistido.
+
+    Regla: cuando existe perfil, Supabase es la fuente de verdad para
+    datos de negocio durables; Redis conserva solo estado conversacional.
+    """
     if perfil_proveedor:
         if perfil_proveedor.get("has_consent") and not flujo.get("has_consent"):
             flujo["has_consent"] = True
@@ -67,13 +71,35 @@ def sincronizar_flujo_con_perfil(
             flujo["provider_id"] = proveedor_id
         if perfil_proveedor.get("full_name"):
             flujo["full_name"] = perfil_proveedor.get("full_name")
+        if perfil_proveedor.get("city") is not None:
+            flujo["city"] = perfil_proveedor.get("city")
+        if perfil_proveedor.get("location_lat") is not None:
+            flujo["location_lat"] = perfil_proveedor.get("location_lat")
+        if perfil_proveedor.get("location_lng") is not None:
+            flujo["location_lng"] = perfil_proveedor.get("location_lng")
+        if perfil_proveedor.get("location_updated_at") is not None:
+            flujo["location_updated_at"] = perfil_proveedor.get("location_updated_at")
+        if perfil_proveedor.get("city_confirmed_at") is not None:
+            flujo["city_confirmed_at"] = perfil_proveedor.get("city_confirmed_at")
         servicios_guardados = perfil_proveedor.get("services_list") or []
         flujo["services"] = servicios_guardados
-        if perfil_proveedor.get("real_phone") and not flujo.get("real_phone"):
+        flujo["service_review_required"] = bool(
+            perfil_proveedor.get("service_review_required")
+        )
+        flujo["generic_services_removed"] = [
+            servicio.strip()
+            for servicio in (perfil_proveedor.get("generic_services_removed") or [])
+            if str(servicio or "").strip()
+        ]
+        if perfil_proveedor.get("real_phone") is not None:
             flujo["real_phone"] = perfil_proveedor.get("real_phone")
         flujo["menu_limitado"] = perfil_tiene_menu_limitado(perfil_proveedor)
     else:
         flujo.setdefault("services", [])
+        flujo.setdefault("service_review_required", False)
+        flujo.setdefault("generic_services_removed", [])
+        flujo.setdefault("location_updated_at", None)
+        flujo.setdefault("city_confirmed_at", None)
         flujo["menu_limitado"] = False
     return flujo
 

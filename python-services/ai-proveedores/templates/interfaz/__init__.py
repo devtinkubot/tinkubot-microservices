@@ -6,6 +6,8 @@ from .menus import (
     mensaje_menu_principal_proveedor,
     mensaje_menu_post_registro_proveedor,
     mensaje_menu_servicios_proveedor,
+    mensaje_menu_servicios_activos,
+    mensaje_menu_servicios_pendientes,
 )
 
 from .componentes import pie_instrucciones_respuesta_numerica
@@ -59,6 +61,8 @@ __all__ = [
     "mensaje_menu_principal_proveedor",
     "mensaje_menu_post_registro_proveedor",
     "mensaje_menu_servicios_proveedor",
+    "mensaje_menu_servicios_activos",
+    "mensaje_menu_servicios_pendientes",
     # Componentes
     "pie_instrucciones_respuesta_numerica",
     # Mensajes comunes

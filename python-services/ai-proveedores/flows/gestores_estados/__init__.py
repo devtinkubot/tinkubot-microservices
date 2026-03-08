@@ -6,9 +6,14 @@ from .gestor_menu import manejar_estado_menu
 from .gestor_actualizacion_redes import manejar_actualizacion_redes_sociales
 from .gestor_servicios import (
     manejar_accion_servicios,
+    manejar_accion_servicios_activos,
+    manejar_accion_servicios_pendientes,
     manejar_agregar_servicios,
     manejar_confirmacion_agregar_servicios,
     manejar_eliminar_servicio,
+    manejar_seleccion_servicio_pendiente,
+    manejar_precision_servicio_pendiente,
+    manejar_confirmacion_precision_servicio_pendiente,
 )
 from .gestor_actualizacion_selfie import manejar_actualizacion_selfie
 from .gestor_eliminacion import manejar_confirmacion_eliminacion
@@ -46,9 +51,14 @@ __all__ = [
     "manejar_estado_menu",
     "manejar_actualizacion_redes_sociales",
     "manejar_accion_servicios",
+    "manejar_accion_servicios_activos",
+    "manejar_accion_servicios_pendientes",
     "manejar_agregar_servicios",
     "manejar_confirmacion_agregar_servicios",
     "manejar_eliminar_servicio",
+    "manejar_seleccion_servicio_pendiente",
+    "manejar_precision_servicio_pendiente",
+    "manejar_confirmacion_precision_servicio_pendiente",
     "manejar_actualizacion_selfie",
     "manejar_confirmacion_eliminacion",
     "manejar_inicio_documentos",

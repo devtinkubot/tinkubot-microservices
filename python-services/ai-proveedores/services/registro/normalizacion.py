@@ -2,6 +2,7 @@
 Funciones de normalización de datos de proveedores.
 """
 
+from datetime import datetime, timezone
 import logging
 import re
 from typing import Any, Dict, Optional
@@ -106,12 +107,21 @@ def normalizar_datos_proveedor(
         if re.fullmatch(r"\+?\d{10,20}", user or ""):
             real_phone = _normalizar_telefono_ecuador(user)
 
+    ahora_iso = datetime.now(timezone.utc).isoformat()
+    tiene_coordenadas = (
+        datos_crudos.location_lat is not None and datos_crudos.location_lng is not None
+    )
+
     return {
         "phone": telefono,
         "real_phone": real_phone,
         "full_name": datos_crudos.full_name.strip().title(),  # Formato legible
         "email": datos_crudos.email.strip() if datos_crudos.email else None,
         "city": normalizar_texto_para_busqueda(datos_crudos.city),  # minúsculas
+        "location_lat": datos_crudos.location_lat,
+        "location_lng": datos_crudos.location_lng,
+        "location_updated_at": ahora_iso if tiene_coordenadas else None,
+        "city_confirmed_at": ahora_iso,
         # Fase 5: Eliminado campo 'profession'
         "services_normalized": servicios_normalizados,  # Fase 5: Lista, no string
         "experience_years": datos_crudos.experience_years or 0,
@@ -151,6 +161,10 @@ def garantizar_campos_obligatorios_proveedor(
 
     datos["rating"] = float(datos.get("rating") or 5.0)
     datos["experience_years"] = int(datos.get("experience_years") or 0)
+    datos.setdefault("location_lat", None)
+    datos.setdefault("location_lng", None)
+    datos.setdefault("location_updated_at", None)
+    datos.setdefault("city_confirmed_at", None)
     # Fase 5: Eliminada referencia a 'profession'
     datos["has_consent"] = bool(datos.get("has_consent"))
     datos["status"] = "approved" if datos.get("verified") else "pending"

@@ -4,7 +4,10 @@ from typing import Any, Dict, Optional
 
 from flows.consentimiento import procesar_respuesta_consentimiento
 from flows.constructores import construir_menu_principal
-from templates.registro import PROMPT_INICIO_REGISTRO, preguntar_real_phone
+from templates.registro import (
+    preguntar_real_phone,
+    solicitar_ciudad_registro,
+)
 
 
 async def manejar_estado_consentimiento(
@@ -28,13 +31,11 @@ async def manejar_estado_consentimiento(
             return {
                 "success": True,
                 "messages": [
-                    {
-                        "response": (
-                            preguntar_real_phone()
-                            if requiere_real_phone
-                            else PROMPT_INICIO_REGISTRO
-                        )
-                    }
+                    (
+                        {"response": preguntar_real_phone()}
+                        if requiere_real_phone
+                        else solicitar_ciudad_registro()
+                    )
                 ],
             }
 

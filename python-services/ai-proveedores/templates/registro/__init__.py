@@ -40,6 +40,12 @@ from .validacion_ciudad import (
     error_ciudad_frase,
     error_ciudad_no_reconocida,
 )
+from .ubicacion import (
+    solicitar_ciudad_registro,
+    solicitar_ciudad_actualizacion,
+    ui_solicitud_ubicacion,
+    mensaje_error_resolviendo_ubicacion,
+)
 
 __all__ = [
     # Pasos de registro
@@ -73,4 +79,8 @@ __all__ = [
     "error_ciudad_multiple",
     "error_ciudad_frase",
     "error_ciudad_no_reconocida",
+    "solicitar_ciudad_registro",
+    "solicitar_ciudad_actualizacion",
+    "ui_solicitud_ubicacion",
+    "mensaje_error_resolviendo_ubicacion",
 ]

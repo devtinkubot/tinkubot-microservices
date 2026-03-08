@@ -33,6 +33,41 @@ _PALABRAS_VAGAS_OCUPACION = {
     "urgentemente",
 }
 
+_VERBOS_ACCION_USUARIO = {
+    "llevar",
+    "enviar",
+    "mudar",
+    "arreglar",
+    "reparar",
+    "destapar",
+    "instalar",
+    "configurar",
+    "pintar",
+    "construir",
+    "hacer",
+    "tramitar",
+}
+
+_SERVICIOS_GENERICOS_CRITICOS = {
+    "asesoria legal": "legal",
+    "servicio legal": "legal",
+    "legal": "legal",
+    "transporte mercancias": "transporte",
+    "transporte mercaderia": "transporte",
+    "transporte de mercancias": "transporte",
+    "transporte de mercaderia": "transporte",
+    "transporte carga": "transporte",
+    "transporte de carga": "transporte",
+    "transporte terrestre": "transporte",
+    "transporte maritimo": "transporte",
+    "transporte aereo": "transporte",
+    "servicios tecnologicos": "tecnologia",
+    "servicio tecnologico": "tecnologia",
+    "consultoria tecnologica": "tecnologia",
+    "consultoria tecnologia": "tecnologia",
+    "desarrollo tecnologico": "tecnologia",
+}
+
 
 def _normalizar_texto(texto: str) -> str:
     base = unicodedata.normalize("NFD", (texto or "").strip().lower())
@@ -56,6 +91,8 @@ def _es_solicitud_generica_ocupacion(
     if not servicio_extraido:
         return False
     tokens = _tokens_relevantes(texto)
+    if any(token in _VERBOS_ACCION_USUARIO for token in tokens):
+        return False
     return 0 < len(tokens) <= 2
 
 
@@ -68,6 +105,10 @@ def _construir_contexto_con_hint(
     if hint and detalle:
         return f"Servicio de referencia: {hint}. Necesidad del usuario: {detalle}"
     return detalle or hint
+
+
+def _detectar_servicio_generico_critico(servicio: Optional[str]) -> Optional[str]:
+    return _SERVICIOS_GENERICOS_CRITICOS.get(_normalizar_texto(servicio or ""))
 
 
 def _hint_usuario_legible(
@@ -176,6 +217,26 @@ async def procesar_estado_esperando_servicio(
                 "Descríbelo de forma más concreta (ej: desarrollador web, "
                 "plomero, electricista, diseñador gráfico)."
             )
+        }
+
+    dominio_generico = _detectar_servicio_generico_critico(valor_servicio)
+    if dominio_generico:
+        flujo["state"] = "awaiting_service"
+        flujo["service_candidate_hint"] = valor_servicio
+        flujo["service_candidate_hint_label"] = valor_servicio
+        flujo.pop("service_candidate", None)
+        flujo.pop("service", None)
+        flujo.pop("descripcion_problema", None)
+        from templates.mensajes.validacion import mensaje_solicitar_precision_servicio
+
+        logger.info(
+            "critical_generic_service_blocked domain='%s' service='%s' input='%s'",
+            dominio_generico,
+            valor_servicio,
+            limpio[:120],
+        )
+        return flujo, {
+            "response": mensaje_solicitar_precision_servicio(valor_servicio),
         }
 
     contexto_busqueda = _construir_contexto_con_hint(texto or limpio, servicio_hint_existente)

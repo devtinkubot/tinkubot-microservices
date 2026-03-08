@@ -49,6 +49,8 @@ class SolicitudCreacionProveedor(BaseModel):
         dni_back_photo_url: URL foto trasera DNI (opcional)
         face_photo_url: URL foto facial (opcional)
         has_consent: Consentimiento de procesamiento de datos (default: False)
+        location_lat: Latitud de ubicación (opcional)
+        location_lng: Longitud de ubicación (opcional)
     """
 
     phone: str = Field(..., min_length=3, max_length=64)
@@ -67,6 +69,10 @@ class SolicitudCreacionProveedor(BaseModel):
     dni_back_photo_url: Optional[str] = None
     face_photo_url: Optional[str] = None
     has_consent: bool = False
+    location_lat: Optional[float] = None
+    location_lng: Optional[float] = None
+    location_updated_at: Optional[datetime] = None
+    city_confirmed_at: Optional[datetime] = None
 
     @field_validator("services_list")
     @classmethod
@@ -158,5 +164,11 @@ class RespuestaProveedor(BaseModel):
     dni_back_photo_url: Optional[str] = None
     face_photo_url: Optional[str] = None
     has_consent: bool = False
+    location_lat: Optional[float] = None
+    location_lng: Optional[float] = None
+    location_updated_at: Optional[datetime] = None
+    city_confirmed_at: Optional[datetime] = None
+    service_review_required: bool = False
+    generic_services_removed: List[str] = Field(default_factory=list)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None

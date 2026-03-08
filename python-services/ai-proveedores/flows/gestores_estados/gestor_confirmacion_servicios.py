@@ -4,10 +4,13 @@ import logging
 import re
 from typing import Any, Dict, List, Optional
 
+from services.servicios_proveedor.utilidades import (
+    es_servicio_critico_generico,
+    mensaje_pedir_precision_servicio,
+)
 from templates.registro import (
     mensaje_confirmacion_servicios,
     mensaje_correccion_servicios,
-    mensaje_lista_servicios_corregida,
 )
 
 logger = logging.getLogger(__name__)
@@ -40,8 +43,10 @@ def mostrar_confirmacion_servicios(
     }
 
 
-def manejar_confirmacion_servicios(
-    flujo: Dict[str, Any], texto_mensaje: Optional[str]
+async def manejar_confirmacion_servicios(
+    flujo: Dict[str, Any],
+    texto_mensaje: Optional[str],
+    cliente_openai: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """
     Procesa la respuesta del usuario a la confirmación de servicios.
@@ -110,11 +115,50 @@ def manejar_confirmacion_servicios(
         }
 
     # Si no es "1" o "2", asumimos que es una corrección manual
-    return procesar_correccion_manual(flujo, texto_mensaje)
+    return await procesar_correccion_manual(flujo, texto_mensaje, cliente_openai)
 
 
-def procesar_correccion_manual(
-    flujo: Dict[str, Any], texto_mensaje: str
+def _extraer_servicios_desde_texto(texto_mensaje: str) -> List[str]:
+    servicios = []
+    for item in re.split(r"[;,/\n]+", texto_mensaje.strip()):
+        item = item.strip()
+        if item and len(item) >= 2:
+            servicios.append(item)
+    return servicios
+
+
+async def _normalizar_o_conservar_servicios(
+    texto_mensaje: str,
+    cliente_openai: Optional[Any],
+    max_servicios: int = 10,
+) -> List[str]:
+    servicios_parseados = _extraer_servicios_desde_texto(texto_mensaje)
+    if not servicios_parseados:
+        return []
+
+    if not cliente_openai:
+        return servicios_parseados[:max_servicios]
+
+    try:
+        from infrastructure.openai.transformador_servicios import TransformadorServicios
+
+        transformador = TransformadorServicios(cliente_openai)
+        servicios_transformados = await transformador.transformar_a_servicios(
+            texto_mensaje,
+            max_servicios=max_servicios,
+        )
+        if servicios_transformados:
+            return servicios_transformados[:max_servicios]
+    except Exception as exc:
+        logger.warning("⚠️ Error re-normalizando corrección manual: %s", exc)
+
+    return servicios_parseados[:max_servicios]
+
+
+async def procesar_correccion_manual(
+    flujo: Dict[str, Any],
+    texto_mensaje: str,
+    cliente_openai: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """
     Procesa la corrección manual de servicios por parte del usuario.
@@ -142,12 +186,7 @@ def procesar_correccion_manual(
             ],
         }
 
-    # Separar por comas, puntos y comas, o slashes
-    servicios = []
-    for item in re.split(r"[;,/\n]+", texto_limpio):
-        item = item.strip()
-        if item and len(item) >= 2:
-            servicios.append(item)
+    servicios = _extraer_servicios_desde_texto(texto_limpio)
 
     if len(servicios) > 10:
         return {
@@ -162,27 +201,51 @@ def procesar_correccion_manual(
             ],
         }
 
-    # Guardar los servicios corregidos
-    flujo["specialty"] = ", ".join(servicios)
+    servicios_normalizados = await _normalizar_o_conservar_servicios(
+        texto_limpio,
+        cliente_openai,
+        max_servicios=10,
+    )
+    if not servicios_normalizados:
+        return {
+            "success": True,
+            "messages": [
+                {
+                    "response": (
+                        "*No pude interpretar tus servicios.* "
+                        "Por favor reescríbelos de forma más simple, separados por comas."
+                    )
+                }
+            ],
+        }
 
-    # Limpiar servicios temporales si existen
-    if "servicios_temporales" in flujo:
-        del flujo["servicios_temporales"]
+    servicio_generico = next(
+        (
+            servicio
+            for servicio in servicios_normalizados
+            if es_servicio_critico_generico(servicio)
+        ),
+        None,
+    )
+    if servicio_generico:
+        return {
+            "success": True,
+            "messages": [
+                {"response": mensaje_pedir_precision_servicio(servicio_generico)}
+            ],
+        }
 
-    logger.info(f"✅ Servicios corregidos manualmente: {len(servicios)} servicios")
+    flujo["servicios_temporales"] = servicios_normalizados
+    flujo["state"] = "awaiting_services_confirmation"
 
-    # Cambiar al siguiente estado
-    flujo["state"] = "awaiting_experience"
+    logger.info(
+        "✅ Servicios corregidos manualmente y re-normalizados: %s servicios",
+        len(servicios_normalizados),
+    )
 
     return {
         "success": True,
         "messages": [
-            {"response": mensaje_lista_servicios_corregida(servicios)},
-            {
-                "response": (
-                    "*¿Cuántos años de experiencia tienes?* "
-                    "(escribe un número, ej: 5)"
-                )
-            },
+            {"response": mensaje_confirmacion_servicios(servicios_normalizados)}
         ],
     }

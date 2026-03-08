@@ -122,6 +122,61 @@ async def actualizar_servicios(proveedor_id: str, servicios: List[str]) -> List[
     return servicios_limpios
 
 
+async def actualizar_servicios_pendientes_genericos(
+    proveedor_id: str,
+    servicios_pendientes: List[str],
+) -> List[str]:
+    """Actualiza el listado de servicios pendientes por precisar."""
+    from principal import supabase  # Import dinámico para evitar circular import
+
+    pendientes_limpios = [
+        str(servicio).strip()
+        for servicio in servicios_pendientes
+        if str(servicio).strip()
+    ]
+    if not supabase:
+        return pendientes_limpios
+
+    try:
+        payload = {
+            "generic_services_removed": pendientes_limpios,
+            "service_review_required": bool(pendientes_limpios),
+        }
+        await run_supabase(
+            lambda: supabase.table("providers")
+            .update(payload)
+            .eq("id", proveedor_id)
+            .execute(),
+            label="providers.update_generic_services_removed",
+        )
+
+        telefono = await _obtener_telefono_proveedor(supabase, proveedor_id)
+        if telefono:
+            from flows.sesion import (
+                invalidar_cache_perfil_proveedor,
+                refrescar_cache_perfil_proveedor,
+            )
+
+            await invalidar_cache_perfil_proveedor(telefono)
+            try:
+                await refrescar_cache_perfil_proveedor(telefono)
+            except Exception as exc:
+                logger.warning(
+                    "⚠️ No se pudo refrescar cache de perfil %s: %s",
+                    telefono,
+                    exc,
+                )
+    except Exception as exc:
+        logger.error(
+            "❌ Error actualizando pendientes genéricos para proveedor %s: %s",
+            proveedor_id,
+            exc,
+        )
+        raise
+
+    return pendientes_limpios
+
+
 async def _obtener_telefono_proveedor(
     supabase: Any, proveedor_id: str
 ) -> Optional[str]:

@@ -7,6 +7,8 @@ from flows.consentimiento import solicitar_consentimiento
 from flows.constructores import construir_menu_principal
 from flows.gestores_estados import (
     manejar_accion_servicios,
+    manejar_accion_servicios_activos,
+    manejar_accion_servicios_pendientes,
     manejar_actualizacion_redes_sociales,
     manejar_actualizacion_selfie,
     manejar_agregar_servicios,
@@ -18,6 +20,9 @@ from flows.gestores_estados import (
     manejar_dni_trasera,
     manejar_dni_trasera_actualizacion,
     manejar_eliminar_servicio,
+    manejar_seleccion_servicio_pendiente,
+    manejar_precision_servicio_pendiente,
+    manejar_confirmacion_precision_servicio_pendiente,
     manejar_espera_ciudad,
     manejar_espera_correo,
     manejar_espera_especialidad,
@@ -448,6 +453,22 @@ async def enrutar_estado(  # noqa: C901
         )
         return {"response": respuesta, "persist_flow": True}
 
+    if estado == "awaiting_active_service_action":
+        respuesta = await manejar_accion_servicios_activos(
+            flujo=flujo,
+            texto_mensaje=texto_mensaje,
+            opcion_menu=opcion_menu,
+        )
+        return {"response": respuesta, "persist_flow": True}
+
+    if estado == "awaiting_pending_service_action":
+        respuesta = await manejar_accion_servicios_pendientes(
+            flujo=flujo,
+            texto_mensaje=texto_mensaje,
+            opcion_menu=opcion_menu,
+        )
+        return {"response": respuesta, "persist_flow": True}
+
     if estado == "awaiting_service_add":
         respuesta = await manejar_agregar_servicios(
             flujo=flujo,
@@ -462,6 +483,7 @@ async def enrutar_estado(  # noqa: C901
             flujo=flujo,
             proveedor_id=flujo.get("provider_id"),
             texto_mensaje=texto_mensaje,
+            cliente_openai=cliente_openai,
         )
         return {"response": respuesta, "persist_flow": True}
 
@@ -470,6 +492,31 @@ async def enrutar_estado(  # noqa: C901
             flujo=flujo,
             proveedor_id=flujo.get("provider_id"),
             texto_mensaje=texto_mensaje,
+        )
+        return {"response": respuesta, "persist_flow": True}
+
+    if estado == "awaiting_pending_service_select":
+        respuesta = await manejar_seleccion_servicio_pendiente(
+            flujo=flujo,
+            texto_mensaje=texto_mensaje,
+        )
+        return {"response": respuesta, "persist_flow": True}
+
+    if estado == "awaiting_pending_service_add":
+        respuesta = await manejar_precision_servicio_pendiente(
+            flujo=flujo,
+            proveedor_id=flujo.get("provider_id"),
+            texto_mensaje=texto_mensaje,
+            cliente_openai=cliente_openai,
+        )
+        return {"response": respuesta, "persist_flow": True}
+
+    if estado == "awaiting_pending_service_add_confirmation":
+        respuesta = await manejar_confirmacion_precision_servicio_pendiente(
+            flujo=flujo,
+            proveedor_id=flujo.get("provider_id"),
+            texto_mensaje=texto_mensaje,
+            cliente_openai=cliente_openai,
         )
         return {"response": respuesta, "persist_flow": True}
 
@@ -504,7 +551,13 @@ async def enrutar_estado(  # noqa: C901
         return {"response": respuesta, "persist_flow": True}
 
     if estado == "awaiting_city":
-        respuesta = manejar_espera_ciudad(flujo, texto_mensaje)
+        respuesta = await manejar_espera_ciudad(
+            flujo,
+            texto_mensaje,
+            carga=carga,
+            supabase=supabase,
+            proveedor_id=flujo.get("provider_id"),
+        )
         return {"response": respuesta, "persist_flow": True}
 
     if estado == "awaiting_name":
@@ -520,7 +573,11 @@ async def enrutar_estado(  # noqa: C901
 
     if estado == "awaiting_services_confirmation":
         # Fase 7: Confirmación de servicios transformados por OpenAI
-        respuesta = manejar_confirmacion_servicios(flujo, texto_mensaje)
+        respuesta = await manejar_confirmacion_servicios(
+            flujo,
+            texto_mensaje,
+            cliente_openai,
+        )
         return {"response": respuesta, "persist_flow": True}
 
     if estado == "awaiting_experience":
