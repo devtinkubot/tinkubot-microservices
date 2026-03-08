@@ -20,6 +20,11 @@ type Handlers struct {
 	sseHub        *SSEHub
 	metaWebhook   *metawebhook.Service
 	outbound      *outbound.Router
+	metaManaged   map[string]bool
+}
+
+type HandlerConfig struct {
+	MetaManagedAccounts map[string]bool
 }
 
 // NewHandlers creates a new Handlers instance
@@ -29,13 +34,19 @@ func NewHandlers(
 	sseHub *SSEHub,
 	metaWebhook *metawebhook.Service,
 	outboundRouter *outbound.Router,
+	cfg HandlerConfig,
 ) *Handlers {
+	metaManaged := cfg.MetaManagedAccounts
+	if metaManaged == nil {
+		metaManaged = map[string]bool{}
+	}
 	return &Handlers{
 		clientManager: cm,
 		rateLimiter:   rl,
 		sseHub:        sseHub,
 		metaWebhook:   metaWebhook,
 		outbound:      outboundRouter,
+		metaManaged:   metaManaged,
 	}
 }
 
@@ -46,9 +57,81 @@ type Account struct {
 	AccountType      string     `json:"account_type"`
 	DisplayName      string     `json:"display_name"`
 	ConnectionStatus string     `json:"connection_status"`
+	Transport        string     `json:"transport,omitempty"`
 	QRCode           string     `json:"qr_code,omitempty"`
 	QRExpiresAt      *time.Time `json:"qr_expires_at,omitempty"`
 	ConnectedAt      *time.Time `json:"connected_at,omitempty"`
+}
+
+var knownAccounts = map[string]Account{
+	"bot-clientes": {
+		ID:          "bot-clientes",
+		AccountID:   "bot-clientes",
+		AccountType: "clientes",
+		DisplayName: "Bot Clientes",
+		Transport:   "whatsmeow",
+	},
+	"bot-proveedores": {
+		ID:          "bot-proveedores",
+		AccountID:   "bot-proveedores",
+		AccountType: "proveedores",
+		DisplayName: "Bot Proveedores",
+		Transport:   "whatsmeow",
+	},
+}
+
+func (h *Handlers) isMetaManaged(accountID string) bool {
+	if h == nil {
+		return false
+	}
+	return h.metaManaged[accountID]
+}
+
+func (h *Handlers) buildAccount(accountID string) Account {
+	acc := knownAccounts[accountID]
+	if h.isMetaManaged(accountID) {
+		acc.ConnectionStatus = "meta_managed"
+		acc.Transport = "meta"
+		return acc
+	}
+
+	acc.ConnectionStatus = "disconnected"
+	acc.Transport = "whatsmeow"
+	if h.clientManager == nil {
+		return acc
+	}
+
+	client, ok := h.clientManager.GetClient(accountID)
+	if !ok {
+		return acc
+	}
+	if client.IsLoggedIn() {
+		acc.ConnectionStatus = "connected"
+		now := time.Now()
+		acc.ConnectedAt = &now
+		return acc
+	}
+	if client.IsConnected() {
+		acc.ConnectionStatus = "qr_ready"
+		if qrCode, expiresAt, exists := h.clientManager.GetQRCode(accountID); exists {
+			acc.QRCode = qrCode
+			acc.QRExpiresAt = expiresAt
+		}
+	}
+	return acc
+}
+
+func (h *Handlers) metaOperationNotApplicable(c *gin.Context, accountID string) bool {
+	if !h.isMetaManaged(accountID) {
+		return false
+	}
+	c.JSON(http.StatusConflict, gin.H{
+		"error":      "Operation not applicable",
+		"message":    "Account is managed by Meta Cloud API",
+		"code":       "ACCOUNT_MANAGED_BY_META",
+		"account_id": accountID,
+	})
+	return true
 }
 
 // GetHealth returns health check information
@@ -68,42 +151,10 @@ func (h *Handlers) GetHealth(c *gin.Context) {
 
 // GetAccounts returns all accounts with their connection status
 func (h *Handlers) GetAccounts(c *gin.Context) {
-	// Return known accounts
-	accounts := []Account{
-		{
-			ID:               "bot-clientes",
-			AccountID:        "bot-clientes",
-			AccountType:      "clientes",
-			DisplayName:      "Bot Clientes",
-			ConnectionStatus: "disconnected",
-		},
-		{
-			ID:               "bot-proveedores",
-			AccountID:        "bot-proveedores",
-			AccountType:      "proveedores",
-			DisplayName:      "Bot Proveedores",
-			ConnectionStatus: "disconnected",
-		},
-	}
-
-	// Update connection status based on actual client state
-	for i := range accounts {
-		if client, ok := h.clientManager.GetClient(accounts[i].AccountID); ok {
-			if client.IsLoggedIn() {
-				accounts[i].ConnectionStatus = "connected"
-				now := time.Now()
-				accounts[i].ConnectedAt = &now
-			} else if client.IsConnected() {
-				accounts[i].ConnectionStatus = "qr_ready"
-				// Include QR code if available
-				if qrCode, expiresAt, exists := h.clientManager.GetQRCode(accounts[i].AccountID); exists {
-					accounts[i].QRCode = qrCode
-					accounts[i].QRExpiresAt = expiresAt
-				}
-			} else {
-				accounts[i].ConnectionStatus = "disconnected"
-			}
-		}
+	accountIDs := []string{"bot-clientes", "bot-proveedores"}
+	accounts := make([]Account, 0, len(accountIDs))
+	for _, accountID := range accountIDs {
+		accounts = append(accounts, h.buildAccount(accountID))
 	}
 
 	c.JSON(http.StatusOK, accounts)
@@ -112,22 +163,6 @@ func (h *Handlers) GetAccounts(c *gin.Context) {
 // GetAccount returns a single account by ID
 func (h *Handlers) GetAccount(c *gin.Context) {
 	accountID := c.Param("accountId")
-
-	// Define known accounts
-	knownAccounts := map[string]Account{
-		"bot-clientes": {
-			ID:          "bot-clientes",
-			AccountID:   "bot-clientes",
-			AccountType: "clientes",
-			DisplayName: "Bot Clientes",
-		},
-		"bot-proveedores": {
-			ID:          "bot-proveedores",
-			AccountID:   "bot-proveedores",
-			AccountType: "proveedores",
-			DisplayName: "Bot Proveedores",
-		},
-	}
 
 	acc, exists := knownAccounts[accountID]
 	if !exists {
@@ -139,27 +174,8 @@ func (h *Handlers) GetAccount(c *gin.Context) {
 		return
 	}
 
-	// Update connection status
-	if client, ok := h.clientManager.GetClient(accountID); ok {
-		if client.IsLoggedIn() {
-			acc.ConnectionStatus = "connected"
-			now := time.Now()
-			acc.ConnectedAt = &now
-		} else if client.IsConnected() {
-			acc.ConnectionStatus = "qr_ready"
-			// Include QR code if available
-			if qrCode, expiresAt, exists := h.clientManager.GetQRCode(accountID); exists {
-				acc.QRCode = qrCode
-				acc.QRExpiresAt = expiresAt
-			}
-		} else {
-			acc.ConnectionStatus = "disconnected"
-		}
-	} else {
-		acc.ConnectionStatus = "disconnected"
-	}
-
-	c.JSON(http.StatusOK, acc)
+	_ = acc
+	c.JSON(http.StatusOK, h.buildAccount(accountID))
 }
 
 // GetQR returns the QR code for an account
@@ -171,6 +187,9 @@ func (h *Handlers) GetQR(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "Account not found",
 		})
+		return
+	}
+	if h.metaOperationNotApplicable(c, accountID) {
 		return
 	}
 
@@ -221,6 +240,9 @@ func (h *Handlers) PostLogin(c *gin.Context) {
 		})
 		return
 	}
+	if h.metaOperationNotApplicable(c, accountID) {
+		return
+	}
 
 	// Check if already connected
 	if client, ok := h.clientManager.GetClient(accountID); ok && client.IsLoggedIn() && !req.Force {
@@ -260,6 +282,9 @@ func (h *Handlers) PostLogin(c *gin.Context) {
 // PostLogout logs out and disconnects an account
 func (h *Handlers) PostLogout(c *gin.Context) {
 	accountID := c.Param("accountId")
+	if h.metaOperationNotApplicable(c, accountID) {
+		return
+	}
 
 	if err := h.clientManager.Logout(accountID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{

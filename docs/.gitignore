@@ -1,4 +1,5 @@
+# Ignorar todo por defecto
 *
+
+# Excepciones (solo estos archivos se trackean)
 !.gitignore
-!plan-meta-webhook-wa-gateway.md
-!plan-whatsapp-interactive-fases.md

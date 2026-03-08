@@ -18,6 +18,7 @@ from .registro import (
 
 # Exportar funciones del módulo de servicios de proveedor
 from .servicios_proveedor import (
+    actualizar_documentos_identidad,
     actualizar_servicios,
     actualizar_redes_sociales,
     actualizar_selfie,
@@ -35,4 +36,5 @@ __all__ = [
     "actualizar_servicios",
     "actualizar_redes_sociales",
     "actualizar_selfie",
+    "actualizar_documentos_identidad",
 ]

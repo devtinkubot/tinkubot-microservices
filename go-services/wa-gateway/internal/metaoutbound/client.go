@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime"
 	"net/http"
 	"strings"
 	"time"
@@ -18,6 +19,7 @@ type Config struct {
 	BaseURL       string
 	APIVersion    string
 	AccessToken   string
+	AccessTokens  map[string]string
 	Timeout       time.Duration
 	RetryAttempts int
 }
@@ -26,6 +28,7 @@ type Client struct {
 	baseURL       string
 	apiVersion    string
 	accessToken   string
+	accessTokens  map[string]string
 	retryAttempts int
 	httpClient    *http.Client
 }
@@ -52,11 +55,40 @@ func NewClient(cfg Config) *Client {
 		baseURL:       strings.TrimRight(baseURL, "/"),
 		apiVersion:    apiVersion,
 		accessToken:   strings.TrimSpace(cfg.AccessToken),
+		accessTokens:  normalizeAccessTokens(cfg.AccessTokens),
 		retryAttempts: retryAttempts,
 		httpClient: &http.Client{
 			Timeout: timeout,
 		},
 	}
+}
+
+func normalizeAccessTokens(raw map[string]string) map[string]string {
+	if len(raw) == 0 {
+		return map[string]string{}
+	}
+
+	normalized := make(map[string]string, len(raw))
+	for phoneNumberID, token := range raw {
+		phoneNumberID = strings.TrimSpace(phoneNumberID)
+		token = strings.TrimSpace(token)
+		if phoneNumberID == "" || token == "" {
+			continue
+		}
+		normalized[phoneNumberID] = token
+	}
+	return normalized
+}
+
+func (c *Client) accessTokenFor(phoneNumberID string) string {
+	if c == nil {
+		return ""
+	}
+	phoneNumberID = strings.TrimSpace(phoneNumberID)
+	if token := strings.TrimSpace(c.accessTokens[phoneNumberID]); token != "" {
+		return token
+	}
+	return strings.TrimSpace(c.accessToken)
 }
 
 type sendMessagePayload struct {
@@ -176,6 +208,12 @@ type templateComponent struct {
 	Parameters []map[string]any `json:"parameters,omitempty"`
 }
 
+type mediaMetadataResponse struct {
+	URL      string `json:"url"`
+	MimeType string `json:"mime_type,omitempty"`
+	ID       string `json:"id,omitempty"`
+}
+
 // SendText sends a plain text WhatsApp message using Meta Cloud API.
 func (c *Client) SendText(ctx context.Context, phoneNumberID, to, body string) error {
 	phoneNumberID = strings.TrimSpace(phoneNumberID)
@@ -185,11 +223,11 @@ func (c *Client) SendText(ctx context.Context, phoneNumberID, to, body string) e
 	if c == nil {
 		return fmt.Errorf("meta outbound client is nil")
 	}
-	if c.accessToken == "" {
-		return fmt.Errorf("meta outbound access token is empty")
-	}
 	if phoneNumberID == "" {
 		return fmt.Errorf("phone_number_id is empty")
+	}
+	if c.accessTokenFor(phoneNumberID) == "" {
+		return fmt.Errorf("meta outbound access token is empty for phone_number_id=%s", phoneNumberID)
 	}
 	if to == "" {
 		return fmt.Errorf("destination number is empty")
@@ -209,7 +247,7 @@ func (c *Client) SendText(ctx context.Context, phoneNumberID, to, body string) e
 		},
 	}
 
-	return c.sendMessage(ctx, phoneNumberID, payload)
+	return c.sendMessage(ctx, phoneNumberID, c.accessTokenFor(phoneNumberID), payload)
 }
 
 // SendImage sends an image message using Meta Cloud API.
@@ -222,11 +260,11 @@ func (c *Client) SendImage(ctx context.Context, phoneNumberID, to, imageURL, cap
 	if c == nil {
 		return fmt.Errorf("meta outbound client is nil")
 	}
-	if c.accessToken == "" {
-		return fmt.Errorf("meta outbound access token is empty")
-	}
 	if phoneNumberID == "" {
 		return fmt.Errorf("phone_number_id is empty")
+	}
+	if c.accessTokenFor(phoneNumberID) == "" {
+		return fmt.Errorf("meta outbound access token is empty for phone_number_id=%s", phoneNumberID)
 	}
 	if to == "" {
 		return fmt.Errorf("destination number is empty")
@@ -246,7 +284,7 @@ func (c *Client) SendImage(ctx context.Context, phoneNumberID, to, imageURL, cap
 		},
 	}
 
-	return c.sendMessage(ctx, phoneNumberID, payload)
+	return c.sendMessage(ctx, phoneNumberID, c.accessTokenFor(phoneNumberID), payload)
 }
 
 // SendButtons sends an interactive button message using Meta Cloud API.
@@ -262,11 +300,11 @@ func (c *Client) SendButtons(
 	if c == nil {
 		return fmt.Errorf("meta outbound client is nil")
 	}
-	if c.accessToken == "" {
-		return fmt.Errorf("meta outbound access token is empty")
-	}
 	if phoneNumberID == "" {
 		return fmt.Errorf("phone_number_id is empty")
+	}
+	if c.accessTokenFor(phoneNumberID) == "" {
+		return fmt.Errorf("meta outbound access token is empty for phone_number_id=%s", phoneNumberID)
 	}
 	if to == "" {
 		return fmt.Errorf("destination number is empty")
@@ -351,7 +389,7 @@ func (c *Client) SendButtons(
 		},
 	}
 
-	return c.sendMessage(ctx, phoneNumberID, payload)
+	return c.sendMessage(ctx, phoneNumberID, c.accessTokenFor(phoneNumberID), payload)
 }
 
 // SendList sends an interactive list message using Meta Cloud API.
@@ -367,11 +405,11 @@ func (c *Client) SendList(
 	if c == nil {
 		return fmt.Errorf("meta outbound client is nil")
 	}
-	if c.accessToken == "" {
-		return fmt.Errorf("meta outbound access token is empty")
-	}
 	if phoneNumberID == "" {
 		return fmt.Errorf("phone_number_id is empty")
+	}
+	if c.accessTokenFor(phoneNumberID) == "" {
+		return fmt.Errorf("meta outbound access token is empty for phone_number_id=%s", phoneNumberID)
 	}
 	if to == "" {
 		return fmt.Errorf("destination number is empty")
@@ -428,7 +466,7 @@ func (c *Client) SendList(
 		},
 	}
 
-	return c.sendMessage(ctx, phoneNumberID, payload)
+	return c.sendMessage(ctx, phoneNumberID, c.accessTokenFor(phoneNumberID), payload)
 }
 
 // SendLocationRequest sends a location request interactive message.
@@ -440,11 +478,11 @@ func (c *Client) SendLocationRequest(ctx context.Context, phoneNumberID, to, bod
 	if c == nil {
 		return fmt.Errorf("meta outbound client is nil")
 	}
-	if c.accessToken == "" {
-		return fmt.Errorf("meta outbound access token is empty")
-	}
 	if phoneNumberID == "" {
 		return fmt.Errorf("phone_number_id is empty")
+	}
+	if c.accessTokenFor(phoneNumberID) == "" {
+		return fmt.Errorf("meta outbound access token is empty for phone_number_id=%s", phoneNumberID)
 	}
 	if to == "" {
 		return fmt.Errorf("destination number is empty")
@@ -467,7 +505,7 @@ func (c *Client) SendLocationRequest(ctx context.Context, phoneNumberID, to, bod
 		},
 	}
 
-	return c.sendMessage(ctx, phoneNumberID, payload)
+	return c.sendMessage(ctx, phoneNumberID, c.accessTokenFor(phoneNumberID), payload)
 }
 
 // SendFlow sends a WhatsApp Flow interactive message.
@@ -483,11 +521,11 @@ func (c *Client) SendFlow(
 	if c == nil {
 		return fmt.Errorf("meta outbound client is nil")
 	}
-	if c.accessToken == "" {
-		return fmt.Errorf("meta outbound access token is empty")
-	}
 	if phoneNumberID == "" {
 		return fmt.Errorf("phone_number_id is empty")
+	}
+	if c.accessTokenFor(phoneNumberID) == "" {
+		return fmt.Errorf("meta outbound access token is empty for phone_number_id=%s", phoneNumberID)
 	}
 	if to == "" {
 		return fmt.Errorf("destination number is empty")
@@ -544,7 +582,7 @@ func (c *Client) SendFlow(
 		},
 	}
 
-	return c.sendMessage(ctx, phoneNumberID, payload)
+	return c.sendMessage(ctx, phoneNumberID, c.accessTokenFor(phoneNumberID), payload)
 }
 
 // SendTemplate sends a WhatsApp template message.
@@ -559,11 +597,11 @@ func (c *Client) SendTemplate(
 	if c == nil {
 		return fmt.Errorf("meta outbound client is nil")
 	}
-	if c.accessToken == "" {
-		return fmt.Errorf("meta outbound access token is empty")
-	}
 	if phoneNumberID == "" {
 		return fmt.Errorf("phone_number_id is empty")
+	}
+	if c.accessTokenFor(phoneNumberID) == "" {
+		return fmt.Errorf("meta outbound access token is empty for phone_number_id=%s", phoneNumberID)
 	}
 	if to == "" {
 		return fmt.Errorf("destination number is empty")
@@ -628,12 +666,135 @@ func (c *Client) SendTemplate(
 		},
 	}
 
-	return c.sendMessage(ctx, phoneNumberID, payload)
+	return c.sendMessage(ctx, phoneNumberID, c.accessTokenFor(phoneNumberID), payload)
+}
+
+// DownloadMedia resolves a media ID through Graph API and downloads the raw bytes.
+func (c *Client) DownloadMedia(ctx context.Context, phoneNumberID, mediaID string) ([]byte, string, string, error) {
+	phoneNumberID = strings.TrimSpace(phoneNumberID)
+	mediaID = strings.TrimSpace(mediaID)
+
+	if c == nil {
+		return nil, "", "", fmt.Errorf("meta outbound client is nil")
+	}
+	if phoneNumberID == "" {
+		return nil, "", "", fmt.Errorf("phone_number_id is empty")
+	}
+	accessToken := c.accessTokenFor(phoneNumberID)
+	if accessToken == "" {
+		return nil, "", "", fmt.Errorf("meta outbound access token is empty for phone_number_id=%s", phoneNumberID)
+	}
+	if mediaID == "" {
+		return nil, "", "", fmt.Errorf("media id is empty")
+	}
+
+	metadata, err := c.getMediaMetadata(ctx, mediaID, accessToken)
+	if err != nil {
+		return nil, "", "", err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, metadata.URL, nil)
+	if err != nil {
+		return nil, "", "", fmt.Errorf("create media download request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, "", "", fmt.Errorf("download media: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, "", "", fmt.Errorf("download media status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, "", "", fmt.Errorf("read media body: %w", err)
+	}
+	if len(data) == 0 {
+		return nil, "", "", fmt.Errorf("downloaded media is empty")
+	}
+
+	contentType := strings.TrimSpace(resp.Header.Get("Content-Type"))
+	if contentType == "" {
+		contentType = metadata.MimeType
+	}
+
+	filename := filenameFromContentDisposition(resp.Header.Get("Content-Disposition"))
+	if filename == "" {
+		filename = filenameFromMimeType(mediaID, contentType)
+	}
+
+	return data, contentType, filename, nil
+}
+
+func (c *Client) getMediaMetadata(ctx context.Context, mediaID, accessToken string) (*mediaMetadataResponse, error) {
+	url := fmt.Sprintf("%s/%s/%s", c.baseURL, c.apiVersion, mediaID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create media metadata request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("resolve media metadata: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("resolve media metadata status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+
+	var metadata mediaMetadataResponse
+	if err := json.NewDecoder(resp.Body).Decode(&metadata); err != nil {
+		return nil, fmt.Errorf("decode media metadata: %w", err)
+	}
+	if strings.TrimSpace(metadata.URL) == "" {
+		return nil, fmt.Errorf("media metadata response missing url")
+	}
+	return &metadata, nil
+}
+
+func filenameFromContentDisposition(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	_, params, err := mime.ParseMediaType(raw)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(params["filename"])
+}
+
+func filenameFromMimeType(mediaID, rawMimeType string) string {
+	mediaID = strings.TrimSpace(mediaID)
+	rawMimeType = strings.TrimSpace(rawMimeType)
+	if mediaID == "" {
+		mediaID = "media"
+	}
+	if rawMimeType == "" {
+		return mediaID
+	}
+	if idx := strings.Index(rawMimeType, ";"); idx >= 0 {
+		rawMimeType = strings.TrimSpace(rawMimeType[:idx])
+	}
+	extensions, err := mime.ExtensionsByType(rawMimeType)
+	if err != nil || len(extensions) == 0 {
+		return mediaID
+	}
+	return mediaID + extensions[0]
 }
 
 func (c *Client) sendMessage(
 	ctx context.Context,
 	phoneNumberID string,
+	accessToken string,
 	payload sendMessagePayload,
 ) error {
 	interactiveType := ""
@@ -669,7 +830,7 @@ func (c *Client) sendMessage(
 			lastErr = fmt.Errorf("create request: %w", err)
 			continue
 		}
-		req.Header.Set("Authorization", "Bearer "+c.accessToken)
+		req.Header.Set("Authorization", "Bearer "+accessToken)
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err := c.httpClient.Do(req)

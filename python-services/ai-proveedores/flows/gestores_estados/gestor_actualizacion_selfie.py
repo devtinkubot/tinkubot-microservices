@@ -24,7 +24,14 @@ async def manejar_actualizacion_selfie(
         flujo["state"] = "awaiting_menu_option"
         return {
             "success": True,
-            "messages": [{"response": construir_menu_principal(esta_registrado=True)}],
+            "messages": [
+                {
+                    "response": construir_menu_principal(
+                        esta_registrado=True,
+                        menu_limitado=bool(flujo.get("menu_limitado")),
+                    )
+                }
+            ],
         }
 
     imagen_b64 = extraer_primera_imagen_base64(carga)
@@ -52,6 +59,11 @@ async def manejar_actualizacion_selfie(
         "success": True,
         "messages": [
             {"response": confirmar_selfie_actualizada()},
-            {"response": construir_menu_principal(esta_registrado=True)},
+            {
+                "response": construir_menu_principal(
+                    esta_registrado=True,
+                    menu_limitado=bool(flujo.get("menu_limitado")),
+                )
+            },
         ],
     }

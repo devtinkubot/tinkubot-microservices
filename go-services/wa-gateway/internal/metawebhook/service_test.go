@@ -33,6 +33,19 @@ type fakeOutboundSender struct {
 	err      error
 }
 
+type fakeMediaDownloader struct {
+	data     []byte
+	mimetype string
+	filename string
+	err      error
+	calls    []mediaDownloadCall
+}
+
+type mediaDownloadCall struct {
+	phoneNumberID string
+	mediaID       string
+}
+
 type outboundRequest struct {
 	kind          string
 	phoneNumberID string
@@ -42,6 +55,17 @@ type outboundRequest struct {
 	imageCaption  string
 	options       []webhook.UIOption
 	ui            *webhook.UIConfig
+}
+
+func (f *fakeMediaDownloader) DownloadMedia(_ context.Context, phoneNumberID, mediaID string) ([]byte, string, string, error) {
+	f.calls = append(f.calls, mediaDownloadCall{
+		phoneNumberID: phoneNumberID,
+		mediaID:       mediaID,
+	})
+	if f.err != nil {
+		return nil, "", "", f.err
+	}
+	return f.data, f.mimetype, f.filename, nil
 }
 
 func (f *fakeOutboundSender) SendText(_ context.Context, phoneNumberID, to, body string) error {
@@ -168,7 +192,7 @@ func TestVerifyChallenge(t *testing.T) {
 	svc := NewService(Config{
 		Enabled:     true,
 		VerifyToken: "token-123",
-	}, &fakeSender{}, nil)
+	}, &fakeSender{}, nil, nil)
 
 	status, body := svc.VerifyChallenge("subscribe", "token-123", "abc")
 	if status != 200 || body != "abc" {
@@ -184,7 +208,7 @@ func TestVerifyChallenge(t *testing.T) {
 func TestVerifyChallengeDisabled(t *testing.T) {
 	svc := NewService(Config{
 		Enabled: false,
-	}, &fakeSender{}, nil)
+	}, &fakeSender{}, nil, nil)
 
 	status, _ := svc.VerifyChallenge("subscribe", "x", "abc")
 	if status != 404 {
@@ -201,7 +225,7 @@ func TestProcessEventValidSignatureRoutesToClientes(t *testing.T) {
 		PhoneNumberToAccount: map[string]string{
 			"123456789": "bot-clientes",
 		},
-	}, fs, nil)
+	}, fs, nil, nil)
 
 	body := []byte(`{
 		"object":"whatsapp_business_account",
@@ -251,7 +275,7 @@ func TestProcessEventInteractiveButtonReply(t *testing.T) {
 		PhoneNumberToAccount: map[string]string{
 			"123456789": "bot-clientes",
 		},
-	}, fs, nil)
+	}, fs, nil, nil)
 
 	body := []byte(`{
 		"object":"whatsapp_business_account",
@@ -298,7 +322,7 @@ func TestProcessEventInteractiveButtonReplyFallbackTitle(t *testing.T) {
 		PhoneNumberToAccount: map[string]string{
 			"123456789": "bot-clientes",
 		},
-	}, fs, nil)
+	}, fs, nil, nil)
 
 	body := []byte(`{
 		"object":"whatsapp_business_account",
@@ -342,7 +366,7 @@ func TestProcessEventLocation(t *testing.T) {
 		PhoneNumberToAccount: map[string]string{
 			"123456789": "bot-clientes",
 		},
-	}, fs, nil)
+	}, fs, nil, nil)
 
 	body := []byte(`{
 		"object":"whatsapp_business_account",
@@ -381,6 +405,166 @@ func TestProcessEventLocation(t *testing.T) {
 	}
 }
 
+func TestProcessEventImageDownloadsMedia(t *testing.T) {
+	fs := &fakeSender{}
+	media := &fakeMediaDownloader{
+		data:     []byte("front-image-bytes"),
+		mimetype: "image/jpeg",
+		filename: "cedula-frontal.jpg",
+	}
+	svc := NewService(Config{
+		Enabled:   true,
+		AppSecret: "secret-1",
+		PhoneNumberToAccount: map[string]string{
+			"123456789": "bot-proveedores",
+		},
+	}, fs, nil, media)
+
+	body := []byte(`{
+		"object":"whatsapp_business_account",
+		"entry":[
+			{
+				"id":"waba-1",
+				"changes":[
+					{
+						"field":"messages",
+						"value":{
+							"metadata":{"phone_number_id":"123456789"},
+							"messages":[{"from":"593999111222","id":"wamid.5","timestamp":"1730000004","type":"image","image":{"id":"1479537139650973","mime_type":"image/jpeg","caption":"frente"}}]
+						}
+					}
+				]
+			}
+		]
+	}`)
+	sig := buildSignature("secret-1", body)
+
+	if err := svc.ProcessEvent(context.Background(), sig, body); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if len(media.calls) != 1 {
+		t.Fatalf("expected 1 media download, got %d", len(media.calls))
+	}
+	if media.calls[0].phoneNumberID != "123456789" || media.calls[0].mediaID != "1479537139650973" {
+		t.Fatalf("unexpected media download call: %+v", media.calls[0])
+	}
+	if len(fs.payloads) != 1 {
+		t.Fatalf("expected 1 forwarded payload, got %d", len(fs.payloads))
+	}
+	got := fs.payloads[0]
+	if got.AccountID != "bot-proveedores" {
+		t.Fatalf("expected account_id bot-proveedores, got %s", got.AccountID)
+	}
+	if got.MessageType != "image" || got.Message != "frente" {
+		t.Fatalf("unexpected message fields: %+v", got)
+	}
+	if got.MediaBase64 != "ZnJvbnQtaW1hZ2UtYnl0ZXM=" {
+		t.Fatalf("unexpected media_base64: %s", got.MediaBase64)
+	}
+	if got.MediaMimetype != "image/jpeg" || got.MediaFilename != "cedula-frontal.jpg" {
+		t.Fatalf("unexpected media metadata: mimetype=%s filename=%s", got.MediaMimetype, got.MediaFilename)
+	}
+}
+
+func TestProcessEventDocumentDownloadsMedia(t *testing.T) {
+	fs := &fakeSender{}
+	media := &fakeMediaDownloader{
+		data:     []byte("back-image-bytes"),
+		mimetype: "application/pdf",
+		filename: "cedula.pdf",
+	}
+	svc := NewService(Config{
+		Enabled:   true,
+		AppSecret: "secret-1",
+		PhoneNumberToAccount: map[string]string{
+			"123456789": "bot-proveedores",
+		},
+	}, fs, nil, media)
+
+	body := []byte(`{
+		"object":"whatsapp_business_account",
+		"entry":[
+			{
+				"id":"waba-1",
+				"changes":[
+					{
+						"field":"messages",
+						"value":{
+							"metadata":{"phone_number_id":"123456789"},
+							"messages":[{"from":"593999111222","id":"wamid.6","timestamp":"1730000005","type":"document","document":{"id":"2479537139650973","mime_type":"application/pdf","filename":"cedula.pdf","caption":"reverso"}}]
+						}
+					}
+				]
+			}
+		]
+	}`)
+	sig := buildSignature("secret-1", body)
+
+	if err := svc.ProcessEvent(context.Background(), sig, body); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if len(fs.payloads) != 1 {
+		t.Fatalf("expected 1 forwarded payload, got %d", len(fs.payloads))
+	}
+	got := fs.payloads[0]
+	if got.MessageType != "document" || got.Message != "reverso" {
+		t.Fatalf("unexpected message fields: %+v", got)
+	}
+	if got.MediaBase64 != "YmFjay1pbWFnZS1ieXRlcw==" {
+		t.Fatalf("unexpected media_base64: %s", got.MediaBase64)
+	}
+	if got.MediaMimetype != "application/pdf" || got.MediaFilename != "cedula.pdf" {
+		t.Fatalf("unexpected media metadata: mimetype=%s filename=%s", got.MediaMimetype, got.MediaFilename)
+	}
+}
+
+func TestProcessEventImageDownloadFailureStillForwardsMessage(t *testing.T) {
+	fs := &fakeSender{}
+	media := &fakeMediaDownloader{
+		err: errors.New("graph download failed"),
+	}
+	svc := NewService(Config{
+		Enabled:   true,
+		AppSecret: "secret-1",
+		PhoneNumberToAccount: map[string]string{
+			"123456789": "bot-proveedores",
+		},
+	}, fs, nil, media)
+
+	body := []byte(`{
+		"object":"whatsapp_business_account",
+		"entry":[
+			{
+				"id":"waba-1",
+				"changes":[
+					{
+						"field":"messages",
+						"value":{
+							"metadata":{"phone_number_id":"123456789"},
+							"messages":[{"from":"593999111222","id":"wamid.7","timestamp":"1730000006","type":"image","image":{"id":"3479537139650973","mime_type":"image/jpeg","caption":"selfie"}}]
+						}
+					}
+				]
+			}
+		]
+	}`)
+	sig := buildSignature("secret-1", body)
+
+	if err := svc.ProcessEvent(context.Background(), sig, body); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if len(fs.payloads) != 1 {
+		t.Fatalf("expected 1 forwarded payload, got %d", len(fs.payloads))
+	}
+	got := fs.payloads[0]
+	if got.MessageType != "image" || got.Message != "selfie" {
+		t.Fatalf("unexpected message fields: %+v", got)
+	}
+	if got.MediaBase64 != "" || got.MediaMimetype != "" || got.MediaFilename != "" {
+		t.Fatalf("expected empty media fields on download failure, got %+v", got)
+	}
+}
+
 func TestProcessEventInteractiveFlowReply(t *testing.T) {
 	fs := &fakeSender{}
 	svc := NewService(Config{
@@ -389,7 +573,7 @@ func TestProcessEventInteractiveFlowReply(t *testing.T) {
 		PhoneNumberToAccount: map[string]string{
 			"123456789": "bot-clientes",
 		},
-	}, fs, nil)
+	}, fs, nil, nil)
 
 	body := []byte(`{
 		"object":"whatsapp_business_account",
@@ -432,7 +616,7 @@ func TestProcessEventInvalidSignature(t *testing.T) {
 	svc := NewService(Config{
 		Enabled:   true,
 		AppSecret: "secret-1",
-	}, &fakeSender{}, nil)
+	}, &fakeSender{}, nil, nil)
 
 	body := []byte(`{"object":"whatsapp_business_account"}`)
 	err := svc.ProcessEvent(context.Background(), "sha256=deadbeef", body)
@@ -444,7 +628,7 @@ func TestProcessEventInvalidSignature(t *testing.T) {
 func TestProcessEventDisabled(t *testing.T) {
 	svc := NewService(Config{
 		Enabled: false,
-	}, &fakeSender{}, nil)
+	}, &fakeSender{}, nil, nil)
 
 	err := svc.ProcessEvent(context.Background(), "sha256=deadbeef", []byte(`{}`))
 	if !errors.Is(err, ErrForbidden) {
@@ -462,7 +646,7 @@ func TestProcessEventOutboundEnabledSendsReplies(t *testing.T) {
 		PhoneNumberToAccount: map[string]string{
 			"123456789": "bot-clientes",
 		},
-	}, fs, fo)
+	}, fs, fo, nil)
 
 	body := []byte(`{
 		"object":"whatsapp_business_account",
@@ -511,7 +695,7 @@ func TestProcessEventOutboundEnabledSendsImageReply(t *testing.T) {
 		PhoneNumberToAccount: map[string]string{
 			"123456789": "bot-clientes",
 		},
-	}, fs, fo)
+	}, fs, fo, nil)
 
 	body := []byte(`{
 		"object":"whatsapp_business_account",
@@ -570,7 +754,7 @@ func TestProcessEventOutboundEnabledSendsFlowReply(t *testing.T) {
 		PhoneNumberToAccount: map[string]string{
 			"123456789": "bot-clientes",
 		},
-	}, fs, fo)
+	}, fs, fo, nil)
 
 	body := []byte(`{
 		"object":"whatsapp_business_account",
@@ -630,7 +814,7 @@ func TestProcessEventOutboundButtons(t *testing.T) {
 		PhoneNumberToAccount: map[string]string{
 			"123456789": "bot-clientes",
 		},
-	}, fs, fo)
+	}, fs, fo, nil)
 
 	body := []byte(`{
 		"object":"whatsapp_business_account",
@@ -695,7 +879,7 @@ func TestProcessEventOutboundLocationRequest(t *testing.T) {
 		PhoneNumberToAccount: map[string]string{
 			"123456789": "bot-clientes",
 		},
-	}, fs, fo)
+	}, fs, fo, nil)
 
 	body := []byte(`{
 		"object":"whatsapp_business_account",
@@ -749,7 +933,7 @@ func TestProcessEventOutboundList(t *testing.T) {
 		PhoneNumberToAccount: map[string]string{
 			"123456789": "bot-clientes",
 		},
-	}, fs, fo)
+	}, fs, fo, nil)
 
 	body := []byte(`{
 		"object":"whatsapp_business_account",
@@ -811,7 +995,7 @@ func TestProcessEventOutboundTemplate(t *testing.T) {
 		PhoneNumberToAccount: map[string]string{
 			"123456789": "bot-clientes",
 		},
-	}, fs, fo)
+	}, fs, fo, nil)
 
 	body := []byte(`{
 		"object":"whatsapp_business_account",

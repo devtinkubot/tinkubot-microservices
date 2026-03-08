@@ -9,7 +9,10 @@ from templates import (
 )
 
 
-def construir_menu_principal(esta_registrado: bool = False) -> str:
+def construir_menu_principal(
+    esta_registrado: bool = False,
+    menu_limitado: bool = False,
+) -> str:
     """Construye el menú principal según estado de registro.
 
     Args:
@@ -19,8 +22,16 @@ def construir_menu_principal(esta_registrado: bool = False) -> str:
         Mensaje del menú principal correspondiente al estado.
     """
     if esta_registrado:
-        return mensaje_menu_post_registro_proveedor()
+        return mensaje_menu_post_registro_proveedor(menu_limitado=menu_limitado)
     return mensaje_menu_principal_proveedor()
+
+
+def construir_menu_desde_flujo(flujo: Dict[str, Any]) -> str:
+    """Construye el menú principal según el estado ya resuelto en el flujo."""
+    return construir_menu_principal(
+        esta_registrado=bool(flujo.get("esta_registrado")),
+        menu_limitado=bool(flujo.get("menu_limitado")),
+    )
 
 
 def construir_respuesta_menu_registro() -> Dict[str, Any]:

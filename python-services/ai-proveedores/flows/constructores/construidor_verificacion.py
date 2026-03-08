@@ -33,3 +33,14 @@ def construir_respuesta_revision(nombre: str) -> Dict[str, Any]:
         "success": True,
         "messages": [{"response": mensaje_proveedor_en_revision(nombre)}],
     }
+
+
+def construir_respuesta_revision_con_menu_limitado(nombre: str) -> Dict[str, Any]:
+    """Construye respuesta para proveedor en revisión con menú limitado."""
+    return {
+        "success": True,
+        "messages": [
+            {"response": mensaje_proveedor_en_revision(nombre)},
+            {"response": mensaje_menu_post_registro_proveedor(menu_limitado=True)},
+        ],
+    }

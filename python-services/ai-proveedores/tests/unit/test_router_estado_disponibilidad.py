@@ -1,7 +1,11 @@
 import asyncio
 import sys
+import types
 from pathlib import Path
 
+imghdr_stub = types.ModuleType("imghdr")
+imghdr_stub.what = lambda *args, **kwargs: None
+sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from flows.router import enrutar_estado

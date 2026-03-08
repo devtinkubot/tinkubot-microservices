@@ -14,8 +14,11 @@ from .gestor_actualizacion_selfie import manejar_actualizacion_selfie
 from .gestor_eliminacion import manejar_confirmacion_eliminacion
 from .gestor_documentos import (
     manejar_inicio_documentos,
+    manejar_inicio_actualizacion_documentos,
     manejar_dni_frontal,
+    manejar_dni_frontal_actualizacion,
     manejar_dni_trasera,
+    manejar_dni_trasera_actualizacion,
     manejar_selfie_registro,
 )
 from .gestor_espera_ciudad import manejar_espera_ciudad
@@ -49,8 +52,11 @@ __all__ = [
     "manejar_actualizacion_selfie",
     "manejar_confirmacion_eliminacion",
     "manejar_inicio_documentos",
+    "manejar_inicio_actualizacion_documentos",
     "manejar_dni_frontal",
+    "manejar_dni_frontal_actualizacion",
     "manejar_dni_trasera",
+    "manejar_dni_trasera_actualizacion",
     "manejar_selfie_registro",
     "manejar_espera_ciudad",
     "manejar_espera_correo",

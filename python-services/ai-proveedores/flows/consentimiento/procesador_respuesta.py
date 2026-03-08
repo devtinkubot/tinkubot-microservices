@@ -18,6 +18,7 @@ from flows.constructores import (  # noqa: E402
     construir_respuesta_consentimiento_aceptado,
     construir_respuesta_consentimiento_rechazado,
     construir_respuesta_revision,
+    construir_respuesta_revision_con_menu_limitado,
 )
 from flows.interpretacion import interpretar_respuesta  # noqa: E402
 from flows.sesion import establecer_flujo, reiniciar_flujo  # noqa: E402
@@ -52,6 +53,7 @@ async def procesar_respuesta_consentimiento(  # noqa: C901
 
     from .registrador import registrar_consentimiento
     from .solicitador import solicitar_consentimiento
+    from services.sesion_proveedor import perfil_tiene_menu_limitado
 
     texto_mensaje = (carga.get("message") or carga.get("content") or "").strip()
     texto_min = texto_mensaje.lower()
@@ -95,6 +97,7 @@ async def procesar_respuesta_consentimiento(  # noqa: C901
             # Fase 4: Eliminada verificación de profession
         )
         esta_verificado = bool(perfil_proveedor and perfil_proveedor.get("verified"))
+        menu_limitado = perfil_tiene_menu_limitado(perfil_proveedor)
 
         flujo["has_consent"] = True
         post_consent_state = flujo.pop("post_consent_state", None)
@@ -112,7 +115,10 @@ async def procesar_respuesta_consentimiento(  # noqa: C901
                 "awaiting_real_phone" if requires_real_phone else "awaiting_city"
             )
         elif not esta_verificado:
-            flujo["state"] = "pending_verification"
+            flujo["state"] = (
+                "awaiting_menu_option" if menu_limitado else "pending_verification"
+            )
+            flujo["menu_limitado"] = menu_limitado
         else:
             flujo["state"] = "awaiting_menu_option"
         await establecer_flujo(telefono, flujo)
@@ -160,6 +166,13 @@ async def procesar_respuesta_consentimiento(  # noqa: C901
         if flujo.get("state") == "pending_verification" and perfil_proveedor:
             nombre_proveedor = perfil_proveedor["full_name"]
             return construir_respuesta_revision(nombre_proveedor)
+        if (
+            flujo.get("state") == "awaiting_menu_option"
+            and menu_limitado
+            and perfil_proveedor
+        ):
+            nombre_proveedor = perfil_proveedor["full_name"]
+            return construir_respuesta_revision_con_menu_limitado(nombre_proveedor)
 
         return construir_respuesta_consentimiento_aceptado(esta_registrado_completo)
 

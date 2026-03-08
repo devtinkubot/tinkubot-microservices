@@ -23,7 +23,14 @@ async def manejar_actualizacion_redes_sociales(
         flujo["state"] = "awaiting_menu_option"
         return {
             "success": True,
-            "messages": [{"response": construir_menu_principal(esta_registrado=True)}],
+            "messages": [
+                {
+                    "response": construir_menu_principal(
+                        esta_registrado=True,
+                        menu_limitado=bool(flujo.get("menu_limitado")),
+                    )
+                }
+            ],
         }
 
     red_social_parseada = parsear_entrada_red_social(texto_mensaje)
@@ -43,7 +50,12 @@ async def manejar_actualizacion_redes_sociales(
             "success": False,
             "messages": [
                 {"response": error_actualizar_redes_sociales()},
-                {"response": construir_menu_principal(esta_registrado=True)},
+                {
+                    "response": construir_menu_principal(
+                        esta_registrado=True,
+                        menu_limitado=bool(flujo.get("menu_limitado")),
+                    )
+                },
             ],
         }
 
@@ -56,6 +68,11 @@ async def manejar_actualizacion_redes_sociales(
                     bool(red_social_parseada["url"])
                 )
             },
-            {"response": construir_menu_principal(esta_registrado=True)},
+            {
+                "response": construir_menu_principal(
+                    esta_registrado=True,
+                    menu_limitado=bool(flujo.get("menu_limitado")),
+                )
+            },
         ],
     }

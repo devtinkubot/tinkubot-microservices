@@ -36,6 +36,8 @@ type metaMessage struct {
 	Text        *metaText        `json:"text,omitempty"`
 	Interactive *metaInteractive `json:"interactive,omitempty"`
 	Location    *metaLocation    `json:"location,omitempty"`
+	Image       *metaImage       `json:"image,omitempty"`
+	Document    *metaDocument    `json:"document,omitempty"`
 }
 
 type metaText struct {
@@ -67,6 +69,19 @@ type metaLocation struct {
 	Address   string  `json:"address,omitempty"`
 }
 
+type metaImage struct {
+	ID       string `json:"id"`
+	MimeType string `json:"mime_type,omitempty"`
+	Caption  string `json:"caption,omitempty"`
+}
+
+type metaDocument struct {
+	ID       string `json:"id"`
+	MimeType string `json:"mime_type,omitempty"`
+	Filename string `json:"filename,omitempty"`
+	Caption  string `json:"caption,omitempty"`
+}
+
 type incomingMessage struct {
 	PhoneNumberID  string
 	From           string
@@ -75,6 +90,9 @@ type incomingMessage struct {
 	SelectedOption string
 	FlowPayload    map[string]any
 	Location       *metaLocation
+	MediaID        string
+	MediaMimetype  string
+	MediaFilename  string
 }
 
 func extractIncomingMessages(evt webhookEvent) []incomingMessage {
@@ -89,11 +107,11 @@ func extractIncomingMessages(evt webhookEvent) []incomingMessage {
 				if msg.From == "" {
 					continue
 				}
-				content, messageType, selectedOption, flowPayload, location := extractMessageData(msg)
-				if content == "" && selectedOption == "" && flowPayload == nil && location == nil {
+				content, messageType, selectedOption, flowPayload, location, media := extractMessageData(msg)
+				if content == "" && selectedOption == "" && flowPayload == nil && location == nil && media == nil {
 					continue
 				}
-				out = append(out, incomingMessage{
+				entry := incomingMessage{
 					PhoneNumberID:  phoneNumberID,
 					From:           msg.From,
 					Content:        content,
@@ -101,33 +119,45 @@ func extractIncomingMessages(evt webhookEvent) []incomingMessage {
 					SelectedOption: selectedOption,
 					FlowPayload:    flowPayload,
 					Location:       location,
-				})
+				}
+				if media != nil {
+					entry.MediaID = media.ID
+					entry.MediaMimetype = media.MimeType
+					entry.MediaFilename = media.Filename
+				}
+				out = append(out, entry)
 			}
 		}
 	}
 	return out
 }
 
-func extractMessageData(msg metaMessage) (content, messageType, selectedOption string, flowPayload map[string]any, location *metaLocation) {
+type incomingMedia struct {
+	ID       string
+	MimeType string
+	Filename string
+}
+
+func extractMessageData(msg metaMessage) (content, messageType, selectedOption string, flowPayload map[string]any, location *metaLocation, media *incomingMedia) {
 	if msg.Type == "text" && msg.Text != nil {
-		return msg.Text.Body, "text", "", nil, nil
+		return msg.Text.Body, "text", "", nil, nil, nil
 	}
 
 	if msg.Type == "interactive" && msg.Interactive != nil {
 		if msg.Interactive.ButtonReply != nil {
 			selected := strings.TrimSpace(msg.Interactive.ButtonReply.ID)
 			if selected != "" {
-				return "", "interactive_button_reply", selected, nil, nil
+				return "", "interactive_button_reply", selected, nil, nil, nil
 			}
 			normalizedTitle := normalizeReplyTitle(msg.Interactive.ButtonReply.Title)
-			return "", "interactive_button_reply", normalizedTitle, nil, nil
+			return "", "interactive_button_reply", normalizedTitle, nil, nil, nil
 		}
 		if msg.Interactive.ListReply != nil {
-			return "", "interactive_list_reply", msg.Interactive.ListReply.ID, nil, nil
+			return "", "interactive_list_reply", msg.Interactive.ListReply.ID, nil, nil, nil
 		}
 		if msg.Interactive.NFMReply != nil {
 			selected := msg.Interactive.NFMReply.Name
-			return "", "interactive_flow_reply", selected, msg.Interactive.NFMReply.ResponseJSON, nil
+			return "", "interactive_flow_reply", selected, msg.Interactive.NFMReply.ResponseJSON, nil, nil
 		}
 	}
 
@@ -142,13 +172,28 @@ func extractMessageData(msg metaMessage) (content, messageType, selectedOption s
 			}
 			contentParts += msg.Location.Address
 		}
-		return contentParts, "location", "", nil, msg.Location
+		return contentParts, "location", "", nil, msg.Location, nil
+	}
+
+	if msg.Type == "image" && msg.Image != nil && strings.TrimSpace(msg.Image.ID) != "" {
+		return strings.TrimSpace(msg.Image.Caption), "image", "", nil, nil, &incomingMedia{
+			ID:       strings.TrimSpace(msg.Image.ID),
+			MimeType: strings.TrimSpace(msg.Image.MimeType),
+		}
+	}
+
+	if msg.Type == "document" && msg.Document != nil && strings.TrimSpace(msg.Document.ID) != "" {
+		return strings.TrimSpace(msg.Document.Caption), "document", "", nil, nil, &incomingMedia{
+			ID:       strings.TrimSpace(msg.Document.ID),
+			MimeType: strings.TrimSpace(msg.Document.MimeType),
+			Filename: strings.TrimSpace(msg.Document.Filename),
+		}
 	}
 
 	if msg.Text != nil && msg.Text.Body != "" {
-		return msg.Text.Body, "text", "", nil, nil
+		return msg.Text.Body, "text", "", nil, nil, nil
 	}
-	return "", "", "", nil, nil
+	return "", "", "", nil, nil, nil
 }
 
 func normalizeReplyTitle(raw string) string {

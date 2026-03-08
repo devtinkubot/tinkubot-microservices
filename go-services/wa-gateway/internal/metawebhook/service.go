@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -38,6 +39,11 @@ type OutboundSender interface {
 	SendTemplate(ctx context.Context, phoneNumberID, to string, ui webhook.UIConfig) error
 }
 
+// MediaDownloader resolves inbound Meta media ids into raw bytes.
+type MediaDownloader interface {
+	DownloadMedia(ctx context.Context, phoneNumberID, mediaID string) ([]byte, string, string, error)
+}
+
 // Config contains runtime settings for Meta webhook processing.
 type Config struct {
 	Enabled              bool
@@ -50,9 +56,10 @@ type Config struct {
 
 // Service validates and processes Meta webhook events.
 type Service struct {
-	cfg            Config
-	sender         Sender
-	outboundSender OutboundSender
+	cfg             Config
+	sender          Sender
+	outboundSender  OutboundSender
+	mediaDownloader MediaDownloader
 }
 
 // Enabled reports whether webhook processing is active.
@@ -61,7 +68,7 @@ func (s *Service) Enabled() bool {
 }
 
 // NewService creates a Meta webhook service.
-func NewService(cfg Config, sender Sender, outboundSender OutboundSender) *Service {
+func NewService(cfg Config, sender Sender, outboundSender OutboundSender, mediaDownloader MediaDownloader) *Service {
 	if cfg.EnabledAccounts == nil {
 		cfg.EnabledAccounts = map[string]bool{}
 	}
@@ -69,9 +76,10 @@ func NewService(cfg Config, sender Sender, outboundSender OutboundSender) *Servi
 		cfg.PhoneNumberToAccount = map[string]string{}
 	}
 	return &Service{
-		cfg:            cfg,
-		sender:         sender,
-		outboundSender: outboundSender,
+		cfg:             cfg,
+		sender:          sender,
+		outboundSender:  outboundSender,
+		mediaDownloader: mediaDownloader,
 	}
 }
 
@@ -131,6 +139,30 @@ func (s *Service) ProcessEvent(ctx context.Context, signature string, body []byt
 				Longitude: msg.Location.Longitude,
 				Name:      msg.Location.Name,
 				Address:   msg.Location.Address,
+			}
+		}
+		if msg.MediaID != "" {
+			if s.mediaDownloader == nil {
+				log.Printf("[MetaWebhook] Media downloader is nil account=%s phone_number_id=%s from=%s message_type=%s media_id=%s", accountID, msg.PhoneNumberID, msg.From, msg.MessageType, msg.MediaID)
+			} else {
+				mediaCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+				data, mimetype, filename, err := s.mediaDownloader.DownloadMedia(mediaCtx, msg.PhoneNumberID, msg.MediaID)
+				cancel()
+				if err != nil {
+					log.Printf("[MetaWebhook] Failed downloading media account=%s phone_number_id=%s from=%s message_type=%s media_id=%s err=%v", accountID, msg.PhoneNumberID, msg.From, msg.MessageType, msg.MediaID, err)
+				} else {
+					payload.MediaBase64 = base64.StdEncoding.EncodeToString(data)
+					if mimetype != "" {
+						payload.MediaMimetype = mimetype
+					} else {
+						payload.MediaMimetype = msg.MediaMimetype
+					}
+					if filename != "" {
+						payload.MediaFilename = filename
+					} else {
+						payload.MediaFilename = msg.MediaFilename
+					}
+				}
 			}
 		}
 

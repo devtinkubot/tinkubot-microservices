@@ -101,11 +101,13 @@ func main() {
 	metaVerifyToken := strings.TrimSpace(os.Getenv("META_WEBHOOK_VERIFY_TOKEN"))
 	metaAppSecret := strings.TrimSpace(os.Getenv("META_APP_SECRET"))
 	metaClientesPhoneNumberID := strings.TrimSpace(os.Getenv("META_PHONE_NUMBER_ID_CLIENTES"))
+	metaProveedoresPhoneNumberID := strings.TrimSpace(os.Getenv("META_PHONE_NUMBER_ID_PROVEEDORES"))
 	metaOutboundEnabled := parseBoolEnv("WA_META_OUTBOUND_ENABLED", false)
 	metaEnabledAccounts := parseEnabledAccounts(os.Getenv("WA_META_ENABLED_ACCOUNTS"))
 	metaGraphBaseURL := strings.TrimSpace(os.Getenv("META_GRAPH_BASE_URL"))
 	metaGraphAPIVersion := strings.TrimSpace(os.Getenv("META_GRAPH_API_VERSION"))
 	metaClientesAccessToken := strings.TrimSpace(os.Getenv("META_CLIENTES_ACCESS_TOKEN"))
+	metaProveedoresAccessToken := strings.TrimSpace(os.Getenv("META_PROVEEDORES_ACCESS_TOKEN"))
 
 	if metaEnabled {
 		if metaVerifyToken == "" {
@@ -114,29 +116,64 @@ func main() {
 		if metaAppSecret == "" {
 			log.Fatal("❌ WA_META_WEBHOOK_ENABLED=true but META_APP_SECRET is empty")
 		}
-		if metaClientesPhoneNumberID == "" {
-			log.Fatal("❌ WA_META_WEBHOOK_ENABLED=true but META_PHONE_NUMBER_ID_CLIENTES is empty")
+		if metaClientesPhoneNumberID == "" && metaProveedoresPhoneNumberID == "" {
+			log.Fatal("❌ WA_META_WEBHOOK_ENABLED=true but no META_PHONE_NUMBER_ID_* is configured")
 		}
 	}
-	if metaOutboundEnabled {
-		if metaClientesAccessToken == "" {
-			log.Fatal("❌ WA_META_OUTBOUND_ENABLED=true but META_CLIENTES_ACCESS_TOKEN is empty")
-		}
-	}
-
 	phoneNumberToAccount := map[string]string{}
 	accountToPhoneNumber := map[string]string{}
 	if metaClientesPhoneNumberID != "" {
 		phoneNumberToAccount[metaClientesPhoneNumberID] = "bot-clientes"
 		accountToPhoneNumber["bot-clientes"] = metaClientesPhoneNumberID
 	}
+	if metaProveedoresPhoneNumberID != "" {
+		phoneNumberToAccount[metaProveedoresPhoneNumberID] = "bot-proveedores"
+		accountToPhoneNumber["bot-proveedores"] = metaProveedoresPhoneNumberID
+	}
+	accountAccessTokens := map[string]string{}
+	if metaClientesAccessToken != "" {
+		accountAccessTokens["bot-clientes"] = metaClientesAccessToken
+	}
+	if metaProveedoresAccessToken != "" {
+		accountAccessTokens["bot-proveedores"] = metaProveedoresAccessToken
+	}
+
+	if metaEnabled {
+		for accountID, phoneNumberID := range accountToPhoneNumber {
+			if !isMetaAccountEnabled(metaEnabled, metaEnabledAccounts, accountToPhoneNumber, accountID) {
+				continue
+			}
+			if strings.TrimSpace(phoneNumberID) == "" {
+				log.Fatalf("❌ WA_META_WEBHOOK_ENABLED=true but phone_number_id is empty for account=%s", accountID)
+			}
+		}
+	}
+	if metaOutboundEnabled {
+		for accountID := range accountToPhoneNumber {
+			if !isMetaAccountEnabled(metaOutboundEnabled, metaEnabledAccounts, accountToPhoneNumber, accountID) {
+				continue
+			}
+			if strings.TrimSpace(accountAccessTokens[accountID]) == "" {
+				log.Fatalf("❌ WA_META_OUTBOUND_ENABLED=true but access token is empty for account=%s", accountID)
+			}
+		}
+	}
 
 	var metaOutboundClient *metaoutbound.Client
 	if metaOutboundEnabled {
+		accessTokensByPhoneNumber := map[string]string{}
+		for accountID, phoneNumberID := range accountToPhoneNumber {
+			token := strings.TrimSpace(accountAccessTokens[accountID])
+			if phoneNumberID == "" || token == "" {
+				continue
+			}
+			accessTokensByPhoneNumber[phoneNumberID] = token
+		}
 		metaOutboundClient = metaoutbound.NewClient(metaoutbound.Config{
 			BaseURL:       metaGraphBaseURL,
 			APIVersion:    metaGraphAPIVersion,
 			AccessToken:   metaClientesAccessToken,
+			AccessTokens:  accessTokensByPhoneNumber,
 			Timeout:       15 * time.Second,
 			RetryAttempts: 2,
 		})
@@ -154,6 +191,7 @@ func main() {
 		},
 		webhookClient,
 		metaOutboundClient,
+		metaOutboundClient,
 	)
 
 	outboundRouter := outbound.NewRouter(cm, metaOutboundClient, outbound.RouterConfig{
@@ -162,12 +200,25 @@ func main() {
 		AccountPhoneNumber:  accountToPhoneNumber,
 	})
 
-	handlers := api.NewHandlers(cm, rl, sseHub, metaSvc, outboundRouter)
+	metaManagedAccounts := map[string]bool{}
+	for accountID := range accountToPhoneNumber {
+		if isMetaAccountEnabled(metaEnabled || metaOutboundEnabled, metaEnabledAccounts, accountToPhoneNumber, accountID) {
+			metaManagedAccounts[accountID] = true
+		}
+	}
+
+	handlers := api.NewHandlers(cm, rl, sseHub, metaSvc, outboundRouter, api.HandlerConfig{
+		MetaManagedAccounts: metaManagedAccounts,
+	})
 
 	// Start WhatsApp clients
 	log.Println("📱 Starting WhatsApp clients...")
 	accountIDs := []string{"bot-clientes", "bot-proveedores"}
 	for _, accountID := range accountIDs {
+		if accountID == "bot-proveedores" && metaManagedAccounts[accountID] {
+			log.Printf("ℹ️ Skipping whatsmeow startup for %s because Meta is active", accountID)
+			continue
+		}
 		if err := cm.StartClient(accountID); err != nil {
 			log.Printf("⚠️  Failed to start client %s: %v", accountID, err)
 		}
@@ -291,6 +342,17 @@ func parseEnabledAccounts(raw string) map[string]bool {
 		allowed[item] = true
 	}
 	return allowed
+}
+
+func isMetaAccountEnabled(enabled bool, allowList map[string]bool, accountToPhoneNumber map[string]string, accountID string) bool {
+	if !enabled {
+		return false
+	}
+	if len(allowList) > 0 {
+		return allowList[accountID]
+	}
+	_, exists := accountToPhoneNumber[accountID]
+	return exists
 }
 
 // runHealthcheck performs a health check and exits with appropriate code

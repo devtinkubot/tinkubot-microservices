@@ -3,6 +3,7 @@ package metaoutbound
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -45,6 +46,48 @@ func TestSendTextSuccess(t *testing.T) {
 	}
 	if gotPayload.MessagingProduct != "whatsapp" || gotPayload.Type != "text" || gotPayload.To != "593998823053" || gotPayload.Text == nil || gotPayload.Text.Body != "hola" {
 		t.Fatalf("unexpected payload: %+v", gotPayload)
+	}
+}
+
+func TestSendTextUsesPhoneSpecificToken(t *testing.T) {
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	client := NewClient(Config{
+		BaseURL:     srv.URL,
+		APIVersion:  "v22.0",
+		AccessToken: "fallback-token",
+		AccessTokens: map[string]string{
+			"1014676405063497": "provider-token-456",
+		},
+	})
+
+	err := client.SendText(context.Background(), "1014676405063497", "593998823053", "hola")
+	if err != nil {
+		t.Fatalf("SendText returned error: %v", err)
+	}
+	if gotAuth != "Bearer provider-token-456" {
+		t.Fatalf("unexpected auth header: %s", gotAuth)
+	}
+}
+
+func TestSendTextFailsWithoutTokenForPhoneNumber(t *testing.T) {
+	client := NewClient(Config{
+		BaseURL:      "https://graph.facebook.com",
+		APIVersion:   "v22.0",
+		AccessTokens: map[string]string{},
+	})
+
+	err := client.SendText(context.Background(), "1014676405063497", "593998823053", "hola")
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "access token is empty") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -492,5 +535,109 @@ func TestSendTextStopsOnClientErrors(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "status=400") {
 		t.Fatalf("expected status in error, got %v", err)
+	}
+}
+
+func TestDownloadMediaSuccess(t *testing.T) {
+	var gotMetadataAuth string
+	var gotDownloadAuth string
+	var serverURL string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v22.0/1479537139650973":
+			gotMetadataAuth = r.Header.Get("Authorization")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"url":       serverURL + "/media/file-1",
+				"mime_type": "image/jpeg",
+			})
+		case "/media/file-1":
+			gotDownloadAuth = r.Header.Get("Authorization")
+			w.Header().Set("Content-Type", "image/jpeg")
+			w.Header().Set("Content-Disposition", `attachment; filename="cedula-frontal.jpg"`)
+			_, _ = w.Write([]byte("binary-image"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	serverURL = srv.URL
+	defer srv.Close()
+
+	client := NewClient(Config{
+		BaseURL:     srv.URL,
+		APIVersion:  "v22.0",
+		AccessToken: "token-123",
+	})
+
+	data, mimetype, filename, err := client.DownloadMedia(context.Background(), "1022104724314763", "1479537139650973")
+	if err != nil {
+		t.Fatalf("DownloadMedia returned error: %v", err)
+	}
+	if string(data) != "binary-image" {
+		t.Fatalf("unexpected media bytes: %q", string(data))
+	}
+	if mimetype != "image/jpeg" || filename != "cedula-frontal.jpg" {
+		t.Fatalf("unexpected media metadata: mimetype=%s filename=%s", mimetype, filename)
+	}
+	if gotMetadataAuth != "Bearer token-123" || gotDownloadAuth != "Bearer token-123" {
+		t.Fatalf("unexpected auth headers metadata=%s download=%s", gotMetadataAuth, gotDownloadAuth)
+	}
+}
+
+func TestDownloadMediaFallsBackToMimeDerivedFilename(t *testing.T) {
+	var serverURL string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v22.0/2479537139650973":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"url":       serverURL + "/media/file-2",
+				"mime_type": "application/pdf",
+			})
+		case "/media/file-2":
+			w.Header().Set("Content-Type", "application/pdf")
+			_, _ = w.Write([]byte("binary-pdf"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	serverURL = srv.URL
+	defer srv.Close()
+
+	client := NewClient(Config{
+		BaseURL:     srv.URL,
+		APIVersion:  "v22.0",
+		AccessToken: "token-123",
+	})
+
+	_, mimetype, filename, err := client.DownloadMedia(context.Background(), "1022104724314763", "2479537139650973")
+	if err != nil {
+		t.Fatalf("DownloadMedia returned error: %v", err)
+	}
+	if mimetype != "application/pdf" {
+		t.Fatalf("unexpected mimetype: %s", mimetype)
+	}
+	if filename != "2479537139650973.pdf" {
+		t.Fatalf("unexpected filename: %s", filename)
+	}
+}
+
+func TestDownloadMediaPropagatesMetadataErrors(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"error":"bad request"}`)
+	}))
+	defer srv.Close()
+
+	client := NewClient(Config{
+		BaseURL:     srv.URL,
+		APIVersion:  "v22.0",
+		AccessToken: "token-123",
+	})
+
+	_, _, _, err := client.DownloadMedia(context.Background(), "1022104724314763", "3479537139650973")
+	if err == nil {
+		t.Fatal("expected error for metadata failure")
+	}
+	if !strings.Contains(err.Error(), "resolve media metadata status=400") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

@@ -17,33 +17,59 @@ def normalize_phone(raw: str) -> str:
     return digits
 
 
-def build_command(payload: str, container: str) -> list[str]:
+def build_command(payload: str, container: str, account: str) -> list[str]:
     shell_cmd = (
         "set -euo pipefail; "
-        ': "${META_PHONE_NUMBER_ID_CLIENTES:?META_PHONE_NUMBER_ID_CLIENTES missing}"; '
-        ': "${META_CLIENTES_ACCESS_TOKEN:?META_CLIENTES_ACCESS_TOKEN missing}"; '
+        'case "${ACCOUNT_ID}" in '
+        '  "bot-clientes") '
+        '    PHONE_NUMBER_ID="${META_PHONE_NUMBER_ID_CLIENTES:-}"; '
+        '    ACCESS_TOKEN="${META_CLIENTES_ACCESS_TOKEN:-}"; '
+        '    ;; '
+        '  "bot-proveedores") '
+        '    PHONE_NUMBER_ID="${META_PHONE_NUMBER_ID_PROVEEDORES:-}"; '
+        '    ACCESS_TOKEN="${META_PROVEEDORES_ACCESS_TOKEN:-}"; '
+        '    ;; '
+        '  *) '
+        '    echo "unsupported ACCOUNT_ID=${ACCOUNT_ID}" >&2; '
+        '    exit 1; '
+        '    ;; '
+        'esac; '
+        ': "${PHONE_NUMBER_ID:?phone number id missing}"; '
+        ': "${ACCESS_TOKEN:?access token missing}"; '
         'API_VERSION="${META_GRAPH_API_VERSION:-v25.0}"; '
-        'URL="https://graph.facebook.com/${API_VERSION}/${META_PHONE_NUMBER_ID_CLIENTES}/messages"; '
+        'URL="https://graph.facebook.com/${API_VERSION}/${PHONE_NUMBER_ID}/messages"; '
         'if command -v curl >/dev/null 2>&1; then '
         '  curl -sS -X POST '
-        '    -H "Authorization: Bearer ${META_CLIENTES_ACCESS_TOKEN}" '
+        '    -H "Authorization: Bearer ${ACCESS_TOKEN}" '
         '    -H "Content-Type: application/json" '
         '    --data "${PAYLOAD}" '
         '    "${URL}"; '
         'else '
         '  wget -qO- '
-        '    --header="Authorization: Bearer ${META_CLIENTES_ACCESS_TOKEN}" '
+        '    --header="Authorization: Bearer ${ACCESS_TOKEN}" '
         '    --header="Content-Type: application/json" '
         '    --post-data="${PAYLOAD}" '
         '    "${URL}"; '
         'fi'
     )
-    return ["docker", "exec", "-e", f"PAYLOAD={payload}", container, "/bin/sh", "-lc", shell_cmd]
+    return [
+        "docker",
+        "exec",
+        "-e",
+        f"ACCOUNT_ID={account}",
+        "-e",
+        f"PAYLOAD={payload}",
+        container,
+        "/bin/sh",
+        "-lc",
+        shell_cmd,
+    ]
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Send Meta Cloud API test message from wa-gateway container.")
     parser.add_argument("--container", default="tinkubot-wa-gateway", help="Docker container name")
+    parser.add_argument("--account", default="bot-clientes", help="Gateway account id: bot-clientes or bot-proveedores")
     parser.add_argument("--to", default="0959091325", help="Destination phone number")
     parser.add_argument(
         "--message",
@@ -68,9 +94,10 @@ def main() -> int:
         ensure_ascii=False,
     )
 
-    command = build_command(payload, args.container)
+    command = build_command(payload, args.container, args.account)
 
     print(f"Container: {args.container}")
+    print(f"Account: {args.account}")
     print(f"To: {to}")
     print(f"Message: {args.message}")
     if args.dry_run:

@@ -32,6 +32,13 @@ from templates.interfaz import (
 _FLUJO_KEY_SERVICIOS_TEMP = "service_add_temporales"
 
 
+def _menu_principal_desde_flujo(flujo: Dict[str, Any]) -> str:
+    return construir_menu_principal(
+        esta_registrado=True,
+        menu_limitado=bool(flujo.get("menu_limitado")),
+    )
+
+
 async def manejar_accion_servicios(
     *,
     flujo: Dict[str, Any],
@@ -90,7 +97,7 @@ async def manejar_accion_servicios(
         flujo["state"] = "awaiting_menu_option"
         return {
             "success": True,
-            "messages": [{"response": construir_menu_principal(esta_registrado=True)}],
+            "messages": [{"response": _menu_principal_desde_flujo(flujo)}],
         }
 
     return {
@@ -118,7 +125,7 @@ async def manejar_agregar_servicios(
         flujo["state"] = "awaiting_menu_option"
         return {
             "success": True,
-            "messages": [{"response": construir_menu_principal(esta_registrado=True)}],
+            "messages": [{"response": _menu_principal_desde_flujo(flujo)}],
         }
 
     servicios_actuales = flujo.get("services") or []
@@ -261,7 +268,7 @@ async def manejar_confirmacion_agregar_servicios(
         flujo.pop(_FLUJO_KEY_SERVICIOS_TEMP, None)
         return {
             "success": True,
-            "messages": [{"response": construir_menu_principal(esta_registrado=True)}],
+            "messages": [{"response": _menu_principal_desde_flujo(flujo)}],
         }
 
     texto_limpio = (texto_mensaje or "").strip().lower()
@@ -429,7 +436,7 @@ async def manejar_eliminar_servicio(
         flujo["state"] = "awaiting_menu_option"
         return {
             "success": True,
-            "messages": [{"response": construir_menu_principal(esta_registrado=True)}],
+            "messages": [{"response": _menu_principal_desde_flujo(flujo)}],
         }
 
     texto_ingresado = (texto_mensaje or "").strip()

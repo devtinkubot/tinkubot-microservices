@@ -87,3 +87,21 @@ def confirmar_actualizacion_redes_sociales(actualizado: bool) -> str:
     if actualizado:
         return "Redes sociales actualizadas."
     return "Redes sociales eliminadas."
+
+
+def solicitar_dni_actualizacion() -> str:
+    """Solicita la foto frontal de la cédula para actualización."""
+    return (
+        "*Envíame una foto clara de la parte frontal de tu cédula.* "
+        "Luego te pediré la parte posterior."
+    )
+
+
+def confirmar_documentos_actualizados() -> str:
+    """Confirma actualización exitosa de documentos."""
+    return "Cédula actualizada correctamente."
+
+
+def error_actualizar_documentos() -> str:
+    """Informa que no se pudo actualizar los documentos."""
+    return "No pude actualizar la cédula en este momento. Intenta nuevamente más tarde."

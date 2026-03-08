@@ -6,9 +6,52 @@ from flows.consentimiento import solicitar_consentimiento
 from flows.constructores import (
     construir_menu_principal,
     construir_respuesta_revision,
+    construir_respuesta_revision_con_menu_limitado,
     construir_respuesta_verificado,
 )
 from flows.registro import determinar_estado_registro
+
+ESTADOS_MENU_LIMITADO = {"interview_required"}
+ESTADOS_BLOQUEO_REVISION = {"rejected"}
+
+
+def normalizar_estado_administrativo(
+    perfil_proveedor: Optional[Dict[str, Any]],
+) -> str:
+    """Normaliza el estado administrativo persistido del proveedor."""
+    if not perfil_proveedor:
+        return "pending"
+
+    estado_crudo = str(perfil_proveedor.get("status") or "").strip().lower()
+    if estado_crudo in {"approved", "aprobado", "ok"}:
+        return "approved"
+    if estado_crudo in {"rejected", "rechazado", "denied"}:
+        return "rejected"
+    if estado_crudo in {
+        "interview_required",
+        "entrevista",
+        "auditoria",
+        "needs_info",
+        "falta_info",
+        "faltainfo",
+    }:
+        return "interview_required"
+    if estado_crudo in {"pending", "pendiente", "new"}:
+        return "pending"
+    return "approved" if perfil_proveedor.get("verified") else "pending"
+
+
+def perfil_tiene_menu_limitado(
+    perfil_proveedor: Optional[Dict[str, Any]],
+) -> bool:
+    """Indica si el proveedor puede editar perfil sin estar aprobado."""
+    if not perfil_proveedor:
+        return False
+    if perfil_proveedor.get("verified"):
+        return False
+    if not determinar_estado_registro(perfil_proveedor):
+        return False
+    return normalizar_estado_administrativo(perfil_proveedor) in ESTADOS_MENU_LIMITADO
 
 
 def sincronizar_flujo_con_perfil(
@@ -28,8 +71,10 @@ def sincronizar_flujo_con_perfil(
         flujo["services"] = servicios_guardados
         if perfil_proveedor.get("real_phone") and not flujo.get("real_phone"):
             flujo["real_phone"] = perfil_proveedor.get("real_phone")
+        flujo["menu_limitado"] = perfil_tiene_menu_limitado(perfil_proveedor)
     else:
         flujo.setdefault("services", [])
+        flujo["menu_limitado"] = False
     return flujo
 
 
@@ -42,7 +87,12 @@ def resolver_estado_registro(
     esta_registrado = determinar_estado_registro(perfil_proveedor)
     flujo["esta_registrado"] = esta_registrado
     esta_verificado = bool(perfil_proveedor and perfil_proveedor.get("verified"))
-    esta_pendiente_revision = bool(esta_registrado and not esta_verificado)
+    estado_administrativo = normalizar_estado_administrativo(perfil_proveedor)
+    esta_pendiente_revision = bool(
+        esta_registrado
+        and not esta_verificado
+        and estado_administrativo in ESTADOS_BLOQUEO_REVISION
+    )
     return (
         tiene_consentimiento,
         esta_registrado,
@@ -83,6 +133,7 @@ def manejar_aprobacion_reciente(
             "has_consent": True,
             "esta_registrado": True,
             "verification_notified": True,
+            "menu_limitado": False,
         }
     )
     return construir_respuesta_verificado()
@@ -95,6 +146,7 @@ async def manejar_estado_inicial(
     tiene_consentimiento: bool,
     esta_registrado: bool,
     esta_verificado: bool,
+    menu_limitado: bool,
     telefono: str,
 ) -> Optional[Dict[str, Any]]:
     """Resuelve la primera interacción cuando no hay estado."""
@@ -119,6 +171,17 @@ async def manejar_estado_inicial(
         return await solicitar_consentimiento(telefono)
 
     if not esta_verificado:
+        if menu_limitado:
+            flujo.update(
+                {
+                    "state": "awaiting_menu_option",
+                    "has_consent": True,
+                    "esta_registrado": True,
+                    "menu_limitado": True,
+                }
+            )
+            nombre_proveedor = flujo["full_name"]
+            return construir_respuesta_revision_con_menu_limitado(nombre_proveedor)
         flujo.update(
             {
                 "state": "pending_verification",
@@ -136,6 +199,7 @@ async def manejar_estado_inicial(
             "has_consent": True,
             "esta_registrado": True,
             "verification_notified": True,
+            "menu_limitado": False,
         }
     )
     return {

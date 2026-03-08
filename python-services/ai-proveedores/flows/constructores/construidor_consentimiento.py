@@ -2,12 +2,9 @@
 
 from typing import Any, Dict
 
-from templates import (
-    mensaje_consentimiento_rechazado,
-    mensajes_prompt_consentimiento,
-    mensaje_menu_principal_proveedor,
-    mensaje_menu_post_registro_proveedor,
-)
+from templates import mensaje_consentimiento_rechazado, mensajes_prompt_consentimiento
+
+from .construidor_menu import construir_menu_principal
 
 
 def construir_respuesta_solicitud_consentimiento() -> Dict[str, Any]:
@@ -21,7 +18,10 @@ def construir_respuesta_solicitud_consentimiento() -> Dict[str, Any]:
     return {"success": True, "messages": mensajes}
 
 
-def construir_respuesta_consentimiento_aceptado(esta_registrado: bool = False) -> Dict[str, Any]:
+def construir_respuesta_consentimiento_aceptado(
+    esta_registrado: bool = False,
+    menu_limitado: bool = False,
+) -> Dict[str, Any]:
     """Construye respuesta cuando el consentimiento es aceptado.
 
     Args:
@@ -30,10 +30,9 @@ def construir_respuesta_consentimiento_aceptado(esta_registrado: bool = False) -
     Returns:
         Diccionario con mensajes de confirmación y menú correspondiente.
     """
-    mensaje_menu = (
-        mensaje_menu_post_registro_proveedor()
-        if esta_registrado
-        else mensaje_menu_principal_proveedor()
+    mensaje_menu = construir_menu_principal(
+        esta_registrado=esta_registrado,
+        menu_limitado=menu_limitado,
     )
     return {
         "success": True,

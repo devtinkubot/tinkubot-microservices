@@ -80,6 +80,8 @@ MENU_STATES = {
     "awaiting_service_add_confirmation",
     "awaiting_service_remove",
     "awaiting_face_photo_update",
+    "awaiting_dni_front_photo_update",
+    "awaiting_dni_back_photo_update",
 }
 
 # Configurar logging

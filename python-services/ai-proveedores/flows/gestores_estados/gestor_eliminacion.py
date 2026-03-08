@@ -29,7 +29,12 @@ async def manejar_confirmacion_eliminacion(
             "success": True,
             "messages": [
                 {"response": informar_eliminacion_cancelada()},
-                {"response": construir_menu_principal(esta_registrado=True)},
+                {
+                    "response": construir_menu_principal(
+                        esta_registrado=True,
+                        menu_limitado=bool(flujo.get("menu_limitado")),
+                    )
+                },
             ],
         }
 
@@ -53,7 +58,12 @@ async def manejar_confirmacion_eliminacion(
             "success": True,
             "messages": [
                 {"response": error_eliminacion_fallida(resultado.get("message", ""))},
-                {"response": construir_menu_principal(esta_registrado=True)},
+                {
+                    "response": construir_menu_principal(
+                        esta_registrado=True,
+                        menu_limitado=bool(flujo.get("menu_limitado")),
+                    )
+                },
             ],
         }
 

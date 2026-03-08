@@ -14,7 +14,9 @@ from flows.gestores_estados import (
     manejar_confirmacion_agregar_servicios,
     manejar_confirmacion_eliminacion,
     manejar_dni_frontal,
+    manejar_dni_frontal_actualizacion,
     manejar_dni_trasera,
+    manejar_dni_trasera_actualizacion,
     manejar_eliminar_servicio,
     manejar_espera_ciudad,
     manejar_espera_correo,
@@ -183,7 +185,8 @@ async def manejar_mensaje(
                             {"response": informar_timeout_inactividad()},
                             {
                                 "response": construir_menu_principal(
-                                    esta_registrado=esta_registrado_timeout
+                                    esta_registrado=esta_registrado_timeout,
+                                    menu_limitado=bool(flujo.get("menu_limitado")),
                                 )
                             },
                         ]
@@ -235,6 +238,7 @@ async def manejar_mensaje(
         tiene_consentimiento=tiene_consentimiento,
         esta_registrado=esta_registrado,
         esta_verificado=esta_verificado,
+        menu_limitado=bool(flujo.get("menu_limitado")),
         telefono=telefono,
     )
     if respuesta_inicial:
@@ -360,8 +364,26 @@ async def enrutar_estado(  # noqa: C901
             texto_mensaje=texto_mensaje,
             opcion_menu=opcion_menu,
             esta_registrado=esta_registrado,
+            menu_limitado=bool(flujo.get("menu_limitado")),
         )
         return {"response": respuesta, "persist_flow": True}
+
+    if estado == "pending_verification" and bool(flujo.get("menu_limitado")):
+        flujo["state"] = "awaiting_menu_option"
+        return {
+            "response": {
+                "success": True,
+                "messages": [
+                    {
+                        "response": construir_menu_principal(
+                            esta_registrado=True,
+                            menu_limitado=True,
+                        )
+                    }
+                ],
+            },
+            "persist_flow": True,
+        }
 
     if estado == "awaiting_availability_response":
         if _es_salida_a_menu(texto_mensaje, opcion_menu):
@@ -370,7 +392,12 @@ async def enrutar_estado(  # noqa: C901
                 "response": {
                     "success": True,
                     "messages": [
-                        {"response": construir_menu_principal(esta_registrado=True)}
+                        {
+                            "response": construir_menu_principal(
+                                esta_registrado=True,
+                                menu_limitado=bool(flujo.get("menu_limitado")),
+                            )
+                        }
                     ],
                 },
                 "persist_flow": True,
@@ -457,6 +484,19 @@ async def enrutar_estado(  # noqa: C901
 
     if estado == "awaiting_dni":
         respuesta = manejar_inicio_documentos(flujo)
+        return {"response": respuesta, "persist_flow": True}
+
+    if estado == "awaiting_dni_front_photo_update":
+        respuesta = manejar_dni_frontal_actualizacion(flujo, carga)
+        return {"response": respuesta, "persist_flow": True}
+
+    if estado == "awaiting_dni_back_photo_update":
+        respuesta = await manejar_dni_trasera_actualizacion(
+            flujo=flujo,
+            carga=carga,
+            proveedor_id=flujo.get("provider_id"),
+            subir_medios_identidad=subir_medios_identidad,
+        )
         return {"response": respuesta, "persist_flow": True}
 
     if estado == "awaiting_real_phone":

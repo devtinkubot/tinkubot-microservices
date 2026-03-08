@@ -10,6 +10,7 @@ from templates.registro import PROMPT_INICIO_REGISTRO, preguntar_real_phone
 from templates.interfaz import (
     error_opcion_no_reconocida,
     informar_cierre_sesion,
+    solicitar_dni_actualizacion,
     solicitar_selfie_actualizacion,
     solicitar_red_social_actualizacion,
     solicitar_confirmacion_eliminacion,
@@ -23,11 +24,13 @@ async def manejar_estado_menu(
     texto_mensaje: str,
     opcion_menu: Optional[str],
     esta_registrado: bool,
+    menu_limitado: bool = False,
 ) -> Dict[str, Any]:
     """Procesa el menú principal y devuelve la respuesta."""
     logger.info(f"🎯 manejar_estado_menu llamado. esta_registrado={esta_registrado}, opcion_menu={opcion_menu}, texto_mensaje='{texto_mensaje}'")
     opcion = opcion_menu
     texto_minusculas = (texto_mensaje or "").strip().lower()
+    max_opcion_menu = 5
 
     if not esta_registrado:
         if opcion == "1" or "registro" in texto_minusculas:
@@ -90,11 +93,23 @@ async def manejar_estado_menu(
             "success": True,
             "messages": [{"response": solicitar_red_social_actualizacion()}],
         }
+    if menu_limitado and (
+        opcion == "4" or "cedula" in texto_minusculas or "cédula" in texto_minusculas or "dni" in texto_minusculas
+    ):
+        flujo["state"] = "awaiting_dni_front_photo_update"
+        return {
+            "success": True,
+            "messages": [{"response": solicitar_dni_actualizacion()}],
+        }
+
     if (
-        opcion == "4"
-        or "eliminar" in texto_minusculas
-        or "borrar" in texto_minusculas
-        or "delete" in texto_minusculas
+        not menu_limitado
+        and (
+            opcion == "4"
+            or "eliminar" in texto_minusculas
+            or "borrar" in texto_minusculas
+            or "delete" in texto_minusculas
+        )
     ):
         flujo["state"] = "awaiting_deletion_confirmation"
         return {
@@ -103,12 +118,17 @@ async def manejar_estado_menu(
                 {"response": solicitar_confirmacion_eliminacion()},
             ],
         }
-    if opcion == "5" or "salir" in texto_minusculas or "volver" in texto_minusculas:
+    if (
+        opcion == str(max_opcion_menu)
+        or "salir" in texto_minusculas
+        or "volver" in texto_minusculas
+    ):
         flujo_base = {
             "has_consent": True,
             "esta_registrado": True,
             "provider_id": flujo.get("provider_id"),
             "services": servicios_actuales,
+            "menu_limitado": menu_limitado,
         }
         flujo.clear()
         flujo.update(flujo_base)
@@ -120,7 +140,12 @@ async def manejar_estado_menu(
     return {
         "success": True,
         "messages": [
-            {"response": error_opcion_no_reconocida(1, 5)},
-            {"response": construir_menu_principal(esta_registrado=True)},
+            {"response": error_opcion_no_reconocida(1, max_opcion_menu)},
+            {
+                "response": construir_menu_principal(
+                    esta_registrado=True,
+                    menu_limitado=menu_limitado,
+                )
+            },
         ],
     }

@@ -296,6 +296,7 @@ class SearchService:
             "match_count": match_count,
             "city_filter": f"%{city}%" if city else None,
             "verified_only": verified_only,
+            "similarity_threshold": settings.vector_similarity_threshold,
         }
 
         response = await self._run_supabase(
@@ -304,9 +305,27 @@ class SearchService:
         )
 
         providers: List[ProviderInfo] = []
+        distances: List[float] = []
         if response and response.data:
             for row in response.data:
+                distance = row.get("distance")
+                if isinstance(distance, (int, float)):
+                    distances.append(float(distance))
                 providers.append(self._dict_to_provider_info_from_vector(row))
+
+        min_distance = min(distances) if distances else None
+        max_distance = max(distances) if distances else None
+        logger.info(
+            "search_embeddings_rpc query=%r match_count=%s threshold=%.2f returned=%s city=%r verified_only=%s min_distance=%s max_distance=%s",
+            effective_query[:120],
+            match_count,
+            settings.vector_similarity_threshold,
+            len(providers),
+            city,
+            verified_only,
+            f"{min_distance:.4f}" if min_distance is not None else "n/a",
+            f"{max_distance:.4f}" if max_distance is not None else "n/a",
+        )
         return providers
 
     def _dict_to_provider_info_from_vector(self, row: Dict[str, Any]) -> ProviderInfo:

@@ -42,7 +42,12 @@ async def manejar_estado_consentimiento(
         return {
             "success": True,
             "messages": [
-                {"response": construir_menu_principal(esta_registrado=esta_registrado)}
+                {
+                    "response": construir_menu_principal(
+                        esta_registrado=esta_registrado,
+                        menu_limitado=bool(flujo.get("menu_limitado")),
+                    )
+                }
             ],
         }
 
