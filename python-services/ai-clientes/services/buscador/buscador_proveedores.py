@@ -3,6 +3,7 @@
 import logging
 from typing import Any, Dict, Optional
 
+from config.configuracion import configuracion
 from infrastructure.clientes.busqueda import ClienteBusqueda
 
 
@@ -75,7 +76,7 @@ class BuscadorProveedores:
                 ciudad=ciudad,
                 descripcion_problema=descripcion_problema or profesion,
                 service_candidate=profesion,
-                limite=10,
+                limite=configuracion.search_candidate_limit,
             )
 
             if not resultado.get("ok"):
@@ -92,6 +93,22 @@ class BuscadorProveedores:
                 f"(estrategia: {metadatos.get('strategy')}, "
                 f"tiempo: {metadatos.get('search_time_ms')}ms)"
             )
+
+            if proveedores:
+                resumen_scores = [
+                    {
+                        "provider_id": proveedor.get("id"),
+                        "similarity_score": proveedor.get("similarity_score"),
+                        "services": (proveedor.get("services") or [])[:2],
+                    }
+                    for proveedor in proveedores[:5]
+                ]
+                self.logger.info(
+                    "📊 Candidatos previos a validación IA para '%s' en %s: %s",
+                    profesion,
+                    ciudad,
+                    resumen_scores,
+                )
 
             # Si no hay proveedores, retornar vacío
             if not proveedores:

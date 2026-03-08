@@ -242,8 +242,13 @@ async def ejecutar_busqueda_y_notificar_en_segundo_plano(
                 try:
                     from services.sesiones.gestor_sesiones import gestor_sesiones
 
+                    texto_sesion = (
+                        mensaje.get("response")
+                        if isinstance(mensaje, dict)
+                        else mensaje
+                    )
                     await gestor_sesiones.guardar_sesion(
-                        telefono, mensaje, es_bot=True
+                        telefono, texto_sesion, es_bot=True
                     )
                 except Exception as exc:
                     logger.warning(f"⚠️ No se pudo guardar en sesión: {exc}")
@@ -285,7 +290,7 @@ async def _construir_mensajes_resultados(
     Private:
         Esta función es un helper privado del módulo.
     """
-    mensajes_por_enviar: List[str] = []
+    mensajes_por_enviar: List[Any] = []
 
     if proveedores_finales:
         # Hay proveedores: construir listado
@@ -316,10 +321,8 @@ async def _construir_mensajes_resultados(
             flujo["confirm_title"], incluir_opcion_ciudad=True
         )
 
-        # Añadir respuestas de texto (el mensaje de botones se envía aparte)
-        mensajes_por_enviar.extend(
-            [msg.get("response") or "" for msg in mensajes_confirmacion]
-        )
+        # Preservar payload completo para no perder UI/buttons en el envío.
+        mensajes_por_enviar.extend(mensajes_confirmacion)
 
         # Guardar mensajes de confirmación en sesión
         try:

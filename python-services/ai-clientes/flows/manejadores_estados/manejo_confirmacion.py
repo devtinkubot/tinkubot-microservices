@@ -18,7 +18,7 @@ async def procesar_estado_confirmar_nueva_busqueda(
         [Dict[str, Any], str], Awaitable[Dict[str, Any]]
     ],
     guardar_mensaje_bot_fn: Callable[[Optional[str]], Awaitable[None]],
-    prompt_inicial: str,
+    prompt_inicial: Dict[str, Any],
     mensaje_despedida: str,
     titulo_confirmacion_por_defecto: str,
     max_intentos: int,
@@ -44,7 +44,7 @@ async def procesar_estado_confirmar_nueva_busqueda(
         reenviar_proveedores_fn: Función asíncrona para reenviar la lista de proveedores
         enviar_prompt_confirmacion_fn: Función asíncrona para enviar prompt de confirmación
         guardar_mensaje_bot_fn: Función asíncrona para guardar mensajes del bot
-        prompt_inicial: Mensaje inicial para reiniciar la búsqueda
+        prompt_inicial: Payload inicial para reiniciar la búsqueda
         mensaje_despedida: Mensaje de despedida cuando el usuario no quiere continuar
         titulo_confirmacion_por_defecto: Título por defecto para el prompt de confirmación
         max_intentos: Número máximo de intentos permitidos antes de reiniciar
@@ -77,7 +77,11 @@ async def procesar_estado_confirmar_nueva_busqueda(
     if opcion_ciudad_habilitada:
         opciones_ciudad |= {"1", "opcion 1", "opción 1", "1)"}
 
-    if eleccion in opciones_ciudad or ("cambio" in eleccion and "ciudad" in eleccion):
+    if (
+        eleccion in opciones_ciudad
+        or seleccionado == "confirm_new_search_city"
+        or ("cambio" in eleccion and "ciudad" in eleccion)
+    ):
         flujo["state"] = "awaiting_city"
         flujo["city_confirmed"] = False
         flujo.pop("providers", None)
@@ -155,7 +159,7 @@ async def procesar_estado_confirmar_nueva_busqueda(
             "2)",
         }
 
-    if eleccion in elecciones_si:
+    if eleccion in elecciones_si or seleccionado == "confirm_new_search_service":
         ciudad_preservada = flujo.get("city")
         ciudad_confirmada_preservada = flujo.get("city_confirmed")
         await resetear_flujo_fn()
@@ -172,10 +176,10 @@ async def procesar_estado_confirmar_nueva_busqueda(
                 nuevo_flujo["city_confirmed"] = ciudad_confirmada_preservada
         return await responder_fn(
             nuevo_flujo,
-            {"response": prompt_inicial},
+            prompt_inicial,
         )
 
-    if eleccion in elecciones_no:
+    if eleccion in elecciones_no or seleccionado == "confirm_new_search_exit":
         await resetear_flujo_fn()
         flujo.pop("confirm_include_city_option", None)
         flujo.pop("", None)
@@ -193,7 +197,7 @@ async def procesar_estado_confirmar_nueva_busqueda(
         flujo.pop("", None)
         return await responder_fn(
             {"state": "awaiting_service"},
-            {"response": prompt_inicial},
+            prompt_inicial,
         )
 
     return await enviar_prompt_confirmacion_fn(

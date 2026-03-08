@@ -24,13 +24,10 @@ def bloque_listado_proveedores_compacto(proveedores: List[Dict[str, Any]]) -> st
 
 
 def mensaje_listado_sin_resultados(ciudad: str) -> str:
-    lineas = [
-        mensaje_intro_listado_proveedores(ciudad),
-        "",
-        "    -- No tenemos aún proveedores --",
-        "",
-    ]
-    return "\n".join(lineas)
+    ciudad_texto = (ciudad or "").strip()
+    if ciudad_texto:
+        return f"❌ *No* encontré expertos en *{ciudad_texto}*."
+    return "❌ *No* encontré expertos."
 
 
 def instruccion_seleccion_numero() -> str:

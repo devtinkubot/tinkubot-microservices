@@ -214,72 +214,14 @@ async def enrutar_estado(
 
         limpio = texto.strip().lower() if texto else ""
         if texto and limpio and limpio not in orquestador.greetings:
-            # IA-only extraction - no static categories
-            orquestador.logger.info(
-                f"🤖 Conversación nueva, usando extracción IA pura para: '{limpio[:50]}...'"
+            flujo["state"] = "awaiting_service"
+            return await orquestador._procesar_awaiting_service(
+                telefono,
+                flujo,
+                texto,
+                responder,
+                cliente_id,
             )
-            extractor = orquestador.extractor_ia
-            validar_necesidad = getattr(extractor, "es_necesidad_o_problema", None)
-            if validar_necesidad:
-                try:
-                    es_necesidad = await validar_necesidad(limpio)
-                except Exception as exc:
-                    orquestador.logger.warning(
-                        "⚠️ Error validando necesidad/problema (fallback a permitir): %s",
-                        exc,
-                    )
-                    es_necesidad = True
-                if not es_necesidad:
-                    flujo.update({"state": "awaiting_service"})
-                    return await responder(
-                        flujo, await _prompt_inicial_servicio(orquestador)
-                    )
-
-            extraer_servicio = extractor.extraer_servicio_con_ia
-            extraer_ubicacion = extractor.extraer_ubicacion_con_ia
-            profesion = await extraer_servicio(limpio)
-            ubicacion_extraida = await extraer_ubicacion(limpio)
-            valor_servicio = (profesion or "").strip()
-            if not valor_servicio:
-                flujo.update({"state": "awaiting_service"})
-                return await responder(
-                    flujo,
-                    {
-                        "response": (
-                            "No pude identificar con claridad el servicio que necesitas. "
-                            "Descríbelo de forma más concreta (ej: desarrollador web, "
-                            "plomero, electricista, diseñador gráfico)."
-                        )
-                    },
-                )
-            descripcion_problema = limpio  # Guardar el mensaje completo como contexto del problema
-
-            flujo.update({
-                "service": valor_servicio,
-                "service_full": texto,
-                "descripcion_problema": descripcion_problema
-            })
-
-            if flujo.get("service") and flujo.get("city"):
-                from templates.mensajes.validacion import (
-                    mensaje_confirmar_servicio,
-                    ui_confirmar_servicio,
-                )
-
-                flujo["service_candidate"] = valor_servicio
-                flujo["state"] = "confirm_service"
-                flujo.pop("service", None)
-                return await responder(
-                    flujo,
-                    {
-                        "response": mensaje_confirmar_servicio(valor_servicio),
-                        "ui": ui_confirmar_servicio(),
-                    },
-                )
-
-            flujo["state"] = "awaiting_city"
-            flujo["city_confirmed"] = False
-            return await responder(flujo, solicitar_ciudad())
 
         flujo.update({"state": "awaiting_service"})
         return await responder(flujo, await _prompt_inicial_servicio(orquestador))
@@ -302,6 +244,8 @@ async def enrutar_estado(
                 flujo["service_captured_after_consent"] = True
                 flujo.pop("service_candidate", None)
                 flujo.pop("descripcion_problema", None)
+                flujo.pop("service_candidate_hint", None)
+                flujo.pop("service_candidate_hint_label", None)
 
                 if orquestador.repositorio_clientes:
                     perfil_cliente = await orquestador.repositorio_clientes.obtener_o_crear(
@@ -551,6 +495,7 @@ async def enrutar_estado(
         )
 
     if estado == "confirm_new_search":
+        prompt_servicio = await _prompt_inicial_servicio(orquestador)
         return await procesar_estado_confirmar_nueva_busqueda(
             flujo,
             texto,
@@ -564,7 +509,7 @@ async def enrutar_estado(
                 telefono, data, title
             ),
             guardar_mensaje_bot,
-            mensaje_inicial_solicitud(),
+            prompt_servicio,
             orquestador.farewell_message,
             titulo_confirmacion_repetir_busqueda,
             orquestador.max_confirm_attempts,

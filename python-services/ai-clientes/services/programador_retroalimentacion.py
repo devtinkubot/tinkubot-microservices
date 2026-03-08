@@ -102,17 +102,27 @@ class ProgramadorRetroalimentacion:
         except Exception as exc:
             self.logger.warning(f"No se pudo agendar retroalimentación: {exc}")
 
-    async def enviar_texto_whatsapp(self, telefono: str, texto: str) -> bool:
+    async def enviar_texto_whatsapp(self, telefono: str, texto: Any) -> bool:
         try:
             url = f"{self.whatsapp_url}/send"
+            if isinstance(texto, dict):
+                body = {
+                    "account_id": self.whatsapp_account_id,
+                    "to": telefono,
+                    "message": texto.get("response") or "",
+                }
+                if texto.get("ui"):
+                    body["ui"] = texto["ui"]
+            else:
+                body = {
+                    "account_id": self.whatsapp_account_id,
+                    "to": telefono,
+                    "message": texto,
+                }
             async with httpx.AsyncClient(timeout=10.0) as client:
                 respuesta = await client.post(
                     url,
-                    json={
-                        "account_id": self.whatsapp_account_id,
-                        "to": telefono,
-                        "message": texto,
-                    },
+                    json=body,
                 )
             if respuesta.status_code == 200:
                 await self._limpiar_marca_rate_limit(telefono)

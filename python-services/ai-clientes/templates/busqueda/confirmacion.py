@@ -88,11 +88,46 @@ def mensajes_confirmacion_busqueda(titulo: str, incluir_opcion_ciudad: bool = Fa
     Returns:
         Lista de diccionarios con 'response' y opcionalmente 'ui'.
     """
-    from templates.comunes.elementos_ui import pie_instrucciones_respuesta_numerica
-
     titulo_negrita = f"*{titulo}*"
+    if incluir_opcion_ciudad:
+        return [
+            {
+                "response": titulo_negrita,
+                "ui": {
+                    "type": "buttons",
+                    "options": [
+                        {
+                            "id": "confirm_new_search_city",
+                            "title": "Otra ciudad",
+                        },
+                        {
+                            "id": "confirm_new_search_service",
+                            "title": "Otro servicio",
+                        },
+                        {
+                            "id": "confirm_new_search_exit",
+                            "title": "Salir",
+                        },
+                    ],
+                },
+            },
+        ]
+
     return [
         {
-            "response": f"{titulo_negrita}\n\n{menu_opciones_confirmacion(incluir_opcion_ciudad)}"
+            "response": titulo_negrita,
+            "ui": {
+                "type": "buttons",
+                "options": [
+                    {
+                        "id": "confirm_new_search_service",
+                        "title": "Buscar otro servicio",
+                    },
+                    {
+                        "id": "confirm_new_search_exit",
+                        "title": "Salir",
+                    },
+                ],
+            },
         },
     ]

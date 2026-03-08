@@ -2,6 +2,8 @@
 
 import asyncio
 import logging
+import re
+import unicodedata
 from typing import Optional
 
 from config.configuracion import configuracion
@@ -11,6 +13,38 @@ from utils.texto import normalizar_texto_para_coincidencia
 
 class ExtractorNecesidadIA:
     """Servicio de extracción semántica de servicio y ciudad con IA."""
+
+    PALABRAS_VAGAS_OCUPACION = {
+        "necesito",
+        "busco",
+        "quiero",
+        "requiero",
+        "ocupo",
+        "solicito",
+        "contratar",
+        "contactar",
+        "un",
+        "una",
+        "unos",
+        "unas",
+        "el",
+        "la",
+        "los",
+        "las",
+        "de",
+        "del",
+        "para",
+        "por",
+        "favor",
+        "con",
+        "urgente",
+        "urgentemente",
+        "ayuda",
+        "alguien",
+        "que",
+        "me",
+        "pueda",
+    }
 
     # Modelos desde configuración centralizada
     MODELO_EXTRACCION = (
@@ -46,6 +80,45 @@ class ExtractorNecesidadIA:
         "Latacunga": {"latacunga"},
         "Salinas": {"salinas"},
     }
+    VERBOS_RESTAURACION_MUEBLES = {
+        "arreglar",
+        "reparar",
+        "restaurar",
+        "restauracion",
+        "remodelar",
+        "remodelacion",
+        "renovar",
+    }
+    VERBOS_RETAPIZADO = {
+        "tapizar",
+        "retapizar",
+        "tapiceria",
+        "tapicería",
+        "forrar",
+    }
+    VERBOS_LIMPIEZA = {
+        "limpiar",
+        "lavar",
+        "desmanchar",
+    }
+    TERMINOS_MUEBLES = {
+        "mueble",
+        "muebles",
+        "mesa",
+        "mesas",
+        "silla",
+        "sillas",
+        "comedor",
+        "sala",
+        "sofa",
+        "sofas",
+        "sillon",
+        "sillones",
+        "ropero",
+        "armario",
+        "aparador",
+        "vitrina",
+    }
 
     def __init__(
         self,
@@ -58,6 +131,44 @@ class ExtractorNecesidadIA:
         self.semaforo_openai = semaforo_openai
         self.tiempo_espera_openai = tiempo_espera_openai
         self.logger = logger
+
+    @classmethod
+    def _normalizar_texto_local(cls, texto: str) -> str:
+        base = unicodedata.normalize("NFD", (texto or "").strip().lower())
+        sin_acentos = "".join(ch for ch in base if unicodedata.category(ch) != "Mn")
+        limpio = re.sub(r"[^a-z0-9\s]", " ", sin_acentos)
+        return re.sub(r"\s+", " ", limpio).strip()
+
+    @classmethod
+    def _tokens_relevantes(cls, texto: str) -> list[str]:
+        return [
+            token
+            for token in cls._normalizar_texto_local(texto).split()
+            if token and token not in cls.PALABRAS_VAGAS_OCUPACION
+        ]
+
+    @classmethod
+    def _extraer_hint_ocupacion_generica(cls, texto: str) -> Optional[str]:
+        tokens = cls._tokens_relevantes(texto)
+        if not tokens or len(tokens) > 2:
+            return None
+        return " ".join(tokens)
+
+    @classmethod
+    def _resolver_servicio_por_reglas_locales(
+        cls, mensaje_usuario: str
+    ) -> Optional[str]:
+        texto_norm = cls._normalizar_texto_local(mensaje_usuario)
+        tokens = set(texto_norm.split())
+        if not (tokens & cls.TERMINOS_MUEBLES):
+            return None
+        if tokens & cls.VERBOS_RETAPIZADO:
+            return "retapizado de muebles"
+        if tokens & cls.VERBOS_LIMPIEZA:
+            return "limpieza de muebles"
+        if tokens & cls.VERBOS_RESTAURACION_MUEBLES:
+            return "restauración de muebles"
+        return None
 
     async def _normalizar_servicio_a_espanol(
         self, servicio_detectado: str
@@ -111,6 +222,24 @@ Responde SOLO con el nombre del servicio."""
 
     async def extraer_servicio_con_ia(self, mensaje_usuario: str) -> Optional[str]:
         """Extrae el servicio requerido por el cliente usando IA."""
+        hint_ocupacion = self._extraer_hint_ocupacion_generica(mensaje_usuario)
+        if hint_ocupacion:
+            self.logger.info(
+                "ℹ️ occupation_hint_detected input='%s' hint='%s'",
+                normalizar_texto_para_coincidencia(mensaje_usuario)[:120],
+                hint_ocupacion,
+            )
+            return hint_ocupacion
+
+        servicio_local = self._resolver_servicio_por_reglas_locales(mensaje_usuario)
+        if servicio_local:
+            self.logger.info(
+                "ℹ️ local_service_rule_detected input='%s' service='%s'",
+                normalizar_texto_para_coincidencia(mensaje_usuario)[:120],
+                servicio_local,
+            )
+            return servicio_local
+
         if not self.cliente_openai:
             self.logger.warning("⚠️ extraer_servicio_con_ia: sin cliente OpenAI")
             return None
@@ -131,6 +260,9 @@ REGLAS CRÍTICAS:
    (pliegos, licitación, contratación pública, etc.).
 5. No uses términos en inglés cuando exista equivalente claro en español.
 6. Responde con una frase corta de 4 a 10 palabras.
+7. Si el usuario solo menciona una ocupación genérica
+   (ej: "carpintero", "abogado", "plomero"), devuelve esa ocupación tal cual,
+   no inventes especialidades ni categorías más sofisticadas.
 
 Responde SOLO con el nombre del servicio, sin explicaciones."""
 
@@ -191,6 +323,13 @@ Responde SOLO con el nombre del servicio, sin explicaciones."""
         """
         texto = (mensaje_usuario or "").strip()
         if not texto:
+            return False
+
+        if self._extraer_hint_ocupacion_generica(texto):
+            self.logger.info(
+                "ℹ️ gate_rejected_local_hint normalized_input='%s'",
+                normalizar_texto_para_coincidencia(texto)[:120],
+            )
             return False
 
         if not self.cliente_openai:

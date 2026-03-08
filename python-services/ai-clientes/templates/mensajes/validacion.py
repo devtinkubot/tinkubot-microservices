@@ -40,6 +40,14 @@ Podrás reanudar el servicio después de las {hora_reinicio}."""
 mensaje_error_input_sin_sentido = mensaje_error_solicitud_servicio_corto
 
 
+def mensaje_solicitar_detalle_servicio(servicio_hint: Optional[str] = None) -> str:
+    """Pide al usuario describir el problema antes de buscar proveedores."""
+    hint = (servicio_hint or "").strip()
+    if hint:
+        return f"Por favor, cuéntame para qué necesitas un *{hint}*."
+    return "Por favor, cuéntame brevemente qué necesitas."
+
+
 def solicitar_reformulacion() -> str:
     """Solicita al usuario reformular su mensaje."""
     return "¿Podrías reformular tu mensaje?"

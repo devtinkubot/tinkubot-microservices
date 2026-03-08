@@ -29,6 +29,7 @@ from services.programador_retroalimentacion import ProgramadorRetroalimentacion
 from services.leads import GestorLeads
 from services.seguridad.contenido import ModeradorContenido
 from services.orquestador_retrollamadas import OrquestadorRetrollamadas
+from services.respuesta_whatsapp import normalizar_respuesta_whatsapp
 
 # Configurar logging
 logging.basicConfig(level=getattr(logging, configuracion.log_level))
@@ -237,45 +238,6 @@ async def health_check():
         }
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Service unhealthy: {str(e)}")
-
-
-
-
-def normalizar_respuesta_whatsapp(respuesta: Any) -> Dict[str, Any]:
-    """Normaliza la respuesta para que siempre use el esquema esperado por wa-gateway."""
-    if respuesta is None:
-        return {"success": True, "messages": []}
-
-    if not isinstance(respuesta, dict):
-        return {"success": True, "messages": [{"response": str(respuesta)}]}
-
-    if "messages" in respuesta:
-        if "success" not in respuesta:
-            respuesta["success"] = True
-        return respuesta
-
-    if "response" in respuesta:
-        texto = respuesta.get("response")
-        mensajes = []
-        if isinstance(texto, list):
-            for item in texto:
-                if isinstance(item, dict) and "response" in item:
-                    mensajes.append(item)
-                else:
-                    mensajes.append({"response": str(item)})
-        else:
-            mensajes.append({"response": str(texto) if texto is not None else ""})
-
-        normalizada = {k: v for k, v in respuesta.items() if k != "response"}
-        normalizada["messages"] = mensajes
-        if "success" not in normalizada:
-            normalizada["success"] = True
-        return normalizada
-
-    if "success" not in respuesta:
-        respuesta["success"] = True
-    return respuesta
-
 
 @app.post("/handle-whatsapp-message")
 async def handle_whatsapp_message(payload: Dict[str, Any]):

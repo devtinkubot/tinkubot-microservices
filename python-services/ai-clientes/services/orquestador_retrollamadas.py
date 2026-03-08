@@ -311,7 +311,7 @@ class OrquestadorRetrollamadas:
             hired=hired,
         )
 
-    async def enviar_texto_whatsapp(self, telefono: str, texto: str) -> bool:
+    async def enviar_texto_whatsapp(self, telefono: str, texto: Any) -> bool:
         if self.programador_retroalimentacion:
             return await self.programador_retroalimentacion.enviar_texto_whatsapp(
                 telefono, texto

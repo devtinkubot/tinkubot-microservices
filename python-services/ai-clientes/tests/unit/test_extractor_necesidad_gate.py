@@ -17,7 +17,19 @@ async def test_es_necesidad_fail_open_si_no_hay_openai():
         logger=logging.getLogger(__name__),
     )
 
-    assert await extractor.es_necesidad_o_problema("plomero") is True
+    assert await extractor.es_necesidad_o_problema("mi lavadora no enciende") is True
+
+
+@pytest.mark.asyncio
+async def test_es_necesidad_rechaza_ocupacion_generica_sin_openai():
+    extractor = ExtractorNecesidadIA(
+        cliente_openai=None,
+        semaforo_openai=asyncio.Semaphore(1),
+        tiempo_espera_openai=1.0,
+        logger=logging.getLogger(__name__),
+    )
+
+    assert await extractor.es_necesidad_o_problema("Necesito un carpintero") is False
 
 
 @pytest.mark.asyncio

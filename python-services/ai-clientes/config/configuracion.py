@@ -47,6 +47,7 @@ class ConfiguracionServicio(BaseSettings):
     whatsapp_clientes_port: int = 5001
     clientes_service_port: int = 8001
     ai_search_port: int = 8000
+    search_candidate_limit: int = 15
 
     # Supabase Configuration (opcional para persistencia)
     supabase_url: Optional[str] = None

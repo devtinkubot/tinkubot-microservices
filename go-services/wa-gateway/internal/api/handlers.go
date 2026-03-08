@@ -10,6 +10,7 @@ import (
 	"github.com/tinkubot/wa-gateway/internal/metawebhook"
 	"github.com/tinkubot/wa-gateway/internal/outbound"
 	"github.com/tinkubot/wa-gateway/internal/ratelimit"
+	"github.com/tinkubot/wa-gateway/internal/webhook"
 	"github.com/tinkubot/wa-gateway/internal/whatsmeow"
 )
 
@@ -305,6 +306,7 @@ type SendMessageRequest struct {
 	AccountID string `json:"account_id" binding:"required"`
 	To        string `json:"to" binding:"required"`
 	Message   string `json:"message" binding:"required"`
+	UI        *webhook.UIConfig `json:"ui,omitempty"`
 }
 
 // PostSend sends a message
@@ -354,7 +356,12 @@ func (h *Handlers) PostSend(c *gin.Context) {
 	}
 
 	// Send message through configured outbound transport.
-	sendErr := h.outbound.SendText(context.Background(), req.AccountID, req.To, req.Message)
+	var sendErr error
+	if req.UI != nil && req.UI.Type == "buttons" {
+		sendErr = h.outbound.SendButtons(context.Background(), req.AccountID, req.To, req.Message, *req.UI)
+	} else {
+		sendErr = h.outbound.SendText(context.Background(), req.AccountID, req.To, req.Message)
+	}
 	if sendErr != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(sendErr, outbound.ErrMetaNotConfigured) {

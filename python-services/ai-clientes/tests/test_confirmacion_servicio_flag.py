@@ -7,7 +7,12 @@ from flows.manejadores_estados.manejo_confirmacion_servicio import (
 
 @pytest.mark.asyncio
 async def test_confirm_service_yes_sets_guard_flag_true():
-    flujo = {"state": "confirm_service", "service_candidate": "plomero"}
+    flujo = {
+        "state": "confirm_service",
+        "service_candidate": "plomero",
+        "service_candidate_hint": "plomero",
+        "service_candidate_hint_label": "plomero",
+    }
 
     async def guardar(_):
         return None
@@ -30,6 +35,7 @@ async def test_confirm_service_yes_sets_guard_flag_true():
     assert flujo["service"] == "plomero"
     assert flujo["service_captured_after_consent"] is True
     assert "service_candidate" not in flujo
+    assert "service_candidate_hint" not in flujo
 
 
 @pytest.mark.asyncio
@@ -59,7 +65,11 @@ async def test_confirm_service_accepts_interactive_yes_id():
 
 @pytest.mark.asyncio
 async def test_confirm_service_rejects_with_interactive_no_id():
-    flujo = {"state": "confirm_service", "service_candidate": "electricista"}
+    flujo = {
+        "state": "confirm_service",
+        "service_candidate": "electricista",
+        "service_candidate_hint": "electricista",
+    }
 
     async def guardar(_):
         return None
@@ -81,6 +91,7 @@ async def test_confirm_service_rejects_with_interactive_no_id():
     assert result == {"response": "¿Qué servicio necesitas?"}
     assert flujo["state"] == "awaiting_service"
     assert "service_candidate" not in flujo
+    assert "service_candidate_hint" not in flujo
 
 
 @pytest.mark.asyncio

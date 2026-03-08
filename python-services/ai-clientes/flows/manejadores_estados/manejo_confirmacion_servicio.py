@@ -25,7 +25,14 @@ async def procesar_estado_confirmar_servicio(
         or interpretar_si_no_fn(eleccion) is True
     ):
         if not service_candidate:
-            for key in ["service", "service_full", "service_candidate"]:
+            for key in [
+                "service",
+                "service_full",
+                "service_candidate",
+                "service_candidate_hint",
+                "service_candidate_hint_label",
+                "descripcion_problema",
+            ]:
                 flujo.pop(key, None)
             flujo["state"] = "awaiting_service"
             await guardar_flujo_fn(flujo)
@@ -38,6 +45,8 @@ async def procesar_estado_confirmar_servicio(
         flujo["service"] = service_candidate
         flujo["service_captured_after_consent"] = True
         flujo.pop("service_candidate", None)
+        flujo.pop("service_candidate_hint", None)
+        flujo.pop("service_candidate_hint_label", None)
         await guardar_flujo_fn(flujo)
         return await iniciar_busqueda_fn(flujo)
 
@@ -45,7 +54,14 @@ async def procesar_estado_confirmar_servicio(
         eleccion_norm in {"2", "no", "problem_confirm_no"}
         or interpretar_si_no_fn(eleccion) is False
     ):
-        for key in ["service", "service_full", "service_candidate"]:
+        for key in [
+            "service",
+            "service_full",
+            "service_candidate",
+            "service_candidate_hint",
+            "service_candidate_hint_label",
+            "descripcion_problema",
+        ]:
             flujo.pop(key, None)
         flujo["state"] = "awaiting_service"
         await guardar_flujo_fn(flujo)

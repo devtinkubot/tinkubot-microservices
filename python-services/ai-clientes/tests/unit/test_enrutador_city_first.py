@@ -114,7 +114,7 @@ async def test_estado_vacio_y_sin_ciudad_pide_ciudad_primero():
 
 
 @pytest.mark.asyncio
-async def test_estado_vacio_con_ciudad_pasa_por_confirm_service_y_no_busca_directo():
+async def test_estado_vacio_con_ciudad_guarda_hint_y_pide_detalle():
     orquestador = _OrquestadorStub()
     flujo = {"city": "Cuenca"}
 
@@ -129,14 +129,12 @@ async def test_estado_vacio_con_ciudad_pasa_por_confirm_service_y_no_busca_direc
         cliente_id="cust-2",
     )
 
-    assert flujo["state"] == "confirm_service"
-    assert flujo["service_candidate"] == "plomero"
-    assert "service" not in flujo
-    assert respuesta["ui"]["type"] == "buttons"
-    assert [opt["id"] for opt in respuesta["ui"]["options"]] == [
-        "problem_confirm_yes",
-        "problem_confirm_no",
-    ]
+    assert flujo["state"] == "awaiting_service"
+    assert flujo["service_candidate_hint"] == "plomero"
+    assert flujo["service_candidate_hint_label"] == "plomero"
+    assert "para qué necesitas un *plomero*" in respuesta["response"].lower()
+    assert "necesito plomero urgente" not in respuesta["response"].lower()
+    assert "ui" not in respuesta
 
 
 @pytest.mark.asyncio
@@ -191,7 +189,7 @@ async def test_awaiting_service_texto_libre_sigue_flujo_normal():
         orquestador,
         telefono="+593999000555",
         flujo=flujo,
-        texto="necesito pintor",
+        texto="quiero pintar la sala de mi casa",
         seleccionado=None,
         tipo_mensaje="text",
         ubicacion={},
@@ -199,4 +197,5 @@ async def test_awaiting_service_texto_libre_sigue_flujo_normal():
     )
 
     assert flujo["state"] == "confirm_service"
+    assert flujo["descripcion_problema"] == "quiero pintar la sala de mi casa"
     assert "¿Es este el servicio que buscas:" in respuesta["response"]

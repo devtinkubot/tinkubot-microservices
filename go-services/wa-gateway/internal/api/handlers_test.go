@@ -1,13 +1,48 @@
 package api
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/tinkubot/wa-gateway/internal/outbound"
+	"github.com/tinkubot/wa-gateway/internal/ratelimit"
+	"github.com/tinkubot/wa-gateway/internal/webhook"
 )
+
+type fakeWebSender struct{}
+
+func (f *fakeWebSender) SendTextMessage(accountID string, to string, message string) error {
+	return nil
+}
+
+type fakeMetaSender struct {
+	buttonCalls int
+	lastBody    string
+	lastUI      *webhook.UIConfig
+}
+
+func (f *fakeMetaSender) SendText(_ context.Context, _ string, _ string, _ string) error {
+	return nil
+}
+
+func (f *fakeMetaSender) SendButtons(
+	_ context.Context,
+	_ string,
+	_ string,
+	body string,
+	ui webhook.UIConfig,
+) error {
+	f.buttonCalls++
+	f.lastBody = body
+	copyUI := ui
+	f.lastUI = &copyUI
+	return nil
+}
 
 func TestGetAccountsShowsMetaManagedProvider(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -98,5 +133,66 @@ func TestMetaManagedAccountOperationsReturnConflict(t *testing.T) {
 				t.Fatalf("unexpected code: %+v", body)
 			}
 		})
+	}
+}
+
+func TestPostSendDispatchesButtonsWhenUIProvided(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	metaSender := &fakeMetaSender{}
+	router := outbound.NewRouter(
+		&fakeWebSender{},
+		metaSender,
+		outbound.RouterConfig{
+			MetaOutboundEnabled: true,
+			MetaEnabledAccounts: map[string]bool{"bot-clientes": true},
+			AccountPhoneNumber:  map[string]string{"bot-clientes": "12345"},
+		},
+	)
+	handlers := NewHandlers(
+		nil,
+		ratelimit.NewLimiter(ratelimit.Config{MaxPerHour: 20, MaxPer24h: 100}),
+		nil,
+		nil,
+		router,
+		HandlerConfig{MetaManagedAccounts: map[string]bool{"bot-clientes": true}},
+	)
+
+	rec := httptest.NewRecorder()
+	_, ginRouter := gin.CreateTestContext(rec)
+	ginRouter.POST("/send", handlers.PostSend)
+
+	body := map[string]any{
+		"account_id": "bot-clientes",
+		"to":         "593999111222",
+		"message":    "¿Te ayudo con otra solicitud?",
+		"ui": map[string]any{
+			"type": "buttons",
+			"options": []map[string]any{
+				{"id": "confirm_new_search_city", "title": "Buscar en otra ciudad"},
+				{"id": "confirm_new_search_service", "title": "Buscar otro servicio"},
+				{"id": "confirm_new_search_exit", "title": "Salir"},
+			},
+		},
+	}
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal body: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/send", bytes.NewReader(raw))
+	req.Header.Set("Content-Type", "application/json")
+	ginRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if metaSender.buttonCalls != 1 {
+		t.Fatalf("expected 1 button send, got %d", metaSender.buttonCalls)
+	}
+	if metaSender.lastBody != "¿Te ayudo con otra solicitud?" {
+		t.Fatalf("unexpected body: %q", metaSender.lastBody)
+	}
+	if metaSender.lastUI == nil || metaSender.lastUI.Type != "buttons" {
+		t.Fatalf("expected buttons UI, got %+v", metaSender.lastUI)
 	}
 }

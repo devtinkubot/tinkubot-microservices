@@ -84,3 +84,37 @@ async def test_prompt_normalizacion_evita_generalizacion():
     prompt_sistema = llamada_normalizacion["messages"][0]["content"]
     assert "sin perder especificidad" in prompt_sistema
     assert "Evita generalizar" in prompt_sistema
+
+
+@pytest.mark.asyncio
+async def test_extraer_servicio_generico_no_inventa_especialidad():
+    fake = _FakeOpenAI(["carpintería personalizada"])
+    extractor = ExtractorNecesidadIA(
+        cliente_openai=fake,
+        semaforo_openai=asyncio.Semaphore(1),
+        tiempo_espera_openai=2.0,
+        logger=logging.getLogger(__name__),
+    )
+
+    servicio = await extractor.extraer_servicio_con_ia("Necesito un carpintero")
+
+    assert servicio == "carpintero"
+    assert fake.completions.llamadas == []
+
+
+@pytest.mark.asyncio
+async def test_regla_local_mapea_reparacion_de_mueble_a_restauracion():
+    fake = _FakeOpenAI(["servicio de carpintería"])
+    extractor = ExtractorNecesidadIA(
+        cliente_openai=fake,
+        semaforo_openai=asyncio.Semaphore(1),
+        tiempo_espera_openai=2.0,
+        logger=logging.getLogger(__name__),
+    )
+
+    servicio = await extractor.extraer_servicio_con_ia(
+        "Servicio de referencia: carpintero. Necesidad del usuario: arreglar un mueble de comedor"
+    )
+
+    assert servicio == "restauración de muebles"
+    assert fake.completions.llamadas == []
