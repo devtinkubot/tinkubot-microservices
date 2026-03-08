@@ -44,6 +44,7 @@ class ProviderInfo(BaseModel):
     services: List[str]
     years_of_experience: Optional[int] = None
     created_at: datetime
+    similarity_score: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     social_media_url: Optional[str] = None
     social_media_type: Optional[str] = None
     face_photo_url: Optional[str] = None

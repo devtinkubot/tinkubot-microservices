@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     embeddings_retry_backoff_ms: int = 300
     vector_top_k: int = 30
     vector_similarity: str = "cosine"
-    vector_similarity_threshold: float = 0.70
+    vector_similarity_threshold: float = 0.50
 
     # API Configuration
     search_api_host: str = "0.0.0.0"

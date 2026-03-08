@@ -196,6 +196,7 @@ class ClienteBusqueda:
                 "services": proveedor.get("services", []),
                 "years_of_experience": proveedor.get("years_of_experience"),
                 "created_at": proveedor.get("created_at"),
+                "similarity_score": proveedor.get("similarity_score"),
                 "social_media_url": proveedor.get("social_media_url"),
                 "social_media_type": proveedor.get("social_media_type"),
                 "face_photo_url": proveedor.get("face_photo_url"),

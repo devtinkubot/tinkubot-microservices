@@ -72,6 +72,7 @@ async def test_search_by_embeddings_envia_threshold_y_mapea_resultados(monkeypat
     assert len(providers) == 1
     assert providers[0].id == "prov-1"
     assert providers[0].services == ["capitan de barco"]
+    assert providers[0].similarity_score == pytest.approx(0.88)
 
 
 def test_build_effective_query_preserva_contexto_existente():

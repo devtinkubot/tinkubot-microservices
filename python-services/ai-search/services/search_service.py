@@ -331,6 +331,13 @@ class SearchService:
     def _dict_to_provider_info_from_vector(self, row: Dict[str, Any]) -> ProviderInfo:
         """Convertir resultado vectorial a ProviderInfo."""
         services = row.get("services") or []
+        distance_raw = row.get("distance")
+        similarity_score = None
+        try:
+            if distance_raw is not None:
+                similarity_score = max(0.0, min(1.0, 1.0 - float(distance_raw)))
+        except (TypeError, ValueError):
+            similarity_score = None
         return ProviderInfo(
             id=str(row.get("provider_id") or row.get("id")),
             phone_number=row.get("phone", ""),
@@ -345,6 +352,7 @@ class SearchService:
             services=services,
             years_of_experience=row.get("experience_years"),
             created_at=row.get("created_at", datetime.now()),
+            similarity_score=similarity_score,
             social_media_url=row.get("social_media_url"),
             social_media_type=row.get("social_media_type"),
             face_photo_url=row.get("face_photo_url"),
