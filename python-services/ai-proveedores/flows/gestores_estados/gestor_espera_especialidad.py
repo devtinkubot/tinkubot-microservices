@@ -1,17 +1,122 @@
-"""Manejador del estado awaiting_specialty."""
+"""Manejador del estado awaiting_specialty para captura incremental."""
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
-from services.servicios_proveedor.constantes import SERVICIOS_MAXIMOS
+from services.servicios_proveedor.constantes import SERVICIOS_MAXIMOS_ONBOARDING
 from services.servicios_proveedor.utilidades import (
     es_servicio_critico_generico,
     limpiar_espacios,
     mensaje_pedir_precision_servicio,
     sanitizar_lista_servicios,
 )
+from templates.registro import (
+    confirmar_servicio_y_preguntar_otro,
+    mensaje_maximo_servicios_registro,
+    mensaje_resumen_servicios_registro,
+    mensaje_servicio_duplicado_registro,
+)
 
 logger = logging.getLogger(__name__)
+
+
+async def normalizar_servicio_registro_individual(
+    *,
+    texto_mensaje: str,
+    cliente_openai: Optional[Any],
+) -> Dict[str, Any]:
+    """Normaliza un solo servicio durante el onboarding."""
+    especialidad_texto = limpiar_espacios(texto_mensaje)
+    texto_minusculas = especialidad_texto.lower()
+
+    if texto_minusculas in {"omitir", "ninguna", "na", "n/a"}:
+        return {
+            "ok": False,
+            "response": (
+                "*Los servicios son obligatorios.* "
+                "Escribe un servicio indicando el servicio y la especialidad o "
+                "área exacta."
+            ),
+        }
+
+    if len(especialidad_texto) < 2:
+        return {
+            "ok": False,
+            "response": (
+                "*El servicio debe tener al menos 2 caracteres.* "
+                "Escríbelo con más detalle."
+            ),
+        }
+
+    if len(especialidad_texto) > 300:
+        return {
+            "ok": False,
+            "response": (
+                "*El texto es muy largo (máx. 300 caracteres).* "
+                "Envía una versión más corta del servicio."
+            ),
+        }
+
+    if not cliente_openai:
+        logger.error("❌ OpenAI no configurado; no se puede normalizar servicios")
+        return {
+            "ok": False,
+            "response": (
+                "*No pude procesar tus servicios en este momento.* "
+                "Por favor intenta nuevamente en unos minutos."
+            ),
+        }
+
+    try:
+        from infrastructure.openai.transformador_servicios import TransformadorServicios
+
+        transformador = TransformadorServicios(cliente_openai)
+        servicios_transformados = await transformador.transformar_a_servicios(
+            especialidad_texto,
+            max_servicios=1,
+        )
+    except Exception as exc:
+        logger.error("❌ Error en transformación OpenAI: %s", exc)
+        return {
+            "ok": False,
+            "response": (
+                "*Tuvimos un problema al normalizar tu servicio.* "
+                "Por favor intenta nuevamente."
+            ),
+        }
+
+    if not servicios_transformados:
+        return {
+            "ok": False,
+            "response": (
+                "*No pude interpretar ese servicio.* "
+                "Por favor reescríbelo de forma más simple y específica."
+            ),
+        }
+
+    servicios_transformados = sanitizar_lista_servicios(servicios_transformados)
+    if not servicios_transformados:
+        return {
+            "ok": False,
+            "response": (
+                "*No pude interpretar ese servicio.* "
+                "Por favor reescríbelo de forma más simple y específica."
+            ),
+        }
+
+    servicio = servicios_transformados[0]
+    if es_servicio_critico_generico(servicio):
+        logger.info(
+            "critical_generic_provider_service_blocked service='%s' raw='%s'",
+            servicio,
+            especialidad_texto[:120],
+        )
+        return {
+            "ok": False,
+            "response": mensaje_pedir_precision_servicio(servicio),
+        }
+
+    return {"ok": True, "service": servicio}
 
 
 async def manejar_espera_especialidad(
@@ -19,161 +124,74 @@ async def manejar_espera_especialidad(
     texto_mensaje: Optional[str],
     cliente_openai: Optional[Any] = None,
 ) -> Dict[str, Any]:
-    """
-    Procesa la entrada del usuario para el campo especialidad/servicios.
+    """Procesa la captura incremental de un servicio en el registro."""
+    servicios_temporales: List[str] = list(flujo.get("servicios_temporales") or [])
 
-    Fase 7: Ahora usa OpenAI para transformar títulos profesionales en
-    servicios optimizados para búsquedas semánticas.
-
-    Args:
-        flujo: Diccionario del flujo conversacional
-        texto_mensaje: Mensaje del usuario con los servicios
-        cliente_openai: Cliente de OpenAI (opcional, si no hay se salta transformación)
-
-    Returns:
-        Respuesta con éxito y siguiente pregunta, o error de validación
-    """
-    especialidad_texto = limpiar_espacios(texto_mensaje)
-    texto_minusculas = especialidad_texto.lower()
-    logger.info(
-        "🧩 servicios.ingreso raw='%s' openai=%s",
-        especialidad_texto[:120],
-        bool(cliente_openai),
-    )
-
-    if texto_minusculas in {"omitir", "ninguna", "na", "n/a"}:
-        return {
-            "success": True,
-            "messages": [
-                {
-                    "response": (
-                        "*Los servicios son obligatorios. Por favor escríbelos tal como los trabajas, separando con comas si hay varios.*"
-                    )
-                }
-            ],
-        }
-
-    if len(especialidad_texto) < 2:
-        return {
-            "success": True,
-            "messages": [
-                {
-                    "response": (
-                        "*Los servicios deben tener al menos 2 caracteres. "
-                        "Incluye tus servicios separados por comas (ej: gasfitería, mantenimiento).*"
-                    )
-                }
-            ],
-        }
-
-    if len(especialidad_texto) > 300:
-        return {
-            "success": True,
-            "messages": [
-                {
-                    "response": (
-                        "*El listado de servicios es muy largo (máx. 300 caracteres).* "
-                        "Envía una versión resumida con tus principales servicios separados por comas."
-                    )
-                }
-            ],
-        }
-
-    if not cliente_openai:
-        logger.error("❌ OpenAI no configurado; no se puede normalizar servicios")
-        return {
-            "success": True,
-            "messages": [
-                {
-                    "response": (
-                        "*No pude procesar tus servicios en este momento.* "
-                        "Por favor intenta nuevamente en unos minutos."
-                    )
-                }
-            ],
-        }
-
-    try:
-        from infrastructure.openai.transformador_servicios import (
-            TransformadorServicios,
-        )
-
-        transformador = TransformadorServicios(cliente_openai)
-        servicios_transformados = await transformador.transformar_a_servicios(
-            especialidad_texto, max_servicios=SERVICIOS_MAXIMOS
-        )
-
-        if not servicios_transformados:
-            logger.warning("⚠️ Transformación OpenAI sin resultados")
-            return {
-                "success": True,
-                "messages": [
-                    {
-                        "response": (
-                            "*No pude interpretar tus servicios.* "
-                            "Por favor reescríbelos de forma más simple, separados por comas."
-                        )
-                    }
-                ],
-            }
-
-        servicios_transformados = sanitizar_lista_servicios(servicios_transformados)
-        logger.info("✅ servicios.transformados count=%s", len(servicios_transformados))
-
-        if not servicios_transformados:
-            logger.warning("⚠️ Servicios vacíos tras sanitización")
-            return {
-                "success": True,
-                "messages": [
-                    {
-                        "response": (
-                            "*No pude interpretar tus servicios.* "
-                            "Por favor reescríbelos de forma más simple, separados por comas."
-                        )
-                    }
-                ],
-            }
-
-        servicio_generico = next(
-            (servicio for servicio in servicios_transformados if es_servicio_critico_generico(servicio)),
-            None,
-        )
-        if servicio_generico:
-            logger.info(
-                "critical_generic_provider_service_blocked service='%s' raw='%s'",
-                servicio_generico,
-                especialidad_texto[:120],
-            )
-            return {
-                "success": True,
-                "messages": [
-                    {
-                        "response": mensaje_pedir_precision_servicio(servicio_generico),
-                    }
-                ],
-            }
-
-        # Guardar servicios temporalmente para confirmación
-        flujo["servicios_temporales"] = servicios_transformados
+    if len(servicios_temporales) >= SERVICIOS_MAXIMOS_ONBOARDING:
         flujo["state"] = "awaiting_services_confirmation"
-
-        # Importar aquí para evitar circular dependency
-        from flows.gestores_estados.gestor_confirmacion_servicios import (
-            mostrar_confirmacion_servicios,
-        )
-
-        return mostrar_confirmacion_servicios(flujo, servicios_transformados)
-
-    except Exception as e:
-        logger.error("❌ Error en transformación OpenAI: %s", e)
         return {
             "success": True,
             "messages": [
                 {
-                    "response": (
-                        "*Tuvimos un problema al normalizar tus servicios.* "
-                        "Por favor intenta nuevamente."
+                    "response": mensaje_maximo_servicios_registro(
+                        SERVICIOS_MAXIMOS_ONBOARDING
                     )
-                }
+                },
+                {
+                    "response": mensaje_resumen_servicios_registro(
+                        servicios_temporales,
+                        SERVICIOS_MAXIMOS_ONBOARDING,
+                    )
+                },
             ],
         }
+
+    resultado = await normalizar_servicio_registro_individual(
+        texto_mensaje=texto_mensaje or "",
+        cliente_openai=cliente_openai,
+    )
+    if not resultado.get("ok"):
+        return {"success": True, "messages": [{"response": resultado["response"]}]}
+
+    servicio = resultado["service"]
+    if servicio in servicios_temporales:
+        return {
+            "success": True,
+            "messages": [{"response": mensaje_servicio_duplicado_registro(servicio)}],
+        }
+
+    servicios_temporales.append(servicio)
+    flujo["servicios_temporales"] = servicios_temporales
+
+    if len(servicios_temporales) >= SERVICIOS_MAXIMOS_ONBOARDING:
+        flujo["state"] = "awaiting_services_confirmation"
+        return {
+            "success": True,
+            "messages": [
+                {
+                    "response": mensaje_maximo_servicios_registro(
+                        SERVICIOS_MAXIMOS_ONBOARDING
+                    )
+                },
+                {
+                    "response": mensaje_resumen_servicios_registro(
+                        servicios_temporales,
+                        SERVICIOS_MAXIMOS_ONBOARDING,
+                    )
+                },
+            ],
+        }
+
+    flujo["state"] = "awaiting_add_another_service"
+    return {
+        "success": True,
+        "messages": [
+            {
+                "response": confirmar_servicio_y_preguntar_otro(
+                    servicio,
+                    len(servicios_temporales),
+                    SERVICIOS_MAXIMOS_ONBOARDING,
+                )
+            }
+        ],
+    }

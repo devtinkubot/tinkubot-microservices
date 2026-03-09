@@ -68,6 +68,20 @@ _SERVICIOS_GENERICOS_CRITICOS = {
     "desarrollo tecnologico": "tecnologia",
 }
 
+_RESPUESTAS_META_NO_UTILES = {
+    "no entiendo",
+    "no comprendo",
+    "que",
+    "qué",
+    "como",
+    "cómo",
+    "eh",
+    "mmm",
+    "?",
+    "no se",
+    "no sé",
+}
+
 
 def _normalizar_texto(texto: str) -> str:
     base = unicodedata.normalize("NFD", (texto or "").strip().lower())
@@ -96,6 +110,34 @@ def _es_solicitud_generica_ocupacion(
     return 0 < len(tokens) <= 2
 
 
+def _es_respuesta_seguimiento_concreta(
+    texto: str,
+    servicio_extraido: Optional[str],
+    servicio_hint: Optional[str],
+) -> bool:
+    """Relaja el gate cuando el usuario ya respondió a una repregunta.
+
+    Si ya existe un hint y el usuario envía una frase corta pero concreta
+    como "cambio de aceite" o "planos para una casa", debe poder pasar
+    a confirmación sin volver a pedir "para qué".
+    """
+    if not servicio_hint or not servicio_extraido:
+        return False
+    if _es_respuesta_meta_no_util(texto):
+        return False
+    if _detectar_servicio_generico_critico(servicio_extraido):
+        return False
+
+    tokens_texto = _tokens_relevantes(texto)
+    tokens_servicio = _tokens_relevantes(servicio_extraido)
+
+    if any(token in _VERBOS_ACCION_USUARIO for token in tokens_texto):
+        return True
+    if len(tokens_texto) >= 2:
+        return True
+    return len(tokens_servicio) >= 3
+
+
 def _construir_contexto_con_hint(
     texto: str,
     servicio_hint: Optional[str],
@@ -109,6 +151,19 @@ def _construir_contexto_con_hint(
 
 def _detectar_servicio_generico_critico(servicio: Optional[str]) -> Optional[str]:
     return _SERVICIOS_GENERICOS_CRITICOS.get(_normalizar_texto(servicio or ""))
+
+
+def _es_respuesta_meta_no_util(texto: str) -> bool:
+    normalizado = _normalizar_texto(texto)
+    if not normalizado:
+        return True
+    if normalizado in _RESPUESTAS_META_NO_UTILES:
+        return True
+    return len(normalizado.split()) <= 2 and normalizado in {
+        "no entiendo",
+        "no se",
+        "que hago",
+    }
 
 
 def _hint_usuario_legible(
@@ -166,6 +221,15 @@ async def procesar_estado_esperando_servicio(
         (flujo.get("service_candidate_hint_label") or "").strip()
         or servicio_hint_existente
     )
+
+    if servicio_hint_existente and _es_respuesta_meta_no_util(limpio):
+        from templates.mensajes.validacion import mensaje_aclarar_detalle_servicio
+
+        flujo["state"] = "awaiting_service"
+        return flujo, {
+            "response": mensaje_aclarar_detalle_servicio(servicio_hint_label),
+        }
+
     texto_para_extraccion = _construir_contexto_con_hint(limpio, servicio_hint_existente)
 
     es_necesidad = True
@@ -190,7 +254,18 @@ async def procesar_estado_esperando_servicio(
         profesion = None
 
     valor_servicio = (profesion or "").strip()
-    if not es_necesidad or _es_solicitud_generica_ocupacion(limpio, valor_servicio):
+    dominio_generico = _detectar_servicio_generico_critico(valor_servicio)
+    respuesta_seguimiento_concreta = _es_respuesta_seguimiento_concreta(
+        limpio,
+        valor_servicio,
+        servicio_hint_existente,
+    )
+    solicitud_generica_ocupacion = bool(
+        not servicio_hint_existente
+        and _es_solicitud_generica_ocupacion(limpio, valor_servicio)
+    )
+
+    if (not es_necesidad and not respuesta_seguimiento_concreta) or solicitud_generica_ocupacion:
         hint = valor_servicio or limpio
         hint_usuario = _hint_usuario_legible(limpio, valor_servicio)
         flujo["state"] = "awaiting_service"
@@ -219,7 +294,6 @@ async def procesar_estado_esperando_servicio(
             )
         }
 
-    dominio_generico = _detectar_servicio_generico_critico(valor_servicio)
     if dominio_generico:
         flujo["state"] = "awaiting_service"
         flujo["service_candidate_hint"] = valor_servicio
@@ -238,6 +312,13 @@ async def procesar_estado_esperando_servicio(
         return flujo, {
             "response": mensaje_solicitar_precision_servicio(valor_servicio),
         }
+
+    if respuesta_seguimiento_concreta:
+        logger.info(
+            "followup_specific_need_accepted normalized_input='%s' extracted='%s'",
+            limpio.lower()[:120],
+            valor_servicio,
+        )
 
     contexto_busqueda = _construir_contexto_con_hint(texto or limpio, servicio_hint_existente)
     flujo.update(

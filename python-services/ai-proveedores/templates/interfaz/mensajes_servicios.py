@@ -29,6 +29,15 @@ def error_limite_servicios_alcanzado(max_servicios: int) -> str:
     )
 
 
+def error_limite_servicios_pendientes(max_servicios: int) -> str:
+    """Informa que un pendiente no puede precisarse sin liberar un cupo activo."""
+    return (
+        f"Ya tienes {max_servicios} servicios activos. "
+        "Para precisar este servicio pendiente, primero elimina uno de tus "
+        "servicios activos y libera un cupo."
+    )
+
+
 # ==================== AGREGAR SERVICIOS ====================
 
 

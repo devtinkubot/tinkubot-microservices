@@ -6,23 +6,25 @@ from typing import Any, Dict, Optional
 from flows.consentimiento import solicitar_consentimiento
 from flows.constructores import construir_menu_principal
 from flows.gestores_estados import (
+    manejar_accion_edicion_servicios_registro,
     manejar_accion_servicios,
     manejar_accion_servicios_activos,
     manejar_accion_servicios_pendientes,
     manejar_actualizacion_redes_sociales,
     manejar_actualizacion_selfie,
+    manejar_agregar_servicio_desde_edicion_registro,
     manejar_agregar_servicios,
     manejar_confirmacion,
     manejar_confirmacion_agregar_servicios,
     manejar_confirmacion_eliminacion,
+    manejar_confirmacion_precision_servicio_pendiente,
+    manejar_decision_agregar_otro_servicio,
     manejar_dni_frontal,
     manejar_dni_frontal_actualizacion,
     manejar_dni_trasera,
     manejar_dni_trasera_actualizacion,
+    manejar_eliminacion_servicio_registro,
     manejar_eliminar_servicio,
-    manejar_seleccion_servicio_pendiente,
-    manejar_precision_servicio_pendiente,
-    manejar_confirmacion_precision_servicio_pendiente,
     manejar_espera_ciudad,
     manejar_espera_correo,
     manejar_espera_especialidad,
@@ -33,6 +35,10 @@ from flows.gestores_estados import (
     manejar_estado_consentimiento,
     manejar_estado_menu,
     manejar_inicio_documentos,
+    manejar_precision_servicio_pendiente,
+    manejar_reemplazo_servicio_registro,
+    manejar_seleccion_reemplazo_servicio_registro,
+    manejar_seleccion_servicio_pendiente,
     manejar_selfie_registro,
 )
 from flows.gestores_estados.gestor_confirmacion_servicios import (
@@ -74,10 +80,7 @@ RESET_KEYWORDS = {
 def _es_salida_a_menu(texto_mensaje: str, opcion_menu: Optional[str]) -> bool:
     texto = (texto_mensaje or "").strip().lower()
     return bool(
-        opcion_menu == "5"
-        or "menu" in texto
-        or "volver" in texto
-        or "salir" in texto
+        opcion_menu == "5" or "menu" in texto or "volver" in texto or "salir" in texto
     )
 
 
@@ -565,15 +568,57 @@ async def enrutar_estado(  # noqa: C901
         return {"response": respuesta, "persist_flow": True}
 
     if estado == "awaiting_specialty":
-        # Fase 7: Pasar cliente_openai para transformación de servicios
         respuesta = await manejar_espera_especialidad(
             flujo, texto_mensaje, cliente_openai
         )
         return {"response": respuesta, "persist_flow": True}
 
+    if estado == "awaiting_add_another_service":
+        respuesta = await manejar_decision_agregar_otro_servicio(
+            flujo,
+            texto_mensaje,
+        )
+        return {"response": respuesta, "persist_flow": True}
+
     if estado == "awaiting_services_confirmation":
-        # Fase 7: Confirmación de servicios transformados por OpenAI
         respuesta = await manejar_confirmacion_servicios(
+            flujo,
+            texto_mensaje,
+            cliente_openai,
+        )
+        return {"response": respuesta, "persist_flow": True}
+
+    if estado == "awaiting_services_edit_action":
+        respuesta = await manejar_accion_edicion_servicios_registro(
+            flujo,
+            texto_mensaje,
+        )
+        return {"response": respuesta, "persist_flow": True}
+
+    if estado == "awaiting_services_edit_replace_select":
+        respuesta = await manejar_seleccion_reemplazo_servicio_registro(
+            flujo,
+            texto_mensaje,
+        )
+        return {"response": respuesta, "persist_flow": True}
+
+    if estado == "awaiting_services_edit_replace_input":
+        respuesta = await manejar_reemplazo_servicio_registro(
+            flujo,
+            texto_mensaje,
+            cliente_openai,
+        )
+        return {"response": respuesta, "persist_flow": True}
+
+    if estado == "awaiting_services_edit_delete_select":
+        respuesta = await manejar_eliminacion_servicio_registro(
+            flujo,
+            texto_mensaje,
+        )
+        return {"response": respuesta, "persist_flow": True}
+
+    if estado == "awaiting_services_edit_add":
+        respuesta = await manejar_agregar_servicio_desde_edicion_registro(
             flujo,
             texto_mensaje,
             cliente_openai,

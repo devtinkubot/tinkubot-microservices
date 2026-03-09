@@ -62,7 +62,13 @@ ONBOARDING_STATES = {
     "awaiting_city",
     "awaiting_name",
     "awaiting_specialty",
+    "awaiting_add_another_service",
     "awaiting_services_confirmation",
+    "awaiting_services_edit_action",
+    "awaiting_services_edit_replace_select",
+    "awaiting_services_edit_replace_input",
+    "awaiting_services_edit_delete_select",
+    "awaiting_services_edit_add",
     "awaiting_experience",
     "awaiting_email",
     "awaiting_social_media",
@@ -242,7 +248,9 @@ def _resolver_message_id(carga: Dict[str, Any]) -> str:
 
 
 def _es_evento_multimedia(carga: Dict[str, Any]) -> bool:
-    if any(carga.get(campo) for campo in ("image_base64", "media_base64", "file_base64")):
+    if any(
+        carga.get(campo) for campo in ("image_base64", "media_base64", "file_base64")
+    ):
         return True
     if carga.get("attachments") or carga.get("media"):
         return True
@@ -319,9 +327,7 @@ async def _registrar_respuesta_disponibilidad_si_aplica(
         isinstance(contexto_disponibilidad, dict)
         and contexto_disponibilidad.get("expecting_response")
     )
-    mensaje_expirado = (
-        "*El tiempo de respuesta ha caducado y tu respuesta ya no contará para este requerimiento*"
-    )
+    mensaje_expirado = "*El tiempo de respuesta ha caducado y tu respuesta ya no contará para este requerimiento*"
 
     # Mejora: manejar casos donde pendientes puede venir como string JSON
     # o no estar decodificado.
@@ -467,7 +473,9 @@ async def _registrar_respuesta_disponibilidad_si_aplica(
     if not nuevos_pendientes:
         await cliente_redis.delete(clave_contexto)
 
-    estado_ciclo = "provider_accepted" if decision == "accepted" else "provider_rejected"
+    estado_ciclo = (
+        "provider_accepted" if decision == "accepted" else "provider_rejected"
+    )
     await _actualizar_ciclo_solicitud(
         req_resuelto,
         estado_ciclo,
@@ -588,7 +596,9 @@ async def obtener_estado_disponibilidad_proveedor(
         return {"success": False, "message": "invalid phone format"}
 
     contexto = await cliente_redis.get(CLAVE_CONTEXTO_DISPONIBILIDAD.format(telefono))
-    pendientes = await cliente_redis.get(CLAVE_PENDIENTES_DISPONIBILIDAD.format(telefono))
+    pendientes = await cliente_redis.get(
+        CLAVE_PENDIENTES_DISPONIBILIDAD.format(telefono)
+    )
     if not isinstance(pendientes, list):
         pendientes = []
 
@@ -646,7 +656,9 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                 _resolver_message_id(carga),
             )
             return {"success": True, "messages": []}
-        hay_contexto_disponibilidad = await _hay_contexto_disponibilidad_activo(telefono)
+        hay_contexto_disponibilidad = await _hay_contexto_disponibilidad_activo(
+            telefono
+        )
         if hay_contexto_disponibilidad and flujo.get("state") in MENU_STATES:
             flujo["state"] = ESTADO_ESPERANDO_DISPONIBILIDAD
         elif (

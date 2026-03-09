@@ -5,6 +5,7 @@ from flows.manejadores_estados.manejo_servicio import (
     procesar_estado_esperando_servicio,
 )
 from templates.mensajes.validacion import (
+    mensaje_aclarar_detalle_servicio,
     mensaje_solicitar_precision_servicio,
     mensaje_solicitar_detalle_servicio,
 )
@@ -203,4 +204,123 @@ async def test_servicio_generico_critico_pide_precision_y_no_busca():
     assert "service_candidate" not in flujo_actualizado
     assert respuesta["response"] == mensaje_solicitar_precision_servicio(
         "transporte de mercancías"
+    )
+
+
+@pytest.mark.asyncio
+async def test_hint_existente_y_servicio_especifico_pasa_a_confirmacion_aun_si_gate_falla():
+    flujo = {
+        "state": "awaiting_service",
+        "service_candidate_hint": "ingeniero sistemas",
+        "service_candidate_hint_label": "ingeniero sistemas",
+    }
+
+    async def extraer_fn(_texto: str):
+        return "desarrollo de aplicaciones móviles"
+
+    async def validar_necesidad_fn(_texto: str):
+        return False
+
+    flujo_actualizado, respuesta = await procesar_estado_esperando_servicio(
+        flujo=flujo,
+        texto="Para qué desarrolle la app movil que requerimos",
+        saludos=set(),
+        prompt_inicial="¿Qué necesitas resolver?",
+        extraer_fn=extraer_fn,
+        validar_necesidad_fn=validar_necesidad_fn,
+    )
+
+    assert flujo_actualizado["state"] == "confirm_service"
+    assert flujo_actualizado["service_candidate"] == "desarrollo de aplicaciones móviles"
+    assert "¿Es este el servicio que buscas:" in respuesta["response"]
+
+
+@pytest.mark.asyncio
+async def test_hint_existente_y_frase_corta_concreta_pasa_a_confirmacion():
+    flujo = {
+        "state": "awaiting_service",
+        "service_candidate_hint": "mecanico",
+        "service_candidate_hint_label": "mecanico",
+    }
+
+    async def extraer_fn(_texto: str):
+        return "cambio de aceite de motor"
+
+    async def validar_necesidad_fn(_texto: str):
+        return False
+
+    flujo_actualizado, respuesta = await procesar_estado_esperando_servicio(
+        flujo=flujo,
+        texto="Cambio de aceite",
+        saludos=set(),
+        prompt_inicial="¿Qué necesitas resolver?",
+        extraer_fn=extraer_fn,
+        validar_necesidad_fn=validar_necesidad_fn,
+    )
+
+    assert flujo_actualizado["state"] == "confirm_service"
+    assert flujo_actualizado["service_candidate"] == "cambio de aceite de motor"
+    assert "¿Es este el servicio que buscas:" in respuesta["response"]
+
+
+@pytest.mark.asyncio
+async def test_hint_existente_y_planos_para_casa_pasa_a_confirmacion():
+    flujo = {
+        "state": "awaiting_service",
+        "service_candidate_hint": "arquitecto",
+        "service_candidate_hint_label": "arquitecto",
+    }
+
+    async def extraer_fn(_texto: str):
+        return "diseño de planos arquitectónicos"
+
+    async def validar_necesidad_fn(_texto: str):
+        return False
+
+    flujo_actualizado, respuesta = await procesar_estado_esperando_servicio(
+        flujo=flujo,
+        texto="Planos para una casa",
+        saludos=set(),
+        prompt_inicial="¿Qué necesitas resolver?",
+        extraer_fn=extraer_fn,
+        validar_necesidad_fn=validar_necesidad_fn,
+    )
+
+    assert flujo_actualizado["state"] == "confirm_service"
+    assert (
+        flujo_actualizado["service_candidate"] == "diseño de planos arquitectónicos"
+    )
+    assert "¿Es este el servicio que buscas:" in respuesta["response"]
+
+
+@pytest.mark.asyncio
+async def test_respuesta_meta_no_reemplaza_hint_y_aclara_que_detalle_falta():
+    flujo = {
+        "state": "awaiting_service",
+        "service_candidate_hint": "desarrollo de aplicaciones móviles",
+        "service_candidate_hint_label": "desarrollo de aplicaciones móviles",
+    }
+
+    async def extraer_fn(_texto: str):
+        return "No entiendo"
+
+    async def validar_necesidad_fn(_texto: str):
+        return False
+
+    flujo_actualizado, respuesta = await procesar_estado_esperando_servicio(
+        flujo=flujo,
+        texto="No entiendo",
+        saludos=set(),
+        prompt_inicial="¿Qué necesitas resolver?",
+        extraer_fn=extraer_fn,
+        validar_necesidad_fn=validar_necesidad_fn,
+    )
+
+    assert flujo_actualizado["state"] == "awaiting_service"
+    assert (
+        flujo_actualizado["service_candidate_hint"]
+        == "desarrollo de aplicaciones móviles"
+    )
+    assert respuesta["response"] == mensaje_aclarar_detalle_servicio(
+        "desarrollo de aplicaciones móviles"
     )

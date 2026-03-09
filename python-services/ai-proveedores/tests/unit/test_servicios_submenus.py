@@ -102,3 +102,29 @@ def test_confirmacion_pendiente_reemplaza_y_limpia_revision(monkeypatch):
     assert flujo["generic_services_removed"] == []
     assert flujo["service_review_required"] is False
     assert "transporte terrestre nacional de carga" in respuesta["messages"][0]["response"]
+
+
+def test_confirmacion_pendiente_con_siete_activos_redirige_a_activos():
+    flujo = {
+        "services": [f"servicio {idx}" for idx in range(1, 8)],
+        "generic_services_removed": ["transporte carga"],
+        "pending_service_index": 0,
+        "pending_service_original": "transporte carga",
+        "service_add_temporales": ["transporte terrestre nacional de carga"],
+        "service_review_required": True,
+    }
+
+    respuesta = asyncio.run(
+        manejar_confirmacion_precision_servicio_pendiente(
+            flujo=flujo,
+            proveedor_id="prov-1",
+            texto_mensaje="1",
+            cliente_openai=None,
+        )
+    )
+
+    assert flujo["state"] == "awaiting_active_service_action"
+    assert flujo["generic_services_removed"] == ["transporte carga"]
+    assert flujo["service_add_temporales"] == ["transporte terrestre nacional de carga"]
+    assert "primero elimina uno de tus servicios activos" in respuesta["messages"][0]["response"].lower()
+    assert "Gestión de Servicios Activos" in respuesta["messages"][1]["response"]

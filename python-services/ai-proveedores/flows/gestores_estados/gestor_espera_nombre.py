@@ -3,6 +3,7 @@
 from typing import Any, Dict, Optional
 
 from services.servicios_proveedor.utilidades import limpiar_espacios
+from templates.registro import preguntar_servicios_registro
 
 
 def manejar_espera_nombre(
@@ -30,11 +31,6 @@ def manejar_espera_nombre(
     return {
         "success": True,
         "messages": [
-            {
-                "response": (
-                    "*¿Qué servicios ofreces?* Sepáralos con comas "
-                    "(ej: instalación eléctrica, mantenimiento industrial, consultoría)."
-                )
-            }
+            {"response": preguntar_servicios_registro()}
         ],
     }

@@ -1,45 +1,89 @@
-"""Manejador del estado awaiting_services_confirmation."""
+"""Manejadores para confirmación y edición de servicios del registro."""
 
 import logging
 import re
 from typing import Any, Dict, List, Optional
 
-from services.servicios_proveedor.utilidades import (
-    es_servicio_critico_generico,
-    mensaje_pedir_precision_servicio,
-)
+from services.servicios_proveedor.constantes import SERVICIOS_MAXIMOS_ONBOARDING
 from templates.registro import (
     mensaje_confirmacion_servicios,
     mensaje_correccion_servicios,
+    mensaje_debes_registrar_al_menos_un_servicio,
+    mensaje_error_opcion_agregar_otro,
+    mensaje_error_opcion_edicion_servicios,
+    mensaje_menu_edicion_servicios_registro,
+    mensaje_resumen_servicios_registro,
+    mensaje_servicio_actualizado,
+    mensaje_servicio_eliminado_registro,
+    preguntar_nuevo_servicio_reemplazo,
+    preguntar_numero_servicio_eliminar,
+    preguntar_numero_servicio_reemplazar,
+    preguntar_siguiente_servicio_registro,
 )
 
 logger = logging.getLogger(__name__)
+
+_FLUJO_KEY_EDIT_INDEX = "service_edit_index"
 
 
 def mostrar_confirmacion_servicios(
     flujo: Dict[str, Any], servicios_transformados: List[str]
 ) -> Dict[str, Any]:
-    """
-    Muestra la confirmación de los servicios transformados.
-
-    Este método se llama cuando OpenAI ha transformado la entrada del usuario
-    en servicios optimizados y necesitamos confirmación.
-
-    Args:
-        flujo: Diccionario del flujo conversacional
-        servicios_transformados: Lista de servicios transformados por OpenAI
-
-    Returns:
-        Respuesta con mensaje de confirmación
-    """
-    logger.info(f"📋 Mostrando {len(servicios_transformados)} servicios para confirmación")
-
-    # Guardar servicios temporalmente en el flujo
+    """Muestra el resumen final de servicios del registro."""
     flujo["servicios_temporales"] = servicios_transformados
+    flujo["state"] = "awaiting_services_confirmation"
+    return {
+        "success": True,
+        "messages": [
+            {
+                "response": mensaje_resumen_servicios_registro(
+                    servicios_transformados,
+                    SERVICIOS_MAXIMOS_ONBOARDING,
+                )
+            }
+        ],
+    }
+
+
+async def manejar_decision_agregar_otro_servicio(
+    flujo: Dict[str, Any],
+    texto_mensaje: Optional[str],
+) -> Dict[str, Any]:
+    """Decide si el proveedor agrega otro servicio o pasa al resumen."""
+    texto = (texto_mensaje or "").strip().lower()
+    servicios = list(flujo.get("servicios_temporales") or [])
+
+    if texto in {"1", "si", "sí", "agregar", "otro", "continuar"}:
+        flujo["state"] = "awaiting_specialty"
+        return {
+            "success": True,
+            "messages": [
+                {
+                    "response": preguntar_siguiente_servicio_registro(
+                        len(servicios) + 1,
+                        SERVICIOS_MAXIMOS_ONBOARDING,
+                    )
+                }
+            ],
+        }
+
+    if texto in {"2", "no", "terminar", "listo"}:
+        flujo["state"] = "awaiting_services_confirmation"
+        return {
+            "success": True,
+            "messages": [
+                {
+                    "response": mensaje_resumen_servicios_registro(
+                        servicios,
+                        SERVICIOS_MAXIMOS_ONBOARDING,
+                    )
+                }
+            ],
+        }
 
     return {
         "success": True,
-        "messages": [{"response": mensaje_confirmacion_servicios(servicios_transformados)}],
+        "messages": [{"response": mensaje_error_opcion_agregar_otro()}],
     }
 
 
@@ -48,53 +92,34 @@ async def manejar_confirmacion_servicios(
     texto_mensaje: Optional[str],
     cliente_openai: Optional[Any] = None,
 ) -> Dict[str, Any]:
-    """
-    Procesa la respuesta del usuario a la confirmación de servicios.
-
-    Args:
-        flujo: Diccionario del flujo conversacional
-        texto_mensaje: Respuesta del usuario ("1" para aceptar, "2" para corregir,
-                      o nueva lista de servicios manual)
-
-    Returns:
-        Respuesta con éxito y siguiente paso, o error de validación
-    """
+    """Procesa la confirmación final de la lista de servicios del registro."""
     if not texto_mensaje:
         return {
             "success": True,
             "messages": [
                 {
-                    "response": "*Por favor selecciona una opción:*\n"
-                    "*1.* Sí, continuar\n"
-                    "*2.* No, corregir"
+                    "response": mensaje_resumen_servicios_registro(
+                        list(flujo.get("servicios_temporales") or []),
+                        SERVICIOS_MAXIMOS_ONBOARDING,
+                    )
                 }
             ],
         }
 
     texto_limpio = texto_mensaje.strip().lower()
 
-    # Opción 1: Aceptar los servicios
-    if texto_limpio == "1" or texto_limpio in {"si", "sí", "aceptar", "acepto", "ok"}:
-        servicios_temporales = flujo.get("servicios_temporales", [])
-
+    if texto_limpio in {"1", "si", "sí", "aceptar", "acepto", "ok"}:
+        servicios_temporales = list(flujo.get("servicios_temporales") or [])
         if not servicios_temporales:
-            logger.error("❌ No hay servicios temporales para confirmar")
             return {
                 "success": True,
                 "messages": [
-                    {"response": "*Error: No hay servicios para confirmar. Por favor escribe tus servicios nuevamente.*"}
+                    {"response": mensaje_debes_registrar_al_menos_un_servicio()}
                 ],
             }
 
-        # Guardar los servicios confirmados
         flujo["specialty"] = ", ".join(servicios_temporales)
-        del flujo["servicios_temporales"]
-
-        logger.info(f"✅ Servicios confirmados: {len(servicios_temporales)} servicios")
-
-        # Cambiar al siguiente estado
         flujo["state"] = "awaiting_experience"
-
         return {
             "success": True,
             "messages": [
@@ -103,149 +128,318 @@ async def manejar_confirmacion_servicios(
                         "*¿Cuántos años de experiencia tienes?* "
                         "(escribe un número, ej: 5)"
                     )
+                }
+            ],
+        }
+
+    if texto_limpio in {"2", "no", "corregir", "editar", "cambiar"}:
+        flujo["state"] = "awaiting_services_edit_action"
+        return {
+            "success": True,
+            "messages": [
+                {"response": mensaje_correccion_servicios()},
+                {
+                    "response": mensaje_menu_edicion_servicios_registro(
+                        list(flujo.get("servicios_temporales") or []),
+                        SERVICIOS_MAXIMOS_ONBOARDING,
+                    )
                 },
             ],
         }
 
-    # Opción 2: Corregir manualmente
-    if texto_limpio == "2" or texto_limpio in {"no", "corregir", "editar", "cambiar"}:
+    return {
+        "success": True,
+        "messages": [
+            {
+                "response": mensaje_resumen_servicios_registro(
+                    list(flujo.get("servicios_temporales") or []),
+                    SERVICIOS_MAXIMOS_ONBOARDING,
+                )
+            }
+        ],
+    }
+
+
+async def manejar_accion_edicion_servicios_registro(
+    flujo: Dict[str, Any],
+    texto_mensaje: Optional[str],
+) -> Dict[str, Any]:
+    """Gestiona el menú de corrección final de servicios."""
+    texto = (texto_mensaje or "").strip().lower()
+    servicios = list(flujo.get("servicios_temporales") or [])
+
+    if texto in {"1", "reemplazar"}:
+        flujo["state"] = "awaiting_services_edit_replace_select"
         return {
             "success": True,
-            "messages": [{"response": mensaje_correccion_servicios()}],
+            "messages": [
+                {
+                    "response": mensaje_menu_edicion_servicios_registro(
+                        servicios,
+                        SERVICIOS_MAXIMOS_ONBOARDING,
+                    )
+                },
+                {"response": preguntar_numero_servicio_reemplazar()},
+            ],
         }
 
-    # Si no es "1" o "2", asumimos que es una corrección manual
-    return await procesar_correccion_manual(flujo, texto_mensaje, cliente_openai)
+    if texto in {"2", "eliminar"}:
+        flujo["state"] = "awaiting_services_edit_delete_select"
+        return {
+            "success": True,
+            "messages": [
+                {
+                    "response": mensaje_menu_edicion_servicios_registro(
+                        servicios,
+                        SERVICIOS_MAXIMOS_ONBOARDING,
+                    )
+                },
+                {"response": preguntar_numero_servicio_eliminar()},
+            ],
+        }
+
+    if texto in {"3", "agregar"}:
+        if len(servicios) >= SERVICIOS_MAXIMOS_ONBOARDING:
+            return {
+                "success": True,
+                "messages": [
+                    {
+                        "response": (
+                            f"Ya tienes {SERVICIOS_MAXIMOS_ONBOARDING} servicios en tu lista temporal."
+                        )
+                    },
+                    {
+                        "response": mensaje_menu_edicion_servicios_registro(
+                            servicios,
+                            SERVICIOS_MAXIMOS_ONBOARDING,
+                        )
+                    },
+                ],
+            }
+        flujo["state"] = "awaiting_services_edit_add"
+        return {
+            "success": True,
+            "messages": [
+                {
+                    "response": preguntar_siguiente_servicio_registro(
+                        len(servicios) + 1,
+                        SERVICIOS_MAXIMOS_ONBOARDING,
+                    )
+                }
+            ],
+        }
+
+    if texto in {"4", "volver", "resumen"}:
+        flujo["state"] = "awaiting_services_confirmation"
+        return {
+            "success": True,
+            "messages": [
+                {
+                    "response": mensaje_resumen_servicios_registro(
+                        servicios,
+                        SERVICIOS_MAXIMOS_ONBOARDING,
+                    )
+                }
+            ],
+        }
+
+    return {
+        "success": True,
+        "messages": [
+            {"response": mensaje_error_opcion_edicion_servicios()},
+            {
+                "response": mensaje_menu_edicion_servicios_registro(
+                    servicios,
+                    SERVICIOS_MAXIMOS_ONBOARDING,
+                )
+            },
+        ],
+    }
 
 
-def _extraer_servicios_desde_texto(texto_mensaje: str) -> List[str]:
-    servicios = []
-    for item in re.split(r"[;,/\n]+", texto_mensaje.strip()):
-        item = item.strip()
-        if item and len(item) >= 2:
-            servicios.append(item)
-    return servicios
-
-
-async def _normalizar_o_conservar_servicios(
-    texto_mensaje: str,
-    cliente_openai: Optional[Any],
-    max_servicios: int = 10,
-) -> List[str]:
-    servicios_parseados = _extraer_servicios_desde_texto(texto_mensaje)
-    if not servicios_parseados:
-        return []
-
-    if not cliente_openai:
-        return servicios_parseados[:max_servicios]
-
+def _extraer_indice(texto_mensaje: Optional[str], total: int) -> Optional[int]:
+    texto = (texto_mensaje or "").strip()
+    if texto.isdigit():
+        idx = int(texto) - 1
+        return idx if 0 <= idx < total else None
     try:
-        from infrastructure.openai.transformador_servicios import TransformadorServicios
-
-        transformador = TransformadorServicios(cliente_openai)
-        servicios_transformados = await transformador.transformar_a_servicios(
-            texto_mensaje,
-            max_servicios=max_servicios,
-        )
-        if servicios_transformados:
-            return servicios_transformados[:max_servicios]
-    except Exception as exc:
-        logger.warning("⚠️ Error re-normalizando corrección manual: %s", exc)
-
-    return servicios_parseados[:max_servicios]
+        idx = int(re.findall(r"\d+", texto)[0]) - 1
+        return idx if 0 <= idx < total else None
+    except Exception:
+        return None
 
 
+async def manejar_seleccion_reemplazo_servicio_registro(
+    flujo: Dict[str, Any],
+    texto_mensaje: Optional[str],
+) -> Dict[str, Any]:
+    servicios = list(flujo.get("servicios_temporales") or [])
+    indice = _extraer_indice(texto_mensaje, len(servicios))
+    if indice is None:
+        return {
+            "success": True,
+            "messages": [
+                {
+                    "response": "Escribe el número válido del servicio que deseas reemplazar."
+                }
+            ],
+        }
+
+    flujo[_FLUJO_KEY_EDIT_INDEX] = indice
+    flujo["state"] = "awaiting_services_edit_replace_input"
+    return {
+        "success": True,
+        "messages": [
+            {
+                "response": preguntar_nuevo_servicio_reemplazo(
+                    indice + 1,
+                    servicios[indice],
+                )
+            }
+        ],
+    }
+
+
+async def manejar_reemplazo_servicio_registro(
+    flujo: Dict[str, Any],
+    texto_mensaje: Optional[str],
+    cliente_openai: Optional[Any] = None,
+) -> Dict[str, Any]:
+    from .gestor_espera_especialidad import normalizar_servicio_registro_individual
+
+    servicios = list(flujo.get("servicios_temporales") or [])
+    indice = flujo.get(_FLUJO_KEY_EDIT_INDEX)
+    if not isinstance(indice, int) or not (0 <= indice < len(servicios)):
+        flujo["state"] = "awaiting_services_edit_action"
+        return await manejar_accion_edicion_servicios_registro(flujo, "4")
+
+    resultado = await normalizar_servicio_registro_individual(
+        texto_mensaje=texto_mensaje or "",
+        cliente_openai=cliente_openai,
+    )
+    if not resultado.get("ok"):
+        return {"success": True, "messages": [{"response": resultado["response"]}]}
+
+    nuevo = resultado["service"]
+    servicios_sin_actual = [s for i, s in enumerate(servicios) if i != indice]
+    if nuevo in servicios_sin_actual:
+        return {
+            "success": True,
+            "messages": [{"response": f"El servicio *{nuevo}* ya existe en tu lista."}],
+        }
+
+    servicios[indice] = nuevo
+    flujo["servicios_temporales"] = servicios
+    flujo.pop(_FLUJO_KEY_EDIT_INDEX, None)
+    flujo["state"] = "awaiting_services_confirmation"
+    return {
+        "success": True,
+        "messages": [
+            {"response": mensaje_servicio_actualizado(nuevo)},
+            {
+                "response": mensaje_resumen_servicios_registro(
+                    servicios,
+                    SERVICIOS_MAXIMOS_ONBOARDING,
+                )
+            },
+        ],
+    }
+
+
+async def manejar_eliminacion_servicio_registro(
+    flujo: Dict[str, Any],
+    texto_mensaje: Optional[str],
+) -> Dict[str, Any]:
+    servicios = list(flujo.get("servicios_temporales") or [])
+    indice = _extraer_indice(texto_mensaje, len(servicios))
+    if indice is None:
+        return {
+            "success": True,
+            "messages": [
+                {
+                    "response": "Escribe el número válido del servicio que deseas eliminar."
+                }
+            ],
+        }
+
+    eliminado = servicios.pop(indice)
+    flujo["servicios_temporales"] = servicios
+
+    if not servicios:
+        flujo["state"] = "awaiting_specialty"
+        return {
+            "success": True,
+            "messages": [
+                {"response": mensaje_servicio_eliminado_registro(eliminado)},
+                {"response": mensaje_debes_registrar_al_menos_un_servicio()},
+                {
+                    "response": preguntar_siguiente_servicio_registro(
+                        1, SERVICIOS_MAXIMOS_ONBOARDING
+                    )
+                },
+            ],
+        }
+
+    flujo["state"] = "awaiting_services_confirmation"
+    return {
+        "success": True,
+        "messages": [
+            {"response": mensaje_servicio_eliminado_registro(eliminado)},
+            {
+                "response": mensaje_resumen_servicios_registro(
+                    servicios,
+                    SERVICIOS_MAXIMOS_ONBOARDING,
+                )
+            },
+        ],
+    }
+
+
+async def manejar_agregar_servicio_desde_edicion_registro(
+    flujo: Dict[str, Any],
+    texto_mensaje: Optional[str],
+    cliente_openai: Optional[Any] = None,
+) -> Dict[str, Any]:
+    from .gestor_espera_especialidad import normalizar_servicio_registro_individual
+
+    servicios = list(flujo.get("servicios_temporales") or [])
+    resultado = await normalizar_servicio_registro_individual(
+        texto_mensaje=texto_mensaje or "",
+        cliente_openai=cliente_openai,
+    )
+    if not resultado.get("ok"):
+        return {"success": True, "messages": [{"response": resultado["response"]}]}
+
+    nuevo = resultado["service"]
+    if nuevo in servicios:
+        return {
+            "success": True,
+            "messages": [{"response": f"El servicio *{nuevo}* ya existe en tu lista."}],
+        }
+
+    servicios.append(nuevo)
+    flujo["servicios_temporales"] = servicios
+    flujo["state"] = "awaiting_services_confirmation"
+    return {
+        "success": True,
+        "messages": [
+            {"response": mensaje_servicio_actualizado(nuevo)},
+            {
+                "response": mensaje_resumen_servicios_registro(
+                    servicios,
+                    SERVICIOS_MAXIMOS_ONBOARDING,
+                )
+            },
+        ],
+    }
+
+
+# Compatibilidad temporal con imports previos
 async def procesar_correccion_manual(
     flujo: Dict[str, Any],
     texto_mensaje: str,
     cliente_openai: Optional[Any] = None,
 ) -> Dict[str, Any]:
-    """
-    Procesa la corrección manual de servicios por parte del usuario.
-
-    Args:
-        flujo: Diccionario del flujo conversacional
-        texto_mensaje: Nueva lista de servicios del usuario
-
-    Returns:
-        Respuesta confirmando la corrección y continuando
-    """
-    # Limpiar y procesar la entrada manual
-    texto_limpio = texto_mensaje.strip()
-
-    if len(texto_limpio) < 2:
-        return {
-            "success": True,
-            "messages": [
-                {
-                    "response": (
-                        "*Los servicios son muy cortos.* "
-                        "Por favor escribe al menos 2 servicios separados por comas."
-                    )
-                }
-            ],
-        }
-
-    servicios = _extraer_servicios_desde_texto(texto_limpio)
-
-    if len(servicios) > 10:
-        return {
-            "success": True,
-            "messages": [
-                {
-                    "response": (
-                        "*Máximo 10 servicios permitidos.* "
-                        f"Envíalos nuevamente (actualmente {len(servicios)})."
-                    )
-                }
-            ],
-        }
-
-    servicios_normalizados = await _normalizar_o_conservar_servicios(
-        texto_limpio,
-        cliente_openai,
-        max_servicios=10,
-    )
-    if not servicios_normalizados:
-        return {
-            "success": True,
-            "messages": [
-                {
-                    "response": (
-                        "*No pude interpretar tus servicios.* "
-                        "Por favor reescríbelos de forma más simple, separados por comas."
-                    )
-                }
-            ],
-        }
-
-    servicio_generico = next(
-        (
-            servicio
-            for servicio in servicios_normalizados
-            if es_servicio_critico_generico(servicio)
-        ),
-        None,
-    )
-    if servicio_generico:
-        return {
-            "success": True,
-            "messages": [
-                {"response": mensaje_pedir_precision_servicio(servicio_generico)}
-            ],
-        }
-
-    flujo["servicios_temporales"] = servicios_normalizados
-    flujo["state"] = "awaiting_services_confirmation"
-
-    logger.info(
-        "✅ Servicios corregidos manualmente y re-normalizados: %s servicios",
-        len(servicios_normalizados),
-    )
-
-    return {
-        "success": True,
-        "messages": [
-            {"response": mensaje_confirmacion_servicios(servicios_normalizados)}
-        ],
-    }
+    """Mantiene compatibilidad redirigiendo a edición guiada."""
+    flujo["state"] = "awaiting_services_edit_action"
+    return await manejar_accion_edicion_servicios_registro(flujo, texto_mensaje)

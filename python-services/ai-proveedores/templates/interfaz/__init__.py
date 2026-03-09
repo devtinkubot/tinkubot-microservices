@@ -32,6 +32,7 @@ from .actualizacion_perfil import (
 
 from .mensajes_servicios import (
     error_limite_servicios_alcanzado,
+    error_limite_servicios_pendientes,
     preguntar_nuevo_servicio,
     error_servicio_no_interpretado,
     error_guardar_servicio,
@@ -81,6 +82,7 @@ __all__ = [
     "confirmar_actualizacion_redes_sociales",
     # Servicios
     "error_limite_servicios_alcanzado",
+    "error_limite_servicios_pendientes",
     "preguntar_nuevo_servicio",
     "error_servicio_no_interpretado",
     "error_guardar_servicio",

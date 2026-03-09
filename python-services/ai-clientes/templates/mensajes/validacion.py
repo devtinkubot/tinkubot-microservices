@@ -48,6 +48,20 @@ def mensaje_solicitar_detalle_servicio(servicio_hint: Optional[str] = None) -> s
     return "Por favor, cuéntame brevemente qué necesitas."
 
 
+def mensaje_aclarar_detalle_servicio(servicio_hint: Optional[str] = None) -> str:
+    """Aclara qué tipo de detalle esperamos cuando el usuario no entiende."""
+    hint = (servicio_hint or "").strip()
+    if hint:
+        return (
+            "Cuéntame brevemente qué necesitas que haga ese profesional. "
+            f"Ejemplo: *necesito un {hint} para desarrollar una app móvil*."
+        )
+    return (
+        "Cuéntame brevemente qué necesitas que haga ese profesional. "
+        "Ejemplo: *necesito un desarrollador para crear una app móvil*."
+    )
+
+
 def mensaje_solicitar_precision_servicio(servicio: str) -> str:
     """Pide mayor precisión cuando el servicio detectado es demasiado general."""
     servicio_norm = _slug_servicio(servicio).replace("_", " ")

@@ -28,6 +28,7 @@ from templates.interfaz import (
     error_eliminar_servicio,
     error_guardar_servicio,
     error_limite_servicios_alcanzado,
+    error_limite_servicios_pendientes,
     error_normalizar_servicio,
     error_opcion_no_reconocida,
     error_servicio_no_interpretado,
@@ -760,12 +761,12 @@ async def manejar_confirmacion_precision_servicio_pendiente(
 
     espacio_restante = SERVICIOS_MAXIMOS - len(servicios_actuales)
     if espacio_restante <= 0:
-        flujo["state"] = "awaiting_pending_service_action"
+        flujo["state"] = "awaiting_active_service_action"
         return {
             "success": True,
             "messages": [
-                {"response": error_limite_servicios_alcanzado(SERVICIOS_MAXIMOS)},
-                {"response": _menu_servicios_pendientes_desde_flujo(flujo)},
+                {"response": error_limite_servicios_pendientes(SERVICIOS_MAXIMOS)},
+                {"response": _menu_servicios_activos_desde_flujo(flujo, servicios_actuales)},
             ],
         }
 
