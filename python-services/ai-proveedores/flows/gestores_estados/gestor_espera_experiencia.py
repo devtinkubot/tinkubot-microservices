@@ -27,6 +27,20 @@ def manejar_espera_experiencia(
         }
 
     flujo["experience_years"] = anios
+    if flujo.get("profile_completion_mode"):
+        flujo["state"] = "awaiting_social_media"
+        return {
+            "success": True,
+            "messages": [
+                {
+                    "response": (
+                        "*Comparte una red social para mostrar tu trabajo* "
+                        "o escribe *omitir* si todavía no deseas agregarla."
+                    )
+                }
+            ],
+        }
+
     flujo["state"] = "awaiting_email"
     return {
         "success": True,

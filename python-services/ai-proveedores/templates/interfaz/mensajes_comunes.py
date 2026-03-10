@@ -51,7 +51,9 @@ def error_opcion_no_reconocida(
     if formato == "lista":
         # Generar lista: "1, 2, 3 o 4"
         opciones = [str(i) for i in range(min_opcion, max_opcion + 1)]
-        if len(opciones) == 2:
+        if len(opciones) == 1:
+            rango = opciones[0]
+        elif len(opciones) == 2:
             rango = f" {opciones[0]} o {opciones[1]}"
         else:
             rango = ", ".join(opciones[:-1]) + f" o {opciones[-1]}"

@@ -4,29 +4,26 @@ import logging
 from typing import Any, Dict, Optional
 
 from flows.constructores import construir_menu_principal, construir_menu_servicios
-
-logger = logging.getLogger(__name__)
+from services.servicios_proveedor.constantes import SERVICIOS_MAXIMOS
 from templates.registro import (
-    preguntar_real_phone,
-    solicitar_ciudad_registro,
+    mensaje_resumen_servicios_registro,
+    preguntar_siguiente_servicio_registro,
 )
 from templates.interfaz import (
     error_opcion_no_reconocida,
     informar_cierre_sesion,
-    solicitar_dni_actualizacion,
-    solicitar_selfie_actualizacion,
-    solicitar_red_social_actualizacion,
     solicitar_confirmacion_eliminacion,
+    solicitar_dni_actualizacion,
+    solicitar_red_social_actualizacion,
+    solicitar_selfie_actualizacion,
 )
-from services.servicios_proveedor.constantes import SERVICIOS_MAXIMOS
+from templates.registro import (
+    PROMPT_INICIO_REGISTRO,
+    preguntar_real_phone,
+    solicitar_ciudad_registro,
+)
 
-
-def _servicios_pendientes_genericos(flujo: Dict[str, Any]) -> list[str]:
-    return [
-        servicio.strip()
-        for servicio in (flujo.get("generic_services_removed") or [])
-        if str(servicio or "").strip()
-    ]
+logger = logging.getLogger(__name__)
 
 
 async def manejar_estado_menu(
@@ -38,15 +35,25 @@ async def manejar_estado_menu(
     menu_limitado: bool = False,
 ) -> Dict[str, Any]:
     """Procesa el menú principal y devuelve la respuesta."""
-    logger.info(f"🎯 manejar_estado_menu llamado. esta_registrado={esta_registrado}, opcion_menu={opcion_menu}, texto_mensaje='{texto_mensaje}'")
+    logger.info(
+        "🎯 manejar_estado_menu llamado. esta_registrado=%s, opcion_menu=%s, "
+        "texto_mensaje='%s'",
+        esta_registrado,
+        opcion_menu,
+        texto_mensaje,
+    )
     opcion = opcion_menu
     texto_minusculas = (texto_mensaje or "").strip().lower()
-    max_opcion_menu = 5
+    approved_basic = bool(flujo.get("approved_basic"))
+    max_opcion_menu = 1 if approved_basic else 5
 
     if not esta_registrado:
         if opcion == "1" or "registro" in texto_minusculas:
-            logger.info(f"✅ Usuario NO registrado seleccionó Registro. Cambiando estado a awaiting_city")
-            logger.info(f"📤 Respuesta a devolver: '{PROMPT_INICIO_REGISTRO}'")
+            logger.info(
+                "✅ Usuario NO registrado seleccionó Registro. "
+                "Cambiando estado a awaiting_city"
+            )
+            logger.info("📤 Respuesta a devolver: '%s'", PROMPT_INICIO_REGISTRO)
             flujo["mode"] = "registration"
             if flujo.get("requires_real_phone"):
                 flujo["state"] = "awaiting_real_phone"
@@ -60,7 +67,7 @@ async def manejar_estado_menu(
                     "success": True,
                     "messages": [solicitar_ciudad_registro()],
                 }
-            logger.info(f"📦 Response completo: {respuesta}")
+            logger.info("📦 Response completo: %s", respuesta)
             return respuesta
         if opcion == "2" or "salir" in texto_minusculas:
             flujo.clear()
@@ -79,7 +86,92 @@ async def manejar_estado_menu(
         }
 
     servicios_actuales = flujo.get("services") or []
-    servicios_pendientes = _servicios_pendientes_genericos(flujo)
+    if approved_basic:
+        if opcion == "1" or "completar perfil" in texto_minusculas:
+            servicios_temporales = list(servicios_actuales)
+            flujo["profile_completion_mode"] = True
+            flujo["servicios_temporales"] = servicios_temporales
+            if servicios_temporales:
+                flujo["state"] = "awaiting_services_confirmation"
+                return {
+                    "success": True,
+                    "messages": [
+                        {
+                            "response": (
+                                "Vamos a completar tu perfil profesional. "
+                                "Revisa tus servicios actuales y confirma o corrige antes de continuar."
+                            )
+                        },
+                        {
+                            "response": mensaje_resumen_servicios_registro(
+                                servicios_temporales,
+                                SERVICIOS_MAXIMOS,
+                            )
+                        },
+                    ],
+                }
+            flujo["state"] = "awaiting_specialty"
+            return {
+                "success": True,
+                "messages": [
+                    {
+                        "response": (
+                            "Vamos a completar tu perfil profesional.\n\n"
+                            + preguntar_siguiente_servicio_registro(1, SERVICIOS_MAXIMOS)
+                        )
+                    }
+                ],
+            }
+
+        return {
+            "success": True,
+            "messages": [
+                {"response": error_opcion_no_reconocida(1, 1)},
+                {
+                    "response": construir_menu_principal(
+                        esta_registrado=True,
+                        approved_basic=True,
+                    )
+                },
+            ],
+        }
+
+    if "completar perfil" in texto_minusculas or "perfil profesional" in texto_minusculas:
+        servicios_temporales = list(servicios_actuales)
+        flujo["profile_completion_mode"] = True
+        flujo["servicios_temporales"] = servicios_temporales
+        if servicios_temporales:
+            flujo["state"] = "awaiting_services_confirmation"
+            return {
+                "success": True,
+                "messages": [
+                    {
+                        "response": (
+                            "Vamos a completar tu perfil profesional. "
+                            "Revisa tus servicios actuales y confirma o corrige antes de continuar."
+                        )
+                    },
+                    {
+                        "response": mensaje_resumen_servicios_registro(
+                            servicios_temporales,
+                            SERVICIOS_MAXIMOS,
+                        )
+                    },
+                ],
+            }
+        flujo["state"] = "awaiting_specialty"
+        return {
+            "success": True,
+            "messages": [
+                {
+                    "response": (
+                        "Vamos a completar tu perfil profesional.\n\n"
+                        + preguntar_siguiente_servicio_registro(1, SERVICIOS_MAXIMOS)
+                    )
+                }
+            ],
+        }
+
     if opcion == "1" or "servicio" in texto_minusculas:
         flujo["state"] = "awaiting_service_action"
         return {
@@ -89,7 +181,6 @@ async def manejar_estado_menu(
                     "response": construir_menu_servicios(
                         servicios_actuales,
                         SERVICIOS_MAXIMOS,
-                        servicios_pendientes_genericos=servicios_pendientes,
                     )
                 }
             ],
@@ -112,7 +203,10 @@ async def manejar_estado_menu(
             "messages": [{"response": solicitar_red_social_actualizacion()}],
         }
     if menu_limitado and (
-        opcion == "4" or "cedula" in texto_minusculas or "cédula" in texto_minusculas or "dni" in texto_minusculas
+        opcion == "4"
+        or "cedula" in texto_minusculas
+        or "cédula" in texto_minusculas
+        or "dni" in texto_minusculas
     ):
         flujo["state"] = "awaiting_dni_front_photo_update"
         return {
@@ -120,21 +214,16 @@ async def manejar_estado_menu(
             "messages": [{"response": solicitar_dni_actualizacion()}],
         }
 
-    if (
-        not menu_limitado
-        and (
-            opcion == "4"
-            or "eliminar" in texto_minusculas
-            or "borrar" in texto_minusculas
-            or "delete" in texto_minusculas
-        )
+    if not menu_limitado and (
+        opcion == "4"
+        or "eliminar" in texto_minusculas
+        or "borrar" in texto_minusculas
+        or "delete" in texto_minusculas
     ):
         flujo["state"] = "awaiting_deletion_confirmation"
         return {
             "success": True,
-            "messages": [
-                {"response": solicitar_confirmacion_eliminacion()},
-            ],
+            "messages": [{"response": solicitar_confirmacion_eliminacion()}],
         }
     if (
         opcion == str(max_opcion_menu)
@@ -147,6 +236,7 @@ async def manejar_estado_menu(
             "provider_id": flujo.get("provider_id"),
             "services": servicios_actuales,
             "menu_limitado": menu_limitado,
+            "approved_basic": approved_basic,
         }
         flujo.clear()
         flujo.update(flujo_base)
@@ -163,6 +253,7 @@ async def manejar_estado_menu(
                 "response": construir_menu_principal(
                     esta_registrado=True,
                     menu_limitado=menu_limitado,
+                    approved_basic=approved_basic,
                 )
             },
         ],

@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 def _resolver_display_order(idx: int) -> int:
-    """Compatibilidad temporal con check DB: provider_services.display_order <= 4."""
+    """Ajusta display_order al máximo soportado por la tabla."""
     return idx if idx <= DISPLAY_ORDER_MAX_DB else DISPLAY_ORDER_MAX_DB
 
 

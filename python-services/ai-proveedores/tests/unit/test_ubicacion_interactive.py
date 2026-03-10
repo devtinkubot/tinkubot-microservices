@@ -76,7 +76,6 @@ def test_validacion_registro_proveedor_preserva_coordenadas():
     flujo = {
         "name": "Proveedor Demo",
         "city": "Cuenca",
-        "specialty": "Plomería",
         "has_consent": True,
         "location_lat": -2.9039,
         "location_lng": -78.9838,
@@ -98,7 +97,6 @@ def test_validacion_registro_proveedor_agrega_timestamps_de_ubicacion():
     flujo = {
         "name": "Proveedor Demo",
         "city": "Cuenca",
-        "specialty": "Plomería",
         "has_consent": True,
         "location_lat": -2.9039,
         "location_lng": -78.9838,

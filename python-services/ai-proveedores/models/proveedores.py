@@ -19,7 +19,7 @@ class ServiceInfo(BaseModel):
         id: Identificador único del servicio
         service_name: Nombre del servicio
         is_primary: Si es el servicio principal del proveedor
-        display_order: Orden de visualización (0-4)
+        display_order: Orden de visualización (0-6)
     """
 
     id: str
@@ -33,7 +33,7 @@ class SolicitudCreacionProveedor(BaseModel):
     Modelo para crear proveedor (Opción C - Sin profession)
 
     IMPORTANTE: Ya no se usa 'profession', todo se maneja con provider_services.
-    El proveedor debe ingresar entre 1 y SERVICIOS_MAXIMOS servicios.
+    El proveedor puede iniciar sin servicios y completarlos luego desde su perfil.
 
     Campos:
         phone: Número de teléfono del proveedor (10-20 caracteres)
@@ -41,7 +41,7 @@ class SolicitudCreacionProveedor(BaseModel):
         full_name: Nombre completo del proveedor (2-255 caracteres)
         email: Correo electrónico (opcional)
         city: Ciudad donde opera el proveedor (2-100 caracteres)
-        services_list: Lista de 1-SERVICIOS_MAXIMOS servicios ofrecidos (REQUERIDO)
+        services_list: Lista de 0-SERVICIOS_MAXIMOS servicios ofrecidos
         experience_years: Años de experiencia (default: 0)
         social_media_url: URL de red social (opcional)
         social_media_type: Tipo de red social (opcional)
@@ -59,9 +59,7 @@ class SolicitudCreacionProveedor(BaseModel):
     email: Optional[str] = None
     city: str = Field(..., min_length=2, max_length=100)
     # profession: ELIMINADO - Ahora se usa provider_services
-    services_list: List[str] = Field(
-        ..., min_length=1
-    )  # 1-SERVICIOS_MAXIMOS servicios REQUERIDOS, validado en @field_validator
+    services_list: List[str] = Field(default_factory=list)
     experience_years: Optional[int] = Field(default=0, ge=0)
     social_media_url: Optional[str] = None
     social_media_type: Optional[str] = None
@@ -78,10 +76,8 @@ class SolicitudCreacionProveedor(BaseModel):
     @classmethod
     def validate_services_list(cls, v: List[str]) -> List[str]:
         """
-        Valida que la lista de servicios tenga entre 1 y SERVICIOS_MAXIMOS elementos.
+        Valida que la lista de servicios no supere SERVICIOS_MAXIMOS elementos.
         """
-        if len(v) < 1:
-            raise ValueError("Debe ingresar al menos 1 servicio")
         if len(v) > SERVICIOS_MAXIMOS:
             raise ValueError(f"Máximo {SERVICIOS_MAXIMOS} servicios permitidos")
         return v
@@ -168,7 +164,5 @@ class RespuestaProveedor(BaseModel):
     location_lng: Optional[float] = None
     location_updated_at: Optional[datetime] = None
     city_confirmed_at: Optional[datetime] = None
-    service_review_required: bool = False
-    generic_services_removed: List[str] = Field(default_factory=list)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None

@@ -450,10 +450,10 @@
                 <div>
                   <h5 class="mb-0" id="providers-title">
                     <i class="fas fa-user-check me-2 text-primary"></i>
-                    Verificación de Proveedores
+                    Revisión de Onboarding
                   </h5>
                   <p class="text-muted small mb-0" id="providers-subtitle">
-                    Revisa y aprueba a los proveedores registrados antes de habilitarlos en el sistema.
+                    Valida identidad básica, consentimiento y documentos antes de aprobar el alta inicial.
                   </p>
                 </div>
                 <button class="refresh-btn" id="providers-refresh-btn" type="button">
@@ -541,8 +541,20 @@
                   <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
                 </div>
                 <div class="modal-body">
+                  <div class="alert alert-info py-2" id="provider-debug-banner">
+                    <strong>DEBUG UI</strong>
+                    <span id="provider-debug-content">Sin datos</span>
+                  </div>
+
+                  <div class="alert alert-light border" id="provider-professional-summary">
+                    <strong>Resumen profesional</strong>
+                    <div class="mt-2"><strong>Servicios:</strong> <span id="provider-summary-services">Sin servicios registrados</span></div>
+                    <div><strong>Experiencia:</strong> <span id="provider-summary-experience">Sin experiencia registrada</span></div>
+                    <div><strong>Red social:</strong> <span id="provider-summary-social-media">Sin red social registrada</span></div>
+                  </div>
+
                   <div class="provider-detail-section">
-                    <h6>Resumen</h6>
+                    <h6 id="provider-basic-section-title">Onboarding básico</h6>
                     <div class="row g-3">
                       <div class="col-md-6">
                         <div class="provider-detail-item">
@@ -550,18 +562,14 @@
                           <span id="provider-detail-location" class="text-muted">Ubicación pendiente</span>
                         </div>
                         <div class="provider-detail-item">
-                          <span class="provider-detail-label">Experiencia</span>
-                          <span id="provider-detail-experience" class="text-muted">No especifica</span>
+                          <span class="provider-detail-label">Etapa</span>
+                          <span id="provider-detail-stage" class="text-muted">Onboarding básico</span>
                         </div>
                       </div>
                       <div class="col-md-6">
                         <div class="provider-detail-item">
                           <span class="provider-detail-label">Consentimiento</span>
                           <span id="provider-detail-consent" class="text-muted">Sin datos</span>
-                        </div>
-                        <div class="provider-detail-item">
-                          <span class="provider-detail-label">Calificación</span>
-                          <span id="provider-detail-rating" class="text-muted">Sin calificación</span>
                         </div>
                         <div class="provider-detail-item">
                           <span class="provider-detail-label">Última revisión</span>
@@ -599,35 +607,28 @@
                       </a>
                       <span class="provider-detail-copy-feedback" id="provider-detail-copy-feedback"></span>
                     </div>
-                    <div class="provider-detail-item">
-                      <span class="provider-detail-label">Correo</span>
-                      <a
-                        id="provider-detail-email"
-                        class="text-decoration-none"
-                        href="#"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        Sin correo
-                      </a>
-                    </div>
-                    <div class="provider-detail-item" id="provider-detail-social-wrapper" style="display: none">
-                      <span class="provider-detail-label">Red social</span>
-                      <a
-                        id="provider-detail-social-link"
-                        class="text-decoration-none"
-                        href="#"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        —
-                      </a>
-                    </div>
                   </div>
 
-                  <div class="provider-detail-section">
-                    <h6>Servicios ofrecidos</h6>
-                    <div id="provider-detail-services"></div>
+                  <div class="provider-detail-section" id="provider-professional-section">
+                    <h6 id="provider-professional-title">Perfil profesional</h6>
+                    <div class="row g-3">
+                      <div class="col-md-6">
+                        <div class="provider-detail-item">
+                          <span class="provider-detail-label">Servicios</span>
+                          <div id="provider-detail-services" class="text-muted">Sin servicios registrados</div>
+                        </div>
+                      </div>
+                      <div class="col-md-6">
+                        <div class="provider-detail-item">
+                          <span class="provider-detail-label">Años de experiencia</span>
+                          <span id="provider-detail-experience" class="text-muted">Sin experiencia registrada</span>
+                        </div>
+                        <div class="provider-detail-item">
+                          <span class="provider-detail-label">Red social</span>
+                          <span id="provider-detail-social-media" class="text-muted">Sin red social registrada</span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
                   <div class="provider-detail-section">
@@ -649,12 +650,13 @@
                   </div>
 
                   <div class="provider-detail-section provider-review-form">
-                    <h6>Revisión administrativa</h6>
+                    <h6 id="provider-review-section-title">Revisión administrativa del onboarding</h6>
                     <div class="mb-3">
                       <label class="form-label" for="provider-review-status">Resultado</label>
                       <select class="form-select" id="provider-review-status">
                         <option value="" selected disabled>Selecciona un resultado</option>
-                        <option value="approved">Aprobado</option>
+                        <option value="approved_basic">Aprobado básico</option>
+                        <option value="profile_pending_review">Perfil en revisión</option>
                         <option value="interview_required">Entrevista requerida</option>
                         <option value="rejected">Rechazado</option>
                       </select>
@@ -676,7 +678,9 @@
                         id="provider-review-check-docs"
                       />
                       <label class="form-check-label" for="provider-review-check-docs">
-                        Confirmo que verifiqué la identidad y documentación del proveedor.
+                        <span id="provider-review-check-docs-label">
+                          Confirmo que revisé nombre, ciudad, consentimiento y documentación del proveedor.
+                        </span>
                       </label>
                     </div>
                     <div class="mb-3">
@@ -686,7 +690,7 @@
                       <textarea
                         class="form-control"
                         id="provider-review-notes"
-                        placeholder="Detalle conclusiones de la revisión, coincidencias con redes sociales, observaciones relevantes..."
+                        placeholder="Legibilidad de cédula, coherencia de nombre, observaciones de identidad, motivos de rechazo o validación adicional..."
                       ></textarea>
                     </div>
                     <div class="mb-3">
@@ -696,10 +700,10 @@
                       <textarea
                         class="form-control"
                         id="provider-review-message"
-                        placeholder="Ej. Necesitamos una breve entrevista para validar tus servicios. Responde a este mensaje para coordinar."
+                        placeholder="Ej. Tu registro básico fue aprobado. El siguiente paso será completar tu perfil profesional."
                       ></textarea>
-                      <div class="form-text">
-                        Se enviará este mensaje al proveedor junto con el resultado seleccionado.
+                      <div class="form-text" id="provider-review-message-help">
+                        Se enviará este mensaje al proveedor junto con el resultado del onboarding básico.
                       </div>
                     </div>
                     <div
@@ -715,8 +719,8 @@
                   </div>
                 </div>
                 <div class="modal-footer justify-content-between">
-                  <div class="text-muted small">
-                    Se notificará al proveedor vía WhatsApp según el resultado.
+                  <div class="text-muted small" id="provider-review-footer-help">
+                    Se notificará al proveedor vía WhatsApp con el resultado y el siguiente paso.
                   </div>
                   <div class="d-flex gap-2">
                     <button type="button" class="btn btn-primary" id="provider-review-submit-btn">

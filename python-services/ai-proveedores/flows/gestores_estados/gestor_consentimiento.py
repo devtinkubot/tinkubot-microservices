@@ -47,6 +47,7 @@ async def manejar_estado_consentimiento(
                     "response": construir_menu_principal(
                         esta_registrado=esta_registrado,
                         menu_limitado=bool(flujo.get("menu_limitado")),
+                        approved_basic=bool(flujo.get("approved_basic")),
                     )
                 }
             ],

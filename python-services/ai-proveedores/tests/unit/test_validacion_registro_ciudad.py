@@ -5,7 +5,6 @@ def test_validacion_registro_rechaza_provincia_en_city():
     flujo = {
         "name": "Proveedor Demo",
         "city": "Azuay",
-        "specialty": "Plomería",
         "has_consent": True,
     }
 
@@ -24,7 +23,6 @@ def test_validacion_registro_autocorrige_ciudad_compuesta():
     flujo = {
         "name": "Proveedor Demo",
         "city": "Cuenca, Azuay, Ecuador",
-        "specialty": "Plomería",
         "has_consent": True,
     }
 
@@ -37,3 +35,4 @@ def test_validacion_registro_autocorrige_ciudad_compuesta():
     assert error is None
     assert proveedor is not None
     assert proveedor.city == "Cuenca"
+    assert proveedor.services_list == []

@@ -160,3 +160,25 @@ def test_respuesta_disponibilidad_en_face_photo_update_no_intercepta(monkeypatch
     )
 
     assert resultado is None
+
+
+def test_respuesta_disponibilidad_en_completar_perfil_no_intercepta(monkeypatch):
+    telefono = "593999111230@s.whatsapp.net"
+    clave_contexto = f"availability:provider:{telefono}:context"
+    redis_falso = RedisFalso(
+        {
+            clave_contexto: {
+                "expecting_response": True,
+                "request_id": "search-vencido",
+            }
+        }
+    )
+    monkeypatch.setattr(principal, "cliente_redis", redis_falso)
+
+    resultado = asyncio.run(
+        principal._registrar_respuesta_disponibilidad_si_aplica(
+            telefono, "1", "awaiting_add_another_service"
+        )
+    )
+
+    assert resultado is None

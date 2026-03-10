@@ -24,6 +24,7 @@ def test_manejar_estado_inicial_habilita_menu_limitado_en_interview_required():
             esta_registrado=True,
             esta_verificado=False,
             menu_limitado=True,
+            approved_basic=False,
             telefono="593999111230@s.whatsapp.net",
         )
     )
@@ -91,3 +92,26 @@ def test_menu_limitado_no_permite_eliminar_registro():
     assert resultado["success"] is True
     assert flujo["state"] == "awaiting_menu_option"
     assert "no reconoc" in resultado["messages"][0]["response"].lower()
+
+
+def test_menu_approved_basic_opcion_invalida_muestra_error_bien_formado():
+    flujo = {
+        "state": "awaiting_menu_option",
+        "approved_basic": True,
+        "has_consent": True,
+        "esta_registrado": True,
+        "provider_id": "prov-abc",
+        "services": [],
+    }
+
+    resultado = asyncio.run(
+        manejar_estado_menu(
+            flujo=flujo,
+            texto_mensaje="menu",
+            opcion_menu=None,
+            esta_registrado=True,
+            menu_limitado=False,
+        )
+    )
+
+    assert "elige 1" in resultado["messages"][0]["response"].lower()

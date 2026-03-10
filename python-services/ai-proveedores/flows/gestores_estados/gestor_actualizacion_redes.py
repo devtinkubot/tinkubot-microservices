@@ -28,6 +28,7 @@ async def manejar_actualizacion_redes_sociales(
                     "response": construir_menu_principal(
                         esta_registrado=True,
                         menu_limitado=bool(flujo.get("menu_limitado")),
+                        approved_basic=bool(flujo.get("approved_basic")),
                     )
                 }
             ],
@@ -54,6 +55,7 @@ async def manejar_actualizacion_redes_sociales(
                     "response": construir_menu_principal(
                         esta_registrado=True,
                         menu_limitado=bool(flujo.get("menu_limitado")),
+                        approved_basic=bool(flujo.get("approved_basic")),
                     )
                 },
             ],
@@ -72,6 +74,7 @@ async def manejar_actualizacion_redes_sociales(
                 "response": construir_menu_principal(
                     esta_registrado=True,
                     menu_limitado=bool(flujo.get("menu_limitado")),
+                    approved_basic=bool(flujo.get("approved_basic")),
                 )
             },
         ],

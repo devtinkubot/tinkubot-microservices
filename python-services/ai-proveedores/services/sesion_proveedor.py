@@ -5,14 +5,29 @@ from typing import Any, Dict, Optional, Tuple
 from flows.consentimiento import solicitar_consentimiento
 from flows.constructores import (
     construir_menu_principal,
+    construir_respuesta_revision_perfil_profesional,
     construir_respuesta_revision,
     construir_respuesta_revision_con_menu_limitado,
     construir_respuesta_verificado,
 )
 from flows.registro import determinar_estado_registro
 
+ESTADOS_APROBADOS_OPERATIVOS = {"approved", "approved_basic"}
 ESTADOS_MENU_LIMITADO = {"interview_required"}
-ESTADOS_BLOQUEO_REVISION = {"rejected"}
+ESTADOS_BLOQUEO_REVISION = {"rejected", "profile_pending_review"}
+
+
+def _fusionar_servicios_perfil(perfil_proveedor: Dict[str, Any]) -> list[str]:
+    """Combina servicios activos y legados en una lista única sin duplicados."""
+    servicios_unificados: list[str] = []
+    for servicio in [
+        *(perfil_proveedor.get("services_list") or []),
+        *(perfil_proveedor.get("generic_services_removed") or []),
+    ]:
+        texto = str(servicio or "").strip()
+        if texto and texto not in servicios_unificados:
+            servicios_unificados.append(texto)
+    return servicios_unificados
 
 
 def normalizar_estado_administrativo(
@@ -23,6 +38,14 @@ def normalizar_estado_administrativo(
         return "pending"
 
     estado_crudo = str(perfil_proveedor.get("status") or "").strip().lower()
+    if estado_crudo in {"approved_basic", "aprobado_basico", "basic_approved"}:
+        return "approved_basic"
+    if estado_crudo in {
+        "profile_pending_review",
+        "perfil_pendiente_revision",
+        "professional_review_pending",
+    }:
+        return "profile_pending_review"
     if estado_crudo in {"approved", "aprobado", "ok"}:
         return "approved"
     if estado_crudo in {"rejected", "rechazado", "denied"}:
@@ -47,7 +70,7 @@ def perfil_tiene_menu_limitado(
     """Indica si el proveedor puede editar perfil sin estar aprobado."""
     if not perfil_proveedor:
         return False
-    if perfil_proveedor.get("verified"):
+    if normalizar_estado_administrativo(perfil_proveedor) in ESTADOS_APROBADOS_OPERATIVOS:
         return False
     if not determinar_estado_registro(perfil_proveedor):
         return False
@@ -81,26 +104,24 @@ def sincronizar_flujo_con_perfil(
             flujo["location_updated_at"] = perfil_proveedor.get("location_updated_at")
         if perfil_proveedor.get("city_confirmed_at") is not None:
             flujo["city_confirmed_at"] = perfil_proveedor.get("city_confirmed_at")
-        servicios_guardados = perfil_proveedor.get("services_list") or []
-        flujo["services"] = servicios_guardados
-        flujo["service_review_required"] = bool(
-            perfil_proveedor.get("service_review_required")
-        )
-        flujo["generic_services_removed"] = [
-            servicio.strip()
-            for servicio in (perfil_proveedor.get("generic_services_removed") or [])
-            if str(servicio or "").strip()
-        ]
+        flujo["services"] = _fusionar_servicios_perfil(perfil_proveedor)
         if perfil_proveedor.get("real_phone") is not None:
             flujo["real_phone"] = perfil_proveedor.get("real_phone")
         flujo["menu_limitado"] = perfil_tiene_menu_limitado(perfil_proveedor)
+        flujo["approved_basic"] = (
+            normalizar_estado_administrativo(perfil_proveedor) == "approved_basic"
+        )
+        flujo["profile_pending_review"] = (
+            normalizar_estado_administrativo(perfil_proveedor)
+            == "profile_pending_review"
+        )
     else:
         flujo.setdefault("services", [])
-        flujo.setdefault("service_review_required", False)
-        flujo.setdefault("generic_services_removed", [])
         flujo.setdefault("location_updated_at", None)
         flujo.setdefault("city_confirmed_at", None)
         flujo["menu_limitado"] = False
+        flujo["approved_basic"] = False
+        flujo["profile_pending_review"] = False
     return flujo
 
 
@@ -112,8 +133,8 @@ def resolver_estado_registro(
     tiene_consentimiento = bool(flujo.get("has_consent"))
     esta_registrado = determinar_estado_registro(perfil_proveedor)
     flujo["esta_registrado"] = esta_registrado
-    esta_verificado = bool(perfil_proveedor and perfil_proveedor.get("verified"))
     estado_administrativo = normalizar_estado_administrativo(perfil_proveedor)
+    esta_verificado = estado_administrativo in ESTADOS_APROBADOS_OPERATIVOS
     esta_pendiente_revision = bool(
         esta_registrado
         and not esta_verificado
@@ -142,6 +163,8 @@ def manejar_pendiente_revision(
             "provider_id": proveedor_id,
         }
     )
+    if flujo.get("profile_pending_review"):
+        return construir_respuesta_revision_perfil_profesional()
     nombre_proveedor = flujo["full_name"]
     return construir_respuesta_revision(nombre_proveedor)
 
@@ -149,6 +172,7 @@ def manejar_pendiente_revision(
 def manejar_aprobacion_reciente(
     flujo: Dict[str, Any],
     esta_verificado: bool,
+    approved_basic: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """Notifica cuando un perfil pasa de pendiente a verificado."""
     if flujo.get("state") != "pending_verification" or not esta_verificado:
@@ -160,9 +184,11 @@ def manejar_aprobacion_reciente(
             "esta_registrado": True,
             "verification_notified": True,
             "menu_limitado": False,
+            "approved_basic": approved_basic,
+            "profile_pending_review": False,
         }
     )
-    return construir_respuesta_verificado()
+    return construir_respuesta_verificado(approved_basic=approved_basic)
 
 
 async def manejar_estado_inicial(
@@ -173,6 +199,7 @@ async def manejar_estado_inicial(
     esta_registrado: bool,
     esta_verificado: bool,
     menu_limitado: bool,
+    approved_basic: bool,
     telefono: str,
 ) -> Optional[Dict[str, Any]]:
     """Resuelve la primera interacción cuando no hay estado."""
@@ -204,6 +231,8 @@ async def manejar_estado_inicial(
                     "has_consent": True,
                     "esta_registrado": True,
                     "menu_limitado": True,
+                    "approved_basic": False,
+                    "profile_pending_review": False,
                 }
             )
             nombre_proveedor = flujo["full_name"]
@@ -213,6 +242,8 @@ async def manejar_estado_inicial(
                 "state": "pending_verification",
                 "has_consent": True,
                 "esta_registrado": True,
+                "approved_basic": False,
+                "profile_pending_review": False,
             }
         )
         nombre_proveedor = flujo["full_name"]
@@ -226,9 +257,18 @@ async def manejar_estado_inicial(
             "esta_registrado": True,
             "verification_notified": True,
             "menu_limitado": False,
+            "approved_basic": approved_basic,
+            "profile_pending_review": False,
         }
     )
     return {
         "success": True,
-        "messages": [{"response": construir_menu_principal(esta_registrado=True)}],
+        "messages": [
+            {
+                "response": construir_menu_principal(
+                    esta_registrado=True,
+                    approved_basic=approved_basic,
+                )
+            }
+        ],
     }

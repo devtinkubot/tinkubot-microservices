@@ -20,6 +20,7 @@ def construir_respuesta_solicitud_consentimiento() -> Dict[str, Any]:
 def construir_respuesta_consentimiento_aceptado(
     esta_registrado: bool = False,
     menu_limitado: bool = False,
+    approved_basic: bool = False,
 ) -> Dict[str, Any]:
     """Construye respuesta cuando el consentimiento es aceptado.
 
@@ -32,6 +33,7 @@ def construir_respuesta_consentimiento_aceptado(
     mensaje_menu = construir_menu_principal(
         esta_registrado=esta_registrado,
         menu_limitado=menu_limitado,
+        approved_basic=approved_basic,
     )
     return {
         "success": True,

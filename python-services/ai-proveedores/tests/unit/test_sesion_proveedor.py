@@ -8,11 +8,14 @@ imghdr_stub.what = lambda *args, **kwargs: None
 sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from services.sesion_proveedor import (
+from services.sesion_proveedor import (  # noqa: E402
     manejar_estado_inicial,
     perfil_tiene_menu_limitado,
     resolver_estado_registro,
     sincronizar_flujo_con_perfil,
+)
+from services.registro.normalizacion import (  # noqa: E402
+    garantizar_campos_obligatorios_proveedor,
 )
 
 
@@ -46,6 +49,36 @@ def test_resolver_estado_registro_interview_required_habilita_menu_limitado():
     assert perfil_tiene_menu_limitado(perfil) is True
 
 
+def test_resolver_estado_registro_approved_basic_habilita_acceso_sin_menu_limitado():
+    flujo = {"has_consent": True}
+    perfil = {
+        "id": "prov-basic",
+        "full_name": "Proveedor Basico",
+        "verified": False,
+        "status": "approved_basic",
+    }
+
+    resultado = resolver_estado_registro(flujo, perfil)
+
+    assert resultado == (True, True, True, False)
+    assert perfil_tiene_menu_limitado(perfil) is False
+
+
+def test_resolver_estado_registro_profile_pending_review_mantiene_revision():
+    flujo = {"has_consent": True}
+    perfil = {
+        "id": "prov-review",
+        "full_name": "Proveedor Profesional",
+        "verified": False,
+        "status": "profile_pending_review",
+    }
+
+    resultado = resolver_estado_registro(flujo, perfil)
+
+    assert resultado == (True, True, False, True)
+    assert perfil_tiene_menu_limitado(perfil) is False
+
+
 def test_resolver_estado_registro_rejected_mantiene_bloqueo():
     flujo = {"has_consent": True}
     perfil = {
@@ -61,7 +94,7 @@ def test_resolver_estado_registro_rejected_mantiene_bloqueo():
     assert perfil_tiene_menu_limitado(perfil) is False
 
 
-def test_manejar_estado_inicial_interview_required_devuelve_revision_con_menu_limitado():
+def test_manejar_estado_inicial_interview_required_devuelve_revision_con_menu_limitado():  # noqa: E501
     flujo = {
         "has_consent": True,
         "full_name": "Proveedor En Revision",
@@ -75,6 +108,7 @@ def test_manejar_estado_inicial_interview_required_devuelve_revision_con_menu_li
             esta_registrado=True,
             esta_verificado=False,
             menu_limitado=True,
+            approved_basic=False,
             telefono="593999111240@s.whatsapp.net",
         )
     )
@@ -102,6 +136,7 @@ def test_manejar_estado_inicial_rejected_permanece_en_pending_verification():
             esta_registrado=True,
             esta_verificado=False,
             menu_limitado=False,
+            approved_basic=False,
             telefono="593999111241@s.whatsapp.net",
         )
     )
@@ -113,14 +148,39 @@ def test_manejar_estado_inicial_rejected_permanece_en_pending_verification():
     assert "revis" in respuesta["messages"][0]["response"].lower()
 
 
+def test_manejar_estado_inicial_approved_basic_muestra_menu_reducido():
+    flujo = {
+        "has_consent": True,
+        "full_name": "Proveedor Basico",
+        "approved_basic": True,
+    }
+
+    respuesta = asyncio.run(
+        manejar_estado_inicial(
+            estado=None,
+            flujo=flujo,
+            tiene_consentimiento=True,
+            esta_registrado=True,
+            esta_verificado=True,
+            menu_limitado=False,
+            approved_basic=True,
+            telefono="593999111299@s.whatsapp.net",
+        )
+    )
+
+    assert respuesta is not None
+    assert flujo["state"] == "awaiting_menu_option"
+    assert flujo["approved_basic"] is True
+    assert "Completar perfil profesional" in respuesta["messages"][0]["response"]
+    assert "Gestionar servicios" not in respuesta["messages"][0]["response"]
+
+
 def test_sincronizar_flujo_con_perfil_prioriza_datos_durables_sobre_redis():
     flujo = {
         "city": "loja",
         "location_lat": 1.23,
         "location_lng": 4.56,
         "services": ["servicio redis viejo"],
-        "generic_services_removed": ["pendiente redis viejo"],
-        "service_review_required": False,
         "real_phone": "0999999999",
     }
     perfil = {
@@ -133,7 +193,6 @@ def test_sincronizar_flujo_con_perfil_prioriza_datos_durables_sobre_redis():
         "city_confirmed_at": "2026-03-08T15:00:00+00:00",
         "services_list": ["servicio supabase"],
         "generic_services_removed": ["pendiente supabase"],
-        "service_review_required": True,
         "real_phone": "593999111222",
         "verified": True,
     }
@@ -143,7 +202,48 @@ def test_sincronizar_flujo_con_perfil_prioriza_datos_durables_sobre_redis():
     assert flujo["city"] == "cuenca"
     assert flujo["location_lat"] == -2.9
     assert flujo["location_lng"] == -78.9
-    assert flujo["services"] == ["servicio supabase"]
-    assert flujo["generic_services_removed"] == ["pendiente supabase"]
-    assert flujo["service_review_required"] is True
+    assert flujo["services"] == ["servicio supabase", "pendiente supabase"]
     assert flujo["real_phone"] == "593999111222"
+
+
+def test_sincronizar_flujo_con_perfil_marca_approved_basic():
+    flujo = {}
+    perfil = {
+        "id": "prov-basic",
+        "full_name": "Proveedor Basico",
+        "services_list": [],
+        "status": "approved_basic",
+        "verified": False,
+    }
+
+    sincronizar_flujo_con_perfil(flujo, perfil)
+
+    assert flujo["approved_basic"] is True
+
+
+def test_sincronizar_flujo_con_perfil_marca_profile_pending_review():
+    flujo = {}
+    perfil = {
+        "id": "prov-review",
+        "full_name": "Proveedor Profesional",
+        "services_list": [],
+        "status": "profile_pending_review",
+        "verified": False,
+    }
+
+    sincronizar_flujo_con_perfil(flujo, perfil)
+
+    assert flujo["profile_pending_review"] is True
+
+
+def test_garantizar_campos_obligatorios_preserva_status_existente():
+    perfil = {
+        "id": "prov-basic",
+        "full_name": "Proveedor Basico",
+        "verified": True,
+        "status": "approved_basic",
+    }
+
+    normalizado = garantizar_campos_obligatorios_proveedor(perfil)
+
+    assert normalizado["status"] == "approved_basic"

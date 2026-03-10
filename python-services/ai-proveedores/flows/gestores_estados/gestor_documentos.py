@@ -115,6 +115,7 @@ async def manejar_dni_trasera_actualizacion(
                     "response": construir_menu_principal(
                         esta_registrado=True,
                         menu_limitado=bool(flujo.get("menu_limitado")),
+                        approved_basic=bool(flujo.get("approved_basic")),
                     )
                 },
             ],
@@ -139,6 +140,7 @@ async def manejar_dni_trasera_actualizacion(
                     "response": construir_menu_principal(
                         esta_registrado=True,
                         menu_limitado=bool(flujo.get("menu_limitado")),
+                        approved_basic=bool(flujo.get("approved_basic")),
                     )
                 },
             ],
@@ -152,6 +154,7 @@ async def manejar_dni_trasera_actualizacion(
                 "response": construir_menu_principal(
                     esta_registrado=True,
                     menu_limitado=bool(flujo.get("menu_limitado")),
+                    approved_basic=bool(flujo.get("approved_basic")),
                 )
             },
         ],

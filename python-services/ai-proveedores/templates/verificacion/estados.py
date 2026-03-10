@@ -22,3 +22,11 @@ def mensaje_proveedor_verificado() -> str:
         "✅ Tu perfil ha sido verificado y autorizado para unirte a la comunidad TinkuBot. "
         "Ya puedes gestionar tu perfil y atender solicitudes de clientes."
     )
+
+
+def mensaje_perfil_profesional_en_revision() -> str:
+    """Mensaje cuando el perfil profesional ya fue enviado a revisión humana."""
+    return (
+        "✅ Tu perfil profesional fue enviado a revisión. "
+        "Te notificaremos cuando quede aprobado."
+    )

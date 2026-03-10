@@ -13,6 +13,8 @@ export interface WhatsAppStatusResponse {
 
 export type ProviderStatus =
   | 'pending'
+  | 'approved_basic'
+  | 'profile_pending_review'
   | 'approved'
   | 'rejected'
   | 'interview_required';

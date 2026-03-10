@@ -5,11 +5,11 @@ from typing import Any, Dict, Optional
 
 from flows.consentimiento import solicitar_consentimiento
 from flows.constructores import construir_menu_principal
+from flows.constructores import construir_respuesta_revision_perfil_profesional
 from flows.gestores_estados import (
-    manejar_accion_edicion_servicios_registro,
     manejar_accion_servicios,
     manejar_accion_servicios_activos,
-    manejar_accion_servicios_pendientes,
+    manejar_accion_edicion_servicios_registro,
     manejar_actualizacion_redes_sociales,
     manejar_actualizacion_selfie,
     manejar_agregar_servicio_desde_edicion_registro,
@@ -17,14 +17,14 @@ from flows.gestores_estados import (
     manejar_confirmacion,
     manejar_confirmacion_agregar_servicios,
     manejar_confirmacion_eliminacion,
-    manejar_confirmacion_precision_servicio_pendiente,
+    manejar_confirmacion_servicios,
     manejar_decision_agregar_otro_servicio,
     manejar_dni_frontal,
     manejar_dni_frontal_actualizacion,
     manejar_dni_trasera,
     manejar_dni_trasera_actualizacion,
-    manejar_eliminacion_servicio_registro,
     manejar_eliminar_servicio,
+    manejar_eliminacion_servicio_registro,
     manejar_espera_ciudad,
     manejar_espera_correo,
     manejar_espera_especialidad,
@@ -35,17 +35,16 @@ from flows.gestores_estados import (
     manejar_estado_consentimiento,
     manejar_estado_menu,
     manejar_inicio_documentos,
-    manejar_precision_servicio_pendiente,
     manejar_reemplazo_servicio_registro,
     manejar_seleccion_reemplazo_servicio_registro,
-    manejar_seleccion_servicio_pendiente,
     manejar_selfie_registro,
 )
-from flows.gestores_estados.gestor_confirmacion_servicios import (
-    manejar_confirmacion_servicios,
-)
 from flows.sesion import reiniciar_flujo
-from services import eliminar_registro_proveedor, registrar_proveedor_en_base_datos
+from services import (
+    actualizar_perfil_profesional,
+    eliminar_registro_proveedor,
+    registrar_proveedor_en_base_datos,
+)
 from services.sesion_proveedor import (
     manejar_aprobacion_reciente,
     manejar_estado_inicial,
@@ -55,8 +54,8 @@ from services.sesion_proveedor import (
 )
 from templates.registro import (
     PROMPT_INICIO_REGISTRO,
-    preguntar_correo_opcional,
     preguntar_real_phone,
+    solicitar_foto_dni_frontal,
 )
 from templates.sesion import (
     informar_reinicio_completo,
@@ -75,6 +74,13 @@ RESET_KEYWORDS = {
     "start",
     "nuevo",
 }
+
+
+def _mensaje_perfil_profesional_actualizado() -> str:
+    return (
+        "✅ Tu perfil profesional quedó completo. "
+        "Lo enviamos a revisión para la aprobación final."
+    )
 
 
 def _es_salida_a_menu(texto_mensaje: str, opcion_menu: Optional[str]) -> bool:
@@ -195,6 +201,7 @@ async def manejar_mensaje(
                                 "response": construir_menu_principal(
                                     esta_registrado=esta_registrado_timeout,
                                     menu_limitado=bool(flujo.get("menu_limitado")),
+                                    approved_basic=bool(flujo.get("approved_basic")),
                                 )
                             },
                         ]
@@ -235,7 +242,11 @@ async def manejar_mensaje(
         logger.info("🧭 router.pendiente_revision telefono=%s", telefono)
         return {"response": respuesta_pendiente, "persist_flow": True}
 
-    respuesta_verificacion = manejar_aprobacion_reciente(flujo, esta_verificado)
+    respuesta_verificacion = manejar_aprobacion_reciente(
+        flujo,
+        esta_verificado,
+        approved_basic=bool(flujo.get("approved_basic")),
+    )
     if respuesta_verificacion:
         logger.info("🧭 router.aprobacion_reciente telefono=%s", telefono)
         return {"response": respuesta_verificacion, "persist_flow": True}
@@ -247,6 +258,7 @@ async def manejar_mensaje(
         esta_registrado=esta_registrado,
         esta_verificado=esta_verificado,
         menu_limitado=bool(flujo.get("menu_limitado")),
+        approved_basic=bool(flujo.get("approved_basic")),
         telefono=telefono,
     )
     if respuesta_inicial:
@@ -464,14 +476,6 @@ async def enrutar_estado(  # noqa: C901
         )
         return {"response": respuesta, "persist_flow": True}
 
-    if estado == "awaiting_pending_service_action":
-        respuesta = await manejar_accion_servicios_pendientes(
-            flujo=flujo,
-            texto_mensaje=texto_mensaje,
-            opcion_menu=opcion_menu,
-        )
-        return {"response": respuesta, "persist_flow": True}
-
     if estado == "awaiting_service_add":
         respuesta = await manejar_agregar_servicios(
             flujo=flujo,
@@ -498,29 +502,103 @@ async def enrutar_estado(  # noqa: C901
         )
         return {"response": respuesta, "persist_flow": True}
 
-    if estado == "awaiting_pending_service_select":
-        respuesta = await manejar_seleccion_servicio_pendiente(
+    if estado == "awaiting_specialty":
+        respuesta = await manejar_espera_especialidad(
             flujo=flujo,
-            texto_mensaje=texto_mensaje,
-        )
-        return {"response": respuesta, "persist_flow": True}
-
-    if estado == "awaiting_pending_service_add":
-        respuesta = await manejar_precision_servicio_pendiente(
-            flujo=flujo,
-            proveedor_id=flujo.get("provider_id"),
             texto_mensaje=texto_mensaje,
             cliente_openai=cliente_openai,
         )
         return {"response": respuesta, "persist_flow": True}
 
-    if estado == "awaiting_pending_service_add_confirmation":
-        respuesta = await manejar_confirmacion_precision_servicio_pendiente(
+    if estado == "awaiting_add_another_service":
+        respuesta = await manejar_decision_agregar_otro_servicio(
             flujo=flujo,
-            proveedor_id=flujo.get("provider_id"),
+            texto_mensaje=texto_mensaje,
+        )
+        return {"response": respuesta, "persist_flow": True}
+
+    if estado == "awaiting_services_confirmation":
+        respuesta = await manejar_confirmacion_servicios(
+            flujo=flujo,
             texto_mensaje=texto_mensaje,
             cliente_openai=cliente_openai,
         )
+        return {"response": respuesta, "persist_flow": True}
+
+    if estado == "awaiting_services_edit_action":
+        respuesta = await manejar_accion_edicion_servicios_registro(
+            flujo=flujo,
+            texto_mensaje=texto_mensaje,
+        )
+        return {"response": respuesta, "persist_flow": True}
+
+    if estado == "awaiting_services_edit_replace_select":
+        respuesta = await manejar_seleccion_reemplazo_servicio_registro(
+            flujo=flujo,
+            texto_mensaje=texto_mensaje,
+        )
+        return {"response": respuesta, "persist_flow": True}
+
+    if estado == "awaiting_services_edit_replace_input":
+        respuesta = await manejar_reemplazo_servicio_registro(
+            flujo=flujo,
+            texto_mensaje=texto_mensaje,
+            cliente_openai=cliente_openai,
+        )
+        return {"response": respuesta, "persist_flow": True}
+
+    if estado == "awaiting_services_edit_delete_select":
+        respuesta = await manejar_eliminacion_servicio_registro(
+            flujo=flujo,
+            texto_mensaje=texto_mensaje,
+        )
+        return {"response": respuesta, "persist_flow": True}
+
+    if estado == "awaiting_services_edit_add":
+        respuesta = await manejar_agregar_servicio_desde_edicion_registro(
+            flujo=flujo,
+            texto_mensaje=texto_mensaje,
+            cliente_openai=cliente_openai,
+        )
+        return {"response": respuesta, "persist_flow": True}
+
+    if estado == "awaiting_experience":
+        respuesta = manejar_espera_experiencia(flujo, texto_mensaje)
+        return {"response": respuesta, "persist_flow": True}
+
+    if estado == "awaiting_email":
+        respuesta = manejar_espera_correo(flujo, texto_mensaje)
+        return {"response": respuesta, "persist_flow": True}
+
+    if estado == "awaiting_social_media":
+        respuesta = manejar_espera_red_social(flujo, texto_mensaje)
+        if flujo.get("profile_completion_mode"):
+            servicios_temporales = list(flujo.get("servicios_temporales") or [])
+            await actualizar_perfil_profesional(
+                proveedor_id=str(flujo.get("provider_id") or ""),
+                servicios=servicios_temporales,
+                experience_years=flujo.get("experience_years"),
+                social_media_url=flujo.get("social_media_url"),
+                social_media_type=flujo.get("social_media_type"),
+            )
+            flujo["services"] = servicios_temporales
+            flujo["state"] = "pending_verification"
+            flujo["profile_completion_mode"] = False
+            flujo["approved_basic"] = False
+            flujo["profile_pending_review"] = True
+            flujo.pop("servicios_temporales", None)
+            return {
+                "response": {
+                    "success": True,
+                    "messages": [
+                        {"response": _mensaje_perfil_profesional_actualizado()},
+                        *construir_respuesta_revision_perfil_profesional()[
+                            "messages"
+                        ],
+                    ],
+                },
+                "persist_flow": True,
+            }
         return {"response": respuesta, "persist_flow": True}
 
     if estado == "awaiting_face_photo_update":
@@ -567,76 +645,6 @@ async def enrutar_estado(  # noqa: C901
         respuesta = manejar_espera_nombre(flujo, texto_mensaje)
         return {"response": respuesta, "persist_flow": True}
 
-    if estado == "awaiting_specialty":
-        respuesta = await manejar_espera_especialidad(
-            flujo, texto_mensaje, cliente_openai
-        )
-        return {"response": respuesta, "persist_flow": True}
-
-    if estado == "awaiting_add_another_service":
-        respuesta = await manejar_decision_agregar_otro_servicio(
-            flujo,
-            texto_mensaje,
-        )
-        return {"response": respuesta, "persist_flow": True}
-
-    if estado == "awaiting_services_confirmation":
-        respuesta = await manejar_confirmacion_servicios(
-            flujo,
-            texto_mensaje,
-            cliente_openai,
-        )
-        return {"response": respuesta, "persist_flow": True}
-
-    if estado == "awaiting_services_edit_action":
-        respuesta = await manejar_accion_edicion_servicios_registro(
-            flujo,
-            texto_mensaje,
-        )
-        return {"response": respuesta, "persist_flow": True}
-
-    if estado == "awaiting_services_edit_replace_select":
-        respuesta = await manejar_seleccion_reemplazo_servicio_registro(
-            flujo,
-            texto_mensaje,
-        )
-        return {"response": respuesta, "persist_flow": True}
-
-    if estado == "awaiting_services_edit_replace_input":
-        respuesta = await manejar_reemplazo_servicio_registro(
-            flujo,
-            texto_mensaje,
-            cliente_openai,
-        )
-        return {"response": respuesta, "persist_flow": True}
-
-    if estado == "awaiting_services_edit_delete_select":
-        respuesta = await manejar_eliminacion_servicio_registro(
-            flujo,
-            texto_mensaje,
-        )
-        return {"response": respuesta, "persist_flow": True}
-
-    if estado == "awaiting_services_edit_add":
-        respuesta = await manejar_agregar_servicio_desde_edicion_registro(
-            flujo,
-            texto_mensaje,
-            cliente_openai,
-        )
-        return {"response": respuesta, "persist_flow": True}
-
-    if estado == "awaiting_experience":
-        respuesta = manejar_espera_experiencia(flujo, texto_mensaje)
-        return {"response": respuesta, "persist_flow": True}
-
-    if estado == "awaiting_email":
-        respuesta = manejar_espera_correo(flujo, texto_mensaje)
-        return {"response": respuesta, "persist_flow": True}
-
-    if estado == "awaiting_social_media":
-        respuesta = manejar_espera_red_social(flujo, texto_mensaje)
-        return {"response": respuesta, "persist_flow": True}
-
     if estado == "awaiting_dni_front_photo":
         respuesta = manejar_dni_frontal(flujo, carga)
         return {"response": respuesta, "persist_flow": True}
@@ -650,10 +658,10 @@ async def enrutar_estado(  # noqa: C901
         return {"response": respuesta, "persist_flow": True}
 
     if estado == "awaiting_address":
-        flujo["state"] = "awaiting_email"
+        flujo["state"] = "awaiting_dni_front_photo"
         respuesta = {
             "success": True,
-            "response": preguntar_correo_opcional(),
+            "messages": [{"response": solicitar_foto_dni_frontal()}],
         }
         return {"response": respuesta, "persist_flow": True}
 

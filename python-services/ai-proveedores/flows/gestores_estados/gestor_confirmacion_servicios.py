@@ -4,7 +4,10 @@ import logging
 import re
 from typing import Any, Dict, List, Optional
 
-from services.servicios_proveedor.constantes import SERVICIOS_MAXIMOS_ONBOARDING
+from services.servicios_proveedor.constantes import (
+    SERVICIOS_MAXIMOS,
+    SERVICIOS_MAXIMOS_ONBOARDING,
+)
 from templates.registro import (
     mensaje_confirmacion_servicios,
     mensaje_correccion_servicios,
@@ -26,10 +29,19 @@ logger = logging.getLogger(__name__)
 _FLUJO_KEY_EDIT_INDEX = "service_edit_index"
 
 
+def _maximo_servicios(flujo: Dict[str, Any]) -> int:
+    return (
+        SERVICIOS_MAXIMOS
+        if flujo.get("profile_completion_mode")
+        else SERVICIOS_MAXIMOS_ONBOARDING
+    )
+
+
 def mostrar_confirmacion_servicios(
     flujo: Dict[str, Any], servicios_transformados: List[str]
 ) -> Dict[str, Any]:
     """Muestra el resumen final de servicios del registro."""
+    maximo_servicios = _maximo_servicios(flujo)
     flujo["servicios_temporales"] = servicios_transformados
     flujo["state"] = "awaiting_services_confirmation"
     return {
@@ -38,7 +50,7 @@ def mostrar_confirmacion_servicios(
             {
                 "response": mensaje_resumen_servicios_registro(
                     servicios_transformados,
-                    SERVICIOS_MAXIMOS_ONBOARDING,
+                    maximo_servicios,
                 )
             }
         ],
@@ -52,6 +64,7 @@ async def manejar_decision_agregar_otro_servicio(
     """Decide si el proveedor agrega otro servicio o pasa al resumen."""
     texto = (texto_mensaje or "").strip().lower()
     servicios = list(flujo.get("servicios_temporales") or [])
+    maximo_servicios = _maximo_servicios(flujo)
 
     if texto in {"1", "si", "sí", "agregar", "otro", "continuar"}:
         flujo["state"] = "awaiting_specialty"
@@ -61,7 +74,7 @@ async def manejar_decision_agregar_otro_servicio(
                 {
                     "response": preguntar_siguiente_servicio_registro(
                         len(servicios) + 1,
-                        SERVICIOS_MAXIMOS_ONBOARDING,
+                        maximo_servicios,
                     )
                 }
             ],
@@ -75,7 +88,7 @@ async def manejar_decision_agregar_otro_servicio(
                 {
                     "response": mensaje_resumen_servicios_registro(
                         servicios,
-                        SERVICIOS_MAXIMOS_ONBOARDING,
+                        maximo_servicios,
                     )
                 }
             ],
@@ -93,6 +106,7 @@ async def manejar_confirmacion_servicios(
     cliente_openai: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Procesa la confirmación final de la lista de servicios del registro."""
+    maximo_servicios = _maximo_servicios(flujo)
     if not texto_mensaje:
         return {
             "success": True,
@@ -100,7 +114,7 @@ async def manejar_confirmacion_servicios(
                 {
                     "response": mensaje_resumen_servicios_registro(
                         list(flujo.get("servicios_temporales") or []),
-                        SERVICIOS_MAXIMOS_ONBOARDING,
+                        maximo_servicios,
                     )
                 }
             ],
@@ -141,7 +155,7 @@ async def manejar_confirmacion_servicios(
                 {
                     "response": mensaje_menu_edicion_servicios_registro(
                         list(flujo.get("servicios_temporales") or []),
-                        SERVICIOS_MAXIMOS_ONBOARDING,
+                        maximo_servicios,
                     )
                 },
             ],
@@ -153,7 +167,7 @@ async def manejar_confirmacion_servicios(
             {
                 "response": mensaje_resumen_servicios_registro(
                     list(flujo.get("servicios_temporales") or []),
-                    SERVICIOS_MAXIMOS_ONBOARDING,
+                    maximo_servicios,
                 )
             }
         ],
@@ -167,6 +181,7 @@ async def manejar_accion_edicion_servicios_registro(
     """Gestiona el menú de corrección final de servicios."""
     texto = (texto_mensaje or "").strip().lower()
     servicios = list(flujo.get("servicios_temporales") or [])
+    maximo_servicios = _maximo_servicios(flujo)
 
     if texto in {"1", "reemplazar"}:
         flujo["state"] = "awaiting_services_edit_replace_select"
@@ -176,7 +191,7 @@ async def manejar_accion_edicion_servicios_registro(
                 {
                     "response": mensaje_menu_edicion_servicios_registro(
                         servicios,
-                        SERVICIOS_MAXIMOS_ONBOARDING,
+                        maximo_servicios,
                     )
                 },
                 {"response": preguntar_numero_servicio_reemplazar()},
@@ -191,7 +206,7 @@ async def manejar_accion_edicion_servicios_registro(
                 {
                     "response": mensaje_menu_edicion_servicios_registro(
                         servicios,
-                        SERVICIOS_MAXIMOS_ONBOARDING,
+                        maximo_servicios,
                     )
                 },
                 {"response": preguntar_numero_servicio_eliminar()},
@@ -199,19 +214,17 @@ async def manejar_accion_edicion_servicios_registro(
         }
 
     if texto in {"3", "agregar"}:
-        if len(servicios) >= SERVICIOS_MAXIMOS_ONBOARDING:
+        if len(servicios) >= maximo_servicios:
             return {
                 "success": True,
                 "messages": [
                     {
-                        "response": (
-                            f"Ya tienes {SERVICIOS_MAXIMOS_ONBOARDING} servicios en tu lista temporal."
-                        )
+                        "response": f"Ya tienes {maximo_servicios} servicios en tu lista temporal."
                     },
                     {
                         "response": mensaje_menu_edicion_servicios_registro(
                             servicios,
-                            SERVICIOS_MAXIMOS_ONBOARDING,
+                            maximo_servicios,
                         )
                     },
                 ],
@@ -223,7 +236,7 @@ async def manejar_accion_edicion_servicios_registro(
                 {
                     "response": preguntar_siguiente_servicio_registro(
                         len(servicios) + 1,
-                        SERVICIOS_MAXIMOS_ONBOARDING,
+                        maximo_servicios,
                     )
                 }
             ],
@@ -237,7 +250,7 @@ async def manejar_accion_edicion_servicios_registro(
                 {
                     "response": mensaje_resumen_servicios_registro(
                         servicios,
-                        SERVICIOS_MAXIMOS_ONBOARDING,
+                        maximo_servicios,
                     )
                 }
             ],
@@ -250,7 +263,7 @@ async def manejar_accion_edicion_servicios_registro(
             {
                 "response": mensaje_menu_edicion_servicios_registro(
                     servicios,
-                    SERVICIOS_MAXIMOS_ONBOARDING,
+                    maximo_servicios,
                 )
             },
         ],
@@ -274,6 +287,7 @@ async def manejar_seleccion_reemplazo_servicio_registro(
     texto_mensaje: Optional[str],
 ) -> Dict[str, Any]:
     servicios = list(flujo.get("servicios_temporales") or [])
+    maximo_servicios = _maximo_servicios(flujo)
     indice = _extraer_indice(texto_mensaje, len(servicios))
     if indice is None:
         return {
@@ -308,6 +322,7 @@ async def manejar_reemplazo_servicio_registro(
     from .gestor_espera_especialidad import normalizar_servicio_registro_individual
 
     servicios = list(flujo.get("servicios_temporales") or [])
+    maximo_servicios = _maximo_servicios(flujo)
     indice = flujo.get(_FLUJO_KEY_EDIT_INDEX)
     if not isinstance(indice, int) or not (0 <= indice < len(servicios)):
         flujo["state"] = "awaiting_services_edit_action"
@@ -339,7 +354,7 @@ async def manejar_reemplazo_servicio_registro(
             {
                 "response": mensaje_resumen_servicios_registro(
                     servicios,
-                    SERVICIOS_MAXIMOS_ONBOARDING,
+                    maximo_servicios,
                 )
             },
         ],
@@ -351,6 +366,7 @@ async def manejar_eliminacion_servicio_registro(
     texto_mensaje: Optional[str],
 ) -> Dict[str, Any]:
     servicios = list(flujo.get("servicios_temporales") or [])
+    maximo_servicios = _maximo_servicios(flujo)
     indice = _extraer_indice(texto_mensaje, len(servicios))
     if indice is None:
         return {
@@ -374,7 +390,7 @@ async def manejar_eliminacion_servicio_registro(
                 {"response": mensaje_debes_registrar_al_menos_un_servicio()},
                 {
                     "response": preguntar_siguiente_servicio_registro(
-                        1, SERVICIOS_MAXIMOS_ONBOARDING
+                        1, maximo_servicios
                     )
                 },
             ],
@@ -388,7 +404,7 @@ async def manejar_eliminacion_servicio_registro(
             {
                 "response": mensaje_resumen_servicios_registro(
                     servicios,
-                    SERVICIOS_MAXIMOS_ONBOARDING,
+                    maximo_servicios,
                 )
             },
         ],
@@ -418,6 +434,7 @@ async def manejar_agregar_servicio_desde_edicion_registro(
         }
 
     servicios.append(nuevo)
+    maximo_servicios = _maximo_servicios(flujo)
     flujo["servicios_temporales"] = servicios
     flujo["state"] = "awaiting_services_confirmation"
     return {
@@ -427,7 +444,7 @@ async def manejar_agregar_servicio_desde_edicion_registro(
             {
                 "response": mensaje_resumen_servicios_registro(
                     servicios,
-                    SERVICIOS_MAXIMOS_ONBOARDING,
+                    maximo_servicios,
                 )
             },
         ],

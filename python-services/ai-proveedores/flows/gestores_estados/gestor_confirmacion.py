@@ -73,7 +73,7 @@ async def manejar_confirmacion(
                     {
                         "response": (
                             f"*No pude validar tus datos:* {mensaje_error}. "
-                            "Revisa que nombre, ciudad y servicios cumplan con el formato."
+                            "Revisa que nombre y ciudad cumplan con el formato."
                         )
                     }
                 ],

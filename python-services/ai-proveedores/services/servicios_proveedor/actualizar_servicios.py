@@ -14,10 +14,10 @@ from typing import Any, List, Optional
 # Agregar el directorio raíz al sys.path para imports absolutos
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
-from services.servicios_proveedor.utilidades import (
+from infrastructure.database import run_supabase  # noqa: E402
+from services.servicios_proveedor.utilidades import (  # noqa: E402
     sanitizar_lista_servicios as sanitizar_servicios,
 )
-from infrastructure.database import run_supabase
 
 logger = logging.getLogger(__name__)
 
@@ -36,18 +36,18 @@ async def actualizar_servicios(proveedor_id: str, servicios: List[str]) -> List[
     Raises:
         Exception: Si hay un error al actualizar en la base de datos
     """
-    from principal import (
-        supabase,
+    from principal import (  # Import dinámico para evitar circular import
         servicio_embeddings,
-    )  # Import dinámico para evitar circular import
+        supabase,
+    )
 
     if not supabase:
         return sanitizar_servicios(servicios)
 
     servicios_limpios = sanitizar_servicios(servicios)
     try:
-        # Fuente de verdad: provider_services
-        # Reemplazo completo para forzar coherencia (incluye eliminación y re-embedding).
+        # Fuente de verdad: provider_services. Reemplazo completo para forzar
+        # coherencia e invalidar también el legacy de genéricos.
         await run_supabase(
             lambda: supabase.table("provider_services")
             .delete()
@@ -83,6 +83,19 @@ async def actualizar_servicios(proveedor_id: str, servicios: List[str]) -> List[
                     "Verificación fallida tras actualización de servicios: "
                     f"esperados={servicios_limpios} persistidos={servicios_persistidos}"
                 )
+
+        await run_supabase(
+            lambda: supabase.table("providers")
+            .update(
+                {
+                    "service_review_required": False,
+                    "generic_services_removed": [],
+                }
+            )
+            .eq("id", proveedor_id)
+            .execute(),
+            label="providers.clear_legacy_generic_services",
+        )
 
         telefono = await _obtener_telefono_proveedor(supabase, proveedor_id)
         if telefono:
@@ -120,61 +133,6 @@ async def actualizar_servicios(proveedor_id: str, servicios: List[str]) -> List[
         raise
 
     return servicios_limpios
-
-
-async def actualizar_servicios_pendientes_genericos(
-    proveedor_id: str,
-    servicios_pendientes: List[str],
-) -> List[str]:
-    """Actualiza el listado de servicios pendientes por precisar."""
-    from principal import supabase  # Import dinámico para evitar circular import
-
-    pendientes_limpios = [
-        str(servicio).strip()
-        for servicio in servicios_pendientes
-        if str(servicio).strip()
-    ]
-    if not supabase:
-        return pendientes_limpios
-
-    try:
-        payload = {
-            "generic_services_removed": pendientes_limpios,
-            "service_review_required": bool(pendientes_limpios),
-        }
-        await run_supabase(
-            lambda: supabase.table("providers")
-            .update(payload)
-            .eq("id", proveedor_id)
-            .execute(),
-            label="providers.update_generic_services_removed",
-        )
-
-        telefono = await _obtener_telefono_proveedor(supabase, proveedor_id)
-        if telefono:
-            from flows.sesion import (
-                invalidar_cache_perfil_proveedor,
-                refrescar_cache_perfil_proveedor,
-            )
-
-            await invalidar_cache_perfil_proveedor(telefono)
-            try:
-                await refrescar_cache_perfil_proveedor(telefono)
-            except Exception as exc:
-                logger.warning(
-                    "⚠️ No se pudo refrescar cache de perfil %s: %s",
-                    telefono,
-                    exc,
-                )
-    except Exception as exc:
-        logger.error(
-            "❌ Error actualizando pendientes genéricos para proveedor %s: %s",
-            proveedor_id,
-            exc,
-        )
-        raise
-
-    return pendientes_limpios
 
 
 async def _obtener_telefono_proveedor(

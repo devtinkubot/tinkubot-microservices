@@ -79,22 +79,15 @@ def normalizar_datos_proveedor(
         Dict con datos normalizados según el esquema unificado
 
     Raises:
-        ValueError: Si no hay servicios o supera el máximo permitido
+        ValueError: Si supera el máximo permitido
     """
-    # Fase 5: Validar cantidad de servicios
     servicios = datos_crudos.services_list or []
-    if len(servicios) == 0:
-        raise ValueError("Debe ingresar al menos 1 servicio")
     if len(servicios) > SERVICIOS_MAXIMOS:
         raise ValueError(f"Máximo {SERVICIOS_MAXIMOS} servicios permitidos")
 
     # Fase 5: Normalizar servicios (title case, trim)
     servicios_limpios = sanitizar_servicios(servicios)
     servicios_normalizados = [s.strip().title() for s in servicios_limpios if s.strip()]
-
-    # Fase 5: Validar que después de la normalización quede al menos 1 servicio
-    if len(servicios_normalizados) == 0:
-        raise ValueError("Debe ingresar al menos 1 servicio válido")
 
     telefono = _normalizar_jid_whatsapp(datos_crudos.phone.strip())
     real_phone = (
@@ -167,5 +160,6 @@ def garantizar_campos_obligatorios_proveedor(
     datos.setdefault("city_confirmed_at", None)
     # Fase 5: Eliminada referencia a 'profession'
     datos["has_consent"] = bool(datos.get("has_consent"))
-    datos["status"] = "approved" if datos.get("verified") else "pending"
+    if not datos.get("status"):
+        datos["status"] = "approved" if datos.get("verified") else "pending"
     return datos

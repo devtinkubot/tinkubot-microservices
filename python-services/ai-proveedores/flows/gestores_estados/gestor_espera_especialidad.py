@@ -3,7 +3,10 @@
 import logging
 from typing import Any, Dict, List, Optional
 
-from services.servicios_proveedor.constantes import SERVICIOS_MAXIMOS_ONBOARDING
+from services.servicios_proveedor.constantes import (
+    SERVICIOS_MAXIMOS,
+    SERVICIOS_MAXIMOS_ONBOARDING,
+)
 from services.servicios_proveedor.utilidades import (
     es_servicio_critico_generico,
     limpiar_espacios,
@@ -18,6 +21,14 @@ from templates.registro import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _maximo_servicios(flujo: Dict[str, Any]) -> int:
+    return (
+        SERVICIOS_MAXIMOS
+        if flujo.get("profile_completion_mode")
+        else SERVICIOS_MAXIMOS_ONBOARDING
+    )
 
 
 async def normalizar_servicio_registro_individual(
@@ -126,21 +137,20 @@ async def manejar_espera_especialidad(
 ) -> Dict[str, Any]:
     """Procesa la captura incremental de un servicio en el registro."""
     servicios_temporales: List[str] = list(flujo.get("servicios_temporales") or [])
+    maximo_servicios = _maximo_servicios(flujo)
 
-    if len(servicios_temporales) >= SERVICIOS_MAXIMOS_ONBOARDING:
+    if len(servicios_temporales) >= maximo_servicios:
         flujo["state"] = "awaiting_services_confirmation"
         return {
             "success": True,
             "messages": [
                 {
-                    "response": mensaje_maximo_servicios_registro(
-                        SERVICIOS_MAXIMOS_ONBOARDING
-                    )
+                    "response": mensaje_maximo_servicios_registro(maximo_servicios)
                 },
                 {
                     "response": mensaje_resumen_servicios_registro(
                         servicios_temporales,
-                        SERVICIOS_MAXIMOS_ONBOARDING,
+                        maximo_servicios,
                     )
                 },
             ],
@@ -163,20 +173,18 @@ async def manejar_espera_especialidad(
     servicios_temporales.append(servicio)
     flujo["servicios_temporales"] = servicios_temporales
 
-    if len(servicios_temporales) >= SERVICIOS_MAXIMOS_ONBOARDING:
+    if len(servicios_temporales) >= maximo_servicios:
         flujo["state"] = "awaiting_services_confirmation"
         return {
             "success": True,
             "messages": [
                 {
-                    "response": mensaje_maximo_servicios_registro(
-                        SERVICIOS_MAXIMOS_ONBOARDING
-                    )
+                    "response": mensaje_maximo_servicios_registro(maximo_servicios)
                 },
                 {
                     "response": mensaje_resumen_servicios_registro(
                         servicios_temporales,
-                        SERVICIOS_MAXIMOS_ONBOARDING,
+                        maximo_servicios,
                     )
                 },
             ],
@@ -190,7 +198,7 @@ async def manejar_espera_especialidad(
                 "response": confirmar_servicio_y_preguntar_otro(
                     servicio,
                     len(servicios_temporales),
-                    SERVICIOS_MAXIMOS_ONBOARDING,
+                    maximo_servicios,
                 )
             }
         ],

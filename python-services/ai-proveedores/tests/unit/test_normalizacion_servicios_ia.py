@@ -33,6 +33,7 @@ from infrastructure.openai import (  # noqa: E402
 from templates.registro import (  # noqa: E402
     mensaje_correccion_servicios,
     preguntar_servicios_registro,
+    solicitar_foto_dni_frontal,
 )
 
 
@@ -71,13 +72,15 @@ def test_prompt_servicios_registro_usa_ejemplos_especificos():
     assert "desarrollo web" in mensaje
 
 
-def test_espera_nombre_envia_prompt_servicios_mejorado():
+def test_espera_nombre_salta_directo_a_documentos():
+    flujo = {"state": "awaiting_name"}
     respuesta = manejar_espera_nombre(
-        flujo={"state": "awaiting_name"},
+        flujo=flujo,
         texto_mensaje="Diego Unkuch",
     )
 
-    assert respuesta["messages"][0]["response"] == preguntar_servicios_registro()
+    assert flujo["state"] == "awaiting_dni_front_photo"
+    assert respuesta["messages"][0]["response"] == solicitar_foto_dni_frontal()
 
 
 def test_mensaje_correccion_servicios_refuerza_especificidad():

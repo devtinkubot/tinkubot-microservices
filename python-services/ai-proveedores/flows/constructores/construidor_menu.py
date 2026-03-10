@@ -12,6 +12,7 @@ from templates import (
 def construir_menu_principal(
     esta_registrado: bool = False,
     menu_limitado: bool = False,
+    approved_basic: bool = False,
 ) -> str:
     """Construye el menú principal según estado de registro.
 
@@ -22,7 +23,10 @@ def construir_menu_principal(
         Mensaje del menú principal correspondiente al estado.
     """
     if esta_registrado:
-        return mensaje_menu_post_registro_proveedor(menu_limitado=menu_limitado)
+        return mensaje_menu_post_registro_proveedor(
+            menu_limitado=menu_limitado,
+            approved_basic=approved_basic,
+        )
     return mensaje_menu_principal_proveedor()
 
 
@@ -31,6 +35,7 @@ def construir_menu_desde_flujo(flujo: Dict[str, Any]) -> str:
     return construir_menu_principal(
         esta_registrado=bool(flujo.get("esta_registrado")),
         menu_limitado=bool(flujo.get("menu_limitado")),
+        approved_basic=bool(flujo.get("approved_basic")),
     )
 
 

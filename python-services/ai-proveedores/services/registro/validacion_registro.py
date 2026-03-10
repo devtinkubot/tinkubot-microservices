@@ -43,7 +43,6 @@ def validar_y_construir_proveedor(
         - Optional[str]: Mensaje de error si falló, None si fue exitosa
         - Optional[SolicitudCreacionProveedor]: Objeto construido y validado
     """
-    # Procesar lista de servicios desde la especialidad
     especialidad = flujo.get("specialty")
     servicios_lista = _procesar_lista_servicios(especialidad)
 

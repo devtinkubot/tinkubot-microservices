@@ -188,32 +188,40 @@ const extraerUrlDocumento = (valor) => {
 const construirMensajeAprobacion = (nombre) => {
   const safeName = limpiarTexto(nombre);
   if (safeName) {
-    return `✅ Hola *${safeName}*, tu perfil en TinkuBot fue aprobado. Ya puedes responder solicitudes cuando te escribamos.`;
+    return `✅ Hola *${safeName}*, tu registro básico fue aprobado. Ya formas parte de TinkuBot. El siguiente paso es completar tu perfil profesional con habilidades, especialidades y redes. Entra al bot y elige la opción *1. Completar perfil profesional*.`;
   }
-  return "✅ Tu perfil en TinkuBot fue aprobado. Ya puedes responder solicitudes cuando te escribamos.";
+  return "✅ Tu registro básico fue aprobado. Ya formas parte de TinkuBot. El siguiente paso es completar tu perfil profesional con habilidades, especialidades y redes. Entra al bot y elige la opción *1. Completar perfil profesional*.";
+};
+
+const construirMensajeRevisionPerfilProfesional = (nombre) => {
+  const safeName = limpiarTexto(nombre);
+  if (safeName) {
+    return `✅ Hola *${safeName}*, tu perfil profesional fue enviado a revisión. Te notificaremos cuando quede aprobado.`;
+  }
+  return "✅ Tu perfil profesional fue enviado a revisión. Te notificaremos cuando quede aprobado.";
 };
 
 const construirMensajeRechazo = (nombre, motivo) => {
   const safeName = limpiarTexto(nombre);
   const safeReason = limpiarTexto(motivo);
   if (safeName && safeReason) {
-    return `❌ Hola ${safeName}, tu perfil en TinkuBot fue rechazado. Motivo: ${safeReason}. Puedes corregir tus datos y volver a postular.`;
+    return `❌ Hola ${safeName}, no pudimos aprobar tu registro básico. Motivo: ${safeReason}. Revisa tus datos y documentos y vuelve a intentarlo.`;
   }
   if (safeName) {
-    return `❌ Hola ${safeName}, tu perfil en TinkuBot fue rechazado. Puedes corregir tus datos y volver a postular.`;
+    return `❌ Hola ${safeName}, no pudimos aprobar tu registro básico con la información enviada. Revisa tus datos y documentos y vuelve a intentarlo.`;
   }
   if (safeReason) {
-    return `❌ Tu perfil en TinkuBot fue rechazado. Motivo: ${safeReason}. Puedes corregir tus datos y volver a postular.`;
+    return `❌ No pudimos aprobar tu registro básico. Motivo: ${safeReason}. Revisa tus datos y documentos y vuelve a intentarlo.`;
   }
-  return "❌ Tu perfil en TinkuBot fue rechazado. Puedes corregir tus datos y volver a postular.";
+  return "❌ No pudimos aprobar tu registro básico con la información enviada. Revisa tus datos y documentos y vuelve a intentarlo.";
 };
 
 const construirMensajeEntrevista = (nombre) => {
   const safeName = limpiarTexto(nombre);
   if (safeName) {
-    return `Hola ${safeName}, para continuar con tu registro necesitamos una breve entrevista de validación. Responde a este mensaje para coordinar.`;
+    return `Hola ${safeName}, necesitamos una validación adicional para continuar con tu registro básico. Responde a este mensaje para coordinar el siguiente paso.`;
   }
-  return "Para continuar con tu registro necesitamos una breve entrevista de validación. Responde a este mensaje para coordinar.";
+  return "Necesitamos una validación adicional para continuar con tu registro básico. Responde a este mensaje para coordinar el siguiente paso.";
 };
 
 /**
@@ -306,6 +314,16 @@ const normalizarEstadoProveedor = (registro) => {
   const estadoCrudo = limpiarTexto(registro?.status);
   const estado = estadoCrudo ? estadoCrudo.toLowerCase() : "";
 
+  if (["approved_basic", "aprobado_basico", "basic_approved"].includes(estado)) {
+    return "approved_basic";
+  }
+  if (
+    ["profile_pending_review", "perfil_pendiente_revision", "professional_review_pending"].includes(
+      estado,
+    )
+  ) {
+    return "profile_pending_review";
+  }
   if (["approved", "aprobado", "ok"].includes(estado)) {
     return "approved";
   }
@@ -566,7 +584,7 @@ const construirRutaSupabasePostRevision = () => {
     `limit=${pendingLimit}`,
     `order=created_at.desc`,
     "select=*,provider_services(service_name,service_name_normalized,display_order)",
-    "status=in.(interview_required,rejected)",
+    "status=in.(profile_pending_review,interview_required,rejected)",
   ];
 
   return `${supabaseProvidersTable}?${parametrosBase.join("&")}`;
@@ -677,8 +695,8 @@ async function aprobarProveedor(providerId, _payload = {}, requestId = null) {
   try {
     const timestamp = new Date().toISOString();
     const payloadPrincipal = {
-      verified: true,
-      status: "approved",
+      verified: false,
+      status: "approved_basic",
       updated_at: timestamp,
       approved_notified_at: timestamp,
     };
@@ -687,7 +705,7 @@ async function aprobarProveedor(providerId, _payload = {}, requestId = null) {
       providerId,
       payloadPrincipal,
       {
-        verified: true,
+        verified: false,
         updated_at: timestamp,
         approved_notified_at: timestamp,
       },
@@ -698,7 +716,7 @@ async function aprobarProveedor(providerId, _payload = {}, requestId = null) {
         ? datosActualizados[0]
         : null;
 
-    const mensaje = "Proveedor aprobado correctamente.";
+    const mensaje = "Onboarding básico aprobado correctamente.";
 
     const approvalMessage = construirMensajeAprobacion(registro?.full_name);
     const telefonoBruto = registro?.real_phone || registro?.phone;
@@ -711,7 +729,7 @@ async function aprobarProveedor(providerId, _payload = {}, requestId = null) {
 
     await invalidarCacheProveedor(registro?.phone, requestId);
 
-    return construirRespuestaAccion(providerId, "approved", mensaje, registro);
+    return construirRespuestaAccion(providerId, "approved_basic", mensaje, registro);
   } catch (error) {
     throw gestionarErrorAxios(error);
   }
@@ -742,7 +760,7 @@ async function rechazarProveedor(providerId, payload = {}, requestId = null) {
         ? datosActualizados[0]
         : null;
 
-    const mensaje = "Proveedor rechazado correctamente.";
+    const mensaje = "Onboarding básico rechazado correctamente.";
 
     const rejectionMessage = construirMensajeRechazo(
       registro?.full_name,
@@ -767,7 +785,13 @@ async function revisarProveedor(providerId, payload = {}, requestId = null) {
     const estadoSolicitado = limpiarTexto(payload.status);
     const estadoFinal =
       estadoSolicitado &&
-      ["approved", "rejected", "interview_required"].includes(estadoSolicitado)
+      [
+        "approved_basic",
+        "profile_pending_review",
+        "approved",
+        "rejected",
+        "interview_required",
+      ].includes(estadoSolicitado)
         ? estadoSolicitado
         : null;
 
@@ -787,7 +811,7 @@ async function revisarProveedor(providerId, payload = {}, requestId = null) {
       verified: estadoFinal === "approved",
     };
 
-    if (estadoFinal === "approved") {
+    if (estadoFinal === "approved" || estadoFinal === "approved_basic") {
       payloadBase.approved_notified_at = timestamp;
     } else if (estadoFinal === "rejected") {
       payloadBase.rejected_notified_at = timestamp;
@@ -821,8 +845,12 @@ async function revisarProveedor(providerId, payload = {}, requestId = null) {
 
     let mensajeProveedor = limpiarTexto(payload.message);
     if (!mensajeProveedor) {
-      if (estadoFinal === "approved") {
+      if (estadoFinal === "approved" || estadoFinal === "approved_basic") {
         mensajeProveedor = construirMensajeAprobacion(registro?.full_name);
+      } else if (estadoFinal === "profile_pending_review") {
+        mensajeProveedor = construirMensajeRevisionPerfilProfesional(
+          registro?.full_name,
+        );
       } else if (estadoFinal === "interview_required") {
         mensajeProveedor = construirMensajeEntrevista(registro?.full_name);
       } else {
@@ -852,7 +880,7 @@ async function revisarProveedor(providerId, payload = {}, requestId = null) {
     return construirRespuestaAccion(
       providerId,
       estadoFinal,
-      "Revisión guardada correctamente.",
+      "Resultado del onboarding guardado correctamente.",
       registro,
     );
   } catch (error) {

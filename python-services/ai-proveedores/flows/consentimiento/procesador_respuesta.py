@@ -31,6 +31,52 @@ from templates.registro import (  # noqa: E402
 logger = logging.getLogger(__name__)
 
 
+def _normalizar_estado_administrativo(
+    perfil_proveedor: Optional[Dict[str, Any]],
+) -> str:
+    if not perfil_proveedor:
+        return "pending"
+
+    estado_crudo = str(perfil_proveedor.get("status") or "").strip().lower()
+    if estado_crudo in {"approved_basic", "aprobado_basico", "basic_approved"}:
+        return "approved_basic"
+    if estado_crudo in {
+        "profile_pending_review",
+        "perfil_pendiente_revision",
+        "professional_review_pending",
+    }:
+        return "profile_pending_review"
+    if estado_crudo in {"approved", "aprobado", "ok"}:
+        return "approved"
+    if estado_crudo in {"rejected", "rechazado", "denied"}:
+        return "rejected"
+    if estado_crudo in {
+        "interview_required",
+        "entrevista",
+        "auditoria",
+        "needs_info",
+        "falta_info",
+        "faltainfo",
+    }:
+        return "interview_required"
+    if estado_crudo in {"pending", "pendiente", "new"}:
+        return "pending"
+    return "approved" if perfil_proveedor.get("verified") else "pending"
+
+
+def _perfil_tiene_menu_limitado(
+    perfil_proveedor: Optional[Dict[str, Any]],
+) -> bool:
+    if not perfil_proveedor:
+        return False
+    if _normalizar_estado_administrativo(perfil_proveedor) in {
+        "approved",
+        "approved_basic",
+    }:
+        return False
+    return _normalizar_estado_administrativo(perfil_proveedor) == "interview_required"
+
+
 def _resolver_opcion_consentimiento(carga: Dict[str, Any]) -> Optional[str]:
     """Mapea respuesta interactiva o textual a 1/2 para consentimiento."""
     seleccionado = str(carga.get("selected_option") or "").strip().lower()
@@ -113,8 +159,9 @@ async def procesar_respuesta_consentimiento(  # noqa: C901
             and perfil_proveedor.get("full_name")  # Verificar que tiene datos completos
             # Fase 4: Eliminada verificación de profession
         )
-        esta_verificado = bool(perfil_proveedor and perfil_proveedor.get("verified"))
-        menu_limitado = perfil_tiene_menu_limitado(perfil_proveedor)
+        estado_administrativo = _normalizar_estado_administrativo(perfil_proveedor)
+        esta_verificado = estado_administrativo in {"approved", "approved_basic"}
+        menu_limitado = _perfil_tiene_menu_limitado(perfil_proveedor)
 
         flujo["has_consent"] = True
         post_consent_state = flujo.pop("post_consent_state", None)
@@ -138,6 +185,10 @@ async def procesar_respuesta_consentimiento(  # noqa: C901
             flujo["menu_limitado"] = menu_limitado
         else:
             flujo["state"] = "awaiting_menu_option"
+            flujo["approved_basic"] = estado_administrativo == "approved_basic"
+            flujo["profile_pending_review"] = (
+                estado_administrativo == "profile_pending_review"
+            )
         await establecer_flujo(telefono, flujo)
 
         if supabase and proveedor_id:

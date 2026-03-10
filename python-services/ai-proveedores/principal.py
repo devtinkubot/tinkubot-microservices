@@ -61,17 +61,6 @@ ONBOARDING_STATES = {
     "awaiting_real_phone",
     "awaiting_city",
     "awaiting_name",
-    "awaiting_specialty",
-    "awaiting_add_another_service",
-    "awaiting_services_confirmation",
-    "awaiting_services_edit_action",
-    "awaiting_services_edit_replace_select",
-    "awaiting_services_edit_replace_input",
-    "awaiting_services_edit_delete_select",
-    "awaiting_services_edit_add",
-    "awaiting_experience",
-    "awaiting_email",
-    "awaiting_social_media",
     "awaiting_dni_front_photo",
     "awaiting_dni_back_photo",
     "awaiting_face_photo",
@@ -85,16 +74,24 @@ MENU_STATES = {
     "awaiting_social_media_update",
     "awaiting_service_action",
     "awaiting_active_service_action",
-    "awaiting_pending_service_action",
     "awaiting_service_add",
     "awaiting_service_add_confirmation",
     "awaiting_service_remove",
-    "awaiting_pending_service_select",
-    "awaiting_pending_service_add",
-    "awaiting_pending_service_add_confirmation",
     "awaiting_face_photo_update",
     "awaiting_dni_front_photo_update",
     "awaiting_dni_back_photo_update",
+}
+PROFILE_COMPLETION_STATES = {
+    "awaiting_specialty",
+    "awaiting_add_another_service",
+    "awaiting_services_confirmation",
+    "awaiting_services_edit_action",
+    "awaiting_services_edit_replace_select",
+    "awaiting_services_edit_replace_input",
+    "awaiting_services_edit_delete_select",
+    "awaiting_services_edit_add",
+    "awaiting_experience",
+    "awaiting_social_media",
 }
 MEDIA_STATES = {
     "awaiting_dni_front_photo",
@@ -299,7 +296,7 @@ async def _actualizar_ciclo_solicitud(
     await cliente_redis.set(clave, actual, expire=AVAILABILITY_RESULT_TTL_SECONDS)
 
 
-async def _registrar_respuesta_disponibilidad_si_aplica(
+async def _registrar_respuesta_disponibilidad_si_aplica(  # noqa: C901
     telefono: str, texto_mensaje: str, estado_actual: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
     decision = _parsear_respuesta_disponibilidad(texto_mensaje)
@@ -310,10 +307,12 @@ async def _registrar_respuesta_disponibilidad_si_aplica(
     clave_contexto = f"availability:provider:{telefono}:context"
     pendientes = await cliente_redis.get(clave_pendientes)
     contexto_disponibilidad = await cliente_redis.get(clave_contexto)
-    if estado_actual is not None and estado_actual in (ONBOARDING_STATES | MENU_STATES):
+    if estado_actual is not None and estado_actual in (
+        ONBOARDING_STATES | MENU_STATES | PROFILE_COMPLETION_STATES
+    ):
         logger.info(
             (
-                "availability_response_ignored_in_onboarding "
+                "availability_response_ignored_in_active_flow "
                 "provider=%s state=%s has_context=%s has_pending=%s"
             ),
             telefono,
@@ -327,7 +326,10 @@ async def _registrar_respuesta_disponibilidad_si_aplica(
         isinstance(contexto_disponibilidad, dict)
         and contexto_disponibilidad.get("expecting_response")
     )
-    mensaje_expirado = "*El tiempo de respuesta ha caducado y tu respuesta ya no contará para este requerimiento*"
+    mensaje_expirado = (
+        "*El tiempo de respuesta ha caducado y tu respuesta "
+        "ya no contará para este requerimiento*"
+    )
 
     # Mejora: manejar casos donde pendientes puede venir como string JSON
     # o no estar decodificado.
@@ -557,7 +559,7 @@ async def obtener_ciclo_disponibilidad(
     request_id: str,
     token: Optional[str] = Header(default=None, alias="x-internal-token"),
 ) -> Dict[str, Any]:
-    """Consulta el estado del ciclo de una solicitud de disponibilidad por request_id."""
+    """Consulta el estado del ciclo de una solicitud por `request_id`."""
     token_esperado = configuracion.internal_token
     if token_esperado and token != token_esperado:
         return {"success": False, "message": "Unauthorized"}
@@ -580,9 +582,7 @@ async def obtener_estado_disponibilidad_proveedor(
     phone: str,
     token: Optional[str] = Header(default=None, alias="x-internal-token"),
 ) -> Dict[str, Any]:
-    """
-    Consulta estado de disponibilidad por proveedor (pendientes, contexto y ciclos asociados).
-    """
+    """Consulta pendientes, contexto y ciclos de disponibilidad por proveedor."""
     token_esperado = configuracion.internal_token
     if token_esperado and token != token_esperado:
         return {"success": False, "message": "Unauthorized"}

@@ -3,7 +3,7 @@
 from typing import Any, Dict, Optional
 
 from services.servicios_proveedor.utilidades import limpiar_espacios
-from templates.registro import preguntar_servicios_registro
+from templates.registro import solicitar_foto_dni_frontal
 
 
 def manejar_espera_nombre(
@@ -26,11 +26,10 @@ def manejar_espera_nombre(
         }
 
     flujo["name"] = nombre
-    # Fase 4: Eliminada referencia a awaiting_profession - salto directo a awaiting_specialty
-    flujo["state"] = "awaiting_specialty"
+    flujo["state"] = "awaiting_dni_front_photo"
     return {
         "success": True,
         "messages": [
-            {"response": preguntar_servicios_registro()}
+            {"response": solicitar_foto_dni_frontal()}
         ],
     }

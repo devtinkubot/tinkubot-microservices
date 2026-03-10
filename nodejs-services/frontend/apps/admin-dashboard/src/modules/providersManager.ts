@@ -125,6 +125,10 @@ function formatearFechaLarga(valor?: string | null): string {
 
 function obtenerEtiquetaEstadoListado(status?: ProviderRecord['status'] | null): string {
   switch (status) {
+    case 'approved_basic':
+      return 'Aprobado básico';
+    case 'profile_pending_review':
+      return 'Perfil en revisión';
     case 'interview_required':
       return 'Entrevista';
     case 'rejected':
@@ -139,6 +143,10 @@ function obtenerEtiquetaEstadoListado(status?: ProviderRecord['status'] | null):
 
 function obtenerClaseEstadoListado(status?: ProviderRecord['status'] | null): string {
   switch (status) {
+    case 'approved_basic':
+      return 'bg-info text-dark';
+    case 'profile_pending_review':
+      return 'bg-primary';
     case 'interview_required':
       return 'bg-secondary';
     case 'rejected':
@@ -161,20 +169,20 @@ function actualizarEncabezadoBucket() {
     if (titulo) titulo.textContent = 'Pendientes post-revisión';
     if (subtitulo) {
       subtitulo.textContent =
-        'Gestiona proveedores que ya tuvieron una revisión previa (entrevista o rechazo).';
+        'Gestiona casos con validación adicional o rechazo posterior al onboarding básico.';
     }
     if (vacio) vacio.textContent = 'No hay proveedores pendientes post-revisión.';
     if (textoCarga) textoCarga.textContent = 'Obteniendo proveedores post-revisión...';
     return;
   }
 
-  if (titulo) titulo.textContent = 'Proveedores nuevos';
+  if (titulo) titulo.textContent = 'Onboarding por revisar';
   if (subtitulo) {
     subtitulo.textContent =
-      'Revisa y aprueba a los proveedores recién registrados antes de habilitarlos.';
+      'Revisa consentimiento, ciudad, identidad y documentos del proveedor antes del alta inicial.';
   }
-  if (vacio) vacio.textContent = 'No hay proveedores nuevos por revisar.';
-  if (textoCarga) textoCarga.textContent = 'Obteniendo proveedores nuevos...';
+  if (vacio) vacio.textContent = 'No hay onboardings pendientes por revisar.';
+  if (textoCarga) textoCarga.textContent = 'Obteniendo onboardings pendientes...';
 }
 
 function escaparHtml(texto: string): string {
@@ -188,19 +196,6 @@ function escaparHtml(texto: string): string {
     };
     return mapa[caracter] ?? caracter;
   });
-}
-
-function obtenerServiciosProveedor(proveedor: ProviderRecord): string[] {
-  if (Array.isArray(proveedor.servicesList) && proveedor.servicesList.length > 0) {
-    return proveedor.servicesList;
-  }
-  if (typeof proveedor.servicesRaw === 'string' && proveedor.servicesRaw.trim().length > 0) {
-    return proveedor.servicesRaw
-      .split('|')
-      .map(servicio => servicio.trim())
-      .filter(servicio => servicio.length > 0);
-  }
-  return [];
 }
 
 function establecerEstadoCarga(estaCargando: boolean) {
@@ -279,30 +274,12 @@ function actualizarDocumentos(proveedor: ProviderRecord) {
   placeholder.style.display = 'none';
 }
 
-function actualizarServicios(proveedor: ProviderRecord) {
-  const contenedor = obtenerElemento<HTMLDivElement>('#provider-detail-services');
-  if (!contenedor) return;
-
-  const servicios = obtenerServiciosProveedor(proveedor);
-  if (servicios.length === 0) {
-    contenedor.innerHTML = '<span class="text-muted">Sin servicios registrados</span>';
-    return;
-  }
-
-  const chips = servicios
-    .map(servicio => `<span class="provider-service-badge">${escaparHtml(servicio)}</span>`)
-    .join('');
-  contenedor.innerHTML = chips;
-}
-
 function actualizarContacto(proveedor: ProviderRecord) {
   const telefono = proveedor.contactPhone ?? proveedor.phone ?? null;
-  const email = proveedor.contactEmail ?? proveedor.email ?? null;
   const nombre = proveedor.contact ?? proveedor.name ?? 'Contacto';
 
   establecerTexto('#provider-detail-phone', telefono, { fallback: 'Sin número' });
   establecerTexto('#provider-detail-contact-name', nombre);
-  establecerTexto('#provider-detail-email', email, { fallback: 'Sin correo' });
 
   const telefonoBtn = obtenerElemento<HTMLButtonElement>('#provider-detail-copy-phone');
   if (telefonoBtn) {
@@ -326,35 +303,6 @@ function actualizarContacto(proveedor: ProviderRecord) {
     }
   }
 
-  const emailLink = obtenerElemento<HTMLAnchorElement>('#provider-detail-email');
-  if (emailLink) {
-    if (email) {
-      emailLink.href = `mailto:${email}`;
-      emailLink.classList.remove('text-muted');
-      emailLink.style.pointerEvents = 'auto';
-      emailLink.tabIndex = 0;
-    } else {
-      emailLink.href = '#';
-      emailLink.classList.add('text-muted');
-      emailLink.style.pointerEvents = 'none';
-      emailLink.tabIndex = -1;
-    }
-  }
-
-  const socialWrapper = obtenerElemento<HTMLDivElement>('#provider-detail-social-wrapper');
-  const socialLink = obtenerElemento<HTMLAnchorElement>('#provider-detail-social-link');
-  if (socialWrapper && socialLink) {
-    if (proveedor.socialMediaUrl) {
-      socialLink.href = proveedor.socialMediaUrl;
-      socialLink.textContent =
-        proveedor.socialMediaType && proveedor.socialMediaType.toLowerCase() !== 'otro'
-          ? `${proveedor.socialMediaType} · ${proveedor.socialMediaUrl}`
-          : proveedor.socialMediaUrl;
-      socialWrapper.style.display = 'block';
-    } else {
-      socialWrapper.style.display = 'none';
-    }
-  }
 }
 
 function actualizarNotas(proveedor: ProviderRecord) {
@@ -374,6 +322,117 @@ function actualizarNotas(proveedor: ProviderRecord) {
   if (notasTextarea) {
     notasTextarea.value = proveedor.notes ?? '';
   }
+}
+
+function actualizarPerfilProfesional(proveedor: ProviderRecord) {
+  const servicios = obtenerElemento<HTMLDivElement>('#provider-detail-services');
+  const experiencia = obtenerElemento<HTMLElement>('#provider-detail-experience');
+  const redSocial = obtenerElemento<HTMLElement>('#provider-detail-social-media');
+
+  if (servicios) {
+    const lista = Array.isArray(proveedor.servicesList)
+      ? proveedor.servicesList.filter(item => typeof item === 'string' && item.trim().length > 0)
+      : [];
+
+    if (lista.length > 0) {
+      servicios.innerHTML = `
+        <ul class="mb-0 ps-3">
+          ${lista.map(item => `<li>${escaparHtml(item)}</li>`).join('')}
+        </ul>
+      `;
+      servicios.classList.remove('text-muted');
+    } else {
+      servicios.textContent = 'Sin servicios registrados';
+      servicios.classList.add('text-muted');
+    }
+  }
+
+  if (experiencia) {
+    const valor =
+      typeof proveedor.experienceYears === 'number' && Number.isFinite(proveedor.experienceYears)
+        ? `${proveedor.experienceYears} año${proveedor.experienceYears === 1 ? '' : 's'}`
+        : null;
+    establecerTexto('#provider-detail-experience', valor, {
+      fallback: 'Sin experiencia registrada'
+    });
+  }
+
+  if (redSocial) {
+    const url = proveedor.socialMediaUrl?.trim();
+    const tipo = proveedor.socialMediaType?.trim();
+    if (url) {
+      const etiqueta = tipo ? `${tipo}: ${url}` : url;
+      redSocial.innerHTML = `<a href="${escaparHtml(url)}" target="_blank" rel="noopener noreferrer">${escaparHtml(
+        etiqueta
+      )}</a>`;
+      redSocial.classList.remove('text-muted');
+    } else {
+      redSocial.textContent = 'Sin red social registrada';
+      redSocial.classList.add('text-muted');
+    }
+  }
+}
+
+function actualizarCopyRevision(proveedor: ProviderRecord) {
+  const tituloBasico = obtenerElemento<HTMLElement>('#provider-basic-section-title');
+  const tituloPerfil = obtenerElemento<HTMLElement>('#provider-professional-title');
+  const tituloRevision = obtenerElemento<HTMLElement>('#provider-review-section-title');
+  const checklist = obtenerElemento<HTMLElement>('#provider-review-check-docs-label');
+  const ayudaMensaje = obtenerElemento<HTMLElement>('#provider-review-message-help');
+  const ayudaFooter = obtenerElemento<HTMLElement>('#provider-review-footer-help');
+  const mensajeTextarea = obtenerElemento<HTMLTextAreaElement>('#provider-review-message');
+
+  const esRevisionProfesional = proveedor.status === 'profile_pending_review';
+
+  if (tituloBasico) {
+    tituloBasico.textContent = esRevisionProfesional ? 'Alta básica verificada' : 'Onboarding básico';
+  }
+  if (tituloPerfil) {
+    tituloPerfil.textContent = 'Perfil profesional';
+  }
+  if (tituloRevision) {
+    tituloRevision.textContent = esRevisionProfesional
+      ? 'Revisión administrativa del perfil profesional'
+      : 'Revisión administrativa del onboarding';
+  }
+  if (checklist) {
+    checklist.textContent = esRevisionProfesional
+      ? 'Confirmo que revisé servicios, experiencia, red social y coherencia general del perfil profesional.'
+      : 'Confirmo que revisé nombre, ciudad, consentimiento y documentación del proveedor.';
+  }
+  if (ayudaMensaje) {
+    ayudaMensaje.textContent = esRevisionProfesional
+      ? 'Se enviará este mensaje al proveedor junto con el resultado de la revisión profesional.'
+      : 'Se enviará este mensaje al proveedor junto con el resultado del onboarding básico.';
+  }
+  if (mensajeTextarea) {
+    mensajeTextarea.placeholder = esRevisionProfesional
+      ? 'Ej. Tu perfil profesional fue aprobado. Ya puedes operar como proveedor en TinkuBot.'
+      : 'Ej. Tu registro básico fue aprobado. El siguiente paso será completar tu perfil profesional.';
+  }
+  if (ayudaFooter) {
+    ayudaFooter.textContent = esRevisionProfesional
+      ? 'Se notificará al proveedor vía WhatsApp con el resultado de la revisión profesional.'
+      : 'Se notificará al proveedor vía WhatsApp con el resultado y el siguiente paso.';
+  }
+}
+
+function actualizarDebugProveedor(proveedor: ProviderRecord) {
+  const debug = obtenerElemento<HTMLElement>('#provider-debug-content');
+  if (!debug) return;
+
+  const servicios = Array.isArray(proveedor.servicesList)
+    ? proveedor.servicesList.filter(item => typeof item === 'string' && item.trim().length > 0)
+    : [];
+  const experiencia =
+    typeof proveedor.experienceYears === 'number' && Number.isFinite(proveedor.experienceYears)
+      ? String(proveedor.experienceYears)
+      : 'null';
+  const redSocial = proveedor.socialMediaUrl?.trim() ? 'si' : 'no';
+
+  debug.textContent =
+    `status=${proveedor.status ?? 'null'} | services=${servicios.length} | ` +
+    `experience=${experiencia} | social=${redSocial}`;
 }
 
 function limpiarFormularioRevision() {
@@ -406,6 +465,10 @@ function limpiarFormularioRevision() {
   if (hiddenId) {
     hiddenId.value = '';
   }
+  const debug = obtenerElemento<HTMLElement>('#provider-debug-content');
+  if (debug) {
+    debug.textContent = 'Sin datos';
+  }
 }
 
 function actualizarBadgeEstado(status: ProviderRecord['status']) {
@@ -422,6 +485,14 @@ function actualizarBadgeEstado(status: ProviderRecord['status']) {
   );
 
   switch (status) {
+    case 'approved_basic':
+      badge.classList.add('bg-info', 'text-dark');
+      badge.textContent = 'Aprobado básico';
+      break;
+    case 'profile_pending_review':
+      badge.classList.add('bg-primary');
+      badge.textContent = 'Perfil en revisión';
+      break;
     case 'approved':
       badge.classList.add('bg-success');
       badge.textContent = 'Aprobado';
@@ -445,6 +516,10 @@ function actualizarDetalleProveedor(proveedor: ProviderRecord) {
   establecerTexto('#provider-detail-name', proveedor.name);
   actualizarBadgeEstado(proveedor.status);
   establecerTexto('#provider-detail-registered', formatearFechaLarga(proveedor.registeredAt));
+  establecerTexto(
+    '#provider-detail-stage',
+    proveedor.status === 'profile_pending_review' ? 'Revisión profesional' : 'Onboarding básico'
+  );
 
   const ubicacion =
     proveedor.city && proveedor.province
@@ -455,23 +530,9 @@ function actualizarDetalleProveedor(proveedor: ProviderRecord) {
   });
 
   establecerTexto(
-    '#provider-detail-experience',
-    typeof proveedor.experienceYears === 'number'
-      ? `${proveedor.experienceYears} año${proveedor.experienceYears === 1 ? '' : 's'}`
-      : null,
-    { fallback: 'No especifica' }
-  );
-
-  establecerTexto(
     '#provider-detail-consent',
     proveedor.hasConsent ? 'Consentimiento registrado' : 'Sin consentimiento',
     { fallback: 'Sin datos' }
-  );
-
-  establecerTexto(
-    '#provider-detail-rating',
-    typeof proveedor.rating === 'number' ? proveedor.rating.toFixed(1) : null,
-    { fallback: 'Sin calificación' }
   );
 
   establecerTexto(
@@ -482,10 +543,12 @@ function actualizarDetalleProveedor(proveedor: ProviderRecord) {
     { fallback: 'Pendiente de revisión' }
   );
 
-  actualizarServicios(proveedor);
   actualizarContacto(proveedor);
+  actualizarPerfilProfesional(proveedor);
   actualizarDocumentos(proveedor);
   actualizarNotas(proveedor);
+  actualizarCopyRevision(proveedor);
+  actualizarDebugProveedor(proveedor);
 
   const estadoSelect = obtenerElemento<HTMLSelectElement>('#provider-review-status');
   if (estadoSelect) {
@@ -629,18 +692,26 @@ function construirMensajeSugerido(
 ): string {
   const nombreLimpio = nombre?.trim();
   switch (status) {
+    case 'approved_basic':
+      return nombreLimpio
+        ? `✅ Hola *${nombreLimpio}*, tu registro básico fue aprobado. Ya formas parte de TinkuBot. El siguiente paso es completar tu perfil profesional con habilidades, especialidades y redes. Entra al bot y elige la opción *1. Completar perfil profesional*.`
+        : '✅ Tu registro básico fue aprobado. Ya formas parte de TinkuBot. El siguiente paso es completar tu perfil profesional con habilidades, especialidades y redes. Entra al bot y elige la opción *1. Completar perfil profesional*.';
+    case 'profile_pending_review':
+      return nombreLimpio
+        ? `✅ Hola *${nombreLimpio}*, tu perfil profesional fue enviado a revisión. Te notificaremos cuando quede aprobado.`
+        : '✅ Tu perfil profesional fue enviado a revisión. Te notificaremos cuando quede aprobado.';
     case 'approved':
       return nombreLimpio
-        ? `✅ Hola *${nombreLimpio}*, tu perfil en TinkuBot fue aprobado. Ya puedes responder solicitudes cuando te escribamos.`
-        : '✅ Tu perfil en TinkuBot fue aprobado. Ya puedes responder solicitudes cuando te escribamos.';
+        ? `✅ Hola *${nombreLimpio}*, tu perfil fue aprobado. Ya puedes operar como proveedor en TinkuBot.`
+        : '✅ Tu perfil fue aprobado. Ya puedes operar como proveedor en TinkuBot.';
     case 'interview_required':
       return nombreLimpio
-        ? `Hola ${nombreLimpio}, para continuar con tu registro necesitamos una breve entrevista de validación. Responde a este mensaje para coordinar.`
-        : 'Para continuar con tu registro necesitamos una breve entrevista de validación. Responde a este mensaje para coordinar.';
+        ? `Hola ${nombreLimpio}, necesitamos una validación adicional para continuar con tu registro básico. Responde a este mensaje para coordinar el siguiente paso.`
+        : 'Necesitamos una validación adicional para continuar con tu registro básico. Responde a este mensaje para coordinar el siguiente paso.';
     case 'rejected':
       return nombreLimpio
-        ? `Hola ${nombreLimpio}, por ahora no podremos aprobar tu perfil. Si quieres postular más adelante, escríbenos.`
-        : 'Por ahora no podremos aprobar tu perfil. Si quieres postular más adelante, escríbenos.';
+        ? `Hola ${nombreLimpio}, no pudimos aprobar tu registro básico con la información enviada. Revisa tus datos y documentos y vuelve a intentarlo.`
+        : 'No pudimos aprobar tu registro básico con la información enviada. Revisa tus datos y documentos y vuelve a intentarlo.';
     default:
       return '';
   }
@@ -658,13 +729,12 @@ function manejarAccionModal() {
   const mensajeTextarea = obtenerElemento<HTMLTextAreaElement>('#provider-review-message');
   const revisorInput = obtenerElemento<HTMLInputElement>('#provider-reviewer-name');
   const checklistDocs = obtenerElemento<HTMLInputElement>('#provider-review-check-docs');
-  const telefonoInput = obtenerElemento<HTMLInputElement>('#provider-phone');
 
   const estadoSeleccionado = (estadoSelect?.value || '') as ProviderRecord['status'];
   const notas = notasTextarea?.value.trim() ?? '';
   const mensaje = mensajeTextarea?.value.trim() ?? '';
   const reviewer = revisorInput?.value.trim() ?? undefined;
-  const telefono = limpiarTelefono(telefonoInput?.value || '');
+  const telefono = limpiarTelefono(proveedor.contactPhone ?? proveedor.phone ?? '');
 
   if (!estadoSeleccionado) {
     mostrarErrorModal('Selecciona un resultado antes de continuar.');
@@ -672,7 +742,12 @@ function manejarAccionModal() {
     return;
   }
 
-  if (estadoSeleccionado !== 'approved' && mensaje.length === 0) {
+  if (
+    estadoSeleccionado !== 'approved_basic' &&
+    estadoSeleccionado !== 'profile_pending_review' &&
+    estadoSeleccionado !== 'approved' &&
+    mensaje.length === 0
+  ) {
     mostrarErrorModal('Ingresa el mensaje que recibirá el proveedor.');
     mensajeTextarea?.focus();
     return;
@@ -684,7 +759,11 @@ function manejarAccionModal() {
     return;
   }
 
-  if (estadoSeleccionado === 'approved' && checklistDocs && !checklistDocs.checked) {
+  if (
+    (estadoSeleccionado === 'approved_basic' || estadoSeleccionado === 'approved') &&
+    checklistDocs &&
+    !checklistDocs.checked
+  ) {
     mostrarErrorModal('Confirma que revisaste los documentos del proveedor.');
     checklistDocs.focus();
     return;
@@ -751,7 +830,6 @@ function renderizarProveedores() {
         name,
         businessName,
         contact,
-        contactEmail,
         contactPhone,
         registeredAt,
         notes,
@@ -761,7 +839,6 @@ function renderizarProveedores() {
 
       const infoContacto = [
         contact ?? null,
-        contactEmail ? `<span class="text-muted d-block">${escaparHtml(contactEmail)}</span>` : null,
         contactPhone ? `<span class="text-muted d-block">${escaparHtml(contactPhone)}</span>` : null
       ]
         .filter(Boolean)

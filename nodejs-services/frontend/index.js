@@ -185,10 +185,14 @@ app.use(requireAuth);
 if (fs.existsSync(dashboardDistPath)) {
   app.use(
     express.static(dashboardDistPath, {
-      maxAge: STATIC_MAX_AGE_SECONDS * 1000,
+      maxAge: 0,
       etag: true,
-      setHeaders: res => {
-        res.setHeader('Cache-Control', `public, max-age=${STATIC_MAX_AGE_SECONDS}`);
+      setHeaders: (res, filePath) => {
+        const isDashboardHtml = filePath.endsWith(`${path.sep}index.html`);
+        res.setHeader(
+          'Cache-Control',
+          isDashboardHtml ? 'no-store' : 'no-store, max-age=0, must-revalidate'
+        );
       }
     })
   );
@@ -256,8 +260,18 @@ app.get('/login', (req, res) => {
 // Rutas
 app.get('/', (req, res) => {
   if (existeCompilacionDashboard()) {
+    res.setHeader('Cache-Control', 'no-store');
     return res.sendFile(path.join(dashboardDistPath, 'index.html'));
   }
+  return res.sendFile(path.join(publicPath, 'admin-dashboard.html'));
+});
+
+app.get('/admin-dashboard', (req, res) => {
+  if (existeCompilacionDashboard()) {
+    res.setHeader('Cache-Control', 'no-store');
+    return res.sendFile(path.join(dashboardDistPath, 'index.html'));
+  }
+  res.setHeader('Cache-Control', 'no-store');
   return res.sendFile(path.join(publicPath, 'admin-dashboard.html'));
 });
 

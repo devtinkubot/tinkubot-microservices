@@ -6,7 +6,6 @@ de servicios que ofrece el proveedor: agregar, eliminar, errores, etc.
 
 from typing import List
 
-
 # ==================== ERRORES DE LÍMITE ====================
 
 
@@ -26,15 +25,6 @@ def error_limite_servicios_alcanzado(max_servicios: int) -> str:
     return (
         f"Ya tienes {max_servicios} servicios registrados. "
         "Elimina uno antes de agregar otro."
-    )
-
-
-def error_limite_servicios_pendientes(max_servicios: int) -> str:
-    """Informa que un pendiente no puede precisarse sin liberar un cupo activo."""
-    return (
-        f"Ya tienes {max_servicios} servicios activos. "
-        "Para precisar este servicio pendiente, primero elimina uno de tus "
-        "servicios activos y libera un cupo."
     )
 
 
