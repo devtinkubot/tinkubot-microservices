@@ -3,16 +3,20 @@
 import re
 from typing import Any, Dict, List, Optional
 
-from flows.constructores import construir_menu_principal, construir_menu_servicios
+from flows.constructores import construir_menu_servicios, construir_payload_menu_principal
 from infrastructure.openai import TransformadorServicios
 from services import actualizar_servicios
 from services.servicios_proveedor.constantes import SERVICIOS_MAXIMOS
 from services.servicios_proveedor.utilidades import (
+    clasificar_servicio_critico,
     construir_listado_servicios,
     dividir_cadena_servicios,
     es_servicio_critico_generico,
     limpiar_texto_servicio,
     mensaje_pedir_precision_servicio,
+    registrar_evento_servicio_generico,
+    registrar_sugerencia_servicio_generico,
+    refrescar_taxonomia_dominios_criticos,
 )
 from templates.interfaz import (
     confirmar_servicio_eliminado,
@@ -34,8 +38,8 @@ from templates.interfaz import (
 _FLUJO_KEY_SERVICIOS_TEMP = "service_add_temporales"
 
 
-def _menu_principal_desde_flujo(flujo: Dict[str, Any]) -> str:
-    return construir_menu_principal(
+def _menu_principal_desde_flujo(flujo: Dict[str, Any]) -> Dict[str, Any]:
+    return construir_payload_menu_principal(
         esta_registrado=True,
         menu_limitado=bool(flujo.get("menu_limitado")),
         approved_basic=bool(flujo.get("approved_basic")),
@@ -138,7 +142,7 @@ async def manejar_accion_servicios(
         flujo["state"] = "awaiting_menu_option"
         return {
             "success": True,
-            "messages": [{"response": _menu_principal_desde_flujo(flujo)}],
+            "messages": [_menu_principal_desde_flujo(flujo)],
         }
 
     return {
@@ -177,7 +181,7 @@ async def manejar_agregar_servicios(
         flujo["state"] = "awaiting_menu_option"
         return {
             "success": True,
-            "messages": [{"response": _menu_principal_desde_flujo(flujo)}],
+            "messages": [_menu_principal_desde_flujo(flujo)],
         }
 
     servicios_actuales = flujo.get("services") or []
@@ -247,6 +251,7 @@ async def manejar_agregar_servicios(
             ],
         }
 
+    await refrescar_taxonomia_dominios_criticos()
     servicio_generico = next(
         (
             servicio
@@ -256,6 +261,33 @@ async def manejar_agregar_servicios(
         None,
     )
     if servicio_generico:
+        clasificacion = clasificar_servicio_critico(servicio_generico)
+        await registrar_sugerencia_servicio_generico(
+            servicio_generico,
+            contexto=texto_mensaje,
+        )
+        await registrar_evento_servicio_generico(
+            event_name="generic_service_blocked",
+            servicio=servicio_generico,
+            dominio=clasificacion.get("domain"),
+            source=clasificacion.get("source") or "unknown",
+            contexto=texto_mensaje,
+        )
+        if not clasificacion.get("clarification_question"):
+            await registrar_evento_servicio_generico(
+                event_name="precision_prompt_fallback_used",
+                servicio=servicio_generico,
+                dominio=clasificacion.get("domain"),
+                source=clasificacion.get("source") or "unknown",
+                contexto=texto_mensaje,
+            )
+        await registrar_evento_servicio_generico(
+            event_name="clarification_requested",
+            servicio=servicio_generico,
+            dominio=clasificacion.get("domain"),
+            source=clasificacion.get("source") or "unknown",
+            contexto=texto_mensaje,
+        )
         flujo["state"] = "awaiting_service_add"
         return {
             "success": True,
@@ -306,7 +338,7 @@ async def manejar_confirmacion_agregar_servicios(
         flujo.pop(_FLUJO_KEY_SERVICIOS_TEMP, None)
         return {
             "success": True,
-            "messages": [{"response": _menu_principal_desde_flujo(flujo)}],
+            "messages": [_menu_principal_desde_flujo(flujo)],
         }
 
     texto_limpio = (texto_mensaje or "").strip().lower()
@@ -359,6 +391,7 @@ async def manejar_confirmacion_agregar_servicios(
                     }
                 ],
             }
+        await refrescar_taxonomia_dominios_criticos()
         servicio_generico = next(
             (
                 servicio
@@ -368,6 +401,33 @@ async def manejar_confirmacion_agregar_servicios(
             None,
         )
         if servicio_generico:
+            clasificacion = clasificar_servicio_critico(servicio_generico)
+            await registrar_sugerencia_servicio_generico(
+                servicio_generico,
+                contexto=texto_mensaje,
+            )
+            await registrar_evento_servicio_generico(
+                event_name="generic_service_blocked",
+                servicio=servicio_generico,
+                dominio=clasificacion.get("domain"),
+                source=clasificacion.get("source") or "unknown",
+                contexto=texto_mensaje,
+            )
+            if not clasificacion.get("clarification_question"):
+                await registrar_evento_servicio_generico(
+                    event_name="precision_prompt_fallback_used",
+                    servicio=servicio_generico,
+                    dominio=clasificacion.get("domain"),
+                    source=clasificacion.get("source") or "unknown",
+                    contexto=texto_mensaje,
+                )
+            await registrar_evento_servicio_generico(
+                event_name="clarification_requested",
+                servicio=servicio_generico,
+                dominio=clasificacion.get("domain"),
+                source=clasificacion.get("source") or "unknown",
+                contexto=texto_mensaje,
+            )
             return {
                 "success": True,
                 "messages": [
@@ -477,7 +537,7 @@ async def manejar_eliminar_servicio(
         flujo["state"] = "awaiting_menu_option"
         return {
             "success": True,
-            "messages": [{"response": _menu_principal_desde_flujo(flujo)}],
+            "messages": [_menu_principal_desde_flujo(flujo)],
         }
 
     texto_ingresado = (texto_mensaje or "").strip()

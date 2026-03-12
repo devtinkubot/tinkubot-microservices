@@ -13,6 +13,7 @@ from services.registro.parser_ubicacion import (
     validar_y_normalizar_ubicacion,
 )
 from infrastructure.database import run_supabase
+from flows.constructores import construir_payload_menu_principal
 from services.servicios_proveedor.utilidades import limpiar_espacios
 from templates.registro import (
     error_ciudad_caracteres_invalidos,
@@ -223,11 +224,8 @@ async def manejar_espera_ciudad(
 
     # Persistimos en minúsculas para mantener consistencia histórica.
     ciudad_normalizada = canonica.lower().strip()
-
-    # Guardar ciudad normalizada
     flujo["city"] = ciudad_normalizada
     flujo["city_confirmed_at"] = datetime.now(timezone.utc).isoformat()
-    flujo["state"] = "awaiting_name"
     if proveedor_id:
         try:
             await _persistir_ubicacion_proveedor(
@@ -240,6 +238,22 @@ async def manejar_espera_ciudad(
         except Exception:
             pass
 
+    if flujo.get("profile_edit_mode") == "personal_city":
+        flujo.pop("profile_edit_mode", None)
+        flujo["state"] = "awaiting_menu_option"
+        return {
+            "success": True,
+            "messages": [
+                {"response": "✅ Tu ubicación principal fue actualizada correctamente."},
+                construir_payload_menu_principal(
+                    esta_registrado=True,
+                    menu_limitado=bool(flujo.get("menu_limitado")),
+                    approved_basic=bool(flujo.get("approved_basic")),
+                ),
+            ],
+        }
+
+    flujo["state"] = "awaiting_name"
     return {
         "success": True,
         "messages": [{"response": preguntar_nombre()}],

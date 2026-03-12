@@ -48,26 +48,6 @@ _VERBOS_ACCION_USUARIO = {
     "tramitar",
 }
 
-_SERVICIOS_GENERICOS_CRITICOS = {
-    "asesoria legal": "legal",
-    "servicio legal": "legal",
-    "legal": "legal",
-    "transporte mercancias": "transporte",
-    "transporte mercaderia": "transporte",
-    "transporte de mercancias": "transporte",
-    "transporte de mercaderia": "transporte",
-    "transporte carga": "transporte",
-    "transporte de carga": "transporte",
-    "transporte terrestre": "transporte",
-    "transporte maritimo": "transporte",
-    "transporte aereo": "transporte",
-    "servicios tecnologicos": "tecnologia",
-    "servicio tecnologico": "tecnologia",
-    "consultoria tecnologica": "tecnologia",
-    "consultoria tecnologia": "tecnologia",
-    "desarrollo tecnologico": "tecnologia",
-}
-
 _RESPUESTAS_META_NO_UTILES = {
     "no entiendo",
     "no comprendo",
@@ -125,9 +105,6 @@ def _es_respuesta_seguimiento_concreta(
         return False
     if _es_respuesta_meta_no_util(texto):
         return False
-    if _detectar_servicio_generico_critico(servicio_extraido):
-        return False
-
     tokens_texto = _tokens_relevantes(texto)
     tokens_servicio = _tokens_relevantes(servicio_extraido)
 
@@ -147,10 +124,6 @@ def _construir_contexto_con_hint(
     if hint and detalle:
         return f"Servicio de referencia: {hint}. Necesidad del usuario: {detalle}"
     return detalle or hint
-
-
-def _detectar_servicio_generico_critico(servicio: Optional[str]) -> Optional[str]:
-    return _SERVICIOS_GENERICOS_CRITICOS.get(_normalizar_texto(servicio or ""))
 
 
 def _es_respuesta_meta_no_util(texto: str) -> bool:
@@ -190,6 +163,18 @@ async def procesar_estado_esperando_servicio(
     prompt_inicial: str,
     extraer_fn: Callable[[str], Awaitable[Optional[str]]],
     validar_necesidad_fn: Optional[Callable[[str], Awaitable[bool]]] = None,
+    detectar_dominio_generico_fn: Optional[
+        Callable[[Optional[str]], Awaitable[Optional[str]]]
+    ] = None,
+    construir_mensaje_precision_fn: Optional[
+        Callable[[Optional[str]], Awaitable[Optional[str]]]
+    ] = None,
+    registrar_sugerencia_fn: Optional[
+        Callable[[str, Optional[str]], Awaitable[None]]
+    ] = None,
+    registrar_evento_fn: Optional[
+        Callable[..., Awaitable[None]]
+    ] = None,
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """Procesa el estado `awaiting_service`.
 
@@ -254,7 +239,12 @@ async def procesar_estado_esperando_servicio(
         profesion = None
 
     valor_servicio = (profesion or "").strip()
-    dominio_generico = _detectar_servicio_generico_critico(valor_servicio)
+    dominio_generico = None
+    dominio_generico_origen = None
+    if detectar_dominio_generico_fn:
+        dominio_generico = await detectar_dominio_generico_fn(valor_servicio)
+        if dominio_generico:
+            dominio_generico_origen = "taxonomy"
     respuesta_seguimiento_concreta = _es_respuesta_seguimiento_concreta(
         limpio,
         valor_servicio,
@@ -295,6 +285,16 @@ async def procesar_estado_esperando_servicio(
         }
 
     if dominio_generico:
+        if registrar_sugerencia_fn:
+            await registrar_sugerencia_fn(valor_servicio, limpio)
+        if registrar_evento_fn:
+            await registrar_evento_fn(
+                event_name="generic_service_blocked",
+                domain_code=dominio_generico,
+                fallback_source=dominio_generico_origen,
+                service_text=valor_servicio,
+                context_excerpt=limpio,
+            )
         flujo["state"] = "awaiting_service"
         flujo["service_candidate_hint"] = valor_servicio
         flujo["service_candidate_hint_label"] = valor_servicio
@@ -303,14 +303,44 @@ async def procesar_estado_esperando_servicio(
         flujo.pop("descripcion_problema", None)
         from templates.mensajes.validacion import mensaje_solicitar_precision_servicio
 
+        mensaje_precision = (
+            await construir_mensaje_precision_fn(valor_servicio)
+            if construir_mensaje_precision_fn
+            else None
+        )
+        if not mensaje_precision:
+            logger.warning(
+                "precision_prompt_fallback_used domain='%s' service='%s' origin='%s'",
+                dominio_generico,
+                valor_servicio,
+                dominio_generico_origen or "unknown",
+            )
+            if registrar_evento_fn:
+                await registrar_evento_fn(
+                    event_name="precision_prompt_fallback_used",
+                    domain_code=dominio_generico,
+                    fallback_source=dominio_generico_origen,
+                    service_text=valor_servicio,
+                    context_excerpt=limpio,
+                )
+        if registrar_evento_fn:
+            await registrar_evento_fn(
+                event_name="clarification_requested",
+                domain_code=dominio_generico,
+                fallback_source=dominio_generico_origen,
+                service_text=valor_servicio,
+                context_excerpt=limpio,
+            )
         logger.info(
-            "critical_generic_service_blocked domain='%s' service='%s' input='%s'",
+            "critical_generic_service_blocked domain='%s' service='%s' input='%s' origin='%s'",
             dominio_generico,
             valor_servicio,
             limpio[:120],
+            dominio_generico_origen or "unknown",
         )
         return flujo, {
-            "response": mensaje_solicitar_precision_servicio(valor_servicio),
+            "response": mensaje_precision
+            or mensaje_solicitar_precision_servicio(valor_servicio),
         }
 
     if respuesta_seguimiento_concreta:

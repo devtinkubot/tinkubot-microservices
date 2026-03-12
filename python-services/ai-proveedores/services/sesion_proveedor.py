@@ -4,13 +4,14 @@ from typing import Any, Dict, Optional, Tuple
 
 from flows.consentimiento import solicitar_consentimiento
 from flows.constructores import (
-    construir_menu_principal,
+    construir_payload_menu_principal,
     construir_respuesta_revision_perfil_profesional,
     construir_respuesta_revision,
     construir_respuesta_revision_con_menu_limitado,
     construir_respuesta_verificado,
 )
 from flows.registro import determinar_estado_registro
+from templates.registro.perfil_profesional import payload_continuar_perfil_profesional
 
 ESTADOS_APROBADOS_OPERATIVOS = {"approved", "approved_basic"}
 ESTADOS_MENU_LIMITADO = {"interview_required"}
@@ -250,6 +251,25 @@ async def manejar_estado_inicial(
         return construir_respuesta_revision(nombre_proveedor)
 
     # SÍ está registrado: establecer estado para menú de registrados
+    if approved_basic:
+        flujo.update(
+            {
+                "state": "awaiting_menu_option",
+                "has_consent": True,
+                "esta_registrado": True,
+                "verification_notified": True,
+                "menu_limitado": False,
+                "approved_basic": True,
+                "profile_pending_review": False,
+            }
+        )
+        return {
+            "success": True,
+            "messages": [
+                payload_continuar_perfil_profesional(str(flujo.get("full_name") or ""))
+            ],
+        }
+
     flujo.update(
         {
             "state": "awaiting_menu_option",
@@ -264,11 +284,9 @@ async def manejar_estado_inicial(
     return {
         "success": True,
         "messages": [
-            {
-                "response": construir_menu_principal(
-                    esta_registrado=True,
-                    approved_basic=approved_basic,
-                )
-            }
+            construir_payload_menu_principal(
+                esta_registrado=True,
+                approved_basic=approved_basic,
+            )
         ],
     }

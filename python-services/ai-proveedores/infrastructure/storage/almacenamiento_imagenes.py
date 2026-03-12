@@ -38,6 +38,7 @@ async def subir_imagen_proveedor(
     tipo_archivo: str,
     extension_archivo: str = "jpg",
     content_type: Optional[str] = None,
+    nombre_base_archivo: Optional[str] = None,
 ) -> Optional[str]:
     """
     Subir imagen de proveedor a Supabase Storage
@@ -45,7 +46,7 @@ async def subir_imagen_proveedor(
     Args:
         proveedor_id: UUID del proveedor
         datos_archivo: Bytes de la imagen
-        tipo_archivo: 'dni-front', 'dni-back', 'face'
+        tipo_archivo: 'dni-front', 'dni-back', 'face', 'certificate'
         extension_archivo: Extensión del archivo
 
     Returns:
@@ -62,6 +63,7 @@ async def subir_imagen_proveedor(
             "dni-front": "dni-fronts",
             "dni-back": "dni-backs",
             "face": "faces",
+            "certificate": "certificates",
         }
 
         folder = folder_map.get(tipo_archivo)
@@ -69,7 +71,8 @@ async def subir_imagen_proveedor(
             raise ValueError(f"Tipo de archivo no válido: {tipo_archivo}")
 
         # Construir ruta del archivo
-        ruta_archivo = f"{folder}/{proveedor_id}.{extension_archivo}"
+        nombre_base = (nombre_base_archivo or proveedor_id or "").strip()
+        ruta_archivo = f"{folder}/{nombre_base}.{extension_archivo}"
 
         logger.info(f"📤 Subiendo imagen a Supabase Storage: {ruta_archivo}")
 

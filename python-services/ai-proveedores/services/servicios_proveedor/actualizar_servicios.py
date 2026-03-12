@@ -18,6 +18,10 @@ from infrastructure.database import run_supabase  # noqa: E402
 from services.servicios_proveedor.utilidades import (  # noqa: E402
     sanitizar_lista_servicios as sanitizar_servicios,
 )
+from services.taxonomia.catalogo_publicado import (  # noqa: E402
+    obtener_taxonomia_publicada,
+    resolver_servicio_canonico_publicado,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +49,12 @@ async def actualizar_servicios(proveedor_id: str, servicios: List[str]) -> List[
         return sanitizar_servicios(servicios)
 
     servicios_limpios = sanitizar_servicios(servicios)
+    taxonomia_publicada = await obtener_taxonomia_publicada(supabase)
+    servicios_canonicos = [
+        resolver_servicio_canonico_publicado(servicio, taxonomia_publicada) or servicio
+        for servicio in servicios_limpios
+    ]
+    servicios_limpios = sanitizar_servicios(servicios_canonicos)
     try:
         # Fuente de verdad: provider_services. Reemplazo completo para forzar
         # coherencia e invalidar también el legacy de genéricos.

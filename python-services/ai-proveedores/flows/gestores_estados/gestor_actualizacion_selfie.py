@@ -2,7 +2,7 @@
 
 from typing import Any, Dict, Optional
 
-from flows.constructores import construir_menu_principal
+from flows.constructores import construir_payload_menu_principal
 from infrastructure.storage.utilidades import extraer_primera_imagen_base64
 from services import actualizar_selfie
 from templates.interfaz import (
@@ -26,7 +26,7 @@ async def manejar_actualizacion_selfie(
             "success": True,
             "messages": [
                 {
-                    "response": construir_menu_principal(
+                    **construir_payload_menu_principal(
                         esta_registrado=True,
                         menu_limitado=bool(flujo.get("menu_limitado")),
                         approved_basic=bool(flujo.get("approved_basic")),
@@ -60,12 +60,10 @@ async def manejar_actualizacion_selfie(
         "success": True,
         "messages": [
             {"response": confirmar_selfie_actualizada()},
-            {
-                "response": construir_menu_principal(
-                    esta_registrado=True,
-                    menu_limitado=bool(flujo.get("menu_limitado")),
-                    approved_basic=bool(flujo.get("approved_basic")),
-                )
-            },
+            construir_payload_menu_principal(
+                esta_registrado=True,
+                menu_limitado=bool(flujo.get("menu_limitado")),
+                approved_basic=bool(flujo.get("approved_basic")),
+            ),
         ],
     }

@@ -303,9 +303,9 @@ func (h *Handlers) PostLogout(c *gin.Context) {
 
 // SendMessageRequest represents the request body for sending a message
 type SendMessageRequest struct {
-	AccountID string `json:"account_id" binding:"required"`
-	To        string `json:"to" binding:"required"`
-	Message   string `json:"message" binding:"required"`
+	AccountID string            `json:"account_id" binding:"required"`
+	To        string            `json:"to" binding:"required"`
+	Message   string            `json:"message" binding:"required"`
 	UI        *webhook.UIConfig `json:"ui,omitempty"`
 }
 
@@ -357,10 +357,27 @@ func (h *Handlers) PostSend(c *gin.Context) {
 
 	// Send message through configured outbound transport.
 	var sendErr error
-	if req.UI != nil && req.UI.Type == "buttons" {
-		sendErr = h.outbound.SendButtons(context.Background(), req.AccountID, req.To, req.Message, *req.UI)
-	} else {
+	if req.UI == nil {
 		sendErr = h.outbound.SendText(context.Background(), req.AccountID, req.To, req.Message)
+	} else {
+		switch req.UI.Type {
+		case "buttons":
+			sendErr = h.outbound.SendButtons(context.Background(), req.AccountID, req.To, req.Message, *req.UI)
+		case "list":
+			sendErr = h.outbound.SendList(context.Background(), req.AccountID, req.To, req.Message, *req.UI)
+		case "location_request":
+			sendErr = h.outbound.SendLocationRequest(context.Background(), req.AccountID, req.To, req.Message)
+		case "flow":
+			sendErr = h.outbound.SendFlow(context.Background(), req.AccountID, req.To, req.Message, *req.UI)
+		case "template":
+			sendErr = h.outbound.SendTemplate(context.Background(), req.AccountID, req.To, req.Message, *req.UI)
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "Invalid request",
+				"message": "unsupported ui.type",
+			})
+			return
+		}
 	}
 	if sendErr != nil {
 		status := http.StatusInternalServerError

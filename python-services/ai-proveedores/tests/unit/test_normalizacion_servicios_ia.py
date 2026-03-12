@@ -2,6 +2,7 @@ import asyncio
 import sys
 import types
 from pathlib import Path
+from types import SimpleNamespace
 
 imghdr_stub = types.ModuleType("imghdr")
 imghdr_stub.what = lambda *args, **kwargs: None
@@ -188,18 +189,16 @@ def test_confirmacion_agregar_servicios_re_normaliza_correccion_manual(monkeypat
 
 
 def test_espera_especialidad_bloquea_servicio_generico_critico(monkeypatch):
-    class _TransformadorGenerico:
-        def __init__(self, cliente_openai, modelo=None):
-            self.cliente_openai = cliente_openai
-            self.modelo = modelo
+    async def _normalizar_stub(**_kwargs):
+        return {
+            "ok": False,
+            "response": "Indica el trámite o área legal exacta con la que trabajas.",
+        }
 
-        async def transformar_a_servicios(self, entrada_usuario, max_servicios=7):
-            return ["asesoría legal"]
-
-    monkeypatch.setattr(
-        modulo_transformador,
-        "TransformadorServicios",
-        _TransformadorGenerico,
+    monkeypatch.setitem(
+        manejar_espera_especialidad.__globals__,
+        "normalizar_servicio_registro_individual",
+        _normalizar_stub,
     )
 
     respuesta = asyncio.run(
@@ -320,6 +319,35 @@ def test_agregar_servicios_bloquea_servicio_generico_critico(monkeypatch):
     monkeypatch.setattr(
         modulo_gestor_servicios, "TransformadorServicios", _TransformadorGenerico
     )
+    monkeypatch.setattr(
+        modulo_gestor_servicios,
+        "refrescar_taxonomia_dominios_criticos",
+        lambda: asyncio.sleep(0),
+    )
+    monkeypatch.setattr(
+        modulo_gestor_servicios,
+        "es_servicio_critico_generico",
+        lambda servicio: servicio in {"transporte de mercancías", "transporte mercancias"},
+    )
+    monkeypatch.setattr(
+        modulo_gestor_servicios,
+        "clasificar_servicio_critico",
+        lambda servicio: {
+            "domain": "transporte",
+            "specificity": "insufficient",
+            "source": "taxonomy",
+            "clarification_question": (
+                "Indica el tipo de transporte, alcance y carga con la que trabajas."
+            ),
+        },
+    )
+    monkeypatch.setattr(
+        modulo_gestor_servicios,
+        "mensaje_pedir_precision_servicio",
+        lambda _servicio: (
+            "Indica el tipo de transporte, alcance y carga con la que trabajas."
+        ),
+    )
 
     respuesta = asyncio.run(
         manejar_agregar_servicios(
@@ -330,4 +358,105 @@ def test_agregar_servicios_bloquea_servicio_generico_critico(monkeypatch):
         )
     )
 
-    assert "terrestre, marítimo o aéreo" in respuesta["messages"][0]["response"]
+    assert "tipo de transporte" in respuesta["messages"][0]["response"]
+
+
+def test_actualizar_servicios_normaliza_a_canonico_publicado(monkeypatch):
+    import importlib
+
+    modulo_actualizar_servicios = importlib.import_module(
+        "services.servicios_proveedor.actualizar_servicios"
+    )
+    actualizar_servicios = modulo_actualizar_servicios.actualizar_servicios
+
+    class _SupabaseQueryStub:
+        def __init__(self, table_name, tables):
+            self.table_name = table_name
+            self.tables = tables
+
+        def select(self, *_args, **_kwargs):
+            return self
+
+        def delete(self, *_args, **_kwargs):
+            return self
+
+        def update(self, _payload):
+            return self
+
+        def eq(self, *_args, **_kwargs):
+            return self
+
+        def order(self, *_args, **_kwargs):
+            return self
+
+        def limit(self, *_args, **_kwargs):
+            return self
+
+        def execute(self):
+            return SimpleNamespace(data=self.tables.get(self.table_name, []))
+
+    class _SupabaseStub:
+        def __init__(self, tables):
+            self.tables = tables
+
+        def table(self, table_name: str):
+            return _SupabaseQueryStub(table_name, self.tables)
+
+    supabase = _SupabaseStub(
+        {
+            "service_taxonomy_publications": [{"version": 1, "status": "published"}],
+            "service_domains": [{"id": "dom-1", "code": "legal", "status": "published"}],
+            "service_domain_aliases": [
+                {
+                    "id": "alias-1",
+                    "domain_id": "dom-1",
+                    "alias_text": "laboralista",
+                    "alias_normalized": "laboralista",
+                    "canonical_service_id": "canon-1",
+                    "status": "published",
+                    "is_active": True,
+                }
+            ],
+            "service_canonical_services": [
+                {
+                    "id": "canon-1",
+                    "domain_id": "dom-1",
+                    "canonical_name": "abogado laboral",
+                    "canonical_normalized": "abogado laboral",
+                    "status": "active",
+                }
+            ],
+            "service_precision_rules": [],
+            "provider_services": [{"service_name": "abogado laboral", "display_order": 1}],
+            "providers": [{"phone": "593959091325@s.whatsapp.net"}],
+        }
+    )
+
+    async def _fake_run_supabase(operation, **_kwargs):
+        return operation()
+
+    async def _fake_insertar_servicios_proveedor(
+        *, supabase, proveedor_id, servicios, servicio_embeddings
+    ):
+        assert proveedor_id == "prov-1"
+        assert servicios == ["abogado laboral"]
+        return {"inserted_count": 1, "failed_services": []}
+
+    monkeypatch.setattr(modulo_actualizar_servicios, "run_supabase", _fake_run_supabase)
+    monkeypatch.setattr(
+        "services.taxonomia.catalogo_publicado.run_supabase",
+        _fake_run_supabase,
+    )
+    monkeypatch.setattr(
+        "services.registro.insertar_servicios_proveedor",
+        _fake_insertar_servicios_proveedor,
+    )
+
+    principal_stub = types.ModuleType("principal")
+    principal_stub.supabase = supabase
+    principal_stub.servicio_embeddings = object()
+    sys.modules["principal"] = principal_stub
+
+    resultado = asyncio.run(actualizar_servicios("prov-1", ["laboralista"]))
+
+    assert resultado == ["abogado laboral"]

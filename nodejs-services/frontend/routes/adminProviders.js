@@ -151,6 +151,169 @@ async function obtenerMonetizacionProveedor(req, res) {
   }
 }
 
+async function obtenerTaxonomiaSugerencias(req, res) {
+  try {
+    const status = typeof req.query.status === 'string' ? req.query.status : 'pending';
+    const limit = Number.isFinite(Number(req.query.limit))
+      ? Number(req.query.limit)
+      : undefined;
+
+    const resultado = await proveedoresBff.obtenerTaxonomiaSugerencias({
+      status,
+      limit
+    });
+    res.json(resultado);
+  } catch (error) {
+    const status = error?.status ?? 500;
+    const payload = error?.data ?? {
+      error: 'No se pudieron obtener las sugerencias de taxonomía.'
+    };
+    res.status(status).json(payload);
+  }
+}
+
+async function obtenerTaxonomiaClusters(req, res) {
+  try {
+    const status = typeof req.query.status === 'string' ? req.query.status : 'pending';
+    const limit = Number.isFinite(Number(req.query.limit))
+      ? Number(req.query.limit)
+      : undefined;
+
+    const resultado = await proveedoresBff.obtenerTaxonomiaClusters({
+      status,
+      limit
+    });
+    res.json(resultado);
+  } catch (error) {
+    const status = error?.status ?? 500;
+    const payload = error?.data ?? {
+      error: 'No se pudieron obtener los clusters de taxonomía.'
+    };
+    res.status(status).json(payload);
+  }
+}
+
+async function obtenerTaxonomiaOverview(req, res) {
+  try {
+    const resultado = await proveedoresBff.obtenerTaxonomiaOverview();
+    res.json(resultado);
+  } catch (error) {
+    const status = error?.status ?? 500;
+    const payload = error?.data ?? {
+      error: 'No se pudo obtener el overview de taxonomía.'
+    };
+    res.status(status).json(payload);
+  }
+}
+
+async function revisarTaxonomiaSugerencia(req, res) {
+  try {
+    const { suggestionId } = req.params;
+    const resultado = await proveedoresBff.revisarTaxonomiaSugerencia(
+      suggestionId,
+      req.body ?? {}
+    );
+    res.json(resultado);
+  } catch (error) {
+    const status = error?.status ?? 500;
+    const payload = error?.data ?? {
+      error: 'No se pudo actualizar la sugerencia de taxonomía.'
+    };
+    res.status(status).json(payload);
+  }
+}
+
+async function aprobarTaxonomiaSugerencia(req, res) {
+  try {
+    const { suggestionId } = req.params;
+    const resultado = await proveedoresBff.aprobarTaxonomiaSugerencia(
+      suggestionId,
+      req.body ?? {}
+    );
+    res.json(resultado);
+  } catch (error) {
+    const status = error?.status ?? 500;
+    const payload = error?.data ?? {
+      error: 'No se pudo aprobar la sugerencia de taxonomía.'
+    };
+    res.status(status).json(payload);
+  }
+}
+
+async function revisarTaxonomiaCluster(req, res) {
+  try {
+    const { clusterId } = req.params;
+    const resultado = await proveedoresBff.revisarTaxonomiaCluster(
+      clusterId,
+      req.body ?? {}
+    );
+    res.json(resultado);
+  } catch (error) {
+    const status = error?.status ?? 500;
+    const payload = error?.data ?? {
+      error: 'No se pudo actualizar el cluster de taxonomía.'
+    };
+    res.status(status).json(payload);
+  }
+}
+
+async function aprobarTaxonomiaCluster(req, res) {
+  try {
+    const { clusterId } = req.params;
+    const resultado = await proveedoresBff.aprobarTaxonomiaCluster(
+      clusterId,
+      req.body ?? {}
+    );
+    res.json(resultado);
+  } catch (error) {
+    const status = error?.status ?? 500;
+    const payload = error?.data ?? {
+      error: 'No se pudo aprobar el cluster de taxonomía.'
+    };
+    res.status(status).json(payload);
+  }
+}
+
+async function obtenerTaxonomiaDrafts(req, res) {
+  try {
+    const resultado = await proveedoresBff.obtenerTaxonomiaDrafts();
+    res.json(resultado);
+  } catch (error) {
+    const status = error?.status ?? 500;
+    const payload = error?.data ?? {
+      error: 'No se pudieron obtener los drafts de taxonomía.'
+    };
+    res.status(status).json(payload);
+  }
+}
+
+async function aplicarTaxonomiaDraft(req, res) {
+  try {
+    const { changeId } = req.params;
+    const resultado = await proveedoresBff.aplicarTaxonomiaDraft(changeId);
+    res.json(resultado);
+  } catch (error) {
+    const status = error?.status ?? 500;
+    const payload = error?.data ?? {
+      error: 'No se pudo aplicar el draft de taxonomía.'
+    };
+    res.status(status).json(payload);
+  }
+}
+
+async function publicarTaxonomiaDrafts(req, res) {
+  try {
+    const resultado = await proveedoresBff.publicarTaxonomiaDrafts();
+    res.json(resultado);
+  } catch (error) {
+    const status = error?.status ?? 500;
+    const payload = error?.data ?? {
+      error: 'No se pudo publicar la nueva versión de taxonomía.'
+    };
+    res.status(status).json(payload);
+  }
+}
+
 async function servirImagen(req, res) {
   try {
     const filePath = req.params[0]; // Para wildcard router.get('/image/*')
@@ -199,6 +362,16 @@ router.post('/:providerId/review', revisarProveedor);
 router.get('/monetization/overview', obtenerMonetizacionResumen);
 router.get('/monetization/providers', obtenerMonetizacionProveedores);
 router.get('/monetization/provider/:providerId', obtenerMonetizacionProveedor);
+router.get('/taxonomy/overview', obtenerTaxonomiaOverview);
+router.get('/taxonomy/suggestions', obtenerTaxonomiaSugerencias);
+router.get('/taxonomy/suggestion-clusters', obtenerTaxonomiaClusters);
+router.post('/taxonomy/suggestions/:suggestionId/review', revisarTaxonomiaSugerencia);
+router.post('/taxonomy/suggestions/:suggestionId/approve-draft', aprobarTaxonomiaSugerencia);
+router.post('/taxonomy/suggestion-clusters/:clusterId/review', revisarTaxonomiaCluster);
+router.post('/taxonomy/suggestion-clusters/:clusterId/approve-draft', aprobarTaxonomiaCluster);
+router.get('/taxonomy/drafts', obtenerTaxonomiaDrafts);
+router.post('/taxonomy/drafts/:changeId/apply', aplicarTaxonomiaDraft);
+router.post('/taxonomy/publish', publicarTaxonomiaDrafts);
 router.get('/image/*', servirImagen);
 
 module.exports = router;

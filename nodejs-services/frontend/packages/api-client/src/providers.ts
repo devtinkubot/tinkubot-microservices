@@ -5,7 +5,17 @@ import type {
   MonetizationProvidersResponse,
   ProviderActionPayload,
   ProviderActionResponse,
-  ProviderRecord
+  ProviderRecord,
+  TaxonomyDraftApplyResponse,
+  TaxonomyDraftsResponse,
+  TaxonomyOverviewResponse,
+  TaxonomyPublishResponse,
+  TaxonomySuggestionClustersResponse,
+  TaxonomySuggestionApprovePayload,
+  TaxonomySuggestionApproveResponse,
+  TaxonomySuggestionReviewPayload,
+  TaxonomySuggestionReviewResponse,
+  TaxonomySuggestionsResponse
 } from './types';
 
 const RUTA_BASE = '/admin/providers';
@@ -104,4 +114,125 @@ export async function obtenerMonetizacionProveedor(
   return realizarSolicitudHttp<MonetizationProviderRecord>(
     `${RUTA_BASE}/monetization/provider/${providerId}`
   );
+}
+
+export async function obtenerTaxonomiaSugerencias(params?: {
+  status?: 'all' | 'pending' | 'enriched' | 'approved' | 'rejected' | 'superseded';
+  limit?: number;
+}): Promise<TaxonomySuggestionsResponse> {
+  const query = new URLSearchParams();
+  if (params?.status) query.set('status', params.status);
+  if (typeof params?.limit === 'number') query.set('limit', String(params.limit));
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  return realizarSolicitudHttp<TaxonomySuggestionsResponse>(
+    `${RUTA_BASE}/taxonomy/suggestions${suffix}`
+  );
+}
+
+export async function obtenerTaxonomiaClusters(params?: {
+  status?: 'all' | 'pending' | 'enriched' | 'approved' | 'rejected' | 'superseded';
+  limit?: number;
+}): Promise<TaxonomySuggestionClustersResponse> {
+  const query = new URLSearchParams();
+  if (params?.status) query.set('status', params.status);
+  if (typeof params?.limit === 'number') query.set('limit', String(params.limit));
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  return realizarSolicitudHttp<TaxonomySuggestionClustersResponse>(
+    `${RUTA_BASE}/taxonomy/suggestion-clusters${suffix}`
+  );
+}
+
+export async function obtenerTaxonomiaOverview(): Promise<TaxonomyOverviewResponse> {
+  return realizarSolicitudHttp<TaxonomyOverviewResponse>(`${RUTA_BASE}/taxonomy/overview`);
+}
+
+export async function revisarTaxonomiaSugerencia(
+  suggestionId: string,
+  payload: TaxonomySuggestionReviewPayload
+): Promise<TaxonomySuggestionReviewResponse> {
+  return realizarSolicitudHttp<TaxonomySuggestionReviewResponse>(
+    `${RUTA_BASE}/taxonomy/suggestions/${suggestionId}/review`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    }
+  );
+}
+
+export async function revisarTaxonomiaCluster(
+  clusterId: string,
+  payload: TaxonomySuggestionReviewPayload
+): Promise<TaxonomySuggestionReviewResponse> {
+  return realizarSolicitudHttp<TaxonomySuggestionReviewResponse>(
+    `${RUTA_BASE}/taxonomy/suggestion-clusters/${encodeURIComponent(clusterId)}/review`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    }
+  );
+}
+
+export async function aprobarTaxonomiaSugerencia(
+  suggestionId: string,
+  payload: TaxonomySuggestionApprovePayload = {}
+): Promise<TaxonomySuggestionApproveResponse> {
+  return realizarSolicitudHttp<TaxonomySuggestionApproveResponse>(
+    `${RUTA_BASE}/taxonomy/suggestions/${suggestionId}/approve-draft`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    }
+  );
+}
+
+export async function aprobarTaxonomiaCluster(
+  clusterId: string,
+  payload: TaxonomySuggestionApprovePayload = {}
+): Promise<TaxonomySuggestionApproveResponse> {
+  return realizarSolicitudHttp<TaxonomySuggestionApproveResponse>(
+    `${RUTA_BASE}/taxonomy/suggestion-clusters/${encodeURIComponent(clusterId)}/approve-draft`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    }
+  );
+}
+
+export async function obtenerTaxonomiaDrafts(): Promise<TaxonomyDraftsResponse> {
+  return realizarSolicitudHttp<TaxonomyDraftsResponse>(`${RUTA_BASE}/taxonomy/drafts`);
+}
+
+export async function aplicarTaxonomiaDraft(
+  changeId: string
+): Promise<TaxonomyDraftApplyResponse> {
+  return realizarSolicitudHttp<TaxonomyDraftApplyResponse>(
+    `${RUTA_BASE}/taxonomy/drafts/${changeId}/apply`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    }
+  );
+}
+
+export async function publicarTaxonomiaDrafts(): Promise<TaxonomyPublishResponse> {
+  return realizarSolicitudHttp<TaxonomyPublishResponse>(`${RUTA_BASE}/taxonomy/publish`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  });
 }

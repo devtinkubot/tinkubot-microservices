@@ -40,20 +40,48 @@ from .mensajes_servicios import (
     preguntar_servicio_eliminar,
 )
 from .menus import (
+    MENU_ID_ELIMINAR_REGISTRO,
+    MENU_ID_INFO_PERSONAL,
+    MENU_ID_INFO_PROFESIONAL,
+    MENU_ID_SALIR,
     MENU_POST_REGISTRO_PROVEEDOR,
     MENU_PRINCIPAL_PROVEEDOR,
     mensaje_menu_post_registro_proveedor,
     mensaje_menu_principal_proveedor,
     mensaje_menu_servicios_proveedor,
+    payload_menu_post_registro_proveedor,
+    payload_submenu_informacion_personal,
+    payload_submenu_informacion_profesional,
+    SUBMENU_ID_PERSONAL_DOCUMENTOS,
+    SUBMENU_ID_PERSONAL_FOTO,
+    SUBMENU_ID_PERSONAL_NOMBRE,
+    SUBMENU_ID_PERSONAL_UBICACION,
+    SUBMENU_ID_PROF_CERTIFICADOS,
+    SUBMENU_ID_PROF_REDES,
+    SUBMENU_ID_PROF_SERVICIOS,
 )
 
 __all__ = [
     # Menús
     "MENU_PRINCIPAL_PROVEEDOR",
     "MENU_POST_REGISTRO_PROVEEDOR",
+    "MENU_ID_INFO_PERSONAL",
+    "MENU_ID_INFO_PROFESIONAL",
+    "MENU_ID_ELIMINAR_REGISTRO",
+    "MENU_ID_SALIR",
+    "SUBMENU_ID_PERSONAL_NOMBRE",
+    "SUBMENU_ID_PERSONAL_UBICACION",
+    "SUBMENU_ID_PERSONAL_DOCUMENTOS",
+    "SUBMENU_ID_PERSONAL_FOTO",
+    "SUBMENU_ID_PROF_SERVICIOS",
+    "SUBMENU_ID_PROF_CERTIFICADOS",
+    "SUBMENU_ID_PROF_REDES",
     "mensaje_menu_principal_proveedor",
     "mensaje_menu_post_registro_proveedor",
     "mensaje_menu_servicios_proveedor",
+    "payload_menu_post_registro_proveedor",
+    "payload_submenu_informacion_personal",
+    "payload_submenu_informacion_profesional",
     # Componentes
     "pie_instrucciones_respuesta_numerica",
     # Mensajes comunes

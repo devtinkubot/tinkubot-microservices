@@ -64,6 +64,7 @@ class ConfiguracionServicio(BaseSettings):
 
     # Redis Configuration
     redis_url: str = "redis://localhost:6379"
+    taxonomy_cache_ttl_seconds: int = 300
 
     # OpenAI Model Configuration (chat/completions)
     openai_chat_model: str = "gpt-4o-mini"

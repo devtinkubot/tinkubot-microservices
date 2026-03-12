@@ -24,6 +24,10 @@ type WebSender interface {
 type MetaSender interface {
 	SendText(ctx context.Context, phoneNumberID, to, body string) error
 	SendButtons(ctx context.Context, phoneNumberID, to, body string, ui webhook.UIConfig) error
+	SendList(ctx context.Context, phoneNumberID, to, body string, ui webhook.UIConfig) error
+	SendLocationRequest(ctx context.Context, phoneNumberID, to, body string) error
+	SendFlow(ctx context.Context, phoneNumberID, to, body string, ui webhook.UIConfig) error
+	SendTemplate(ctx context.Context, phoneNumberID, to string, ui webhook.UIConfig) error
 }
 
 // RouterConfig controls outbound routing strategy.
@@ -113,6 +117,113 @@ func (r *Router) SendButtons(
 	}
 
 	// WhatsMeow path no soporta botones en este endpoint; degradar a texto.
+	return r.SendText(ctx, accountID, to, message)
+}
+
+// SendList sends a list through Meta when available, or falls back to text.
+func (r *Router) SendList(
+	ctx context.Context,
+	accountID, to, message string,
+	ui webhook.UIConfig,
+) error {
+	if r == nil {
+		return fmt.Errorf("outbound router is nil")
+	}
+	if r.shouldUseMeta(accountID) {
+		if r.metaSender == nil {
+			return fmt.Errorf("%w: sender unavailable for account=%s", ErrMetaNotConfigured, accountID)
+		}
+		phoneNumberID := strings.TrimSpace(r.accountPhoneNumber[accountID])
+		if phoneNumberID == "" {
+			return fmt.Errorf("%w: missing phone_number_id for account=%s", ErrMetaNotConfigured, accountID)
+		}
+		metaTo := normalizeMetaDestination(to)
+		if metaTo == "" {
+			return fmt.Errorf("invalid meta destination for account=%s", accountID)
+		}
+		return r.metaSender.SendList(ctx, phoneNumberID, metaTo, message, ui)
+	}
+
+	return r.SendText(ctx, accountID, to, message)
+}
+
+// SendLocationRequest sends a location request through Meta when available, or falls back to text.
+func (r *Router) SendLocationRequest(
+	ctx context.Context,
+	accountID, to, message string,
+) error {
+	if r == nil {
+		return fmt.Errorf("outbound router is nil")
+	}
+	if r.shouldUseMeta(accountID) {
+		if r.metaSender == nil {
+			return fmt.Errorf("%w: sender unavailable for account=%s", ErrMetaNotConfigured, accountID)
+		}
+		phoneNumberID := strings.TrimSpace(r.accountPhoneNumber[accountID])
+		if phoneNumberID == "" {
+			return fmt.Errorf("%w: missing phone_number_id for account=%s", ErrMetaNotConfigured, accountID)
+		}
+		metaTo := normalizeMetaDestination(to)
+		if metaTo == "" {
+			return fmt.Errorf("invalid meta destination for account=%s", accountID)
+		}
+		return r.metaSender.SendLocationRequest(ctx, phoneNumberID, metaTo, message)
+	}
+
+	return r.SendText(ctx, accountID, to, message)
+}
+
+// SendFlow sends a flow through Meta when available, or falls back to text.
+func (r *Router) SendFlow(
+	ctx context.Context,
+	accountID, to, message string,
+	ui webhook.UIConfig,
+) error {
+	if r == nil {
+		return fmt.Errorf("outbound router is nil")
+	}
+	if r.shouldUseMeta(accountID) {
+		if r.metaSender == nil {
+			return fmt.Errorf("%w: sender unavailable for account=%s", ErrMetaNotConfigured, accountID)
+		}
+		phoneNumberID := strings.TrimSpace(r.accountPhoneNumber[accountID])
+		if phoneNumberID == "" {
+			return fmt.Errorf("%w: missing phone_number_id for account=%s", ErrMetaNotConfigured, accountID)
+		}
+		metaTo := normalizeMetaDestination(to)
+		if metaTo == "" {
+			return fmt.Errorf("invalid meta destination for account=%s", accountID)
+		}
+		return r.metaSender.SendFlow(ctx, phoneNumberID, metaTo, message, ui)
+	}
+
+	return r.SendText(ctx, accountID, to, message)
+}
+
+// SendTemplate sends a template through Meta when available, or falls back to text.
+func (r *Router) SendTemplate(
+	ctx context.Context,
+	accountID, to, message string,
+	ui webhook.UIConfig,
+) error {
+	if r == nil {
+		return fmt.Errorf("outbound router is nil")
+	}
+	if r.shouldUseMeta(accountID) {
+		if r.metaSender == nil {
+			return fmt.Errorf("%w: sender unavailable for account=%s", ErrMetaNotConfigured, accountID)
+		}
+		phoneNumberID := strings.TrimSpace(r.accountPhoneNumber[accountID])
+		if phoneNumberID == "" {
+			return fmt.Errorf("%w: missing phone_number_id for account=%s", ErrMetaNotConfigured, accountID)
+		}
+		metaTo := normalizeMetaDestination(to)
+		if metaTo == "" {
+			return fmt.Errorf("invalid meta destination for account=%s", accountID)
+		}
+		return r.metaSender.SendTemplate(ctx, phoneNumberID, metaTo, ui)
+	}
+
 	return r.SendText(ctx, accountID, to, message)
 }
 

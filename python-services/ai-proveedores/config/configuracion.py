@@ -36,6 +36,8 @@ class ConfiguracionServicio(BaseSettings):
 
     # Configuración de caché
     ttl_cache_segundos: int = 300
+    ttl_cache_taxonomia_segundos: int = 300
+    taxonomy_cache_ttl_seconds: int = 300
 
     # Configuración de timeouts
     ttl_flujo_segundos: int = 3600

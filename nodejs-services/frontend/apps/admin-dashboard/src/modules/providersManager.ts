@@ -126,15 +126,15 @@ function formatearFechaLarga(valor?: string | null): string {
 function obtenerEtiquetaEstadoListado(status?: ProviderRecord['status'] | null): string {
   switch (status) {
     case 'approved_basic':
-      return 'Aprobado básico';
+      return 'Información personal aprobada';
     case 'profile_pending_review':
-      return 'Perfil en revisión';
+      return 'Perfil profesional en revisión';
     case 'interview_required':
       return 'Entrevista';
     case 'rejected':
       return 'Rechazado';
     case 'approved':
-      return 'Aprobado';
+      return 'Perfil profesional aprobado';
     case 'pending':
     default:
       return 'Nuevo';
@@ -169,7 +169,7 @@ function actualizarEncabezadoBucket() {
     if (titulo) titulo.textContent = 'Pendientes post-revisión';
     if (subtitulo) {
       subtitulo.textContent =
-        'Gestiona casos con validación adicional o rechazo posterior al onboarding básico.';
+        'Revisa el perfil profesional, valida los 3 servicios principales y define la aprobación final.';
     }
     if (vacio) vacio.textContent = 'No hay proveedores pendientes post-revisión.';
     if (textoCarga) textoCarga.textContent = 'Obteniendo proveedores post-revisión...';
@@ -241,7 +241,7 @@ function actualizarDocumentos(proveedor: ProviderRecord) {
     items.push({ url: documentos.dniBack, etiqueta: 'Documento identidad - reverso' });
   }
   if (documentos.face) {
-    items.push({ url: documentos.face, etiqueta: 'Selfie / Rostro' });
+    items.push({ url: documentos.face, etiqueta: 'Foto de perfil / rostro' });
   }
 
   if (items.length === 0) {
@@ -274,12 +274,57 @@ function actualizarDocumentos(proveedor: ProviderRecord) {
   placeholder.style.display = 'none';
 }
 
+function actualizarCertificados(proveedor: ProviderRecord) {
+  const contenedor = obtenerElemento<HTMLDivElement>('#provider-detail-certificates');
+  const placeholder = obtenerElemento<HTMLDivElement>('#provider-detail-certificates-empty');
+  if (!contenedor || !placeholder) return;
+
+  const certificados = Array.isArray(proveedor.certificates) ? proveedor.certificates : [];
+  const items = certificados
+    .filter(item => typeof item.fileUrl === 'string' && item.fileUrl.trim().length > 0)
+    .map((item, index) => ({
+      url: item.fileUrl.trim(),
+      etiqueta: `Certificado ${index + 1}`
+    }));
+
+  if (items.length === 0) {
+    contenedor.innerHTML = '';
+    placeholder.style.display = 'block';
+    return;
+  }
+
+  const tarjetas = items
+    .map(
+      item => `
+        <div class="col-md-4">
+          <div class="provider-document-card">
+            <div class="provider-document-thumb">
+              <a href="${escaparHtml(item.url)}" target="_blank" rel="noopener noreferrer">
+                <img src="${escaparHtml(
+                  item.url
+                )}" alt="${escaparHtml(item.etiqueta)}" loading="lazy"
+                     onerror="this.onerror=null; this.src='data:image/svg+xml;base64,${btoa('<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100\" height=\"100\" viewBox=\"0 0 100 100\"><rect width=\"100\" height=\"100\" fill=\"#f8f9fa\"/><text x=\"50\" y=\"50\" text-anchor=\"middle\" dy=\".3em\" fill=\"#6c757d\" font-family=\"Arial\" font-size=\"12\">Archivo</text></svg>')}; this.style.background='#f8f9fa'; this.style.border='1px solid #dee2e6';" />
+              </a>
+            </div>
+            <p class="provider-document-label">${escaparHtml(item.etiqueta)}</p>
+          </div>
+        </div>
+      `
+    )
+    .join('');
+
+  contenedor.innerHTML = tarjetas;
+  placeholder.style.display = 'none';
+}
+
 function actualizarContacto(proveedor: ProviderRecord) {
   const telefono = proveedor.contactPhone ?? proveedor.phone ?? null;
   const nombre = proveedor.contact ?? proveedor.name ?? 'Contacto';
+  const correo = proveedor.contactEmail ?? proveedor.email ?? null;
 
   establecerTexto('#provider-detail-phone', telefono, { fallback: 'Sin número' });
   establecerTexto('#provider-detail-contact-name', nombre);
+  establecerTexto('#provider-detail-email', correo, { fallback: 'Sin correo registrado' });
 
   const telefonoBtn = obtenerElemento<HTMLButtonElement>('#provider-detail-copy-phone');
   if (telefonoBtn) {
@@ -328,17 +373,42 @@ function actualizarPerfilProfesional(proveedor: ProviderRecord) {
   const servicios = obtenerElemento<HTMLDivElement>('#provider-detail-services');
   const experiencia = obtenerElemento<HTMLElement>('#provider-detail-experience');
   const redSocial = obtenerElemento<HTMLElement>('#provider-detail-social-media');
+  const tituloPerfil = obtenerElemento<HTMLElement>('#provider-professional-title');
+  const lista = Array.isArray(proveedor.servicesList)
+    ? proveedor.servicesList.filter(item => typeof item === 'string' && item.trim().length > 0)
+    : [];
+  const serviciosPrincipales = lista.slice(0, 3);
+  const serviciosAdicionales = Math.max(lista.length - serviciosPrincipales.length, 0);
+  const esRevisionProfesional = proveedor.status === 'profile_pending_review';
+  const experienciaValor =
+    typeof proveedor.experienceYears === 'number' && Number.isFinite(proveedor.experienceYears)
+      ? `${proveedor.experienceYears} año${proveedor.experienceYears === 1 ? '' : 's'}`
+      : null;
+  const urlRedSocial = proveedor.socialMediaUrl?.trim();
+  const tipoRedSocial = proveedor.socialMediaType?.trim();
+  const etiquetaRedSocial = urlRedSocial
+    ? tipoRedSocial
+      ? `${tipoRedSocial}: ${urlRedSocial}`
+      : urlRedSocial
+    : null;
+
+  if (tituloPerfil) {
+    tituloPerfil.textContent = esRevisionProfesional
+      ? 'Servicios principales para revisión'
+      : 'Servicios del perfil';
+  }
 
   if (servicios) {
-    const lista = Array.isArray(proveedor.servicesList)
-      ? proveedor.servicesList.filter(item => typeof item === 'string' && item.trim().length > 0)
-      : [];
-
-    if (lista.length > 0) {
+    if (serviciosPrincipales.length > 0) {
       servicios.innerHTML = `
         <ul class="mb-0 ps-3">
-          ${lista.map(item => `<li>${escaparHtml(item)}</li>`).join('')}
+          ${serviciosPrincipales.map(item => `<li>${escaparHtml(item)}</li>`).join('')}
         </ul>
+        ${
+          serviciosAdicionales > 0
+            ? `<div class="small text-muted mt-2">+${serviciosAdicionales} servicio(s) adicional(es) fuera de la revisión principal.</div>`
+            : ''
+        }
       `;
       servicios.classList.remove('text-muted');
     } else {
@@ -348,22 +418,15 @@ function actualizarPerfilProfesional(proveedor: ProviderRecord) {
   }
 
   if (experiencia) {
-    const valor =
-      typeof proveedor.experienceYears === 'number' && Number.isFinite(proveedor.experienceYears)
-        ? `${proveedor.experienceYears} año${proveedor.experienceYears === 1 ? '' : 's'}`
-        : null;
-    establecerTexto('#provider-detail-experience', valor, {
+    establecerTexto('#provider-detail-experience', experienciaValor, {
       fallback: 'Sin experiencia registrada'
     });
   }
 
   if (redSocial) {
-    const url = proveedor.socialMediaUrl?.trim();
-    const tipo = proveedor.socialMediaType?.trim();
-    if (url) {
-      const etiqueta = tipo ? `${tipo}: ${url}` : url;
-      redSocial.innerHTML = `<a href="${escaparHtml(url)}" target="_blank" rel="noopener noreferrer">${escaparHtml(
-        etiqueta
+    if (urlRedSocial && etiquetaRedSocial) {
+      redSocial.innerHTML = `<a href="${escaparHtml(urlRedSocial)}" target="_blank" rel="noopener noreferrer">${escaparHtml(
+        etiquetaRedSocial
       )}</a>`;
       redSocial.classList.remove('text-muted');
     } else {
@@ -371,6 +434,32 @@ function actualizarPerfilProfesional(proveedor: ProviderRecord) {
       redSocial.classList.add('text-muted');
     }
   }
+}
+
+function actualizarOpcionesResultadoRevision(proveedor: ProviderRecord) {
+  const estadoSelect = obtenerElemento<HTMLSelectElement>('#provider-review-status');
+  if (!estadoSelect) return;
+
+  const opciones =
+    proveedor.status === 'profile_pending_review'
+      ? [
+          { value: 'approved', label: 'Perfil profesional aprobado' },
+          { value: 'interview_required', label: 'Entrevista requerida' },
+          { value: 'rejected', label: 'Rechazado' }
+        ]
+      : [
+          { value: 'approved_basic', label: 'Información personal aprobada' },
+          { value: 'interview_required', label: 'Entrevista requerida' },
+          { value: 'rejected', label: 'Rechazado' }
+        ];
+
+  estadoSelect.innerHTML = [
+    '<option value="" selected disabled>Selecciona un resultado</option>',
+    ...opciones.map(
+      opcion => `<option value="${opcion.value}">${opcion.label}</option>`
+    )
+  ].join('');
+  estadoSelect.value = '';
 }
 
 function actualizarCopyRevision(proveedor: ProviderRecord) {
@@ -385,19 +474,21 @@ function actualizarCopyRevision(proveedor: ProviderRecord) {
   const esRevisionProfesional = proveedor.status === 'profile_pending_review';
 
   if (tituloBasico) {
-    tituloBasico.textContent = esRevisionProfesional ? 'Alta básica verificada' : 'Onboarding básico';
+    tituloBasico.textContent = 'Información personal';
   }
   if (tituloPerfil) {
-    tituloPerfil.textContent = 'Perfil profesional';
+    tituloPerfil.textContent = esRevisionProfesional
+      ? 'Servicios principales para revisión'
+      : 'Servicios del perfil';
   }
   if (tituloRevision) {
     tituloRevision.textContent = esRevisionProfesional
       ? 'Revisión administrativa del perfil profesional'
-      : 'Revisión administrativa del onboarding';
+      : 'Revisión administrativa de la información personal';
   }
   if (checklist) {
     checklist.textContent = esRevisionProfesional
-      ? 'Confirmo que revisé servicios, experiencia, red social y coherencia general del perfil profesional.'
+      ? 'Confirmo que revisé los 3 servicios principales, experiencia, red social y coherencia general del perfil profesional.'
       : 'Confirmo que revisé nombre, ciudad, consentimiento y documentación del proveedor.';
   }
   if (ayudaMensaje) {
@@ -415,24 +506,8 @@ function actualizarCopyRevision(proveedor: ProviderRecord) {
       ? 'Se notificará al proveedor vía WhatsApp con el resultado de la revisión profesional.'
       : 'Se notificará al proveedor vía WhatsApp con el resultado y el siguiente paso.';
   }
-}
 
-function actualizarDebugProveedor(proveedor: ProviderRecord) {
-  const debug = obtenerElemento<HTMLElement>('#provider-debug-content');
-  if (!debug) return;
-
-  const servicios = Array.isArray(proveedor.servicesList)
-    ? proveedor.servicesList.filter(item => typeof item === 'string' && item.trim().length > 0)
-    : [];
-  const experiencia =
-    typeof proveedor.experienceYears === 'number' && Number.isFinite(proveedor.experienceYears)
-      ? String(proveedor.experienceYears)
-      : 'null';
-  const redSocial = proveedor.socialMediaUrl?.trim() ? 'si' : 'no';
-
-  debug.textContent =
-    `status=${proveedor.status ?? 'null'} | services=${servicios.length} | ` +
-    `experience=${experiencia} | social=${redSocial}`;
+  actualizarVisibilidadMensajeRevision('');
 }
 
 function limpiarFormularioRevision() {
@@ -449,6 +524,7 @@ function limpiarFormularioRevision() {
   if (mensajeTextarea) {
     mensajeTextarea.value = '';
   }
+  actualizarVisibilidadMensajeRevision('');
   const revisorInput = obtenerElemento<HTMLInputElement>('#provider-reviewer-name');
   if (revisorInput) {
     revisorInput.value = '';
@@ -464,10 +540,6 @@ function limpiarFormularioRevision() {
   const hiddenId = obtenerElemento<HTMLInputElement>('#provider-review-provider-id');
   if (hiddenId) {
     hiddenId.value = '';
-  }
-  const debug = obtenerElemento<HTMLElement>('#provider-debug-content');
-  if (debug) {
-    debug.textContent = 'Sin datos';
   }
 }
 
@@ -487,15 +559,15 @@ function actualizarBadgeEstado(status: ProviderRecord['status']) {
   switch (status) {
     case 'approved_basic':
       badge.classList.add('bg-info', 'text-dark');
-      badge.textContent = 'Aprobado básico';
+      badge.textContent = 'Información personal aprobada';
       break;
     case 'profile_pending_review':
       badge.classList.add('bg-primary');
-      badge.textContent = 'Perfil en revisión';
+      badge.textContent = 'Perfil profesional en revisión';
       break;
     case 'approved':
       badge.classList.add('bg-success');
-      badge.textContent = 'Aprobado';
+      badge.textContent = 'Perfil profesional aprobado';
       break;
     case 'rejected':
       badge.classList.add('bg-danger');
@@ -515,10 +587,17 @@ function actualizarBadgeEstado(status: ProviderRecord['status']) {
 function actualizarDetalleProveedor(proveedor: ProviderRecord) {
   establecerTexto('#provider-detail-name', proveedor.name);
   actualizarBadgeEstado(proveedor.status);
+  establecerTexto('#provider-detail-status-text', obtenerEtiquetaEstadoListado(proveedor.status));
   establecerTexto('#provider-detail-registered', formatearFechaLarga(proveedor.registeredAt));
   establecerTexto(
     '#provider-detail-stage',
-    proveedor.status === 'profile_pending_review' ? 'Revisión profesional' : 'Onboarding básico'
+    proveedor.status === 'profile_pending_review'
+      ? 'Revisión profesional'
+      : proveedor.status === 'approved_basic'
+        ? 'Información personal aprobada'
+        : proveedor.status === 'approved'
+          ? 'Perfil profesional aprobado'
+          : 'Onboarding básico'
   );
 
   const ubicacion =
@@ -546,13 +625,14 @@ function actualizarDetalleProveedor(proveedor: ProviderRecord) {
   actualizarContacto(proveedor);
   actualizarPerfilProfesional(proveedor);
   actualizarDocumentos(proveedor);
+  actualizarCertificados(proveedor);
   actualizarNotas(proveedor);
   actualizarCopyRevision(proveedor);
-  actualizarDebugProveedor(proveedor);
+  actualizarOpcionesResultadoRevision(proveedor);
 
   const estadoSelect = obtenerElemento<HTMLSelectElement>('#provider-review-status');
   if (estadoSelect) {
-    estadoSelect.value = proveedor.status ?? '';
+    estadoSelect.value = '';
   }
 
   const hiddenId = obtenerElemento<HTMLInputElement>('#provider-review-provider-id');
@@ -693,17 +773,15 @@ function construirMensajeSugerido(
   const nombreLimpio = nombre?.trim();
   switch (status) {
     case 'approved_basic':
-      return nombreLimpio
-        ? `✅ Hola *${nombreLimpio}*, tu registro básico fue aprobado. Ya formas parte de TinkuBot. El siguiente paso es completar tu perfil profesional con habilidades, especialidades y redes. Entra al bot y elige la opción *1. Completar perfil profesional*.`
-        : '✅ Tu registro básico fue aprobado. Ya formas parte de TinkuBot. El siguiente paso es completar tu perfil profesional con habilidades, especialidades y redes. Entra al bot y elige la opción *1. Completar perfil profesional*.';
+      return '';
     case 'profile_pending_review':
       return nombreLimpio
         ? `✅ Hola *${nombreLimpio}*, tu perfil profesional fue enviado a revisión. Te notificaremos cuando quede aprobado.`
         : '✅ Tu perfil profesional fue enviado a revisión. Te notificaremos cuando quede aprobado.';
     case 'approved':
       return nombreLimpio
-        ? `✅ Hola *${nombreLimpio}*, tu perfil fue aprobado. Ya puedes operar como proveedor en TinkuBot.`
-        : '✅ Tu perfil fue aprobado. Ya puedes operar como proveedor en TinkuBot.';
+        ? `✅ Hola *${nombreLimpio}*, tu perfil profesional fue aprobado. Ya puedes operar como proveedor en TinkuBot.`
+        : '✅ Tu perfil profesional fue aprobado. Ya puedes operar como proveedor en TinkuBot.';
     case 'interview_required':
       return nombreLimpio
         ? `Hola ${nombreLimpio}, necesitamos una validación adicional para continuar con tu registro básico. Responde a este mensaje para coordinar el siguiente paso.`
@@ -714,6 +792,29 @@ function construirMensajeSugerido(
         : 'No pudimos aprobar tu registro básico con la información enviada. Revisa tus datos y documentos y vuelve a intentarlo.';
     default:
       return '';
+  }
+}
+
+function actualizarVisibilidadMensajeRevision(status: ProviderRecord['status'] | '') {
+  const grupoMensaje = obtenerElemento<HTMLElement>('#provider-review-message-group');
+  const ayudaFooter = obtenerElemento<HTMLElement>('#provider-review-footer-help');
+  const mensajeTextarea = obtenerElemento<HTMLTextAreaElement>('#provider-review-message');
+  const usaMensajeEstandar = status === 'approved_basic';
+
+  if (grupoMensaje) {
+    grupoMensaje.style.display = usaMensajeEstandar ? 'none' : '';
+  }
+
+  if (mensajeTextarea && usaMensajeEstandar) {
+    mensajeTextarea.value = '';
+  }
+
+  if (ayudaFooter) {
+    ayudaFooter.textContent = usaMensajeEstandar
+      ? 'Se notificará al proveedor vía WhatsApp con un mensaje estándar y un botón para continuar.'
+      : status === 'profile_pending_review'
+        ? 'Se notificará al proveedor vía WhatsApp con el resultado de la revisión profesional.'
+        : 'Se notificará al proveedor vía WhatsApp con el resultado y el siguiente paso.';
   }
 }
 
@@ -774,7 +875,12 @@ function manejarAccionModal() {
     notes: notas.length > 0 ? notas : undefined,
     reviewer,
     phone: telefono ?? undefined,
-    message: mensaje.length > 0 ? mensaje : undefined
+    message:
+      estadoSeleccionado === 'approved_basic'
+        ? undefined
+        : mensaje.length > 0
+          ? mensaje
+          : undefined
   });
 }
 
@@ -921,10 +1027,11 @@ function enlazarEventos() {
     estadoSelect.addEventListener('change', () => {
       const mensajeTextarea =
         obtenerElemento<HTMLTextAreaElement>('#provider-review-message');
+      const status = estadoSelect.value as ProviderRecord['status'];
+      actualizarVisibilidadMensajeRevision(status);
       if (!mensajeTextarea) {
         return;
       }
-      const status = estadoSelect.value as ProviderRecord['status'];
       mensajeTextarea.value = construirMensajeSugerido(status, estado.proveedorSeleccionado?.name);
     });
   }

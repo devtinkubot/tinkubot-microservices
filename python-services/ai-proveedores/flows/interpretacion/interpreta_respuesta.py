@@ -36,6 +36,13 @@ def interpretar_respuesta(text: Optional[str], modo: str = "menu") -> Optional[o
     if not normalized_value:
         return None
 
+    # IDs estructurados de menús/submenús interactivos deben evaluarse
+    # directamente en los gestores de estado, sin coerción a opciones numéricas.
+    if normalized_value.startswith("provider_menu_") or normalized_value.startswith(
+        "provider_submenu_"
+    ):
+        return None
+
     # Modo consentimiento (sí/no)
     if modo == "consentimiento":
         if normalized_value.startswith("1"):

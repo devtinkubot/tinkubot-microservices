@@ -2,7 +2,7 @@
 
 from typing import Any, Dict, Optional
 
-from flows.constructores import construir_menu_principal
+from flows.constructores import construir_payload_menu_principal
 from flows.validadores.validador_entrada import parsear_entrada_red_social
 from services import actualizar_redes_sociales
 from templates.interfaz import (
@@ -25,7 +25,7 @@ async def manejar_actualizacion_redes_sociales(
             "success": True,
             "messages": [
                 {
-                    "response": construir_menu_principal(
+                    **construir_payload_menu_principal(
                         esta_registrado=True,
                         menu_limitado=bool(flujo.get("menu_limitado")),
                         approved_basic=bool(flujo.get("approved_basic")),
@@ -52,7 +52,7 @@ async def manejar_actualizacion_redes_sociales(
             "messages": [
                 {"response": error_actualizar_redes_sociales()},
                 {
-                    "response": construir_menu_principal(
+                    **construir_payload_menu_principal(
                         esta_registrado=True,
                         menu_limitado=bool(flujo.get("menu_limitado")),
                         approved_basic=bool(flujo.get("approved_basic")),
@@ -70,12 +70,10 @@ async def manejar_actualizacion_redes_sociales(
                     bool(red_social_parseada["url"])
                 )
             },
-            {
-                "response": construir_menu_principal(
-                    esta_registrado=True,
-                    menu_limitado=bool(flujo.get("menu_limitado")),
-                    approved_basic=bool(flujo.get("approved_basic")),
-                )
-            },
+            construir_payload_menu_principal(
+                esta_registrado=True,
+                menu_limitado=bool(flujo.get("menu_limitado")),
+                approved_basic=bool(flujo.get("approved_basic")),
+            ),
         ],
     }

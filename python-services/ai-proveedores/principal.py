@@ -26,6 +26,7 @@ from flows.sesion import (
     establecer_flujo,
     invalidar_cache_perfil_proveedor,
     obtener_flujo,
+    obtener_perfil_proveedor,
     obtener_perfil_proveedor_cacheado,
 )
 from infrastructure.database import run_supabase, set_supabase_client
@@ -36,6 +37,7 @@ from models import RecepcionMensajeWhatsApp, RespuestaSalud
 from openai import AsyncOpenAI
 from pydantic import BaseModel
 from supabase import Client, create_client
+from templates.registro import PROFILE_SINGLE_USE_CONTROL_IDS
 
 # Configuración desde variables de entorno
 URL_SUPABASE = configuracion.supabase_url or os.getenv("SUPABASE_URL", "")
@@ -54,6 +56,11 @@ CLAVE_CICLO_SOLICITUD = "availability:lifecycle:{}"
 ESTADO_ESPERANDO_DISPONIBILIDAD = "awaiting_availability_response"
 CLAVE_DEDUPE_MEDIA = "prov_media_dedupe:{}:{}"
 TTL_DEDUPE_MEDIA_SEGUNDOS = int(os.getenv("PROVIDER_MEDIA_DEDUPE_TTL_SECONDS", "900"))
+CLAVE_DEDUPE_INTERACTIVE = "prov_interactive_dedupe:{}:{}"
+CLAVE_DEDUPE_INTERACTIVE_ACTION = "prov_interactive_action_dedupe:{}:{}"
+TTL_DEDUPE_INTERACTIVE_SEGUNDOS = int(
+    os.getenv("PROVIDER_INTERACTIVE_DEDUPE_TTL_SECONDS", "900")
+)
 ONBOARDING_STATES = {
     None,
     "pending_verification",
@@ -70,6 +77,8 @@ ONBOARDING_STATES = {
 # Estados de menú post-registro (deben ignorar flujo de disponibilidad)
 MENU_STATES = {
     "awaiting_menu_option",
+    "awaiting_personal_info_action",
+    "awaiting_professional_info_action",
     "awaiting_deletion_confirmation",
     "awaiting_social_media_update",
     "awaiting_service_action",
@@ -82,16 +91,21 @@ MENU_STATES = {
     "awaiting_dni_back_photo_update",
 }
 PROFILE_COMPLETION_STATES = {
+    "awaiting_experience",
+    "awaiting_social_media",
+    "awaiting_certificate",
     "awaiting_specialty",
+    "awaiting_profile_service_confirmation",
     "awaiting_add_another_service",
     "awaiting_services_confirmation",
+    "awaiting_profile_completion_confirmation",
+    "awaiting_profile_completion_edit_action",
     "awaiting_services_edit_action",
     "awaiting_services_edit_replace_select",
     "awaiting_services_edit_replace_input",
     "awaiting_services_edit_delete_select",
     "awaiting_services_edit_add",
-    "awaiting_experience",
-    "awaiting_social_media",
+    "profile_completion_finalize",
 }
 MEDIA_STATES = {
     "awaiting_dni_front_photo",
@@ -235,6 +249,15 @@ def _parsear_respuesta_disponibilidad(texto: str) -> Optional[str]:
     return None
 
 
+def _es_continue_profile_completion(carga: Dict[str, Any]) -> bool:
+    seleccionado = str(carga.get("selected_option") or "").strip().lower()
+    contenido = str(carga.get("content") or carga.get("message") or "").strip().lower()
+    return (
+        seleccionado == "continue_profile_completion"
+        or contenido == "continue_profile_completion"
+    )
+
+
 async def _hay_contexto_disponibilidad_activo(telefono: str) -> bool:
     contexto = await cliente_redis.get(CLAVE_CONTEXTO_DISPONIBILIDAD.format(telefono))
     return bool(isinstance(contexto, dict) and contexto.get("expecting_response"))
@@ -253,6 +276,13 @@ def _es_evento_multimedia(carga: Dict[str, Any]) -> bool:
         return True
     contenido = carga.get("content") or carga.get("message")
     return isinstance(contenido, str) and contenido.startswith("data:image/")
+
+
+def _es_evento_interactivo(carga: Dict[str, Any]) -> bool:
+    if carga.get("selected_option"):
+        return True
+    message_type = str(carga.get("message_type") or "").strip().lower()
+    return message_type.startswith("interactive_")
 
 
 async def _es_mensaje_multimedia_duplicado(
@@ -275,6 +305,47 @@ async def _es_mensaje_multimedia_duplicado(
         expire=TTL_DEDUPE_MEDIA_SEGUNDOS,
     )
     return not creado
+
+
+async def _es_mensaje_interactivo_duplicado(
+    telefono: str,
+    estado: Optional[str],
+    carga: Dict[str, Any],
+) -> bool:
+    if estado not in ONBOARDING_STATES and estado not in MENU_STATES and estado not in PROFILE_COMPLETION_STATES:
+        return False
+    if not _es_evento_interactivo(carga):
+        return False
+
+    seleccionado = str(carga.get("selected_option") or "").strip().lower()
+    message_id = _resolver_message_id(carga)
+    if not message_id:
+        if seleccionado not in PROFILE_SINGLE_USE_CONTROL_IDS:
+            return False
+        creado_semantico = await cliente_redis.set_if_absent(
+            CLAVE_DEDUPE_INTERACTIVE_ACTION.format(telefono, seleccionado),
+            {"state": estado, "processed_at": datetime.now(timezone.utc).isoformat()},
+            expire=TTL_DEDUPE_INTERACTIVE_SEGUNDOS,
+        )
+        return not creado_semantico
+
+    creado = await cliente_redis.set_if_absent(
+        CLAVE_DEDUPE_INTERACTIVE.format(telefono, message_id),
+        {"state": estado, "processed_at": datetime.now(timezone.utc).isoformat()},
+        expire=TTL_DEDUPE_INTERACTIVE_SEGUNDOS,
+    )
+    if not creado:
+        return True
+
+    if seleccionado not in PROFILE_SINGLE_USE_CONTROL_IDS:
+        return False
+
+    creado_semantico = await cliente_redis.set_if_absent(
+        CLAVE_DEDUPE_INTERACTIVE_ACTION.format(telefono, seleccionado),
+        {"state": estado, "processed_at": datetime.now(timezone.utc).isoformat()},
+        expire=TTL_DEDUPE_INTERACTIVE_SEGUNDOS,
+    )
+    return not creado_semantico
 
 
 async def _actualizar_ciclo_solicitud(
@@ -635,7 +706,9 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
         telefono = _resolver_telefono_canonico(raw_from, raw_phone) or "unknown"
         phone_user = _extraer_user_jid(telefono)
         is_lid = telefono.endswith("@lid")
-        texto_mensaje = solicitud.message or solicitud.content or ""
+        texto_mensaje = (
+            solicitud.message or solicitud.content or solicitud.selected_option or ""
+        )
         carga = solicitud.model_dump()
         opcion_menu = interpretar_respuesta(texto_mensaje, "menu")
 
@@ -651,6 +724,14 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
         if await _es_mensaje_multimedia_duplicado(telefono, flujo.get("state"), carga):
             logger.info(
                 "media_message_duplicate_ignored provider=%s state=%s message_id=%s",
+                telefono,
+                flujo.get("state"),
+                _resolver_message_id(carga),
+            )
+            return {"success": True, "messages": []}
+        if await _es_mensaje_interactivo_duplicado(telefono, flujo.get("state"), carga):
+            logger.info(
+                "interactive_message_duplicate_ignored provider=%s state=%s message_id=%s",
                 telefono,
                 flujo.get("state"),
                 _resolver_message_id(carga),
@@ -676,6 +757,10 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
             return normalizar_respuesta_whatsapp(respuesta_disponibilidad)
 
         perfil_proveedor = await obtener_perfil_proveedor_cacheado(telefono)
+        if _es_continue_profile_completion(carga):
+            perfil_fresco = await obtener_perfil_proveedor(telefono)
+            if perfil_fresco:
+                perfil_proveedor = perfil_fresco
         tiene_real_phone = bool(
             flujo.get("real_phone") or (perfil_proveedor or {}).get("real_phone")
         )

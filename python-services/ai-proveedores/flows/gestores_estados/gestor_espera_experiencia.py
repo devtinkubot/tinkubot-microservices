@@ -2,8 +2,11 @@
 
 from typing import Any, Dict, Optional
 
-from services.servicios_proveedor.utilidades import (
-    extraer_anios_experiencia as parsear_anios_experiencia,
+from services.servicios_proveedor.utilidades import extraer_anios_experiencia as parsear_anios_experiencia
+from templates.registro import (
+    construir_resumen_confirmacion_perfil_profesional,
+    payload_confirmacion_resumen,
+    payload_red_social_opcional,
 )
 
 
@@ -27,18 +30,27 @@ def manejar_espera_experiencia(
         }
 
     flujo["experience_years"] = anios
+    if flujo.get("profile_edit_mode") == "experience":
+        flujo.pop("profile_edit_mode", None)
+        flujo["state"] = "awaiting_profile_completion_confirmation"
+        return {
+            "success": True,
+            "messages": [
+                payload_confirmacion_resumen(
+                    construir_resumen_confirmacion_perfil_profesional(
+                        experience_years=flujo.get("experience_years"),
+                        social_media_url=flujo.get("social_media_url"),
+                        certificate_uploaded=bool(flujo.get("certificate_uploaded")),
+                        services=list(flujo.get("servicios_temporales") or []),
+                    )
+                )
+            ],
+        }
     if flujo.get("profile_completion_mode"):
         flujo["state"] = "awaiting_social_media"
         return {
             "success": True,
-            "messages": [
-                {
-                    "response": (
-                        "*Comparte una red social para mostrar tu trabajo* "
-                        "o escribe *omitir* si todavía no deseas agregarla."
-                    )
-                }
-            ],
+            "messages": [payload_red_social_opcional()],
         }
 
     flujo["state"] = "awaiting_email"

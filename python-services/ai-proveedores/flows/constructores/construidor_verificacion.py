@@ -7,7 +7,9 @@ from templates import (
     mensaje_menu_post_registro_proveedor,
     mensaje_proveedor_en_revision,
     mensaje_proveedor_verificado,
+    payload_menu_post_registro_proveedor,
 )
+from templates.registro.perfil_profesional import payload_continuar_perfil_profesional
 
 
 def construir_respuesta_verificado(approved_basic: bool = False) -> Dict[str, Any]:
@@ -17,13 +19,10 @@ def construir_respuesta_verificado(approved_basic: bool = False) -> Dict[str, An
         Diccionario con mensajes de verificación y menú posterior al registro.
     """
     mensajes = [{"response": mensaje_proveedor_verificado()}]
-    mensajes.append(
-        {
-            "response": mensaje_menu_post_registro_proveedor(
-                approved_basic=approved_basic
-            )
-        }
-    )
+    if approved_basic:
+        mensajes.append(payload_continuar_perfil_profesional(""))
+    else:
+        mensajes.append(payload_menu_post_registro_proveedor())
     return {"success": True, "messages": mensajes}
 
 

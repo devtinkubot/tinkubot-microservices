@@ -1,8 +1,9 @@
 """Mensajes relacionados con el flujo de registro de proveedores."""
 
 from .confirmacion import (
-    informar_datos_recibidos,
-    pedir_confirmacion_resumen,
+    CONFIRM_ACCEPT_ID,
+    CONFIRM_REJECT_ID,
+    payload_confirmacion_resumen,
 )
 from .confirmacion_servicios import (
     mensaje_confirmacion_servicios,
@@ -27,9 +28,31 @@ from .pasos_registro import (
     preguntar_nombre,
     preguntar_real_phone,
 )
+from .perfil_profesional import (
+    CERTIFICATE_SKIP_ID,
+    CONTINUE_PROFILE_COMPLETION_ID,
+    construir_resumen_confirmacion_perfil_profesional,
+    mensaje_menu_edicion_perfil_profesional,
+    PROFILE_CONTROL_IDS,
+    PROFILE_SINGLE_USE_CONTROL_IDS,
+    SERVICE_ADD_NO_ID,
+    SERVICE_ADD_YES_ID,
+    SERVICE_CONFIRM_ID,
+    SERVICE_CORRECT_ID,
+    SOCIAL_SKIP_ID,
+    mensaje_error_certificado_invalido,
+    mensaje_inicio_perfil_profesional,
+    mensaje_minimo_servicios_pendiente,
+    payload_agregar_otro_servicio,
+    payload_confirmacion_servicio_perfil,
+    payload_certificado_opcional,
+    payload_red_social_opcional,
+    preguntar_experiencia_general,
+)
 from .servicios import (
     confirmar_servicio_y_preguntar_otro,
     mensaje_debes_registrar_al_menos_un_servicio,
+    mensaje_debes_registrar_mas_servicios,
     mensaje_error_opcion_agregar_otro,
     mensaje_error_opcion_edicion_servicios,
     mensaje_maximo_servicios_registro,
@@ -70,6 +93,8 @@ __all__ = [
     "preguntar_nombre",
     "preguntar_real_phone",
     "error_real_phone_invalido",
+    "mensaje_inicio_perfil_profesional",
+    "preguntar_experiencia_general",
     # Documentación
     "solicitar_foto_dni_frontal",
     "solicitar_foto_dni_trasera",
@@ -77,8 +102,9 @@ __all__ = [
     "solicitar_selfie_registro",
     "solicitar_selfie_requerida_registro",
     # Confirmación
-    "informar_datos_recibidos",
-    "pedir_confirmacion_resumen",
+    "payload_confirmacion_resumen",
+    "CONFIRM_ACCEPT_ID",
+    "CONFIRM_REJECT_ID",
     # Confirmación de servicios
     "mensaje_confirmacion_servicios",
     "mensaje_correccion_servicios",
@@ -87,6 +113,8 @@ __all__ = [
     "preguntar_servicios_registro",
     "preguntar_siguiente_servicio_registro",
     "confirmar_servicio_y_preguntar_otro",
+    "payload_agregar_otro_servicio",
+    "payload_confirmacion_servicio_perfil",
     "mensaje_resumen_servicios_registro",
     "mensaje_menu_edicion_servicios_registro",
     "preguntar_numero_servicio_reemplazar",
@@ -97,8 +125,24 @@ __all__ = [
     "mensaje_servicio_duplicado_registro",
     "mensaje_maximo_servicios_registro",
     "mensaje_debes_registrar_al_menos_un_servicio",
+    "mensaje_debes_registrar_mas_servicios",
     "mensaje_error_opcion_agregar_otro",
     "mensaje_error_opcion_edicion_servicios",
+    "payload_red_social_opcional",
+    "payload_certificado_opcional",
+    "mensaje_error_certificado_invalido",
+    "mensaje_minimo_servicios_pendiente",
+    "construir_resumen_confirmacion_perfil_profesional",
+    "mensaje_menu_edicion_perfil_profesional",
+    "CONTINUE_PROFILE_COMPLETION_ID",
+    "PROFILE_CONTROL_IDS",
+    "PROFILE_SINGLE_USE_CONTROL_IDS",
+    "SOCIAL_SKIP_ID",
+    "CERTIFICATE_SKIP_ID",
+    "SERVICE_ADD_YES_ID",
+    "SERVICE_ADD_NO_ID",
+    "SERVICE_CONFIRM_ID",
+    "SERVICE_CORRECT_ID",
     # Validación de ciudad
     "preguntar_ciudad",
     "error_ciudad_corta",

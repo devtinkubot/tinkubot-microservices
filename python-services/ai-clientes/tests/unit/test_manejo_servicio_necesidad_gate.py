@@ -183,12 +183,21 @@ async def test_hint_previsto_se_combina_con_detalle_para_extraer_servicio():
 @pytest.mark.asyncio
 async def test_servicio_generico_critico_pide_precision_y_no_busca():
     flujo = {"state": "awaiting_service"}
+    eventos = []
 
     async def extraer_fn(_texto: str):
         return "transporte de mercancías"
 
     async def validar_necesidad_fn(_texto: str):
         return True
+
+    async def detectar_dominio_generico_fn(servicio: str):
+        if servicio == "transporte de mercancías":
+            return "transporte"
+        return None
+
+    async def registrar_evento_fn(**payload):
+        eventos.append(payload)
 
     flujo_actualizado, respuesta = await procesar_estado_esperando_servicio(
         flujo=flujo,
@@ -197,6 +206,8 @@ async def test_servicio_generico_critico_pide_precision_y_no_busca():
         prompt_inicial="¿Qué necesitas resolver?",
         extraer_fn=extraer_fn,
         validar_necesidad_fn=validar_necesidad_fn,
+        detectar_dominio_generico_fn=detectar_dominio_generico_fn,
+        registrar_evento_fn=registrar_evento_fn,
     )
 
     assert flujo_actualizado["state"] == "awaiting_service"
@@ -204,6 +215,50 @@ async def test_servicio_generico_critico_pide_precision_y_no_busca():
     assert "service_candidate" not in flujo_actualizado
     assert respuesta["response"] == mensaje_solicitar_precision_servicio(
         "transporte de mercancías"
+    )
+    assert [evento["event_name"] for evento in eventos] == [
+        "generic_service_blocked",
+        "precision_prompt_fallback_used",
+        "clarification_requested",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_taxonomia_publicada_puede_bloquear_servicio_generico_fuera_del_hardcode():
+    flujo = {"state": "awaiting_service"}
+
+    async def extraer_fn(_texto: str):
+        return "servicio inmobiliario"
+
+    async def validar_necesidad_fn(_texto: str):
+        return True
+
+    async def detectar_dominio_generico_fn(servicio: str):
+        if servicio == "servicio inmobiliario":
+            return "inmobiliario"
+        return None
+
+    async def construir_mensaje_precision_fn(servicio: str):
+        assert servicio == "servicio inmobiliario"
+        return "Indica si buscas comprar, vender o rentar y qué tipo de inmueble."
+
+    flujo_actualizado, respuesta = await procesar_estado_esperando_servicio(
+        flujo=flujo,
+        texto="quiero tramitar un servicio inmobiliario",
+        saludos=set(),
+        prompt_inicial="¿Qué necesitas resolver?",
+        extraer_fn=extraer_fn,
+        validar_necesidad_fn=validar_necesidad_fn,
+        detectar_dominio_generico_fn=detectar_dominio_generico_fn,
+        construir_mensaje_precision_fn=construir_mensaje_precision_fn,
+    )
+
+    assert flujo_actualizado["state"] == "awaiting_service"
+    assert flujo_actualizado["service_candidate_hint"] == "servicio inmobiliario"
+    assert "service_candidate" not in flujo_actualizado
+    assert (
+        respuesta["response"]
+        == "Indica si buscas comprar, vender o rentar y qué tipo de inmueble."
     )
 
 

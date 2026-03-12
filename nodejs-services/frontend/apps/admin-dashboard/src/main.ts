@@ -4,6 +4,10 @@ import {
   type MonetizationManagerModule
 } from './modules/monetizationManager';
 import { ProvidersManager, type ProvidersManagerModule } from './modules/providersManager';
+import {
+  TaxonomySuggestionsManager,
+  type TaxonomySuggestionsManagerModule
+} from './modules/taxonomySuggestionsManager';
 import { Utils, type UtilsModule } from './modules/utils';
 import {
   WhatsAppManager,
@@ -16,6 +20,7 @@ type TinkuBotGlobal = {
   WhatsAppManager: WhatsAppManagerModule;
   ProvidersManager: ProvidersManagerModule;
   MonetizationManager: MonetizationManagerModule;
+  TaxonomySuggestionsManager: TaxonomySuggestionsManagerModule;
 };
 
 type VentanaDashboard = typeof window & {
@@ -23,6 +28,7 @@ type VentanaDashboard = typeof window & {
   regenerarConexionWhatsApp?: (instanceId: string) => Promise<void>;
   recargarProveedoresPendientes?: () => Promise<void>;
   recargarMonetizacion?: () => Promise<void>;
+  recargarTaxonomia?: () => Promise<void>;
 };
 
 const ventanaGlobal = window as VentanaDashboard;
@@ -32,7 +38,8 @@ ventanaGlobal.TinkuBot = {
   Navigation,
   WhatsAppManager,
   ProvidersManager,
-  MonetizationManager
+  MonetizationManager,
+  TaxonomySuggestionsManager
 };
 
 function enlazarManejadoresGlobales() {
@@ -46,6 +53,9 @@ function enlazarManejadoresGlobales() {
   ventanaGlobal.recargarMonetizacion = async () => {
     await MonetizationManager.recargar();
   };
+  ventanaGlobal.recargarTaxonomia = async () => {
+    await TaxonomySuggestionsManager.recargar();
+  };
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -54,5 +64,6 @@ document.addEventListener('DOMContentLoaded', () => {
   WhatsAppManager.actualizarHoraUltimaActualizacion();
   ProvidersManager.iniciar();
   MonetizationManager.iniciar();
+  TaxonomySuggestionsManager.iniciar();
   enlazarManejadoresGlobales();
 });

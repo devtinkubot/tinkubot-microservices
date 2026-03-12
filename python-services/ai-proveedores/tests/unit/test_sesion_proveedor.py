@@ -148,7 +148,7 @@ def test_manejar_estado_inicial_rejected_permanece_en_pending_verification():
     assert "revis" in respuesta["messages"][0]["response"].lower()
 
 
-def test_manejar_estado_inicial_approved_basic_muestra_menu_reducido():
+def test_manejar_estado_inicial_approved_basic_muestra_cta_con_boton():
     flujo = {
         "has_consent": True,
         "full_name": "Proveedor Basico",
@@ -171,8 +171,35 @@ def test_manejar_estado_inicial_approved_basic_muestra_menu_reducido():
     assert respuesta is not None
     assert flujo["state"] == "awaiting_menu_option"
     assert flujo["approved_basic"] is True
-    assert "Completar perfil profesional" in respuesta["messages"][0]["response"]
-    assert "Gestionar servicios" not in respuesta["messages"][0]["response"]
+    assert "Ya formas parte de TinkuBot" in respuesta["messages"][0]["response"]
+    assert respuesta["messages"][0]["ui"]["type"] == "buttons"
+    assert respuesta["messages"][0]["ui"]["options"][0]["id"] == "continue_profile_completion"
+
+
+def test_manejar_estado_inicial_aprobado_muestra_menu_interactivo():
+    flujo = {
+        "has_consent": True,
+        "full_name": "Proveedor Aprobado",
+        "approved_basic": False,
+    }
+
+    respuesta = asyncio.run(
+        manejar_estado_inicial(
+            estado=None,
+            flujo=flujo,
+            tiene_consentimiento=True,
+            esta_registrado=True,
+            esta_verificado=True,
+            menu_limitado=False,
+            approved_basic=False,
+            telefono="593999111288@s.whatsapp.net",
+        )
+    )
+
+    assert respuesta is not None
+    assert flujo["state"] == "awaiting_menu_option"
+    assert respuesta["messages"][0]["ui"]["type"] == "list"
+    assert respuesta["messages"][0]["ui"]["options"][0]["id"] == "provider_menu_info_personal"
 
 
 def test_sincronizar_flujo_con_perfil_prioriza_datos_durables_sobre_redis():

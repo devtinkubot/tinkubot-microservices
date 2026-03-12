@@ -5,19 +5,27 @@ from typing import Any, Dict, List, Optional
 
 from services.servicios_proveedor.constantes import (
     SERVICIOS_MAXIMOS,
+    SERVICIOS_MINIMOS_PERFIL_PROFESIONAL,
     SERVICIOS_MAXIMOS_ONBOARDING,
 )
 from services.servicios_proveedor.utilidades import (
+    clasificar_servicio_critico,
     es_servicio_critico_generico,
     limpiar_espacios,
     mensaje_pedir_precision_servicio,
+    registrar_evento_servicio_generico,
+    registrar_sugerencia_servicio_generico,
+    refrescar_taxonomia_dominios_criticos,
     sanitizar_lista_servicios,
 )
 from templates.registro import (
-    confirmar_servicio_y_preguntar_otro,
+    PROFILE_CONTROL_IDS,
+    payload_confirmacion_servicio_perfil,
     mensaje_maximo_servicios_registro,
     mensaje_resumen_servicios_registro,
     mensaje_servicio_duplicado_registro,
+    preguntar_siguiente_servicio_registro,
+    payload_agregar_otro_servicio,
 )
 
 logger = logging.getLogger(__name__)
@@ -29,6 +37,13 @@ def _maximo_servicios(flujo: Dict[str, Any]) -> int:
         if flujo.get("profile_completion_mode")
         else SERVICIOS_MAXIMOS_ONBOARDING
     )
+
+
+def _limite_visible_para_contexto(flujo: Dict[str, Any]) -> int:
+    """Devuelve el límite que debe comunicarse al usuario en este contexto."""
+    if flujo.get("profile_completion_mode"):
+        return SERVICIOS_MINIMOS_PERFIL_PROFESIONAL
+    return SERVICIOS_MAXIMOS_ONBOARDING
 
 
 async def normalizar_servicio_registro_individual(
@@ -116,7 +131,35 @@ async def normalizar_servicio_registro_individual(
         }
 
     servicio = servicios_transformados[0]
+    await refrescar_taxonomia_dominios_criticos()
     if es_servicio_critico_generico(servicio):
+        clasificacion = clasificar_servicio_critico(servicio)
+        await registrar_sugerencia_servicio_generico(
+            servicio,
+            contexto=especialidad_texto,
+        )
+        await registrar_evento_servicio_generico(
+            event_name="generic_service_blocked",
+            servicio=servicio,
+            dominio=clasificacion.get("domain"),
+            source=clasificacion.get("source") or "unknown",
+            contexto=especialidad_texto,
+        )
+        if not clasificacion.get("clarification_question"):
+            await registrar_evento_servicio_generico(
+                event_name="precision_prompt_fallback_used",
+                servicio=servicio,
+                dominio=clasificacion.get("domain"),
+                source=clasificacion.get("source") or "unknown",
+                contexto=especialidad_texto,
+            )
+        await registrar_evento_servicio_generico(
+            event_name="clarification_requested",
+            servicio=servicio,
+            dominio=clasificacion.get("domain"),
+            source=clasificacion.get("source") or "unknown",
+            contexto=especialidad_texto,
+        )
         logger.info(
             "critical_generic_provider_service_blocked service='%s' raw='%s'",
             servicio,
@@ -138,6 +181,8 @@ async def manejar_espera_especialidad(
     """Procesa la captura incremental de un servicio en el registro."""
     servicios_temporales: List[str] = list(flujo.get("servicios_temporales") or [])
     maximo_servicios = _maximo_servicios(flujo)
+    maximo_visible = _limite_visible_para_contexto(flujo)
+    texto_limpio = limpiar_espacios(texto_mensaje or "").lower()
 
     if len(servicios_temporales) >= maximo_servicios:
         flujo["state"] = "awaiting_services_confirmation"
@@ -150,9 +195,25 @@ async def manejar_espera_especialidad(
                 {
                     "response": mensaje_resumen_servicios_registro(
                         servicios_temporales,
-                        maximo_servicios,
+                        maximo_visible,
                     )
                 },
+            ],
+        }
+
+    if texto_limpio in PROFILE_CONTROL_IDS:
+        return {
+            "success": True,
+            "messages": [
+                {
+                    "response": preguntar_siguiente_servicio_registro(
+                        len(servicios_temporales) + 1,
+                        maximo_visible,
+                        SERVICIOS_MINIMOS_PERFIL_PROFESIONAL
+                        if flujo.get("profile_completion_mode")
+                        else None,
+                    )
+                }
             ],
         }
 
@@ -170,6 +231,22 @@ async def manejar_espera_especialidad(
             "messages": [{"response": mensaje_servicio_duplicado_registro(servicio)}],
         }
 
+    if flujo.get("profile_completion_mode"):
+        indice_servicio = int(flujo.get("profile_edit_service_index", len(servicios_temporales)))
+        flujo["pending_service_candidate"] = servicio
+        flujo["pending_service_index"] = indice_servicio
+        flujo["state"] = "awaiting_profile_service_confirmation"
+        return {
+            "success": True,
+            "messages": [
+                payload_confirmacion_servicio_perfil(
+                    servicio=servicio,
+                    indice=indice_servicio + 1,
+                    total_requerido=SERVICIOS_MINIMOS_PERFIL_PROFESIONAL,
+                )
+            ],
+        }
+
     servicios_temporales.append(servicio)
     flujo["servicios_temporales"] = servicios_temporales
 
@@ -184,7 +261,7 @@ async def manejar_espera_especialidad(
                 {
                     "response": mensaje_resumen_servicios_registro(
                         servicios_temporales,
-                        maximo_servicios,
+                        maximo_visible,
                     )
                 },
             ],
@@ -194,12 +271,11 @@ async def manejar_espera_especialidad(
     return {
         "success": True,
         "messages": [
-            {
-                "response": confirmar_servicio_y_preguntar_otro(
-                    servicio,
-                    len(servicios_temporales),
-                    maximo_servicios,
-                )
-            }
+            payload_agregar_otro_servicio(
+                servicio=servicio,
+                cantidad_actual=len(servicios_temporales),
+                maximo=maximo_visible,
+                minimo_requerido=SERVICIOS_MINIMOS_PERFIL_PROFESIONAL,
+            )
         ],
     }

@@ -3,6 +3,12 @@
 from typing import Any, Dict, Optional
 
 from flows.validadores.validador_entrada import parsear_entrada_red_social
+from templates.registro import (
+    SOCIAL_SKIP_ID,
+    construir_resumen_confirmacion_perfil_profesional,
+    payload_certificado_opcional,
+    payload_confirmacion_resumen,
+)
 
 
 def manejar_espera_red_social(
@@ -17,9 +23,34 @@ def manejar_espera_red_social(
     Returns:
         Respuesta con éxito y siguiente pregunta.
     """
-    red_social_parseada = parsear_entrada_red_social(texto_mensaje)
+    texto_normalizado = (texto_mensaje or "").strip()
+    if texto_normalizado.lower() == SOCIAL_SKIP_ID:
+        texto_normalizado = "omitir"
+
+    red_social_parseada = parsear_entrada_red_social(texto_normalizado)
     flujo["social_media_url"] = red_social_parseada["url"]
     flujo["social_media_type"] = red_social_parseada["type"]
+
+    if flujo.get("profile_edit_mode") == "social_media":
+        flujo.pop("profile_edit_mode", None)
+        flujo["state"] = "awaiting_profile_completion_confirmation"
+        return {
+            "success": True,
+            "messages": [
+                payload_confirmacion_resumen(
+                    construir_resumen_confirmacion_perfil_profesional(
+                        experience_years=flujo.get("experience_years"),
+                        social_media_url=flujo.get("social_media_url"),
+                        certificate_uploaded=bool(flujo.get("certificate_uploaded")),
+                        services=list(flujo.get("servicios_temporales") or []),
+                    )
+                )
+            ],
+        }
+
+    if flujo.get("profile_completion_mode"):
+        flujo["state"] = "awaiting_certificate"
+        return {"success": True, "messages": [payload_certificado_opcional()]}
 
     flujo["state"] = "awaiting_dni_front_photo"
     return {

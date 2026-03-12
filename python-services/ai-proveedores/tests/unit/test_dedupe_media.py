@@ -9,7 +9,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import pytest
 
-from principal import _es_mensaje_multimedia_duplicado  # noqa: E402
+from principal import (  # noqa: E402
+    _es_mensaje_interactivo_duplicado,
+    _es_mensaje_multimedia_duplicado,
+)
 
 
 class _RedisStub:
@@ -39,6 +42,60 @@ async def test_dedupe_multimedia_ignora_reentrega_con_mismo_message_id(monkeypat
         "593999111222@s.whatsapp.net",
         "awaiting_dni_front_photo",
         carga,
+    )
+
+    assert primera is False
+    assert segunda is True
+
+
+@pytest.mark.asyncio
+async def test_dedupe_interactivo_ignora_reentrega_con_mismo_message_id(monkeypatch):
+    redis_stub = _RedisStub()
+    monkeypatch.setattr("principal.cliente_redis", redis_stub)
+
+    carga = {
+        "id": "wamid-interactive-1",
+        "message_type": "interactive_button_reply",
+        "selected_option": "continue_provider_onboarding",
+    }
+
+    primera = await _es_mensaje_interactivo_duplicado(
+        "593999111222@s.whatsapp.net",
+        "awaiting_consent",
+        carga,
+    )
+    segunda = await _es_mensaje_interactivo_duplicado(
+        "593999111222@s.whatsapp.net",
+        "awaiting_consent",
+        carga,
+    )
+
+    assert primera is False
+    assert segunda is True
+
+
+@pytest.mark.asyncio
+async def test_dedupe_interactivo_ignora_reentrega_semantica_en_accion_unica(monkeypatch):
+    redis_stub = _RedisStub()
+    monkeypatch.setattr("principal.cliente_redis", redis_stub)
+
+    primera = await _es_mensaje_interactivo_duplicado(
+        "593999111222@s.whatsapp.net",
+        "awaiting_certificate",
+        {
+            "id": "wamid-interactive-10",
+            "message_type": "interactive_button_reply",
+            "selected_option": "skip_profile_certificate",
+        },
+    )
+    segunda = await _es_mensaje_interactivo_duplicado(
+        "593999111222@s.whatsapp.net",
+        "awaiting_specialty",
+        {
+            "id": "wamid-interactive-11",
+            "message_type": "interactive_button_reply",
+            "selected_option": "skip_profile_certificate",
+        },
     )
 
     assert primera is False

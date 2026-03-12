@@ -76,7 +76,7 @@ def test_menu_limitado_opcion_5_sale_sin_abrir_eliminacion():
     assert flujo.get("state") is None
 
 
-def test_menu_completo_opcion_4_abre_confirmacion_eliminacion():
+def test_menu_completo_opcion_3_abre_confirmacion_eliminacion():
     flujo = {
         "provider_id": "prov-3",
         "services": ["Pintura"],
@@ -85,8 +85,8 @@ def test_menu_completo_opcion_4_abre_confirmacion_eliminacion():
     respuesta = asyncio.run(
         manejar_estado_menu(
             flujo=flujo,
-            texto_mensaje="4",
-            opcion_menu="4",
+            texto_mensaje="3",
+            opcion_menu="3",
             esta_registrado=True,
             menu_limitado=False,
         )
@@ -94,3 +94,24 @@ def test_menu_completo_opcion_4_abre_confirmacion_eliminacion():
 
     assert flujo["state"] == "awaiting_deletion_confirmation"
     assert "eliminar" in respuesta["messages"][0]["response"].lower()
+
+
+def test_menu_completo_opcion_5_ya_no_sale_y_muestra_error():
+    flujo = {
+        "provider_id": "prov-5",
+        "services": ["Pintura"],
+    }
+
+    respuesta = asyncio.run(
+        manejar_estado_menu(
+            flujo=flujo,
+            texto_mensaje="5",
+            opcion_menu="5",
+            esta_registrado=True,
+            menu_limitado=False,
+        )
+    )
+
+    assert flujo.get("state") != "awaiting_deletion_confirmation"
+    assert "no reconoc" in respuesta["messages"][0]["response"].lower()
+    assert "1, 2, 3 o 4" in respuesta["messages"][0]["response"]

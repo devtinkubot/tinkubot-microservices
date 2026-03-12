@@ -517,6 +517,10 @@ async def enrutar_estado(
 
     if estado == "confirm_service":
         from services.orquestador_conversacion import interpretar_si_no
+        from services.taxonomia.catalogo_publicado import (
+            obtener_taxonomia_publicada,
+            resolver_servicio_canonico_publicado,
+        )
 
         async def iniciar_busqueda_desde_confirmacion(data: Dict[str, Any]):
             if orquestador.repositorio_clientes:
@@ -533,6 +537,15 @@ async def enrutar_estado(
                 guardar_flujo_callback=orquestador.guardar_flujo,
             )
 
+        async def resolver_servicio_canonico(servicio: str) -> Optional[str]:
+            if not orquestador.supabase:
+                return None
+            taxonomia = await obtener_taxonomia_publicada(
+                orquestador.supabase,
+                redis_client=orquestador.redis_client,
+            )
+            return resolver_servicio_canonico_publicado(servicio, taxonomia)
+
         return await procesar_estado_confirmar_servicio(
             flujo,
             texto,
@@ -542,6 +555,7 @@ async def enrutar_estado(
             iniciar_busqueda_desde_confirmacion,
             interpretar_si_no,
             mensaje_inicial_solicitud(),
+            resolver_servicio_canonico,
         )
 
     helper = flujo if isinstance(flujo, dict) else {}

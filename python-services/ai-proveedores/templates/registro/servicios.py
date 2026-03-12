@@ -14,8 +14,38 @@ def preguntar_servicios_registro() -> str:
     )
 
 
-def preguntar_siguiente_servicio_registro(indice: int, maximo: int) -> str:
+def preguntar_siguiente_servicio_registro(
+    indice: int,
+    maximo: int,
+    total_requerido: int | None = None,
+) -> str:
     """Solicita el siguiente servicio del proveedor."""
+    if total_requerido:
+        progreso = min(indice, total_requerido)
+        ejemplos_por_paso = {
+            1: (
+                "Ejemplo para plomero o abogado:\n"
+                "*destape de cañerías*, *representación legal en materia laboral*."
+            ),
+            2: (
+                "Ejemplo para contador o jardinero:\n"
+                "*declaración de impuestos para personas naturales*, "
+                "*mantenimiento de jardines residenciales*."
+            ),
+            3: (
+                "Ejemplo para electricista o arquitecto:\n"
+                "*instalación de tableros eléctricos*, "
+                "*diseño de planos arquitectónicos*."
+            ),
+        }
+        return (
+            f"*{progreso}/{total_requerido}:* Escribe un *servicio o habilidad* que ofreces, "
+            "debes especificar la *especialidad* o *área exacta*.\n"
+            + ejemplos_por_paso.get(
+                progreso,
+                ejemplos_por_paso[1],
+            )
+        )
     return (
         f"*Escribe el servicio {indice} de {maximo}* indicando el servicio y la "
         "especialidad o área exacta."
@@ -42,7 +72,7 @@ def mensaje_resumen_servicios_registro(servicios: List[str], maximo: int) -> str
         [f"{idx + 1}. {servicio}" for idx, servicio in enumerate(servicios)]
     )
     return (
-        f"*Resumen de servicios registrados ({len(servicios)}/{maximo}):*\n\n"
+        f"*Resumen de servicios principales ({len(servicios)}/{maximo}):*\n\n"
         f"{servicios_formateados}\n\n"
         "¿Estás de acuerdo con esta lista?\n"
         "*1.* Sí, continuar\n"
@@ -59,7 +89,7 @@ def mensaje_menu_edicion_servicios_registro(
         [f"{idx + 1}. {servicio}" for idx, servicio in enumerate(servicios)]
     )
     return (
-        f"*Servicios capturados ({len(servicios)}/{maximo}):*\n\n"
+        f"*Servicios principales capturados ({len(servicios)}/{maximo}):*\n\n"
         f"{servicios_formateados}\n\n"
         "¿Qué deseas corregir?\n"
         "*1.* Reemplazar un servicio\n"
@@ -98,13 +128,17 @@ def mensaje_servicio_duplicado_registro(servicio: str) -> str:
 
 def mensaje_maximo_servicios_registro(maximo: int) -> str:
     return (
-        f"Ya completaste tus {maximo} servicios permitidos en el registro. "
+        f"Ya completaste tus {maximo} servicios principales para esta revisión. "
         "Revisemos la lista final."
     )
 
 
 def mensaje_debes_registrar_al_menos_un_servicio() -> str:
     return "Debes registrar al menos un servicio para continuar."
+
+
+def mensaje_debes_registrar_mas_servicios(minimo: int) -> str:
+    return f"Necesitas registrar al menos *{minimo} servicios* para completar tu perfil profesional."
 
 
 def mensaje_error_opcion_agregar_otro() -> str:

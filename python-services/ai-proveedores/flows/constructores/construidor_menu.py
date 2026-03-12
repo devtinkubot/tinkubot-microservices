@@ -4,8 +4,9 @@ from typing import Any, Dict
 
 from templates import (
     mensaje_guia_proveedor,
-    mensaje_menu_principal_proveedor,
     mensaje_menu_post_registro_proveedor,
+    mensaje_menu_principal_proveedor,
+    payload_menu_post_registro_proveedor,
 )
 
 
@@ -30,9 +31,36 @@ def construir_menu_principal(
     return mensaje_menu_principal_proveedor()
 
 
+def construir_payload_menu_principal(
+    *,
+    esta_registrado: bool = False,
+    menu_limitado: bool = False,
+    approved_basic: bool = False,
+) -> Dict[str, Any]:
+    """Construye un payload de menú listo para enviar por WhatsApp."""
+    if esta_registrado and not menu_limitado and not approved_basic:
+        return payload_menu_post_registro_proveedor()
+    return {
+        "response": construir_menu_principal(
+            esta_registrado=esta_registrado,
+            menu_limitado=menu_limitado,
+            approved_basic=approved_basic,
+        )
+    }
+
+
 def construir_menu_desde_flujo(flujo: Dict[str, Any]) -> str:
     """Construye el menú principal según el estado ya resuelto en el flujo."""
     return construir_menu_principal(
+        esta_registrado=bool(flujo.get("esta_registrado")),
+        menu_limitado=bool(flujo.get("menu_limitado")),
+        approved_basic=bool(flujo.get("approved_basic")),
+    )
+
+
+def construir_payload_menu_desde_flujo(flujo: Dict[str, Any]) -> Dict[str, Any]:
+    """Construye el payload del menú principal según el estado del flujo."""
+    return construir_payload_menu_principal(
         esta_registrado=bool(flujo.get("esta_registrado")),
         menu_limitado=bool(flujo.get("menu_limitado")),
         approved_basic=bool(flujo.get("approved_basic")),

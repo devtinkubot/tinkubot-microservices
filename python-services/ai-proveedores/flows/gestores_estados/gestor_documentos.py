@@ -2,7 +2,10 @@
 
 from typing import Any, Dict, Optional
 
-from flows.constructores import construir_menu_principal, construir_resumen_confirmacion
+from flows.constructores import (
+    construir_payload_menu_principal,
+    construir_resumen_confirmacion,
+)
 from infrastructure.storage.utilidades import extraer_primera_imagen_base64
 from services import actualizar_documentos_identidad
 from templates.interfaz import (
@@ -12,14 +15,13 @@ from templates.interfaz import (
 )
 from templates.registro import (
     solicitar_ciudad_actualizacion,
-    pedir_confirmacion_resumen,
+    payload_confirmacion_resumen,
     solicitar_foto_dni_frontal,
     solicitar_foto_dni_trasera,
     solicitar_foto_dni_trasera_requerida,
     solicitar_selfie_registro,
     solicitar_selfie_requerida_registro,
 )
-from templates.registro import informar_datos_recibidos
 
 
 def manejar_inicio_documentos(flujo: Dict[str, Any]) -> Dict[str, Any]:
@@ -112,7 +114,7 @@ async def manejar_dni_trasera_actualizacion(
             "messages": [
                 {"response": error_actualizar_documentos()},
                 {
-                    "response": construir_menu_principal(
+                    **construir_payload_menu_principal(
                         esta_registrado=True,
                         menu_limitado=bool(flujo.get("menu_limitado")),
                         approved_basic=bool(flujo.get("approved_basic")),
@@ -137,7 +139,7 @@ async def manejar_dni_trasera_actualizacion(
             "messages": [
                 {"response": error_actualizar_documentos()},
                 {
-                    "response": construir_menu_principal(
+                    **construir_payload_menu_principal(
                         esta_registrado=True,
                         menu_limitado=bool(flujo.get("menu_limitado")),
                         approved_basic=bool(flujo.get("approved_basic")),
@@ -150,13 +152,11 @@ async def manejar_dni_trasera_actualizacion(
         "success": True,
         "messages": [
             {"response": confirmar_documentos_actualizados()},
-            {
-                "response": construir_menu_principal(
-                    esta_registrado=True,
-                    menu_limitado=bool(flujo.get("menu_limitado")),
-                    approved_basic=bool(flujo.get("approved_basic")),
-                )
-            },
+            construir_payload_menu_principal(
+                esta_registrado=True,
+                menu_limitado=bool(flujo.get("menu_limitado")),
+                approved_basic=bool(flujo.get("approved_basic")),
+            ),
         ],
     }
 
@@ -174,9 +174,5 @@ def manejar_selfie_registro(flujo: Dict[str, Any], carga: Dict[str, Any]) -> Dic
     flujo["state"] = "confirm"
     return {
         "success": True,
-        "messages": [
-            {"response": informar_datos_recibidos()},
-            {"response": resumen},
-            {"response": pedir_confirmacion_resumen()},
-        ],
+        "messages": [payload_confirmacion_resumen(resumen)],
     }

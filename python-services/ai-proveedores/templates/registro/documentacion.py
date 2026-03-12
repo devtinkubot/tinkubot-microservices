@@ -1,7 +1,7 @@
 """Mensajes para recolección de documentación de identidad.
 
 Este módulo contiene mensajes relacionados con la recolección
-de documentación del proveedor: fotos de DNI y selfies.
+de documentación del proveedor: fotos de DNI y foto de perfil.
 """
 
 
@@ -15,9 +15,8 @@ def solicitar_foto_dni_frontal() -> str:
         Mensaje solicitando la foto frontal del DNI como adjunto
     """
     return (
-        "*Para validar tu identidad y mantener la confianza en la plataforma*, "
-        "necesito una foto clara de la parte frontal de tu cédula. "
-        "*Envíala como imagen adjunta.*"
+        "Para *validar tu identidad* y mantener la *confianza en la plataforma*, "
+        "envía una foto clara de la parte frontal de tu cédula."
     )
 
 
@@ -28,9 +27,8 @@ def solicitar_foto_dni_trasera() -> str:
         Mensaje solicitando la foto trasera con tono positivo
     """
     return (
-        "*Para validar tu identidad y mantener la confianza en la plataforma*, "
-        "necesito una foto clara de la parte posterior de tu cédula. "
-        "*Envíala como imagen adjunta.*"
+        "Para *validar tu identidad* y mantener la *confianza en la plataforma*, "
+        "envía una foto clara de la parte posterior de tu cédula."
     )
 
 
@@ -46,28 +44,25 @@ def solicitar_foto_dni_trasera_requerida() -> str:
     )
 
 
-# ==================== SELFIE ====================
+# ==================== FOTO DE PERFIL ====================
 
 
 def solicitar_selfie_registro() -> str:
-    """Solicita la selfie para completar el registro.
+    """Solicita la foto de perfil para completar el registro.
 
     Returns:
-        Mensaje solicitando la selfie con tono de agradecimiento
+        Mensaje solicitando la foto de perfil con tono de agradecimiento
     """
-    return (
-        "*Para completar la validación de identidad*, necesito una selfie clara "
-        "donde se vea bien tu rostro. *Envíala como imagen adjunta.*"
-    )
+    return "Para finalizar. Envía tu *foto de perfil* donde se vea bien tu rostro."
 
 
 def solicitar_selfie_requerida_registro() -> str:
-    """Solicita la selfie como requerimiento final.
+    """Solicita la foto de perfil como requerimiento final.
 
     Returns:
-        Mensaje indicando que la selfie es necesaria para finalizar
+        Mensaje indicando que la foto de perfil es necesaria para finalizar
     """
     return (
-        "Necesito una selfie clara (rostro visible) para finalizar. "
+        "Necesito una foto de perfil clara donde se vea bien tu rostro para finalizar. "
         "Envíala como imagen adjunta."
     )

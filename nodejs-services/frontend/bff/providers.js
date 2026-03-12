@@ -187,11 +187,59 @@ const extraerUrlDocumento = (valor) => {
 
 const construirMensajeAprobacion = (nombre) => {
   const safeName = limpiarTexto(nombre);
-  if (safeName) {
-    return `✅ Hola *${safeName}*, tu registro básico fue aprobado. Ya formas parte de TinkuBot. El siguiente paso es completar tu perfil profesional con habilidades, especialidades y redes. Entra al bot y elige la opción *1. Completar perfil profesional*.`;
-  }
-  return "✅ Tu registro básico fue aprobado. Ya formas parte de TinkuBot. El siguiente paso es completar tu perfil profesional con habilidades, especialidades y redes. Entra al bot y elige la opción *1. Completar perfil profesional*.";
+  const saludo = safeName
+    ? `✅ Hola *_${safeName}_*. Ya formas parte de TinkuBot. El siguiente paso es completar tu perfil profesional.`
+    : "✅ Ya formas parte de TinkuBot. El siguiente paso es completar tu perfil profesional.";
+
+  return {
+    message: saludo,
+    ui: {
+      type: "buttons",
+      id: "provider_basic_approval_v1",
+      options: [{ id: "continue_profile_completion", title: "Continuar" }],
+    },
+  };
 };
+
+const construirMensajeAprobacionPerfil = (nombre) => {
+  const safeName = limpiarTexto(nombre);
+  if (safeName) {
+    return `✅ Hola *${safeName}*, tu perfil profesional fue aprobado. Ya puedes operar como proveedor en TinkuBot.`;
+  }
+  return "✅ Tu perfil profesional fue aprobado. Ya puedes operar como proveedor en TinkuBot.";
+};
+
+const construirMenuProveedorAprobado = () => ({
+  message: "*TinkuBot Proveedores*\n\nElige la opción de interés.",
+  ui: {
+    type: "list",
+    id: "provider_main_menu_v1",
+    list_button_text: "Ver menú",
+    list_section_title: "Menú del Proveedor",
+    options: [
+      {
+        id: "provider_menu_info_personal",
+        title: "Información personal",
+        description: "Nombre, ubicación, documentos y foto de perfil",
+      },
+      {
+        id: "provider_menu_info_profesional",
+        title: "Información profesional",
+        description: "Servicios, certificados y redes sociales",
+      },
+      {
+        id: "provider_menu_eliminar_registro",
+        title: "Eliminar mi registro",
+        description: "Eliminar permanentemente tu perfil",
+      },
+      {
+        id: "provider_menu_salir",
+        title: "Salir",
+        description: "Cerrar el menú actual",
+      },
+    ],
+  },
+});
 
 const construirMensajeRevisionPerfilProfesional = (nombre) => {
   const safeName = limpiarTexto(nombre);
@@ -267,7 +315,7 @@ const formatearTelefonoWhatsApp = (phone) => {
   return `${digitos}@s.whatsapp.net`;
 };
 
-const enviarNotificacionWhatsapp = async ({ to, message, requestId }) => {
+const enviarNotificacionWhatsapp = async ({ to, message, ui, requestId }) => {
   if (!limpiarTexto(to)) {
     console.warn("⚠️ Notificación WhatsApp omitida: teléfono vacío");
     return false;
@@ -282,6 +330,7 @@ const enviarNotificacionWhatsapp = async ({ to, message, requestId }) => {
       account_id: PROVEEDORES_ACCOUNT_ID,
       to,
       message,
+      ...(ui && { ui }),
     };
     const headers = {};
     if (requestId) headers["x-request-id"] = requestId;
@@ -436,6 +485,25 @@ const normalizarProveedorSupabase = (registro) => {
     normalizarTimestampComoUtc(registro?.verification_reviewed_at) ||
     normalizarTimestampComoUtc(registro?.reviewed_at) ||
     null;
+  const certificates = Array.isArray(registro?.provider_certificates)
+    ? registro.provider_certificates
+        .filter(item => item && typeof item.file_url === "string")
+        .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
+        .map(item => ({
+          id: item.id,
+          fileUrl: prepararUrlDocumento(item.file_url),
+          displayOrder:
+            typeof item.display_order === "number"
+              ? item.display_order
+              : Number.isFinite(Number(item.display_order))
+                ? Number(item.display_order)
+                : null,
+          status: limpiarTexto(item.status) || null,
+          createdAt: normalizarTimestampComoUtc(item.created_at) || null,
+          updatedAt: normalizarTimestampComoUtc(item.updated_at) || null,
+        }))
+        .filter(item => typeof item.fileUrl === "string" && item.fileUrl.length > 0)
+    : [];
 
   return {
     id: registro?.id,
@@ -463,6 +531,7 @@ const normalizarProveedorSupabase = (registro) => {
       dniBack: dniBackPhotoUrl,
       face: facePhotoUrl,
     },
+    certificates,
     verificationReviewer,
     verificationReviewedAt,
   };
@@ -531,7 +600,7 @@ const construirRutaSupabasePendientes = (incluirEstado = true) => {
   const parametrosBase = [
     `limit=${pendingLimit}`,
     `order=created_at.desc`,
-    "select=*,provider_services(service_name,service_name_normalized,display_order)",
+    "select=*,provider_services(service_name,service_name_normalized,display_order),provider_certificates(id,file_url,display_order,status,created_at,updated_at)",
   ];
 
   if (incluirEstado) {
@@ -583,7 +652,7 @@ const construirRutaSupabasePostRevision = () => {
   const parametrosBase = [
     `limit=${pendingLimit}`,
     `order=created_at.desc`,
-    "select=*,provider_services(service_name,service_name_normalized,display_order)",
+    "select=*,provider_services(service_name,service_name_normalized,display_order),provider_certificates(id,file_url,display_order,status,created_at,updated_at)",
     "status=in.(profile_pending_review,interview_required,rejected)",
   ];
 
@@ -611,7 +680,7 @@ const obtenerProveedoresPostRevisionSupabase = async () => {
 
 const construirRutaSupabasePorId = (providerId) => {
   const encodedId = encodeURIComponent(providerId);
-  return `${supabaseProvidersTable}?id=eq.${encodedId}&select=*,provider_services(service_name,service_name_normalized,display_order)`;
+  return `${supabaseProvidersTable}?id=eq.${encodedId}&select=*,provider_services(service_name,service_name_normalized,display_order),provider_certificates(id,file_url,display_order,status,created_at,updated_at)`;
 };
 
 const intentarActualizacionSupabase = async (
@@ -718,12 +787,13 @@ async function aprobarProveedor(providerId, _payload = {}, requestId = null) {
 
     const mensaje = "Onboarding básico aprobado correctamente.";
 
-    const approvalMessage = construirMensajeAprobacion(registro?.full_name);
+    const approvalResult = construirMensajeAprobacion(registro?.full_name);
     const telefonoBruto = registro?.real_phone || registro?.phone;
     const telefonoNotificacion = formatearTelefonoWhatsApp(telefonoBruto);
     await enviarNotificacionWhatsapp({
       to: telefonoNotificacion,
-      message: approvalMessage,
+      message: approvalResult.message,
+      ui: approvalResult.ui,
       requestId,
     });
 
@@ -844,9 +914,14 @@ async function revisarProveedor(providerId, payload = {}, requestId = null) {
         : null;
 
     let mensajeProveedor = limpiarTexto(payload.message);
-    if (!mensajeProveedor) {
-      if (estadoFinal === "approved" || estadoFinal === "approved_basic") {
-        mensajeProveedor = construirMensajeAprobacion(registro?.full_name);
+    let uiProveedor = null;
+    if (estadoFinal === "approved_basic") {
+      const resultado = construirMensajeAprobacion(registro?.full_name);
+      mensajeProveedor = resultado.message;
+      uiProveedor = resultado.ui;
+    } else if (!mensajeProveedor) {
+      if (estadoFinal === "approved") {
+        mensajeProveedor = construirMensajeAprobacionPerfil(registro?.full_name);
       } else if (estadoFinal === "profile_pending_review") {
         mensajeProveedor = construirMensajeRevisionPerfilProfesional(
           registro?.full_name,
@@ -867,8 +942,19 @@ async function revisarProveedor(providerId, payload = {}, requestId = null) {
     await enviarNotificacionWhatsapp({
       to: telefonoRevisar,
       message: mensajeProveedor,
+      ui: uiProveedor,
       requestId,
     });
+
+    if (estadoFinal === "approved") {
+      const menuProveedor = construirMenuProveedorAprobado();
+      await enviarNotificacionWhatsapp({
+        to: telefonoRevisar,
+        message: menuProveedor.message,
+        ui: menuProveedor.ui,
+        requestId,
+      });
+    }
 
     if (estadoFinal === "approved") {
       await invalidarCacheProveedor(
@@ -1181,6 +1267,1417 @@ async function obtenerMonetizacionProveedor(providerId) {
   }
 }
 
+async function obtenerTaxonomiaSugerencias({
+  status = "pending",
+  limit = 50,
+} = {}) {
+  if (!supabaseClient) {
+    const error = new Error(
+      "Supabase REST no configurado para consultar sugerencias de taxonomía.",
+    );
+    error.status = 500;
+    throw error;
+  }
+
+  try {
+    const params = {
+      select: [
+        "id",
+        "source_channel",
+        "source_text",
+        "normalized_text",
+        "context_excerpt",
+        "proposed_domain_code",
+        "proposed_service_candidate",
+        "proposed_canonical_name",
+        "missing_dimensions",
+        "proposal_type",
+        "confidence_score",
+        "evidence_json",
+        "review_status",
+        "cluster_key",
+        "occurrence_count",
+        "first_seen_at",
+        "last_seen_at",
+        "created_at",
+        "updated_at",
+      ].join(","),
+      order: "last_seen_at.desc",
+      limit,
+    };
+
+    if (status && status !== "all") {
+      params.review_status = `eq.${status}`;
+    }
+
+    const response = await supabaseClient.get(
+      "/service_taxonomy_suggestions",
+      {
+        params,
+      },
+    );
+
+    return {
+      suggestions: Array.isArray(response.data) ? response.data : [],
+    };
+  } catch (error) {
+    throw gestionarErrorAxios(error);
+  }
+}
+
+async function obtenerTaxonomiaClusters({
+  status = "pending",
+  limit = 50,
+} = {}) {
+  const result = await obtenerTaxonomiaSugerencias({
+    status,
+    limit: Math.max(limit * 5, 200),
+  });
+  const clusters = construirClustersTaxonomia(result.suggestions || []).slice(0, limit);
+  return { clusters };
+}
+
+async function obtenerTaxonomiaOverview() {
+  if (!supabaseClient) {
+    const error = new Error(
+      "Supabase REST no configurado para consultar overview de taxonomía.",
+    );
+    error.status = 500;
+    throw error;
+  }
+
+  try {
+    const [
+      suggestionsResponse,
+      draftsResponse,
+      publicationsResponse,
+      domainsResponse,
+      rulesResponse,
+      aliasesResponse,
+      canonicalServicesResponse,
+      runtimeEventsResponse,
+    ] = await Promise.all([
+      supabaseClient.get("/service_taxonomy_suggestions", {
+        params: {
+          select: "review_status,source_channel",
+          limit: 1000,
+        },
+      }),
+      supabaseClient.get("/service_taxonomy_change_queue", {
+        params: {
+          select: "status",
+          limit: 1000,
+        },
+      }),
+      supabaseClient.get("/service_taxonomy_publications", {
+        params: {
+          select: "version,status,published_at",
+          order: "version.desc",
+          limit: 5,
+        },
+      }),
+      supabaseClient.get("/service_domains", {
+        params: {
+          select: "id,code,status",
+          limit: 500,
+        },
+      }),
+      supabaseClient.get("/service_precision_rules", {
+        params: {
+          select: "id,domain_id,status",
+          limit: 500,
+        },
+      }),
+      supabaseClient.get("/service_domain_aliases", {
+        params: {
+          select: "id,domain_id,status",
+          limit: 2000,
+        },
+      }),
+      supabaseClient.get("/service_canonical_services", {
+        params: {
+          select: "id,domain_id,status",
+          limit: 2000,
+        },
+      }),
+      supabaseClient.get("/service_taxonomy_runtime_events", {
+        params: {
+          select: "event_name,source_channel,domain_code,fallback_source,created_at",
+          created_at: `gte.${new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()}`,
+          order: "created_at.desc",
+          limit: 5000,
+        },
+      }),
+    ]);
+
+    const suggestions = Array.isArray(suggestionsResponse.data)
+      ? suggestionsResponse.data
+      : [];
+    const drafts = Array.isArray(draftsResponse.data) ? draftsResponse.data : [];
+    const publications = Array.isArray(publicationsResponse.data)
+      ? publicationsResponse.data
+      : [];
+    const domains = Array.isArray(domainsResponse.data) ? domainsResponse.data : [];
+    const rules = Array.isArray(rulesResponse.data) ? rulesResponse.data : [];
+    const aliases = Array.isArray(aliasesResponse.data) ? aliasesResponse.data : [];
+    const canonicalServices = Array.isArray(canonicalServicesResponse.data)
+      ? canonicalServicesResponse.data
+      : [];
+    const runtimeEvents = Array.isArray(runtimeEventsResponse.data)
+      ? runtimeEventsResponse.data
+      : [];
+
+    const suggestionStatusCounts = {
+      pending: 0,
+      enriched: 0,
+      approved: 0,
+      rejected: 0,
+      superseded: 0,
+    };
+    const suggestionSourceCounts = {
+      client: 0,
+      provider: 0,
+      admin: 0,
+      system: 0,
+    };
+    for (const item of suggestions) {
+      const status = limpiarTexto(item.review_status);
+      const source = limpiarTexto(item.source_channel);
+      if (status && status in suggestionStatusCounts) {
+        suggestionStatusCounts[status] += 1;
+      }
+      if (source && source in suggestionSourceCounts) {
+        suggestionSourceCounts[source] += 1;
+      }
+    }
+
+    const draftStatusCounts = {
+      draft: 0,
+      applied: 0,
+      published: 0,
+      rejected: 0,
+    };
+    for (const item of drafts) {
+      const status = limpiarTexto(item.status);
+      if (status && status in draftStatusCounts) {
+        draftStatusCounts[status] += 1;
+      }
+    }
+
+    const activePublication = publications.find(item => item?.status === "published") || null;
+    const publishedDomains = domains.filter(
+      item => item?.status === "published" || item?.status === "active",
+    );
+    const publishedDomainIds = new Set(
+      publishedDomains.map(item => item?.id).filter(Boolean),
+    );
+    const domainsWithRules = new Set(
+      rules
+        .filter(item => publishedDomainIds.has(item?.domain_id))
+        .map(item => item?.domain_id)
+        .filter(Boolean),
+    );
+    const domainsWithAliases = new Set(
+      aliases
+        .filter(item => publishedDomainIds.has(item?.domain_id))
+        .map(item => item?.domain_id)
+        .filter(Boolean),
+    );
+    const domainsWithCanonicals = new Set(
+      canonicalServices
+        .filter(item => publishedDomainIds.has(item?.domain_id))
+        .map(item => item?.domain_id)
+        .filter(Boolean),
+    );
+    const runtimeEventCounts = {
+      clarificationRequested: 0,
+      genericServiceBlocked: 0,
+      genericFallbackUsed: 0,
+      precisionPromptFallbackUsed: 0,
+    };
+    const runtimeSourceCounts = {
+      client: 0,
+      provider: 0,
+      admin: 0,
+      system: 0,
+    };
+    const domainRuntimeMap = new Map();
+
+    for (const item of runtimeEvents) {
+      const eventName = limpiarTexto(item.event_name);
+      const source = limpiarTexto(item.source_channel);
+      const domainCode = limpiarTexto(item.domain_code) || "sin-dominio";
+
+      if (source && source in runtimeSourceCounts) {
+        runtimeSourceCounts[source] += 1;
+      }
+
+      if (eventName === "clarification_requested") {
+        runtimeEventCounts.clarificationRequested += 1;
+      } else if (eventName === "generic_service_blocked") {
+        runtimeEventCounts.genericServiceBlocked += 1;
+      } else if (eventName === "generic_fallback_used") {
+        runtimeEventCounts.genericFallbackUsed += 1;
+      } else if (eventName === "precision_prompt_fallback_used") {
+        runtimeEventCounts.precisionPromptFallbackUsed += 1;
+      }
+
+      if (!domainRuntimeMap.has(domainCode)) {
+        domainRuntimeMap.set(domainCode, {
+          domainCode,
+          clarificationRequested: 0,
+          genericServiceBlocked: 0,
+          fallbackUsed: 0,
+        });
+      }
+
+      const bucket = domainRuntimeMap.get(domainCode);
+      if (eventName === "clarification_requested") {
+        bucket.clarificationRequested += 1;
+      } else if (eventName === "generic_service_blocked") {
+        bucket.genericServiceBlocked += 1;
+      } else if (eventName === "generic_fallback_used") {
+        bucket.fallbackUsed += 1;
+      }
+    }
+
+    const topAmbiguousDomains = Array.from(domainRuntimeMap.values())
+      .filter(
+        item =>
+          item.domainCode !== "sin-dominio" &&
+          (item.clarificationRequested > 0 || item.genericServiceBlocked > 0),
+      )
+      .sort((a, b) => {
+        const aScore =
+          a.clarificationRequested * 2 + a.genericServiceBlocked + a.fallbackUsed;
+        const bScore =
+          b.clarificationRequested * 2 + b.genericServiceBlocked + b.fallbackUsed;
+        return bScore - aScore || a.domainCode.localeCompare(b.domainCode);
+      })
+      .slice(0, 5);
+
+    return {
+      summary: {
+        activeVersion: activePublication?.version ?? null,
+        publishedAt: activePublication?.published_at ?? null,
+        domainsPublished: publishedDomains.length,
+        domainsWithRules: domainsWithRules.size,
+        domainsWithAliases: domainsWithAliases.size,
+        domainsWithCanonicals: domainsWithCanonicals.size,
+        totalSuggestions: suggestions.length,
+        totalDrafts: drafts.length,
+      },
+      suggestionStatusCounts,
+      suggestionSourceCounts,
+      draftStatusCounts,
+      runtimeMetrics7d: {
+        totalEvents: runtimeEvents.length,
+        eventCounts: runtimeEventCounts,
+        sourceCounts: runtimeSourceCounts,
+        topAmbiguousDomains,
+      },
+    };
+  } catch (error) {
+    throw gestionarErrorAxios(error);
+  }
+}
+
+function normalizarAliasTaxonomia(value) {
+  return limpiarTexto(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizarListaTexto(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+  return [...new Set(items.map(item => limpiarTexto(item)).filter(Boolean))];
+}
+
+function compararSugerenciasCluster(a, b) {
+  const aOccurrences = Number(a?.occurrence_count || 1);
+  const bOccurrences = Number(b?.occurrence_count || 1);
+  if (bOccurrences !== aOccurrences) {
+    return bOccurrences - aOccurrences;
+  }
+
+  const aConfidence = Number(a?.confidence_score || 0);
+  const bConfidence = Number(b?.confidence_score || 0);
+  if (bConfidence !== aConfidence) {
+    return bConfidence - aConfidence;
+  }
+
+  const aLastSeen = Date.parse(a?.last_seen_at || a?.updated_at || 0) || 0;
+  const bLastSeen = Date.parse(b?.last_seen_at || b?.updated_at || 0) || 0;
+  return bLastSeen - aLastSeen;
+}
+
+function determinarEstadoCluster(members) {
+  const statuses = new Set(
+    members.map(item => limpiarTexto(item.review_status)).filter(Boolean),
+  );
+  if (statuses.has("approved")) return "approved";
+  if (statuses.has("pending")) return "pending";
+  if (statuses.has("enriched")) return "enriched";
+  if (statuses.size === 1 && statuses.has("rejected")) return "rejected";
+  if (statuses.size === 1 && statuses.has("superseded")) return "superseded";
+  if (statuses.has("rejected")) return "rejected";
+  return "pending";
+}
+
+function construirClustersTaxonomia(suggestions) {
+  const buckets = new Map();
+  for (const suggestion of suggestions) {
+    const clusterKey = limpiarTexto(suggestion.cluster_key) || `legacy:${suggestion.id}`;
+    if (!buckets.has(clusterKey)) {
+      buckets.set(clusterKey, []);
+    }
+    buckets.get(clusterKey).push(suggestion);
+  }
+
+  return Array.from(buckets.entries())
+    .map(([clusterKey, members]) => {
+      const orderedMembers = [...members].sort(compararSugerenciasCluster);
+      const representative = orderedMembers[0];
+      const sourceCounts = {
+        client: 0,
+        provider: 0,
+        admin: 0,
+        system: 0,
+      };
+      const variants = [];
+      let totalOccurrences = 0;
+      let firstSeenAt = null;
+      let lastSeenAt = null;
+
+      for (const member of orderedMembers) {
+        const source = limpiarTexto(member.source_channel);
+        if (source && source in sourceCounts) {
+          sourceCounts[source] += 1;
+        }
+        const variant = limpiarTexto(member.source_text) || limpiarTexto(member.normalized_text);
+        if (variant && !variants.includes(variant)) {
+          variants.push(variant);
+        }
+        totalOccurrences += Number(member.occurrence_count || 1);
+        const first = member.first_seen_at || member.created_at || null;
+        const last = member.last_seen_at || member.updated_at || null;
+        if (first && (!firstSeenAt || Date.parse(first) < Date.parse(firstSeenAt))) {
+          firstSeenAt = first;
+        }
+        if (last && (!lastSeenAt || Date.parse(last) > Date.parse(lastSeenAt))) {
+          lastSeenAt = last;
+        }
+      }
+
+      return {
+        clusterId: clusterKey,
+        clusterKey,
+        representativeSuggestionId: representative.id,
+        representative,
+        reviewStatus: determinarEstadoCluster(orderedMembers),
+        proposalType: representative.proposal_type || null,
+        proposedDomainCode: representative.proposed_domain_code || null,
+        proposedCanonicalName:
+          representative.proposed_canonical_name ||
+          representative.proposed_service_candidate ||
+          null,
+        confidenceScore: representative.confidence_score ?? null,
+        memberCount: orderedMembers.length,
+        totalOccurrences,
+        sourceCounts,
+        variants,
+        firstSeenAt,
+        lastSeenAt,
+        members: orderedMembers,
+      };
+    })
+    .sort((a, b) => {
+      const aLast = Date.parse(a.lastSeenAt || 0) || 0;
+      const bLast = Date.parse(b.lastSeenAt || 0) || 0;
+      return bLast - aLast || b.totalOccurrences - a.totalOccurrences;
+    });
+}
+
+async function obtenerSugerenciasPorClusterKey(clusterKey) {
+  const key = limpiarTexto(clusterKey);
+  if (!supabaseClient || !key) {
+    return [];
+  }
+
+  const response = await supabaseClient.get("/service_taxonomy_suggestions", {
+    params: {
+      select: [
+        "id",
+        "source_channel",
+        "source_text",
+        "normalized_text",
+        "context_excerpt",
+        "proposed_domain_code",
+        "proposed_service_candidate",
+        "proposed_canonical_name",
+        "missing_dimensions",
+        "proposal_type",
+        "confidence_score",
+        "evidence_json",
+        "review_status",
+        "cluster_key",
+        "occurrence_count",
+        "first_seen_at",
+        "last_seen_at",
+        "created_at",
+        "updated_at",
+      ].join(","),
+      cluster_key: `eq.${key}`,
+      order: "last_seen_at.desc",
+      limit: 500,
+    },
+  });
+
+  return Array.isArray(response.data) ? response.data : [];
+}
+
+async function obtenerDominioTaxonomiaPorCodigo(domainCode) {
+  const domain = limpiarTexto(domainCode);
+  if (!supabaseClient || !domain) {
+    return null;
+  }
+
+  const response = await supabaseClient.get("/service_domains", {
+    params: {
+      select: "id,code,display_name,status",
+      code: `eq.${domain}`,
+      limit: 1,
+    },
+  });
+
+  return Array.isArray(response.data) ? response.data[0] : null;
+}
+
+async function obtenerReglaPrecisionPorDominio(domainId) {
+  const id = limpiarTexto(domainId);
+  if (!supabaseClient || !id) {
+    return null;
+  }
+
+  const response = await supabaseClient.get("/service_precision_rules", {
+    params: {
+      select: [
+        "id",
+        "required_dimensions",
+        "generic_examples",
+        "sufficient_examples",
+        "client_prompt_template",
+        "provider_prompt_template",
+        "draft_required_dimensions",
+        "draft_generic_examples",
+        "draft_sufficient_examples",
+        "draft_client_prompt_template",
+        "draft_provider_prompt_template",
+        "draft_updated_at",
+      ].join(","),
+      domain_id: `eq.${id}`,
+      limit: 1,
+    },
+  });
+
+  return Array.isArray(response.data) ? response.data[0] : null;
+}
+
+async function obtenerServicioCanonicoPorDominio(domainId, canonicalNormalized) {
+  const id = limpiarTexto(domainId);
+  const normalized = limpiarTexto(canonicalNormalized);
+  if (!supabaseClient || !id || !normalized) {
+    return null;
+  }
+
+  const response = await supabaseClient.get("/service_canonical_services", {
+    params: {
+      select: "id,domain_id,canonical_name,canonical_normalized,status",
+      domain_id: `eq.${id}`,
+      canonical_normalized: `eq.${normalized}`,
+      limit: 1,
+    },
+  });
+
+  return Array.isArray(response.data) ? response.data[0] : null;
+}
+
+function construirPayloadCambioTaxonomia(suggestion, currentRule) {
+  const sourceText = limpiarTexto(suggestion.source_text);
+  const normalizedText = limpiarTexto(suggestion.normalized_text);
+  const proposedServiceCandidate = limpiarTexto(
+    suggestion.proposed_service_candidate,
+  );
+  const proposedCanonicalName = limpiarTexto(
+    suggestion.proposed_canonical_name || proposedServiceCandidate,
+  );
+  const missingDimensions = normalizarListaTexto(suggestion.missing_dimensions);
+  const currentRequiredDimensions = normalizarListaTexto(
+    currentRule?.required_dimensions,
+  );
+  const proposedRequiredDimensions = normalizarListaTexto([
+    ...currentRequiredDimensions,
+    ...missingDimensions,
+  ]);
+
+  return {
+    source_channel: suggestion.source_channel || null,
+    source_text: sourceText || null,
+    normalized_text: normalizedText || null,
+    context_excerpt: suggestion.context_excerpt || null,
+    confidence_score: suggestion.confidence_score ?? null,
+    occurrence_count: suggestion.occurrence_count ?? 1,
+    evidence_json: suggestion.evidence_json || {},
+    proposed_service_candidate: proposedServiceCandidate || null,
+    missing_dimensions: missingDimensions,
+    proposed_aliases: normalizarListaTexto([
+      sourceText,
+      proposedCanonicalName,
+      normalizedText,
+    ]),
+    current_rule_snapshot: currentRule
+      ? {
+          id: currentRule.id || null,
+          required_dimensions: currentRequiredDimensions,
+          generic_examples: Array.isArray(currentRule.generic_examples)
+            ? currentRule.generic_examples
+            : [],
+          sufficient_examples: Array.isArray(currentRule.sufficient_examples)
+            ? currentRule.sufficient_examples
+            : [],
+          client_prompt_template: currentRule.client_prompt_template || null,
+          provider_prompt_template: currentRule.provider_prompt_template || null,
+          draft_required_dimensions: Array.isArray(currentRule.draft_required_dimensions)
+            ? currentRule.draft_required_dimensions
+            : null,
+        }
+      : null,
+    proposed_rule_update: {
+      required_dimensions: proposedRequiredDimensions,
+      generic_examples: Array.isArray(currentRule?.generic_examples)
+        ? currentRule.generic_examples
+        : [],
+      sufficient_examples: Array.isArray(currentRule?.sufficient_examples)
+        ? currentRule.sufficient_examples
+        : [],
+      client_prompt_template: currentRule?.client_prompt_template || null,
+      provider_prompt_template: currentRule?.provider_prompt_template || null,
+    },
+    current_canonical_name: null,
+    diff_summary: {
+      alias_before: suggestion.evidence_json?.alias_match?.alias_text || null,
+      alias_after: proposedCanonicalName || sourceText || normalizedText || null,
+      required_dimensions_before: currentRequiredDimensions,
+      required_dimensions_after: proposedRequiredDimensions,
+    },
+  };
+}
+
+async function obtenerTaxonomiaSugerenciaPorId(suggestionId) {
+  const id = limpiarTexto(suggestionId);
+  if (!supabaseClient || !id) {
+    return null;
+  }
+
+  const suggestionResponse = await supabaseClient.get(
+    `/service_taxonomy_suggestions?id=eq.${encodeURIComponent(id)}`,
+    {
+      params: {
+        select: [
+          "id",
+          "source_channel",
+          "source_text",
+          "normalized_text",
+          "context_excerpt",
+          "proposed_domain_code",
+          "proposed_service_candidate",
+          "proposed_canonical_name",
+          "missing_dimensions",
+          "proposal_type",
+          "confidence_score",
+          "evidence_json",
+          "review_status",
+          "occurrence_count",
+          "cluster_key",
+        ].join(","),
+        limit: 1,
+      },
+    },
+  );
+
+  return Array.isArray(suggestionResponse.data) ? suggestionResponse.data[0] : null;
+}
+
+async function aprobarTaxonomiaSugerenciaDesdeRegistro(suggestion, payload = {}) {
+  const approvedBy = limpiarTexto(payload.approvedBy) || "admin-dashboard";
+  const reviewNotes = limpiarTexto(payload.reviewNotes);
+
+  const actionType = limpiarTexto(suggestion.proposal_type) || "review";
+  if (!["alias", "new_canonical", "rule_update", "review"].includes(actionType)) {
+    const error = new Error("proposal_type inválido para aprobación.");
+    error.status = 400;
+    throw error;
+  }
+
+  const domain = await obtenerDominioTaxonomiaPorCodigo(
+    suggestion.proposed_domain_code,
+  );
+  const currentRule = domain?.id
+    ? await obtenerReglaPrecisionPorDominio(domain.id)
+    : null;
+  const nowIso = new Date().toISOString();
+  const changeResponse = await supabaseClient.post(
+    "/service_taxonomy_change_queue",
+    {
+      suggestion_id: suggestion.id,
+      action_type: actionType,
+      target_domain_code: suggestion.proposed_domain_code || null,
+      proposed_canonical_name: suggestion.proposed_canonical_name || null,
+      payload_json: construirPayloadCambioTaxonomia(suggestion, currentRule),
+      status: "draft",
+      notes: reviewNotes || null,
+      approved_by: approvedBy,
+      approved_at: nowIso,
+    },
+    {
+      headers: {
+        Prefer: "return=representation",
+      },
+    },
+  );
+
+  const change = Array.isArray(changeResponse.data) ? changeResponse.data[0] : null;
+  if (!change?.id) {
+    const error = new Error("No se pudo crear el cambio draft.");
+    error.status = 500;
+    throw error;
+  }
+
+  await supabaseClient.patch(
+    `/service_taxonomy_suggestions?id=eq.${encodeURIComponent(suggestion.id)}`,
+    {
+      review_status: "approved",
+      status: "approved",
+      review_notes: reviewNotes || null,
+      reviewed_by: approvedBy,
+      reviewed_at: nowIso,
+      updated_at: nowIso,
+    },
+    {
+      headers: {
+        Prefer: "return=representation",
+      },
+    },
+  );
+
+  return {
+    suggestionId: suggestion.id,
+    reviewStatus: "approved",
+    changeId: change.id,
+    changeStatus: change.status || "draft",
+    updatedAt: nowIso,
+  };
+}
+
+async function revisarTaxonomiaSugerencia(suggestionId, payload = {}) {
+  if (!supabaseClient) {
+    const error = new Error(
+      "Supabase REST no configurado para revisar sugerencias de taxonomía.",
+    );
+    error.status = 500;
+    throw error;
+  }
+
+  const id = limpiarTexto(suggestionId);
+  if (!id) {
+    const error = new Error("Identificador de sugerencia inválido.");
+    error.status = 400;
+    throw error;
+  }
+
+  const reviewStatus = limpiarTexto(payload.reviewStatus);
+  if (!reviewStatus || !["pending", "rejected"].includes(reviewStatus)) {
+    const error = new Error("reviewStatus inválido.");
+    error.status = 400;
+    throw error;
+  }
+
+  const reviewNotes = limpiarTexto(payload.reviewNotes);
+  const nowIso = new Date().toISOString();
+
+  try {
+    const response = await supabaseClient.patch(
+      `/service_taxonomy_suggestions?id=eq.${encodeURIComponent(id)}`,
+      {
+        review_status: reviewStatus,
+        status: reviewStatus === "pending" ? "pending" : "rejected",
+        review_notes: reviewNotes || null,
+        updated_at: nowIso,
+      },
+      {
+        headers: {
+          Prefer: "return=representation",
+        },
+      },
+    );
+
+    const updated = Array.isArray(response.data) ? response.data[0] : null;
+    return {
+      suggestionId: id,
+      reviewStatus,
+      updatedAt: updated?.updated_at ?? nowIso,
+    };
+  } catch (error) {
+    throw gestionarErrorAxios(error);
+  }
+}
+
+async function aprobarTaxonomiaSugerencia(suggestionId, payload = {}) {
+  if (!supabaseClient) {
+    const error = new Error(
+      "Supabase REST no configurado para aprobar sugerencias de taxonomía.",
+    );
+    error.status = 500;
+    throw error;
+  }
+
+  const id = limpiarTexto(suggestionId);
+  if (!id) {
+    const error = new Error("Identificador de sugerencia inválido.");
+    error.status = 400;
+    throw error;
+  }
+
+  try {
+    const suggestion = await obtenerTaxonomiaSugerenciaPorId(id);
+    if (!suggestion) {
+      const error = new Error("Sugerencia no encontrada.");
+      error.status = 404;
+      throw error;
+    }
+    return await aprobarTaxonomiaSugerenciaDesdeRegistro(suggestion, payload);
+  } catch (error) {
+    throw gestionarErrorAxios(error);
+  }
+}
+
+async function revisarTaxonomiaCluster(clusterId, payload = {}) {
+  if (!supabaseClient) {
+    const error = new Error(
+      "Supabase REST no configurado para revisar clusters de taxonomía.",
+    );
+    error.status = 500;
+    throw error;
+  }
+
+  const decodedClusterId = limpiarTexto(decodeURIComponent(clusterId || ""));
+  if (!decodedClusterId) {
+    const error = new Error("Identificador de cluster inválido.");
+    error.status = 400;
+    throw error;
+  }
+
+  const reviewStatus = limpiarTexto(payload.reviewStatus);
+  if (!reviewStatus || !["pending", "rejected"].includes(reviewStatus)) {
+    const error = new Error("reviewStatus inválido.");
+    error.status = 400;
+    throw error;
+  }
+
+  const suggestions = await obtenerSugerenciasPorClusterKey(decodedClusterId);
+  if (suggestions.length === 0) {
+    const error = new Error("Cluster no encontrado.");
+    error.status = 404;
+    throw error;
+  }
+
+  const targetSuggestions = suggestions.filter(item => {
+    const status = limpiarTexto(item.review_status);
+    if (reviewStatus === "rejected") {
+      return status === "pending" || status === "enriched";
+    }
+    return status === "rejected";
+  });
+
+  const nowIso = new Date().toISOString();
+  const reviewNotes = limpiarTexto(payload.reviewNotes);
+
+  await Promise.all(
+    targetSuggestions.map(item =>
+      supabaseClient.patch(
+        `/service_taxonomy_suggestions?id=eq.${encodeURIComponent(item.id)}`,
+        {
+          review_status: reviewStatus,
+          status: reviewStatus === "pending" ? "pending" : "rejected",
+          review_notes: reviewNotes || null,
+          updated_at: nowIso,
+        },
+        {
+          headers: {
+            Prefer: "return=representation",
+          },
+        },
+      ),
+    ),
+  );
+
+  return {
+    clusterId: decodedClusterId,
+    reviewStatus,
+    updatedAt: nowIso,
+  };
+}
+
+async function aprobarTaxonomiaCluster(clusterId, payload = {}) {
+  if (!supabaseClient) {
+    const error = new Error(
+      "Supabase REST no configurado para aprobar clusters de taxonomía.",
+    );
+    error.status = 500;
+    throw error;
+  }
+
+  const decodedClusterId = limpiarTexto(decodeURIComponent(clusterId || ""));
+  if (!decodedClusterId) {
+    const error = new Error("Identificador de cluster inválido.");
+    error.status = 400;
+    throw error;
+  }
+
+  const suggestions = await obtenerSugerenciasPorClusterKey(decodedClusterId);
+  if (suggestions.length === 0) {
+    const error = new Error("Cluster no encontrado.");
+    error.status = 404;
+    throw error;
+  }
+
+  const representative = [...suggestions].sort(compararSugerenciasCluster)[0];
+  const result = await aprobarTaxonomiaSugerenciaDesdeRegistro(representative, payload);
+  const reviewNotes = limpiarTexto(payload.reviewNotes);
+  const nowIso = new Date().toISOString();
+  const siblings = suggestions.filter(item => item.id !== representative.id);
+
+  await Promise.all(
+    siblings.map(item =>
+      supabaseClient.patch(
+        `/service_taxonomy_suggestions?id=eq.${encodeURIComponent(item.id)}`,
+        {
+          review_status: "superseded",
+          status: "superseded",
+          review_notes:
+            reviewNotes || `Superseded by cluster representative ${representative.id}`,
+          updated_at: nowIso,
+        },
+        {
+          headers: {
+            Prefer: "return=representation",
+          },
+        },
+      ),
+    ),
+  );
+
+  return {
+    ...result,
+    clusterId: decodedClusterId,
+  };
+}
+
+async function obtenerTaxonomiaDrafts() {
+  if (!supabaseClient) {
+    const error = new Error(
+      "Supabase REST no configurado para consultar drafts de taxonomía.",
+    );
+    error.status = 500;
+    throw error;
+  }
+
+  try {
+    const response = await supabaseClient.get("/service_taxonomy_change_queue", {
+      params: {
+        select: [
+          "id",
+          "suggestion_id",
+          "action_type",
+          "target_domain_code",
+          "proposed_canonical_name",
+          "payload_json",
+          "status",
+          "notes",
+          "approved_by",
+          "approved_at",
+          "created_at",
+          "updated_at",
+          "applied_at",
+        ].join(","),
+        order: "created_at.desc",
+      },
+    });
+
+    return {
+      items: Array.isArray(response.data) ? response.data : [],
+    };
+  } catch (error) {
+    throw gestionarErrorAxios(error);
+  }
+}
+
+async function aplicarTaxonomiaDraft(changeId) {
+  if (!supabaseClient) {
+    const error = new Error(
+      "Supabase REST no configurado para aplicar drafts de taxonomía.",
+    );
+    error.status = 500;
+    throw error;
+  }
+
+  const id = limpiarTexto(changeId);
+  if (!id) {
+    const error = new Error("Identificador de draft inválido.");
+    error.status = 400;
+    throw error;
+  }
+
+  try {
+    const changeResponse = await supabaseClient.get(
+      `/service_taxonomy_change_queue?id=eq.${encodeURIComponent(id)}`,
+      {
+        params: {
+          select: [
+            "id",
+            "action_type",
+            "target_domain_code",
+            "proposed_canonical_name",
+            "payload_json",
+            "status",
+          ].join(","),
+          limit: 1,
+        },
+      },
+    );
+    const change = Array.isArray(changeResponse.data) ? changeResponse.data[0] : null;
+    if (!change) {
+      const error = new Error("Draft no encontrado.");
+      error.status = 404;
+      throw error;
+    }
+    if (change.status !== "draft") {
+      return {
+        changeId: id,
+        status: change.status,
+        aliasId: change.payload_json?.applied_alias_id ?? null,
+        updatedAt: change.payload_json?.applied_at ?? null,
+      };
+    }
+
+    const domainCode = limpiarTexto(change.target_domain_code);
+    if (!domainCode) {
+      const error = new Error("El draft no tiene target_domain_code.");
+      error.status = 400;
+      throw error;
+    }
+
+    const domainResponse = await supabaseClient.get("/service_domains", {
+      params: {
+        select: "id,code,status",
+        code: `eq.${domainCode}`,
+        limit: 1,
+      },
+    });
+    const domain = Array.isArray(domainResponse.data) ? domainResponse.data[0] : null;
+    if (!domain?.id) {
+      const error = new Error("No se encontró el dominio destino para el draft.");
+      error.status = 404;
+      throw error;
+    }
+
+    const nowIso = new Date().toISOString();
+    const mergedPayload = {
+      ...(change.payload_json || {}),
+      applied_at: nowIso,
+    };
+    let aliasId = null;
+
+    if (change.action_type === "rule_update") {
+      const proposedRuleUpdate = mergedPayload.proposed_rule_update || {};
+      const currentRule = await obtenerReglaPrecisionPorDominio(domain.id);
+
+      if (currentRule?.id) {
+        await supabaseClient.patch(
+          `/service_precision_rules?id=eq.${encodeURIComponent(currentRule.id)}`,
+          {
+            draft_required_dimensions: normalizarListaTexto(
+              proposedRuleUpdate.required_dimensions,
+            ),
+            draft_generic_examples: Array.isArray(
+              proposedRuleUpdate.generic_examples,
+            )
+              ? proposedRuleUpdate.generic_examples
+              : currentRule.generic_examples || [],
+            draft_sufficient_examples: Array.isArray(
+              proposedRuleUpdate.sufficient_examples,
+            )
+              ? proposedRuleUpdate.sufficient_examples
+              : currentRule.sufficient_examples || [],
+            draft_client_prompt_template:
+              limpiarTexto(proposedRuleUpdate.client_prompt_template)
+              || currentRule.client_prompt_template
+              || null,
+            draft_provider_prompt_template:
+              limpiarTexto(proposedRuleUpdate.provider_prompt_template)
+              || currentRule.provider_prompt_template
+              || null,
+            draft_updated_at: nowIso,
+            updated_at: nowIso,
+          },
+        );
+        mergedPayload.applied_rule_id = currentRule.id;
+      } else {
+        const insertedRuleResponse = await supabaseClient.post(
+          "/service_precision_rules",
+          {
+            domain_id: domain.id,
+            required_dimensions: [],
+            generic_examples: [],
+            sufficient_examples: [],
+            client_prompt_template: null,
+            provider_prompt_template: null,
+            draft_required_dimensions: normalizarListaTexto(
+              proposedRuleUpdate.required_dimensions,
+            ),
+            draft_generic_examples: Array.isArray(
+              proposedRuleUpdate.generic_examples,
+            )
+              ? proposedRuleUpdate.generic_examples
+              : [],
+            draft_sufficient_examples: Array.isArray(
+              proposedRuleUpdate.sufficient_examples,
+            )
+              ? proposedRuleUpdate.sufficient_examples
+              : [],
+            draft_client_prompt_template:
+              limpiarTexto(proposedRuleUpdate.client_prompt_template) || null,
+            draft_provider_prompt_template:
+              limpiarTexto(proposedRuleUpdate.provider_prompt_template) || null,
+            draft_updated_at: nowIso,
+          },
+          {
+            headers: {
+              Prefer: "return=representation",
+            },
+          },
+        );
+        const insertedRule = Array.isArray(insertedRuleResponse.data)
+          ? insertedRuleResponse.data[0]
+          : null;
+        mergedPayload.applied_rule_id = insertedRule?.id || null;
+      }
+      mergedPayload.apply_strategy = "rule_draft";
+    } else {
+      const aliasText = limpiarTexto(change.proposed_canonical_name)
+        || limpiarTexto(mergedPayload.proposed_service_candidate)
+        || limpiarTexto(mergedPayload.source_text)
+        || limpiarTexto(mergedPayload.normalized_text);
+      if (!aliasText) {
+        const error = new Error("No se pudo resolver el texto del alias draft.");
+        error.status = 400;
+        throw error;
+      }
+
+      const aliasNormalized = normalizarAliasTaxonomia(aliasText);
+      let canonicalServiceId = null;
+
+      if (change.action_type === "new_canonical") {
+        const canonicalService = await obtenerServicioCanonicoPorDominio(
+          domain.id,
+          aliasNormalized,
+        );
+
+        canonicalServiceId = canonicalService?.id ?? null;
+        if (!canonicalService) {
+          const insertedCanonicalResponse = await supabaseClient.post(
+            "/service_canonical_services",
+            {
+              domain_id: domain.id,
+              canonical_name: aliasText,
+              canonical_normalized: aliasNormalized,
+              description: mergedPayload.context_excerpt || null,
+              metadata_json: {
+                source_text: mergedPayload.source_text || null,
+                occurrence_count: mergedPayload.occurrence_count ?? 1,
+                confidence_score: mergedPayload.confidence_score ?? null,
+              },
+              status: "inactive",
+            },
+            {
+              headers: {
+                Prefer: "return=representation",
+              },
+            },
+          );
+          const insertedCanonical = Array.isArray(insertedCanonicalResponse.data)
+            ? insertedCanonicalResponse.data[0]
+            : null;
+          canonicalServiceId = insertedCanonical?.id ?? null;
+        }
+
+        mergedPayload.applied_canonical_service_id = canonicalServiceId;
+        mergedPayload.applied_canonical_name = aliasText;
+        mergedPayload.apply_strategy = "canonical_service";
+      }
+
+      const existingAlias = await supabaseClient.get("/service_domain_aliases", {
+        params: {
+          select: "id,domain_id,alias_normalized,status,canonical_service_id",
+          domain_id: `eq.${domain.id}`,
+          alias_normalized: `eq.${aliasNormalized}`,
+          limit: 1,
+        },
+      });
+      const existing = Array.isArray(existingAlias.data) ? existingAlias.data[0] : null;
+
+      aliasId = existing?.id ?? null;
+      if (!existing) {
+        const insertedAlias = await supabaseClient.post(
+          "/service_domain_aliases",
+          {
+            domain_id: domain.id,
+            alias_text: aliasText,
+            alias_normalized: aliasNormalized,
+            canonical_service_id: canonicalServiceId,
+            priority: 1000,
+            status: "inactive",
+          },
+          {
+            headers: {
+              Prefer: "return=representation",
+            },
+          },
+        );
+        const inserted = Array.isArray(insertedAlias.data) ? insertedAlias.data[0] : null;
+        aliasId = inserted?.id ?? null;
+      } else if (
+        change.action_type === "new_canonical"
+        && canonicalServiceId
+        && existing.canonical_service_id !== canonicalServiceId
+      ) {
+        await supabaseClient.patch(
+          `/service_domain_aliases?id=eq.${encodeURIComponent(existing.id)}`,
+          {
+            canonical_service_id: canonicalServiceId,
+            updated_at: nowIso,
+          },
+        );
+      }
+
+      mergedPayload.applied_alias_id = aliasId;
+      mergedPayload.applied_alias_text = aliasText;
+      mergedPayload.applied_alias_normalized = aliasNormalized;
+      if (!mergedPayload.apply_strategy) {
+        mergedPayload.apply_strategy = change.action_type || "alias";
+      }
+    }
+
+    await supabaseClient.patch(
+      `/service_taxonomy_change_queue?id=eq.${encodeURIComponent(id)}`,
+      {
+        status: "applied",
+        payload_json: mergedPayload,
+        applied_at: nowIso,
+        updated_at: nowIso,
+      },
+      {
+        headers: {
+          Prefer: "return=representation",
+        },
+      },
+    );
+
+    return {
+      changeId: id,
+      status: "applied",
+      aliasId,
+      updatedAt: nowIso,
+    };
+  } catch (error) {
+    throw gestionarErrorAxios(error);
+  }
+}
+
+async function publicarTaxonomiaDrafts() {
+  if (!supabaseClient) {
+    const error = new Error(
+      "Supabase REST no configurado para publicar taxonomía.",
+    );
+    error.status = 500;
+    throw error;
+  }
+
+  try {
+    const draftsResponse = await supabaseClient.get("/service_taxonomy_change_queue", {
+      params: {
+        select: "id,payload_json,status,action_type",
+        status: "eq.applied",
+      },
+    });
+    const drafts = Array.isArray(draftsResponse.data) ? draftsResponse.data : [];
+    if (drafts.length === 0) {
+      const error = new Error("No hay drafts aplicados pendientes de publicación.");
+      error.status = 400;
+      throw error;
+    }
+    const nowIso = new Date().toISOString();
+
+    const aliasIds = drafts
+      .filter(item => item?.action_type !== "rule_update")
+      .map(item => item?.payload_json?.applied_alias_id)
+      .filter(Boolean);
+
+    const canonicalServiceIds = drafts
+      .filter(item => item?.action_type === "new_canonical")
+      .map(item => item?.payload_json?.applied_canonical_service_id)
+      .filter(Boolean);
+
+    for (const canonicalServiceId of canonicalServiceIds) {
+      await supabaseClient.patch(
+        `/service_canonical_services?id=eq.${encodeURIComponent(canonicalServiceId)}`,
+        {
+          status: "active",
+          updated_at: nowIso,
+        },
+      );
+    }
+
+    for (const aliasId of aliasIds) {
+      await supabaseClient.patch(
+        `/service_domain_aliases?id=eq.${encodeURIComponent(aliasId)}`,
+        {
+          status: "active",
+          updated_at: new Date().toISOString(),
+        },
+      );
+    }
+
+    const ruleIds = drafts
+      .filter(item => item?.action_type === "rule_update")
+      .map(item => item?.payload_json?.applied_rule_id)
+      .filter(Boolean);
+
+    for (const ruleId of ruleIds) {
+      const rulesResponse = await supabaseClient.get(
+        `/service_precision_rules?id=eq.${encodeURIComponent(ruleId)}`,
+        {
+          params: {
+            select: [
+              "id",
+              "required_dimensions",
+              "generic_examples",
+              "sufficient_examples",
+              "client_prompt_template",
+              "provider_prompt_template",
+              "draft_required_dimensions",
+              "draft_generic_examples",
+              "draft_sufficient_examples",
+              "draft_client_prompt_template",
+              "draft_provider_prompt_template",
+            ].join(","),
+            limit: 1,
+          },
+        },
+      );
+      const rule = Array.isArray(rulesResponse.data) ? rulesResponse.data[0] : null;
+      if (!rule?.id) {
+        continue;
+      }
+      await supabaseClient.patch(
+        `/service_precision_rules?id=eq.${encodeURIComponent(rule.id)}`,
+        {
+          required_dimensions: Array.isArray(rule.draft_required_dimensions)
+            ? rule.draft_required_dimensions
+            : rule.required_dimensions || [],
+          generic_examples: Array.isArray(rule.draft_generic_examples)
+            ? rule.draft_generic_examples
+            : rule.generic_examples || [],
+          sufficient_examples: Array.isArray(rule.draft_sufficient_examples)
+            ? rule.draft_sufficient_examples
+            : rule.sufficient_examples || [],
+          client_prompt_template:
+            rule.draft_client_prompt_template || rule.client_prompt_template || null,
+          provider_prompt_template:
+            rule.draft_provider_prompt_template || rule.provider_prompt_template || null,
+          draft_required_dimensions: null,
+          draft_generic_examples: null,
+          draft_sufficient_examples: null,
+          draft_client_prompt_template: null,
+          draft_provider_prompt_template: null,
+          draft_updated_at: null,
+          updated_at: nowIso,
+        },
+      );
+    }
+
+    const publicationsResponse = await supabaseClient.get(
+      "/service_taxonomy_publications",
+      {
+        params: {
+          select: "version,status",
+          order: "version.desc",
+          limit: 1,
+        },
+      },
+    );
+    const last = Array.isArray(publicationsResponse.data)
+      ? publicationsResponse.data[0]
+      : null;
+    const nextVersion = Number(last?.version || 0) + 1;
+
+    await supabaseClient.patch(
+      "/service_taxonomy_publications?status=eq.published",
+      {
+        status: "archived",
+        updated_at: nowIso,
+      },
+    );
+    await supabaseClient.post("/service_taxonomy_publications", {
+      version: nextVersion,
+      status: "published",
+      published_by: "admin-dashboard",
+      published_at: nowIso,
+      notes: `Publicación manual desde draft queue (${drafts.length} cambios aplicados).`,
+    });
+
+    for (const draft of drafts) {
+      const mergedPayload = {
+        ...(draft.payload_json || {}),
+        published_at: nowIso,
+        published_version: nextVersion,
+      };
+      await supabaseClient.patch(
+        `/service_taxonomy_change_queue?id=eq.${encodeURIComponent(draft.id)}`,
+        {
+          status: "published",
+          payload_json: mergedPayload,
+          updated_at: nowIso,
+        },
+      );
+    }
+
+    return {
+      version: nextVersion,
+      publishedCount: drafts.length,
+      publishedAt: nowIso,
+    };
+  } catch (error) {
+    throw gestionarErrorAxios(error);
+  }
+}
+
 module.exports = {
   obtenerProveedoresPendientes,
   obtenerProveedoresNuevos,
@@ -1191,4 +2688,14 @@ module.exports = {
   obtenerMonetizacionResumen,
   obtenerMonetizacionProveedores,
   obtenerMonetizacionProveedor,
+  obtenerTaxonomiaOverview,
+  obtenerTaxonomiaSugerencias,
+  obtenerTaxonomiaClusters,
+  revisarTaxonomiaSugerencia,
+  revisarTaxonomiaCluster,
+  aprobarTaxonomiaSugerencia,
+  aprobarTaxonomiaCluster,
+  obtenerTaxonomiaDrafts,
+  aplicarTaxonomiaDraft,
+  publicarTaxonomiaDrafts,
 };

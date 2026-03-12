@@ -4,23 +4,33 @@ Este módulo contiene mensajes relacionados con la confirmación
 de datos recibidos y resumen del registro del proveedor.
 """
 
+from typing import Any, Dict
 
-def informar_datos_recibidos() -> str:
-    """Confirma que se recibieron los datos y se están procesando.
+
+# IDs para botones interactivos
+CONFIRM_ACCEPT_ID = "confirm_accept"
+CONFIRM_REJECT_ID = "confirm_reject"
+
+
+def payload_confirmacion_resumen(resumen: str) -> Dict[str, Any]:
+    """Retorna payload interactivo con botones para confirmar registro.
+
+    Args:
+        resumen: Texto del resumen de datos a confirmar.
 
     Returns:
-        Mensaje indicando que la información fue recibida y está siendo procesada
+        Diccionario con estructura de mensaje incluyendo UI de botones.
     """
-    return (
-        "*Información recibida. Voy a procesar tu información, "
-        "espera un momento.*"
-    )
+    ui: Dict[str, Any] = {
+        "type": "buttons",
+        "id": "provider_registration_confirm_v1",
+        "options": [
+            {"id": CONFIRM_ACCEPT_ID, "title": "Acepto"},
+            {"id": CONFIRM_REJECT_ID, "title": "No acepto"},
+        ],
+    }
 
-
-def pedir_confirmacion_resumen() -> str:
-    """Solicita aceptar o rechazar el resumen mostrado."""
-    return (
-        "*Responde con el número de tu opción:*\n\n"
-        "*1.* Acepto\n"
-        "*2.* No acepto"
-    )
+    return {
+        "response": resumen,
+        "ui": ui,
+    }

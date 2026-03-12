@@ -7,6 +7,8 @@ from .construidor_consentimiento import (
 )
 from .construidor_menu import (
     construir_menu_desde_flujo,
+    construir_payload_menu_desde_flujo,
+    construir_payload_menu_principal,
     construir_menu_principal,
     construir_respuesta_menu_registro,
 )
@@ -21,6 +23,8 @@ from .construidor_verificacion import (
 
 __all__ = [
     "construir_menu_desde_flujo",
+    "construir_payload_menu_desde_flujo",
+    "construir_payload_menu_principal",
     "construir_menu_principal",
     "construir_respuesta_menu_registro",
     "construir_respuesta_verificado",

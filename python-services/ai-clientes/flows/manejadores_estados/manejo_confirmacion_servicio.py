@@ -12,6 +12,9 @@ async def procesar_estado_confirmar_servicio(
     iniciar_busqueda_fn: Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]],
     interpretar_si_no_fn: Callable[[Optional[str]], Optional[bool]],
     mensaje_inicial_solicitud: str,
+    resolver_servicio_canonico_fn: Optional[
+        Callable[[str], Awaitable[Optional[str]]]
+    ] = None,
 ) -> Dict[str, Any]:
     """Confirma el servicio detectado antes de iniciar búsqueda."""
     from templates.mensajes.validacion import ui_confirmar_servicio
@@ -42,7 +45,13 @@ async def procesar_estado_confirmar_servicio(
                     "Por favor descríbelo nuevamente de forma concreta."
                 )
             }
-        flujo["service"] = service_candidate
+        servicio_final = service_candidate
+        if resolver_servicio_canonico_fn:
+            servicio_canonico = await resolver_servicio_canonico_fn(service_candidate)
+            if isinstance(servicio_canonico, str) and servicio_canonico.strip():
+                servicio_final = servicio_canonico.strip()
+
+        flujo["service"] = servicio_final
         flujo["service_captured_after_consent"] = True
         flujo.pop("service_candidate", None)
         flujo.pop("service_candidate_hint", None)

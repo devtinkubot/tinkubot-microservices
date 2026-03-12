@@ -2,7 +2,7 @@
 
 from typing import Any, Dict
 
-from flows.constructores import construir_menu_principal
+from flows.constructores import construir_payload_menu_principal
 from services import eliminar_registro_proveedor
 from templates.interfaz import (
     confirmar_eliminacion_exitosa,
@@ -29,13 +29,11 @@ async def manejar_confirmacion_eliminacion(
             "success": True,
             "messages": [
                 {"response": informar_eliminacion_cancelada()},
-                {
-                    "response": construir_menu_principal(
-                        esta_registrado=True,
-                        menu_limitado=bool(flujo.get("menu_limitado")),
-                        approved_basic=bool(flujo.get("approved_basic")),
-                    )
-                },
+                construir_payload_menu_principal(
+                    esta_registrado=True,
+                    menu_limitado=bool(flujo.get("menu_limitado")),
+                    approved_basic=bool(flujo.get("approved_basic")),
+                ),
             ],
         }
 
@@ -59,13 +57,11 @@ async def manejar_confirmacion_eliminacion(
             "success": True,
             "messages": [
                 {"response": error_eliminacion_fallida(resultado.get("message", ""))},
-                {
-                    "response": construir_menu_principal(
-                        esta_registrado=True,
-                        menu_limitado=bool(flujo.get("menu_limitado")),
-                        approved_basic=bool(flujo.get("approved_basic")),
-                    )
-                },
+                construir_payload_menu_principal(
+                    esta_registrado=True,
+                    menu_limitado=bool(flujo.get("menu_limitado")),
+                    approved_basic=bool(flujo.get("approved_basic")),
+                ),
             ],
         }
 

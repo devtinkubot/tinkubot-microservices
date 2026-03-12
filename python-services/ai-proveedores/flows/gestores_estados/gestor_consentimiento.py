@@ -3,7 +3,7 @@
 from typing import Any, Dict, Optional
 
 from flows.consentimiento import procesar_respuesta_consentimiento
-from flows.constructores import construir_menu_principal
+from flows.constructores import construir_payload_menu_principal
 from templates.registro import (
     preguntar_real_phone,
     solicitar_ciudad_registro,
@@ -43,13 +43,11 @@ async def manejar_estado_consentimiento(
         return {
             "success": True,
             "messages": [
-                {
-                    "response": construir_menu_principal(
-                        esta_registrado=esta_registrado,
-                        menu_limitado=bool(flujo.get("menu_limitado")),
-                        approved_basic=bool(flujo.get("approved_basic")),
-                    )
-                }
+                construir_payload_menu_principal(
+                    esta_registrado=esta_registrado,
+                    menu_limitado=bool(flujo.get("menu_limitado")),
+                    approved_basic=bool(flujo.get("approved_basic")),
+                )
             ],
         }
 

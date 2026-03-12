@@ -46,6 +46,14 @@ from services.sesion_clientes import (
     sincronizar_cliente,
     validar_consentimiento,
 )
+from services.taxonomia.catalogo_publicado import (
+    construir_mensaje_precision_cliente,
+    detectar_dominio_generico_en_taxonomia,
+    obtener_taxonomia_publicada,
+)
+from services.taxonomia.clasificador import clasificar_servicio_taxonomia
+from services.taxonomia.metricas import registrar_evento_taxonomia_runtime
+from services.taxonomia.sugerencias import registrar_sugerencia_taxonomia
 from templates.mensajes.consentimiento import (
     opciones_consentimiento_textos,
 )
@@ -451,6 +459,106 @@ class OrquestadorConversacional:
         servicios = await self.obtener_servicios_populares_recientes(limite=5)
         return construir_prompt_lista_servicios(servicios)
 
+    async def _detectar_servicio_generico_critico_desde_taxonomia(
+        self,
+        servicio: Optional[str],
+    ) -> Optional[str]:
+        if not (servicio or "").strip():
+            return None
+
+        try:
+            taxonomia = await obtener_taxonomia_publicada(
+                self.supabase,
+                redis_client=self.redis_client,
+            )
+        except Exception as exc:
+            self.logger.warning(
+                "No se pudo leer taxonomía publicada para detección genérica: %s",
+                exc,
+            )
+            return None
+        clasificacion = await clasificar_servicio_taxonomia(
+            supabase=self.supabase,
+            servicio=servicio or "",
+            taxonomia=taxonomia,
+            audience="client",
+        )
+        if clasificacion.get("specificity") == "insufficient":
+            return clasificacion.get("domain")
+        return detectar_dominio_generico_en_taxonomia(servicio, taxonomia)
+
+    async def _construir_mensaje_precision_desde_taxonomia(
+        self,
+        servicio: Optional[str],
+    ) -> Optional[str]:
+        if not (servicio or "").strip():
+            return None
+
+        try:
+            taxonomia = await obtener_taxonomia_publicada(
+                self.supabase,
+                redis_client=self.redis_client,
+            )
+        except Exception as exc:
+            self.logger.warning(
+                "No se pudo leer taxonomía publicada para construir mensaje: %s",
+                exc,
+            )
+            return None
+        clasificacion = await clasificar_servicio_taxonomia(
+            supabase=self.supabase,
+            servicio=servicio or "",
+            taxonomia=taxonomia,
+            audience="client",
+        )
+        if clasificacion.get("specificity") == "insufficient":
+            return clasificacion.get("clarification_question")
+        return construir_mensaje_precision_cliente(servicio, taxonomia)
+
+    async def _registrar_sugerencia_taxonomia(
+        self,
+        servicio: str,
+        contexto: Optional[str],
+    ) -> None:
+        try:
+            await registrar_sugerencia_taxonomia(
+                supabase=self.supabase,
+                redis_client=self.redis_client,
+                source_channel="client",
+                source_text=servicio,
+                context_excerpt=contexto,
+            )
+        except Exception as exc:
+            self.logger.warning(
+                "No se pudo registrar sugerencia de taxonomía cliente: %s",
+                exc,
+            )
+
+    async def _registrar_evento_taxonomia_runtime(
+        self,
+        *,
+        event_name: str,
+        domain_code: Optional[str] = None,
+        fallback_source: Optional[str] = None,
+        service_text: Optional[str] = None,
+        context_excerpt: Optional[str] = None,
+    ) -> None:
+        try:
+            await registrar_evento_taxonomia_runtime(
+                supabase=self.supabase,
+                source_channel="client",
+                event_name=event_name,
+                domain_code=domain_code,
+                fallback_source=fallback_source,
+                service_text=service_text,
+                context_excerpt=context_excerpt,
+            )
+        except Exception as exc:
+            self.logger.warning(
+                "No se pudo registrar evento runtime de taxonomía cliente: %s",
+                exc,
+            )
+
     async def _obtener_ciudad_cache_geocoding(
         self, latitud: float, longitud: float
     ) -> Optional[str]:
@@ -776,6 +884,10 @@ class OrquestadorConversacional:
             mensaje_inicial_solicitud(),
             funcion_extraccion,
             funcion_validacion_necesidad,
+            self._detectar_servicio_generico_critico_desde_taxonomia,
+            self._construir_mensaje_precision_desde_taxonomia,
+            self._registrar_sugerencia_taxonomia,
+            self._registrar_evento_taxonomia_runtime,
         )
         flujo = flujo_actualizado
 

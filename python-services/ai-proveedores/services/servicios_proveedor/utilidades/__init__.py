@@ -14,10 +14,14 @@ from .parser_servicios import parsear_servicios_con_limite
 from .extractor_servicios import extraer_servicios_almacenados
 from .constructor_listado import construir_listado_servicios
 from .dominios_criticos import (
+    clasificar_servicio_critico,
     detectar_dominio_critico_generico,
     es_servicio_critico_generico,
     mensaje_pedir_precision_servicio,
     normalizar_servicio_critico,
+    registrar_evento_servicio_generico,
+    registrar_sugerencia_servicio_generico,
+    refrescar_taxonomia_dominios_criticos,
 )
 
 __all__ = [
@@ -32,8 +36,12 @@ __all__ = [
     "parsear_servicios_con_limite",
     "extraer_servicios_almacenados",
     "construir_listado_servicios",
+    "clasificar_servicio_critico",
     "detectar_dominio_critico_generico",
     "es_servicio_critico_generico",
     "mensaje_pedir_precision_servicio",
     "normalizar_servicio_critico",
+    "registrar_evento_servicio_generico",
+    "registrar_sugerencia_servicio_generico",
+    "refrescar_taxonomia_dominios_criticos",
 ]

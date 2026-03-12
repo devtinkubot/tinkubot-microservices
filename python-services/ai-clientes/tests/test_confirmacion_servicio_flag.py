@@ -121,3 +121,33 @@ async def test_confirm_service_invalid_choice_repeats_buttons_ui():
         "problem_confirm_yes",
         "problem_confirm_no",
     ]
+
+
+@pytest.mark.asyncio
+async def test_confirm_service_yes_normaliza_a_canonico_publicado():
+    flujo = {"state": "confirm_service", "service_candidate": "laboralista"}
+
+    async def guardar(_):
+        return None
+
+    async def iniciar_busqueda(data):
+        return {"response": f"ok:{data.get('service')}"}
+
+    async def resolver(servicio):
+        assert servicio == "laboralista"
+        return "abogado laboral"
+
+    result = await procesar_estado_confirmar_servicio(
+        flujo=flujo,
+        texto="1",
+        seleccionado=None,
+        telefono="+593666",
+        guardar_flujo_fn=guardar,
+        iniciar_busqueda_fn=iniciar_busqueda,
+        interpretar_si_no_fn=lambda _: True,
+        mensaje_inicial_solicitud="¿Qué servicio necesitas?",
+        resolver_servicio_canonico_fn=resolver,
+    )
+
+    assert result == {"response": "ok:abogado laboral"}
+    assert flujo["service"] == "abogado laboral"

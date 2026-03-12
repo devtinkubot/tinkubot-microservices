@@ -1,47 +1,47 @@
 """Mensajes para actualización de perfil de proveedor.
 
 Este módulo contiene mensajes relacionados con la actualización
-de información del perfil del proveedor (selfie, redes sociales).
+de información del perfil del proveedor (foto de perfil, redes sociales).
 """
 
 
-# ==================== SELFIE ====================
+# ==================== FOTO DE PERFIL ====================
 
 
 def solicitar_selfie_actualizacion() -> str:
-    """Solicita una nueva selfie para actualizar la foto de perfil.
+    """Solicita una nueva foto de perfil para actualizar el perfil.
 
     Returns:
-        Mensaje solicitando la selfie con el rostro visible
+        Mensaje solicitando la foto con el rostro visible
     """
-    return "*Envíame la nueva selfie con tu rostro visible.*"
+    return "*Envíame tu nueva foto de perfil con el rostro visible.*"
 
 
 def solicitar_selfie_requerida() -> str:
-    """Solicita la selfie como imagen adjunta (requerido).
+    """Solicita la foto de perfil como imagen adjunta (requerido).
 
     Returns:
-        Mensaje indicando que la selfie es necesaria como adjunto
+        Mensaje indicando que la foto es necesaria como adjunto
     """
-    return "Necesito la selfie como imagen adjunta para poder actualizarla."
+    return "Necesito la foto de perfil como imagen adjunta para poder actualizarla."
 
 
 def confirmar_selfie_actualizada() -> str:
-    """Confirma que la selfie fue actualizada correctamente.
+    """Confirma que la foto de perfil fue actualizada correctamente.
 
     Returns:
         Mensaje de confirmación de actualización exitosa
     """
-    return "Selfie actualizada correctamente."
+    return "Foto de perfil actualizada correctamente."
 
 
 def error_actualizar_selfie() -> str:
-    """Informa que no se pudo actualizar la selfie.
+    """Informa que no se pudo actualizar la foto de perfil.
 
     Returns:
         Mensaje de error con sugerencia de reintentar
     """
-    return "No pude actualizar la selfie en este momento. Intenta nuevamente más tarde."
+    return "No pude actualizar la foto de perfil en este momento. Intenta nuevamente más tarde."
 
 
 # ==================== REDES SOCIALES ====================
