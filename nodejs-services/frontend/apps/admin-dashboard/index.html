@@ -333,9 +333,9 @@
                 <i class="fas fa-coins me-2"></i>
                 Monetización
               </a>
-              <a class="nav-link" href="#" data-section="taxonomy">
-                <i class="fas fa-sitemap me-2"></i>
-                Taxonomía
+              <a class="nav-link" href="#" data-section="governance">
+                <i class="fas fa-scale-balanced me-2"></i>
+                Gobernanza
               </a>
               <a class="nav-link" href="#" data-section="settings">
                 <i class="fas fa-cog me-2"></i>
@@ -602,6 +602,14 @@
                           <div id="provider-detail-services" class="text-muted">Sin servicios registrados</div>
                         </div>
                       </div>
+                      <div class="col-12">
+                        <div class="provider-detail-item">
+                          <span class="provider-detail-label">Resolución taxonómica</span>
+                          <div id="provider-detail-service-taxonomy" class="text-muted">
+                            Sin resolución taxonómica disponible
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -848,20 +856,20 @@
             </div>
           </div>
 
-          <!-- Taxonomy Section -->
-          <div id="taxonomy-section" style="display: none">
+          <!-- Governance Section -->
+          <div id="governance-section" style="display: none">
             <div class="status-card">
               <div class="d-flex justify-content-between align-items-center mb-3">
                 <div>
                   <h5 class="mb-0">
-                    <i class="fas fa-sitemap me-2 text-primary"></i>
-                    Taxonomía > Sugerencias
+                    <i class="fas fa-scale-balanced me-2 text-primary"></i>
+                    Gobernanza de servicios
                   </h5>
                   <p class="text-muted small mb-0">
-                    Cola asistida de servicios no resueltos, con propuesta y evidencia.
+                    Evidencia servicios fuera de catálogo, aprueba dominios/categorías y publica servicios al índice operativo.
                   </p>
                 </div>
-                <button class="refresh-btn" id="taxonomy-refresh-btn" type="button">
+                <button class="refresh-btn" id="governance-refresh-btn" type="button">
                   <i class="fas fa-sync-alt me-1"></i>
                   Actualizar
                   <div class="spinner-border spinner-border-sm loading-spinner" role="status">
@@ -869,135 +877,101 @@
                   </div>
                 </button>
               </div>
-              <div class="d-flex justify-content-end mb-3">
-                <button class="btn btn-primary btn-sm" id="taxonomy-publish-btn" type="button">
-                  <i class="fas fa-upload me-1"></i>
-                  Publicar versión
-                </button>
-              </div>
               <div class="row g-3 mb-3">
                 <div class="col-md-4">
-                  <label for="taxonomy-status-filter" class="form-label mb-1 small text-muted">
+                  <label for="governance-status-filter" class="form-label mb-1 small text-muted">
                     Estado
                   </label>
-                  <select class="form-select form-select-sm" id="taxonomy-status-filter">
+                  <select class="form-select form-select-sm" id="governance-status-filter">
                     <option value="pending" selected>Pendientes</option>
-                    <option value="enriched">Enriquecidas</option>
-                    <option value="rejected">Rechazadas</option>
-                    <option value="approved">Aprobadas</option>
-                    <option value="all">Todas</option>
+                    <option value="approved_existing_domain">Aprobados con dominio existente</option>
+                    <option value="approved_new_domain">Aprobados con dominio nuevo</option>
+                    <option value="rejected">Rechazados</option>
+                    <option value="all">Todos</option>
                   </select>
                 </div>
               </div>
-              <div id="taxonomy-feedback" class="alert" style="display: none"></div>
-              <div id="taxonomy-loading" class="text-center text-muted py-4">
+              <div id="governance-feedback" class="alert" style="display: none"></div>
+              <div id="governance-loading" class="text-center text-muted py-4">
                 <div class="spinner-border text-primary" role="status">
                   <span class="visually-hidden">Cargando...</span>
                 </div>
-                <p class="mt-2 mb-0">Obteniendo sugerencias de taxonomía...</p>
+                <p class="mt-2 mb-0">Obteniendo revisiones y métricas de gobernanza...</p>
               </div>
-              <div id="taxonomy-empty" class="alert alert-info" style="display: none">
-                No hay sugerencias de taxonomía para mostrar.
-              </div>
-              <div class="row g-3 mb-3" id="taxonomy-overview-cards">
-                <div class="col-lg-3 col-md-6">
+              <div class="row g-3 mb-3">
+                <div class="col-lg-2 col-md-4">
                   <div class="border rounded p-3 bg-light-subtle h-100">
-                    <div class="small text-muted">Versión activa</div>
-                    <div class="fs-4 fw-semibold" id="taxonomy-overview-version">—</div>
-                    <div class="small text-muted" id="taxonomy-overview-published-at">—</div>
+                    <div class="small text-muted">Pendientes</div>
+                    <div class="fs-4 fw-semibold" id="governance-metric-pending">—</div>
                   </div>
                 </div>
-                <div class="col-lg-3 col-md-6">
+                <div class="col-lg-2 col-md-4">
                   <div class="border rounded p-3 bg-light-subtle h-100">
-                    <div class="small text-muted">Cobertura activa</div>
-                    <div class="fs-4 fw-semibold" id="taxonomy-overview-coverage">—</div>
-                    <div class="small text-muted" id="taxonomy-overview-coverage-detail">—</div>
+                    <div class="small text-muted">Aprobados</div>
+                    <div class="fs-4 fw-semibold" id="governance-metric-approved">—</div>
                   </div>
                 </div>
-                <div class="col-lg-3 col-md-6">
+                <div class="col-lg-2 col-md-4">
                   <div class="border rounded p-3 bg-light-subtle h-100">
-                    <div class="small text-muted">Casos agrupados</div>
-                    <div class="fs-4 fw-semibold" id="taxonomy-overview-suggestions">—</div>
-                    <div class="small text-muted" id="taxonomy-overview-suggestions-detail">—</div>
+                    <div class="small text-muted">Rechazados</div>
+                    <div class="fs-4 fw-semibold" id="governance-metric-rejected">—</div>
                   </div>
                 </div>
-                <div class="col-lg-3 col-md-6">
+                <div class="col-lg-2 col-md-4">
                   <div class="border rounded p-3 bg-light-subtle h-100">
-                    <div class="small text-muted">Cambios listos</div>
-                    <div class="fs-4 fw-semibold" id="taxonomy-overview-drafts">—</div>
-                    <div class="small text-muted" id="taxonomy-overview-drafts-detail">—</div>
+                    <div class="small text-muted">Dominios activos</div>
+                    <div class="fs-4 fw-semibold" id="governance-metric-domains">—</div>
                   </div>
                 </div>
-                <div class="col-lg-6 col-md-12">
+                <div class="col-lg-2 col-md-4">
                   <div class="border rounded p-3 bg-light-subtle h-100">
-                    <div class="small text-muted">Actividad 7d</div>
-                    <div class="fs-4 fw-semibold" id="taxonomy-overview-runtime">—</div>
-                    <div class="small text-muted" id="taxonomy-overview-runtime-detail">—</div>
+                    <div class="small text-muted">Servicios operativos</div>
+                    <div class="fs-4 fw-semibold" id="governance-metric-services">—</div>
+                  </div>
+                </div>
+                <div class="col-lg-2 col-md-8">
+                  <div class="border rounded p-3 bg-light-subtle h-100">
+                    <div class="small text-muted">Dominios sugeridos</div>
+                    <div class="small text-muted" id="governance-top-domains">—</div>
                   </div>
                 </div>
               </div>
-              <div class="row g-3" id="taxonomy-table-wrapper" style="display: none">
+              <div id="governance-empty" class="alert alert-info" style="display: none">
+                No hay revisiones de servicios para el filtro seleccionado.
+              </div>
+              <div class="row g-3" id="governance-table-wrapper" style="display: none">
                 <div class="col-lg-7">
                   <div class="table-responsive">
                     <table class="table align-middle">
                       <thead>
                         <tr>
-                          <th>Caso</th>
-                          <th>Dominio</th>
-                          <th>Propuesta</th>
+                          <th>Servicio</th>
+                          <th>Proveedor</th>
+                          <th>Dominio sugerido</th>
                           <th>Estado</th>
-                          <th>Conf.</th>
-                          <th>Miembros</th>
-                          <th>Ocs.</th>
-                          <th>Última vez</th>
+                          <th>Ingreso</th>
                         </tr>
                       </thead>
-                      <tbody id="taxonomy-table-body"></tbody>
+                      <tbody id="governance-table-body"></tbody>
                     </table>
                   </div>
                 </div>
                 <div class="col-lg-5">
                   <div class="border rounded p-3 bg-light-subtle">
-                    <h6 class="mb-3">Detalle</h6>
-                    <div id="taxonomy-detail-panel"></div>
+                    <h6 class="mb-3">Detalle y resolución</h6>
+                    <div id="governance-detail-panel"></div>
                   </div>
                 </div>
               </div>
-              <hr class="my-4" />
-              <div class="d-flex justify-content-between align-items-center mb-3">
-                <div>
-                  <h6 class="mb-0">Draft Queue</h6>
-                  <p class="text-muted small mb-0">
-                    Cambios aprobados listos para aplicar y publicar.
-                  </p>
-                </div>
-              </div>
-              <div id="taxonomy-drafts-empty" class="alert alert-light border" style="display: none">
-                No hay drafts de taxonomía.
-              </div>
-              <div class="row g-3" id="taxonomy-drafts-table-wrapper" style="display: none">
-                <div class="col-lg-7">
-                  <div class="table-responsive">
-                    <table class="table align-middle">
-                      <thead>
-                        <tr>
-                          <th>Canónico</th>
-                          <th>Dominio</th>
-                          <th>Acción</th>
-                          <th>Estado</th>
-                          <th>Aprobado</th>
-                        </tr>
-                      </thead>
-                      <tbody id="taxonomy-drafts-table-body"></tbody>
-                    </table>
-                  </div>
-                </div>
-                <div class="col-lg-5">
-                  <div class="border rounded p-3 bg-light-subtle">
-                    <h6 class="mb-3">Detalle draft</h6>
-                    <div id="taxonomy-draft-detail-panel"></div>
-                  </div>
-                </div>
+            </div>
+          </div>
+
+          <!-- Taxonomy Section -->
+          <div id="taxonomy-section" style="display: none">
+            <div class="status-card">
+              <div class="alert alert-secondary mb-0">
+                La vista legacy de taxonomía quedó fuera del flujo operativo. Usa la sección
+                <strong>Gobernanza</strong>.
               </div>
             </div>
           </div>

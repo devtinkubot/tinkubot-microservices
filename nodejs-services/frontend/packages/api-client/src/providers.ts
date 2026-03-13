@@ -6,6 +6,13 @@ import type {
   ProviderActionPayload,
   ProviderActionResponse,
   ProviderRecord,
+  ServiceGovernanceActionResponse,
+  ServiceGovernanceApprovePayload,
+  ServiceGovernanceDomainRecord,
+  ServiceGovernanceMetricsResponse,
+  ServiceGovernanceRejectPayload,
+  ServiceGovernanceReviewsResponse,
+  TaxonomyCatalogResponse,
   TaxonomyDraftApplyResponse,
   TaxonomyDraftsResponse,
   TaxonomyOverviewResponse,
@@ -146,6 +153,10 @@ export async function obtenerTaxonomiaOverview(): Promise<TaxonomyOverviewRespon
   return realizarSolicitudHttp<TaxonomyOverviewResponse>(`${RUTA_BASE}/taxonomy/overview`);
 }
 
+export async function obtenerTaxonomiaCatalogo(): Promise<TaxonomyCatalogResponse> {
+  return realizarSolicitudHttp<TaxonomyCatalogResponse>(`${RUTA_BASE}/taxonomy/catalog`);
+}
+
 export async function revisarTaxonomiaSugerencia(
   suggestionId: string,
   payload: TaxonomySuggestionReviewPayload
@@ -235,4 +246,61 @@ export async function publicarTaxonomiaDrafts(): Promise<TaxonomyPublishResponse
       'Content-Type': 'application/json'
     }
   });
+}
+
+export async function obtenerGovernanceReviews(params?: {
+  status?: 'all' | 'pending' | 'approved_existing_domain' | 'approved_new_domain' | 'rejected';
+  limit?: number;
+}): Promise<ServiceGovernanceReviewsResponse> {
+  const query = new URLSearchParams();
+  if (params?.status) query.set('status', params.status);
+  if (typeof params?.limit === 'number') query.set('limit', String(params.limit));
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  return realizarSolicitudHttp<ServiceGovernanceReviewsResponse>(
+    `${RUTA_BASE}/governance/reviews${suffix}`
+  );
+}
+
+export async function obtenerGovernanceDomains(): Promise<{ domains: ServiceGovernanceDomainRecord[] }> {
+  return realizarSolicitudHttp<{ domains: ServiceGovernanceDomainRecord[] }>(
+    `${RUTA_BASE}/governance/domains`
+  );
+}
+
+export async function obtenerGovernanceMetrics(): Promise<ServiceGovernanceMetricsResponse> {
+  return realizarSolicitudHttp<ServiceGovernanceMetricsResponse>(
+    `${RUTA_BASE}/governance/metrics`
+  );
+}
+
+export async function aprobarGovernanceReview(
+  reviewId: string,
+  payload: ServiceGovernanceApprovePayload
+): Promise<ServiceGovernanceActionResponse> {
+  return realizarSolicitudHttp<ServiceGovernanceActionResponse>(
+    `${RUTA_BASE}/governance/reviews/${reviewId}/approve`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    }
+  );
+}
+
+export async function rechazarGovernanceReview(
+  reviewId: string,
+  payload: ServiceGovernanceRejectPayload = {}
+): Promise<ServiceGovernanceActionResponse> {
+  return realizarSolicitudHttp<ServiceGovernanceActionResponse>(
+    `${RUTA_BASE}/governance/reviews/${reviewId}/reject`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    }
+  );
 }

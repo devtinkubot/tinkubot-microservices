@@ -43,6 +43,7 @@ async def test_search_by_embeddings_envia_threshold_y_mapea_resultados(monkeypat
                         "experience_years": 8,
                         "created_at": datetime(2026, 3, 8),
                         "services": ["capitan de barco"],
+                        "matched_service_summary": "Servicio especializado en capitan de barco para embarcaciones turisticas.",
                         "distance": 0.12,
                     }
                 ]
@@ -72,6 +73,7 @@ async def test_search_by_embeddings_envia_threshold_y_mapea_resultados(monkeypat
     assert len(providers) == 1
     assert providers[0].id == "prov-1"
     assert providers[0].services == ["capitan de barco"]
+    assert "capitan de barco" in (providers[0].matched_service_summary or "").lower()
     assert providers[0].similarity_score == pytest.approx(0.88)
 
 

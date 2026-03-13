@@ -120,19 +120,96 @@ class BuscadorProveedores:
                 descripcion_problema=descripcion_problema or profesion,
                 proveedores=proveedores,
             )
+            proveedores_rankeados = self._rankear_proveedores(
+                proveedores=proveedores_validados,
+                necesidad_usuario=profesion,
+                descripcion_problema=descripcion_problema or profesion,
+            )
 
             self.logger.info(
-                f"🎯 Validación final: {len(proveedores_validados)}/{total} "
+                f"🎯 Validación final: {len(proveedores_rankeados)}/{total} "
                 f"proveedores pasaron validación IA"
             )
 
             return {
                 "ok": True,
-                "providers": proveedores_validados,
-                "total": len(proveedores_validados),
+                "providers": proveedores_rankeados,
+                "total": len(proveedores_rankeados),
                 "search_scope": "local",
             }
 
         except Exception as exc:
             self.logger.error(f"❌ Error en búsqueda: {exc}")
             return {"ok": False, "providers": [], "total": 0}
+
+    def _rankear_proveedores(
+        self,
+        *,
+        proveedores: list[Dict[str, Any]],
+        necesidad_usuario: str,
+        descripcion_problema: str,
+    ) -> list[Dict[str, Any]]:
+        """Aplica un ranking híbrido y deja trazabilidad humana en los resultados."""
+        query_text = " ".join(
+            part.strip()
+            for part in [necesidad_usuario, descripcion_problema]
+            if str(part or "").strip()
+        ).lower()
+        query_tokens = {token for token in query_text.split() if len(token) >= 4}
+        rankeados: list[Dict[str, Any]] = []
+        for proveedor in proveedores:
+            similarity = float(proveedor.get("similarity_score") or 0.0)
+            retrieval = float(proveedor.get("retrieval_score") or similarity)
+            validation = float(proveedor.get("validation_confidence") or 0.0)
+            rating = max(0.0, min(1.0, float(proveedor.get("rating") or 0.0) / 5.0))
+            verified = 1.0 if proveedor.get("verified") else 0.0
+            metadata_terms = " ".join(
+                str(proveedor.get(field) or "").lower()
+                for field in (
+                    "domain_code",
+                    "category_name",
+                    "matched_service_name",
+                    "matched_service_summary",
+                )
+            )
+            metadata_tokens = {
+                token for token in metadata_terms.split() if len(token) >= 4
+            }
+            metadata_match = (
+                len(query_tokens.intersection(metadata_tokens)) / len(query_tokens)
+                if query_tokens
+                else 0.0
+            )
+            ranking_score = max(
+                0.0,
+                min(
+                    1.0,
+                    retrieval * 0.35
+                    + similarity * 0.20
+                    + validation * 0.25
+                    + metadata_match * 0.10
+                    + rating * 0.05
+                    + verified * 0.05,
+                ),
+            )
+            proveedor_rankeado = dict(proveedor)
+            proveedor_rankeado["ranking_score"] = ranking_score
+            proveedor_rankeado["ranking_explain"] = {
+                "retrieval_score": round(retrieval, 4),
+                "similarity_score": round(similarity, 4),
+                "validation_confidence": round(validation, 4),
+                "metadata_match": round(metadata_match, 4),
+                "rating_score": round(rating, 4),
+                "verified_score": round(verified, 4),
+            }
+            rankeados.append(proveedor_rankeado)
+
+        rankeados.sort(
+            key=lambda proveedor: (
+                float(proveedor.get("ranking_score") or 0.0),
+                float(proveedor.get("validation_confidence") or 0.0),
+                float(proveedor.get("similarity_score") or 0.0),
+            ),
+            reverse=True,
+        )
+        return rankeados

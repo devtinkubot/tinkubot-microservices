@@ -35,7 +35,7 @@ def mensaje_correccion_servicios() -> str:
     """
     return """*Entendido. Escribe tus servicios nuevamente* usando tus propias palabras e indicando el servicio y la especialidad o área exacta.
 
-Sepáralos con comas (ej: asesoría en ley laboral, defensa en demandas laborales, destape de cañerías, reparación de fugas, desarrollo web).""".strip()
+Sepáralos con comas (ej: asesoría en derecho laboral, declaración de impuestos para personas naturales, desarrollo de software a medida, instalación de cámaras de seguridad, terapia psicológica).""".strip()
 
 
 def mensaje_servicios_aceptados() -> str:

@@ -172,6 +172,91 @@ async function obtenerTaxonomiaSugerencias(req, res) {
   }
 }
 
+async function obtenerGovernanceReviews(req, res) {
+  try {
+    const status = typeof req.query.status === 'string' ? req.query.status : 'pending';
+    const limit = Number.isFinite(Number(req.query.limit))
+      ? Number(req.query.limit)
+      : undefined;
+
+    const resultado = await proveedoresBff.obtenerGovernanceReviews({
+      status,
+      limit,
+    });
+    res.json(resultado);
+  } catch (error) {
+    const status = error?.status ?? 500;
+    const payload = error?.data ?? {
+      error: 'No se pudieron obtener las revisiones de gobernanza.'
+    };
+    res.status(status).json(payload);
+  }
+}
+
+async function obtenerGovernanceDomains(req, res) {
+  try {
+    const resultado = await proveedoresBff.obtenerGovernanceDomains();
+    res.json(resultado);
+  } catch (error) {
+    const status = error?.status ?? 500;
+    const payload = error?.data ?? {
+      error: 'No se pudieron obtener los dominios operativos.'
+    };
+    res.status(status).json(payload);
+  }
+}
+
+async function obtenerGovernanceMetrics(req, res) {
+  try {
+    const resultado = await proveedoresBff.obtenerGovernanceMetrics();
+    res.json(resultado);
+  } catch (error) {
+    const status = error?.status ?? 500;
+    const payload = error?.data ?? {
+      error: 'No se pudieron obtener las métricas de gobernanza.'
+    };
+    res.status(status).json(payload);
+  }
+}
+
+async function aprobarGovernanceReview(req, res) {
+  try {
+    const { reviewId } = req.params;
+    const requestId = req.headers['x-request-id'] || req.headers['x-correlation-id'] || null;
+    const resultado = await proveedoresBff.aprobarGovernanceReview(
+      reviewId,
+      req.body ?? {},
+      requestId
+    );
+    res.json(resultado);
+  } catch (error) {
+    const status = error?.status ?? 500;
+    const payload = error?.data ?? {
+      error: 'No se pudo aprobar la revisión de gobernanza.'
+    };
+    res.status(status).json(payload);
+  }
+}
+
+async function rechazarGovernanceReview(req, res) {
+  try {
+    const { reviewId } = req.params;
+    const requestId = req.headers['x-request-id'] || req.headers['x-correlation-id'] || null;
+    const resultado = await proveedoresBff.rechazarGovernanceReview(
+      reviewId,
+      req.body ?? {},
+      requestId
+    );
+    res.json(resultado);
+  } catch (error) {
+    const status = error?.status ?? 500;
+    const payload = error?.data ?? {
+      error: 'No se pudo rechazar la revisión de gobernanza.'
+    };
+    res.status(status).json(payload);
+  }
+}
+
 async function obtenerTaxonomiaClusters(req, res) {
   try {
     const status = typeof req.query.status === 'string' ? req.query.status : 'pending';
@@ -201,6 +286,19 @@ async function obtenerTaxonomiaOverview(req, res) {
     const status = error?.status ?? 500;
     const payload = error?.data ?? {
       error: 'No se pudo obtener el overview de taxonomía.'
+    };
+    res.status(status).json(payload);
+  }
+}
+
+async function obtenerTaxonomiaCatalogo(req, res) {
+  try {
+    const resultado = await proveedoresBff.obtenerTaxonomiaCatalogo();
+    res.json(resultado);
+  } catch (error) {
+    const status = error?.status ?? 500;
+    const payload = error?.data ?? {
+      error: 'No se pudo obtener el catálogo publicado de taxonomía.'
     };
     res.status(status).json(payload);
   }
@@ -362,7 +460,13 @@ router.post('/:providerId/review', revisarProveedor);
 router.get('/monetization/overview', obtenerMonetizacionResumen);
 router.get('/monetization/providers', obtenerMonetizacionProveedores);
 router.get('/monetization/provider/:providerId', obtenerMonetizacionProveedor);
+router.get('/governance/reviews', obtenerGovernanceReviews);
+router.get('/governance/domains', obtenerGovernanceDomains);
+router.get('/governance/metrics', obtenerGovernanceMetrics);
+router.post('/governance/reviews/:reviewId/approve', aprobarGovernanceReview);
+router.post('/governance/reviews/:reviewId/reject', rechazarGovernanceReview);
 router.get('/taxonomy/overview', obtenerTaxonomiaOverview);
+router.get('/taxonomy/catalog', obtenerTaxonomiaCatalogo);
 router.get('/taxonomy/suggestions', obtenerTaxonomiaSugerencias);
 router.get('/taxonomy/suggestion-clusters', obtenerTaxonomiaClusters);
 router.post('/taxonomy/suggestions/:suggestionId/review', revisarTaxonomiaSugerencia);

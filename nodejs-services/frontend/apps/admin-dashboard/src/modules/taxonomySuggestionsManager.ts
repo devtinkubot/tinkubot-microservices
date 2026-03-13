@@ -1,5 +1,7 @@
 import {
   apiProveedores,
+  type TaxonomyCatalogDomain,
+  type TaxonomyCatalogResponse,
   type TaxonomyDraftPayload,
   type TaxonomyDraftRecord,
   type TaxonomySuggestionCluster,
@@ -15,8 +17,10 @@ interface TaxonomyState {
   loading: boolean;
   filter: SuggestionFilter;
   overview: TaxonomyOverviewResponse | null;
+  catalog: TaxonomyCatalogResponse | null;
   items: TaxonomySuggestionCluster[];
   drafts: TaxonomyDraftRecord[];
+  selectedDomainCode: string | null;
   selectedId: string | null;
   selectedDraftId: string | null;
   actionInFlightId: string | null;
@@ -26,8 +30,10 @@ const state: TaxonomyState = {
   loading: false,
   filter: 'pending',
   overview: null,
+  catalog: null,
   items: [],
   drafts: [],
+  selectedDomainCode: null,
   selectedId: null,
   selectedDraftId: null,
   actionInFlightId: null
@@ -66,6 +72,8 @@ function formatDate(value?: string | null): string {
 function setLoading(loading: boolean) {
   state.loading = loading;
   const loadingBlock = getElement<HTMLDivElement>('#taxonomy-loading');
+  const catalogWrapper = getElement<HTMLDivElement>('#taxonomy-catalog-wrapper');
+  const catalogEmpty = getElement<HTMLDivElement>('#taxonomy-catalog-empty');
   const tableWrapper = getElement<HTMLDivElement>('#taxonomy-table-wrapper');
   const emptyBlock = getElement<HTMLDivElement>('#taxonomy-empty');
   const refreshButton = getElement<HTMLButtonElement>('#taxonomy-refresh-btn');
@@ -76,6 +84,8 @@ function setLoading(loading: boolean) {
   if (spinner) spinner.style.display = loading ? 'inline-block' : 'none';
 
   if (loading) {
+    if (catalogWrapper) catalogWrapper.style.display = 'none';
+    if (catalogEmpty) catalogEmpty.style.display = 'none';
     if (tableWrapper) tableWrapper.style.display = 'none';
     if (emptyBlock) emptyBlock.style.display = 'none';
   }
@@ -186,6 +196,107 @@ function renderOverview() {
   runtimeDetail.textContent =
     `Repreguntas: ${overview.runtimeMetrics7d.eventCounts.clarificationRequested} · Respaldo legacy: ${overview.runtimeMetrics7d.eventCounts.genericFallbackUsed} · Cliente/Proveedor: ${overview.runtimeMetrics7d.sourceCounts.client}/${overview.runtimeMetrics7d.sourceCounts.provider}` +
     (topDomains ? ` · Top: ${topDomains}` : '');
+}
+
+function selectedCatalogDomain(): TaxonomyCatalogDomain | null {
+  const domains = state.catalog?.domains ?? [];
+  return domains.find(item => item.code === state.selectedDomainCode) ?? null;
+}
+
+function renderCatalogTable() {
+  const body = getElement<HTMLTableSectionElement>('#taxonomy-catalog-table-body');
+  const wrapper = getElement<HTMLDivElement>('#taxonomy-catalog-wrapper');
+  const empty = getElement<HTMLDivElement>('#taxonomy-catalog-empty');
+  if (!body || !wrapper || !empty) return;
+
+  const domains = state.catalog?.domains ?? [];
+  if (domains.length === 0) {
+    body.innerHTML = '';
+    wrapper.style.display = 'none';
+    empty.style.display = 'block';
+    renderCatalogDetail();
+    return;
+  }
+
+  empty.style.display = 'none';
+  wrapper.style.display = 'flex';
+  body.innerHTML = domains
+    .map(
+      domain => `
+      <tr data-taxonomy-domain="${escapeHtml(domain.code)}" class="${
+        domain.code === state.selectedDomainCode ? 'table-active' : ''
+      }">
+        <td>
+          <div class="fw-semibold">${escapeHtml(domain.displayName ?? domain.code)}</div>
+          <small class="text-muted">${escapeHtml(domain.code)}</small>
+        </td>
+        <td>${domain.canonicalServices.length}</td>
+        <td>${domain.aliases.length}</td>
+        <td>${domain.rules.length}</td>
+      </tr>
+    `
+    )
+    .join('');
+
+  body.querySelectorAll<HTMLTableRowElement>('tr[data-taxonomy-domain]').forEach(row => {
+    row.addEventListener('click', () => {
+      state.selectedDomainCode = row.dataset.taxonomyDomain ?? null;
+      renderCatalogTable();
+      renderCatalogDetail();
+    });
+  });
+
+  if (!state.selectedDomainCode && domains[0]) {
+    state.selectedDomainCode = domains[0].code;
+    renderCatalogTable();
+    renderCatalogDetail();
+  }
+}
+
+function renderCatalogDetail() {
+  const panel = getElement<HTMLDivElement>('#taxonomy-catalog-detail-panel');
+  if (!panel) return;
+
+  const domain = selectedCatalogDomain();
+  if (!domain) {
+    panel.innerHTML =
+      '<div class="text-muted">Selecciona un dominio para ver aliases, canónicos y reglas activas.</div>';
+    return;
+  }
+
+  const requiredDimensions = domain.rules.flatMap(rule => rule.required_dimensions ?? []);
+  const genericExamples = domain.rules.flatMap(rule => rule.generic_examples ?? []).slice(0, 6);
+  const sufficientExamples = domain.rules
+    .flatMap(rule => rule.sufficient_examples ?? [])
+    .slice(0, 6);
+
+  panel.innerHTML = `
+    <div class="mb-3">
+      <div class="small text-muted">Dominio</div>
+      <div class="fw-semibold">${escapeHtml(domain.displayName ?? domain.code)}</div>
+      <div class="small text-muted">${escapeHtml(domain.code)}</div>
+    </div>
+    <div class="mb-3">
+      <div class="small text-muted">Servicios canónicos</div>
+      <div>${renderList(domain.canonicalServices.map(item => item.canonical_name ?? ''))}</div>
+    </div>
+    <div class="mb-3">
+      <div class="small text-muted">Aliases</div>
+      <div>${renderList(domain.aliases.map(item => item.alias_text ?? item.alias_normalized ?? ''))}</div>
+    </div>
+    <div class="mb-3">
+      <div class="small text-muted">Dimensiones requeridas</div>
+      <div>${renderList(requiredDimensions)}</div>
+    </div>
+    <div class="mb-3">
+      <div class="small text-muted">Ejemplos genéricos</div>
+      <div>${renderList(genericExamples)}</div>
+    </div>
+    <div class="mb-0">
+      <div class="small text-muted">Ejemplos suficientes</div>
+      <div>${renderList(sufficientExamples)}</div>
+    </div>
+  `;
 }
 
 function renderList(items?: string[] | null): string {
@@ -553,13 +664,22 @@ async function loadSuggestions() {
   setLoading(true);
   setFeedback('');
   try {
-    const overview = await apiProveedores.obtenerTaxonomiaOverview();
+    const [overview, catalog, response] = await Promise.all([
+      apiProveedores.obtenerTaxonomiaOverview(),
+      apiProveedores.obtenerTaxonomiaCatalogo(),
+      apiProveedores.obtenerTaxonomiaClusters({
+        status: state.filter,
+        limit: 100
+      })
+    ]);
     state.overview = overview;
+    state.catalog = catalog;
     renderOverview();
-    const response = await apiProveedores.obtenerTaxonomiaClusters({
-      status: state.filter,
-      limit: 100
-    });
+    if (!state.catalog?.domains.some(item => item.code === state.selectedDomainCode)) {
+      state.selectedDomainCode = state.catalog?.domains[0]?.code ?? null;
+    }
+    renderCatalogTable();
+    renderCatalogDetail();
     state.items = response.clusters ?? [];
     if (!state.items.some(item => item.clusterId === state.selectedId)) {
       state.selectedId = state.items[0]?.clusterId ?? null;
@@ -570,10 +690,14 @@ async function loadSuggestions() {
   } catch (error) {
     console.error('Error cargando sugerencias de taxonomía:', error);
     state.overview = null;
+    state.catalog = null;
     state.items = [];
     state.drafts = [];
+    state.selectedDomainCode = null;
     state.selectedId = null;
     state.selectedDraftId = null;
+    renderCatalogTable();
+    renderCatalogDetail();
     renderTable();
     renderDetail();
     renderDrafts();

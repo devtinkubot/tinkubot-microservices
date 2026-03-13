@@ -517,11 +517,6 @@ async def enrutar_estado(
 
     if estado == "confirm_service":
         from services.orquestador_conversacion import interpretar_si_no
-        from services.taxonomia.catalogo_publicado import (
-            obtener_taxonomia_publicada,
-            resolver_servicio_canonico_publicado,
-        )
-
         async def iniciar_busqueda_desde_confirmacion(data: Dict[str, Any]):
             if orquestador.repositorio_clientes:
                 perfil = await orquestador.repositorio_clientes.obtener_o_crear(
@@ -538,13 +533,7 @@ async def enrutar_estado(
             )
 
         async def resolver_servicio_canonico(servicio: str) -> Optional[str]:
-            if not orquestador.supabase:
-                return None
-            taxonomia = await obtener_taxonomia_publicada(
-                orquestador.supabase,
-                redis_client=orquestador.redis_client,
-            )
-            return resolver_servicio_canonico_publicado(servicio, taxonomia)
+            return (servicio or "").strip() or None
 
         return await procesar_estado_confirmar_servicio(
             flujo,

@@ -8,9 +8,9 @@ def preguntar_servicios_registro() -> str:
     return (
         "*Escribe tu primer servicio* e indica el servicio y la especialidad o "
         "área exacta.\n"
-        "Ejemplos: asesoría en ley laboral, defensa en demandas laborales, "
-        "asesoría por acoso laboral, destape de cañerías, reparación de fugas, "
-        "desarrollo web."
+        "Ejemplos: asesoría en derecho laboral, declaración de impuestos para "
+        "personas naturales, desarrollo de software a medida, instalación de "
+        "cámaras de seguridad, terapia psicológica, transporte de carga."
     )
 
 
@@ -24,18 +24,18 @@ def preguntar_siguiente_servicio_registro(
         progreso = min(indice, total_requerido)
         ejemplos_por_paso = {
             1: (
-                "Ejemplo para plomero o abogado:\n"
-                "*destape de cañerías*, *representación legal en materia laboral*."
+                "Ejemplo para abogado o técnico:\n"
+                "*asesoría en derecho laboral*, *instalación de cámaras de seguridad*."
             ),
             2: (
-                "Ejemplo para contador o jardinero:\n"
+                "Ejemplo para contador o desarrollador:\n"
                 "*declaración de impuestos para personas naturales*, "
-                "*mantenimiento de jardines residenciales*."
+                "*desarrollo de software a medida*."
             ),
             3: (
-                "Ejemplo para electricista o arquitecto:\n"
-                "*instalación de tableros eléctricos*, "
-                "*diseño de planos arquitectónicos*."
+                "Ejemplo para psicólogo o transportista:\n"
+                "*terapia psicológica para ansiedad*, "
+                "*transporte de carga pesada*."
             ),
         }
         return (

@@ -14,6 +14,13 @@ from services.registro.normalizacion import (
     normalizar_datos_proveedor,
 )
 from services.servicios_proveedor.constantes import DISPLAY_ORDER_MAX_DB
+from services.servicios_proveedor.clasificacion_semantica import (
+    construir_service_summary,
+    clasificar_servicios_livianos,
+)
+from services.servicios_proveedor.revision_catalogo import (
+    registrar_revision_catalogo_servicio,
+)
 from services.servicios_proveedor.utilidades import normalizar_texto_para_busqueda
 
 logger = logging.getLogger(__name__)
@@ -24,10 +31,38 @@ def _resolver_display_order(idx: int) -> int:
     return idx if idx <= DISPLAY_ORDER_MAX_DB else DISPLAY_ORDER_MAX_DB
 
 
+def _normalizar_entradas_servicio(servicios: List[Any]) -> List[Dict[str, str]]:
+    """Convierte la entrada de servicios en un payload uniforme para persistencia."""
+    entradas: List[Dict[str, str]] = []
+    for servicio in servicios:
+        if isinstance(servicio, dict):
+            nombre_visible = str(servicio.get("service_name") or "").strip()
+            texto_original = str(
+                servicio.get("raw_service_text") or nombre_visible
+            ).strip()
+            service_summary = str(servicio.get("service_summary") or "").strip()
+        else:
+            nombre_visible = str(servicio or "").strip()
+            texto_original = nombre_visible
+            service_summary = ""
+
+        if not nombre_visible:
+            continue
+
+        entradas.append(
+            {
+                "service_name": nombre_visible,
+                "raw_service_text": texto_original or nombre_visible,
+                "service_summary": service_summary,
+            }
+        )
+    return entradas
+
+
 async def insertar_servicios_proveedor(
     supabase: Client,
     proveedor_id: str,
-    servicios: List[str],
+    servicios: List[Any],
     servicio_embeddings: Optional[ServicioEmbeddings],
     tiempo_espera: float = 5.0,
 ) -> Dict[str, Any]:
@@ -41,7 +76,7 @@ async def insertar_servicios_proveedor(
     Args:
         supabase: Cliente de Supabase
         proveedor_id: ID del proveedor
-        servicios: Lista de servicios normalizados
+        servicios: Lista de servicios visibles o payloads con texto original
         servicio_embeddings: Servicio para generar embeddings (opcional)
         tiempo_espera: Timeout para operaciones de Supabase (segundos)
 
@@ -61,7 +96,13 @@ async def insertar_servicios_proveedor(
     """
     servicios_insertados: List[Dict[str, Any]] = []
     failed_services: List[Dict[str, str]] = []
-    requested_count = len(servicios)
+    service_entries = _normalizar_entradas_servicio(servicios)
+    requested_count = len(service_entries)
+    clasificaciones_semanticas = await clasificar_servicios_livianos(
+        cliente_openai=getattr(servicio_embeddings, "client", None),
+        supabase=supabase,
+        servicios=[entry["service_name"] for entry in service_entries],
+    )
 
     def _resultado() -> Dict[str, Any]:
         return {
@@ -76,8 +117,46 @@ async def insertar_servicios_proveedor(
             "⚠️ Servicio de embeddings no disponible, no se generarán embeddings"
         )
         # Si no hay servicio de embeddings, igual insertamos los servicios sin embedding
-        for idx, servicio in enumerate(servicios):
+        for idx, entry in enumerate(service_entries):
+            servicio = entry["service_name"]
             servicio_normalizado = normalizar_texto_para_busqueda(servicio)
+            metadata = (
+                clasificaciones_semanticas[idx]
+                if idx < len(clasificaciones_semanticas)
+                else {}
+            )
+            if metadata.get("domain_resolution_status") != "matched" or not metadata.get(
+                "resolved_domain_code"
+            ):
+                await registrar_revision_catalogo_servicio(
+                    supabase=supabase,
+                    provider_id=proveedor_id,
+                    raw_service_text=entry["raw_service_text"],
+                    service_name=servicio,
+                    suggested_domain_code=metadata.get("domain_code"),
+                    proposed_category_name=metadata.get("proposed_category_name")
+                    or metadata.get("category_name"),
+                    proposed_service_summary=metadata.get("proposed_service_summary")
+                    or metadata.get("service_summary"),
+                    review_reason=str(
+                        metadata.get("domain_resolution_status")
+                        or "catalog_review_required"
+                    ),
+                    source="provider_registration",
+                )
+                failed_services.append(
+                    {"service": servicio, "error": "catalog_review_required"}
+                )
+                continue
+            service_summary = (
+                entry.get("service_summary")
+                or metadata.get("service_summary")
+                or construir_service_summary(
+                    service_name=servicio,
+                    category_name=metadata.get("category_name"),
+                    domain_code=metadata.get("domain_code"),
+                )
+            )
 
             try:
                 resultado = await run_supabase(
@@ -86,10 +165,17 @@ async def insertar_servicios_proveedor(
                         {
                             "provider_id": proveedor_id,
                             "service_name": servicio,
+                            "raw_service_text": entry["raw_service_text"],
+                            "service_summary": service_summary,
                             "service_name_normalized": servicio_normalizado,
                             "service_embedding": None,  # Sin embedding
                             "is_primary": (idx == 0),
                             "display_order": _resolver_display_order(idx),
+                            "domain_code": metadata.get("resolved_domain_code"),
+                            "category_name": metadata.get("category_name"),
+                            "classification_confidence": metadata.get(
+                                "classification_confidence", 0.0
+                            ),
                         }
                     )
                     .execute(),
@@ -122,11 +208,51 @@ async def insertar_servicios_proveedor(
         return _resultado()
 
     # Generar embeddings para cada servicio
-    for idx, servicio in enumerate(servicios):
+    for idx, entry in enumerate(service_entries):
         try:
+            servicio = entry["service_name"]
+            metadata = (
+                clasificaciones_semanticas[idx]
+                if idx < len(clasificaciones_semanticas)
+                else {}
+            )
+            if metadata.get("domain_resolution_status") != "matched" or not metadata.get(
+                "resolved_domain_code"
+            ):
+                await registrar_revision_catalogo_servicio(
+                    supabase=supabase,
+                    provider_id=proveedor_id,
+                    raw_service_text=entry["raw_service_text"],
+                    service_name=servicio,
+                    suggested_domain_code=metadata.get("domain_code"),
+                    proposed_category_name=metadata.get("proposed_category_name")
+                    or metadata.get("category_name"),
+                    proposed_service_summary=metadata.get("proposed_service_summary")
+                    or metadata.get("service_summary"),
+                    review_reason=str(
+                        metadata.get("domain_resolution_status")
+                        or "catalog_review_required"
+                    ),
+                    source="provider_registration",
+                )
+                failed_services.append(
+                    {"service": servicio, "error": "catalog_review_required"}
+                )
+                continue
+            service_summary = (
+                entry.get("service_summary")
+                or metadata.get("service_summary")
+                or construir_service_summary(
+                    service_name=servicio,
+                    category_name=metadata.get("category_name"),
+                    domain_code=metadata.get("domain_code"),
+                )
+            )
             # Generar embedding individual para este servicio
             logger.info(f"🔄 Generando embedding para servicio: {servicio}")
-            embedding = await servicio_embeddings.generar_embedding(servicio)
+            embedding = await servicio_embeddings.generar_embedding(
+                f"{servicio}. {service_summary}".strip()
+            )
 
             if not embedding:
                 logger.warning(
@@ -144,10 +270,17 @@ async def insertar_servicios_proveedor(
                     {
                         "provider_id": proveedor_id,
                         "service_name": servicio,
+                        "raw_service_text": entry["raw_service_text"],
+                        "service_summary": service_summary,
                         "service_name_normalized": servicio_normalizado,
                         "service_embedding": embedding,
                         "is_primary": (idx == 0),  # Primer servicio = principal
                         "display_order": _resolver_display_order(idx),
+                        "domain_code": metadata.get("resolved_domain_code"),
+                        "category_name": metadata.get("category_name"),
+                        "classification_confidence": metadata.get(
+                            "classification_confidence", 0.0
+                        ),
                     }
                 )
                 .execute(),
@@ -183,7 +316,7 @@ async def insertar_servicios_proveedor(
     logger.info(
         "✅ Total servicios insertados: %s/%s (fallidos=%s)",
         len(servicios_insertados),
-        len(servicios),
+        len(service_entries),
         len(failed_services),
     )
     return _resultado()
@@ -224,6 +357,7 @@ async def registrar_proveedor_en_base_datos(
         # Normalizar datos
         datos_normalizados = normalizar_datos_proveedor(datos_proveedor)
         servicios_normalizados = datos_normalizados.pop("services_normalized", [])
+        service_entries = datos_normalizados.pop("service_entries", [])
 
         # Upsert por teléfono: reabre rechazados como pending, evita doble round-trip
         carga_upsert = {
@@ -276,7 +410,7 @@ async def registrar_proveedor_en_base_datos(
             logger.info(f"✅ Proveedor registrado en esquema unificado: {id_proveedor}")
 
             # Fase 6: Insertar servicios en provider_services con embeddings
-            servicios = servicios_normalizados
+            servicios = service_entries or servicios_normalizados
             if servicios:
                 logger.info(
                     "🔄 Insertando %s servicios en provider_services...",
@@ -312,6 +446,7 @@ async def registrar_proveedor_en_base_datos(
                 "city": registro_insertado.get("city", datos_normalizados["city"]),
                 # Fase 6: Eliminado campo 'profession'
                 "services_normalized": servicios_normalizados,
+                "service_entries": service_entries,
                 "experience_years": registro_insertado.get(
                     "experience_years", datos_normalizados["experience_years"]
                 ),

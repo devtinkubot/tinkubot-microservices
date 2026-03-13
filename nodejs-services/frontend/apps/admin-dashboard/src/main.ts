@@ -3,11 +3,8 @@ import {
   MonetizationManager,
   type MonetizationManagerModule
 } from './modules/monetizationManager';
+import { GovernanceManager, type GovernanceManagerModule } from './modules/governanceManager';
 import { ProvidersManager, type ProvidersManagerModule } from './modules/providersManager';
-import {
-  TaxonomySuggestionsManager,
-  type TaxonomySuggestionsManagerModule
-} from './modules/taxonomySuggestionsManager';
 import { Utils, type UtilsModule } from './modules/utils';
 import {
   WhatsAppManager,
@@ -20,7 +17,7 @@ type TinkuBotGlobal = {
   WhatsAppManager: WhatsAppManagerModule;
   ProvidersManager: ProvidersManagerModule;
   MonetizationManager: MonetizationManagerModule;
-  TaxonomySuggestionsManager: TaxonomySuggestionsManagerModule;
+  GovernanceManager: GovernanceManagerModule;
 };
 
 type VentanaDashboard = typeof window & {
@@ -28,7 +25,7 @@ type VentanaDashboard = typeof window & {
   regenerarConexionWhatsApp?: (instanceId: string) => Promise<void>;
   recargarProveedoresPendientes?: () => Promise<void>;
   recargarMonetizacion?: () => Promise<void>;
-  recargarTaxonomia?: () => Promise<void>;
+  recargarGobernanza?: () => Promise<void>;
 };
 
 const ventanaGlobal = window as VentanaDashboard;
@@ -39,7 +36,7 @@ ventanaGlobal.TinkuBot = {
   WhatsAppManager,
   ProvidersManager,
   MonetizationManager,
-  TaxonomySuggestionsManager
+  GovernanceManager
 };
 
 function enlazarManejadoresGlobales() {
@@ -53,8 +50,8 @@ function enlazarManejadoresGlobales() {
   ventanaGlobal.recargarMonetizacion = async () => {
     await MonetizationManager.recargar();
   };
-  ventanaGlobal.recargarTaxonomia = async () => {
-    await TaxonomySuggestionsManager.recargar();
+  ventanaGlobal.recargarGobernanza = async () => {
+    await GovernanceManager.recargar();
   };
 }
 
@@ -64,6 +61,6 @@ document.addEventListener('DOMContentLoaded', () => {
   WhatsAppManager.actualizarHoraUltimaActualizacion();
   ProvidersManager.iniciar();
   MonetizationManager.iniciar();
-  TaxonomySuggestionsManager.iniciar();
+  GovernanceManager.iniciar();
   enlazarManejadoresGlobales();
 });

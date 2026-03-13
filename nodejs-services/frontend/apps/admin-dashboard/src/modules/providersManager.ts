@@ -371,6 +371,7 @@ function actualizarNotas(proveedor: ProviderRecord) {
 
 function actualizarPerfilProfesional(proveedor: ProviderRecord) {
   const servicios = obtenerElemento<HTMLDivElement>('#provider-detail-services');
+  const taxonomia = obtenerElemento<HTMLDivElement>('#provider-detail-service-taxonomy');
   const experiencia = obtenerElemento<HTMLElement>('#provider-detail-experience');
   const redSocial = obtenerElemento<HTMLElement>('#provider-detail-social-media');
   const tituloPerfil = obtenerElemento<HTMLElement>('#provider-professional-title');
@@ -391,6 +392,11 @@ function actualizarPerfilProfesional(proveedor: ProviderRecord) {
       ? `${tipoRedSocial}: ${urlRedSocial}`
       : urlRedSocial
     : null;
+  const serviceTaxonomy = Array.isArray(proveedor.serviceTaxonomy)
+    ? proveedor.serviceTaxonomy.filter(
+        item => typeof item?.serviceName === 'string' && item.serviceName.trim().length > 0
+      )
+    : [];
 
   if (tituloPerfil) {
     tituloPerfil.textContent = esRevisionProfesional
@@ -421,6 +427,35 @@ function actualizarPerfilProfesional(proveedor: ProviderRecord) {
     establecerTexto('#provider-detail-experience', experienciaValor, {
       fallback: 'Sin experiencia registrada'
     });
+  }
+
+  if (taxonomia) {
+    if (serviceTaxonomy.length > 0) {
+      taxonomia.innerHTML = `
+        <ul class="mb-0 ps-3">
+          ${serviceTaxonomy
+            .map(item => {
+              const dominio = item.domainDisplayName ?? item.domainCode ?? 'Sin dominio';
+              const canonico = item.canonicalName?.trim();
+              const etiquetaMatch =
+                item.matchType === 'canonical'
+                  ? 'Canónico'
+                  : item.matchType === 'alias'
+                    ? 'Alias'
+                    : 'Sin resolver';
+              const detalleCanonico = canonico ? ` · Canónico: ${escaparHtml(canonico)}` : '';
+              return `<li><strong>${escaparHtml(item.serviceName)}</strong> · ${escaparHtml(
+                dominio
+              )} · ${etiquetaMatch}${detalleCanonico}</li>`;
+            })
+            .join('')}
+        </ul>
+      `;
+      taxonomia.classList.remove('text-muted');
+    } else {
+      taxonomia.textContent = 'Sin resolución taxonómica disponible';
+      taxonomia.classList.add('text-muted');
+    }
   }
 
   if (redSocial) {

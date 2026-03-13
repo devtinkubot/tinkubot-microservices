@@ -164,6 +164,21 @@ class SolicitudInvalidacionCache(BaseModel):
     phone: str
 
 
+class SolicitudAprobacionGovernanceReview(BaseModel):
+    domain_code: str
+    category_name: str
+    service_name: str
+    service_summary: Optional[str] = None
+    reviewer: Optional[str] = None
+    notes: Optional[str] = None
+    create_domain_if_missing: bool = False
+
+
+class SolicitudRechazoGovernanceReview(BaseModel):
+    reviewer: Optional[str] = None
+    notes: Optional[str] = None
+
+
 # === FASTAPI LIFECYCLE EVENTS ===
 
 
@@ -690,6 +705,72 @@ async def obtener_estado_disponibilidad_proveedor(
         "pending_request_ids": request_ids_unicos,
         "lifecycles": ciclos,
     }
+
+
+@app.post("/admin/service-governance/reviews/{review_id}/approve")
+async def aprobar_review_gobernanza(
+    review_id: str,
+    solicitud: SolicitudAprobacionGovernanceReview,
+    token: Optional[str] = Header(default=None, alias="x-internal-token"),
+) -> Dict[str, Any]:
+    token_esperado = configuracion.internal_token
+    if token_esperado and token != token_esperado:
+        return {"success": False, "message": "Unauthorized"}
+
+    if not supabase:
+        return {"success": False, "message": "Supabase no configurado"}
+
+    try:
+        from services.servicios_proveedor.gobernanza_admin import (
+            aprobar_review_catalogo_servicio,
+        )
+
+        resultado = await aprobar_review_catalogo_servicio(
+            supabase=supabase,
+            servicio_embeddings=servicio_embeddings,
+            review_id=(review_id or "").strip(),
+            domain_code=solicitud.domain_code,
+            category_name=solicitud.category_name,
+            service_name=solicitud.service_name,
+            service_summary=solicitud.service_summary,
+            reviewer=solicitud.reviewer,
+            notes=solicitud.notes,
+            create_domain_if_missing=solicitud.create_domain_if_missing,
+        )
+        return {"success": True, **resultado}
+    except Exception as exc:
+        logger.error("❌ Error aprobando review de gobernanza %s: %s", review_id, exc)
+        return {"success": False, "message": str(exc)}
+
+
+@app.post("/admin/service-governance/reviews/{review_id}/reject")
+async def rechazar_review_gobernanza(
+    review_id: str,
+    solicitud: SolicitudRechazoGovernanceReview,
+    token: Optional[str] = Header(default=None, alias="x-internal-token"),
+) -> Dict[str, Any]:
+    token_esperado = configuracion.internal_token
+    if token_esperado and token != token_esperado:
+        return {"success": False, "message": "Unauthorized"}
+
+    if not supabase:
+        return {"success": False, "message": "Supabase no configurado"}
+
+    try:
+        from services.servicios_proveedor.gobernanza_admin import (
+            rechazar_review_catalogo_servicio,
+        )
+
+        resultado = await rechazar_review_catalogo_servicio(
+            supabase=supabase,
+            review_id=(review_id or "").strip(),
+            reviewer=solicitud.reviewer,
+            notes=solicitud.notes,
+        )
+        return {"success": True, **resultado}
+    except Exception as exc:
+        logger.error("❌ Error rechazando review de gobernanza %s: %s", review_id, exc)
+        return {"success": False, "message": str(exc)}
 
 
 @app.post("/handle-whatsapp-message")

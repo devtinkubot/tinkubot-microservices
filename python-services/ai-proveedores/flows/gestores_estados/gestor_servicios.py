@@ -7,16 +7,16 @@ from flows.constructores import construir_menu_servicios, construir_payload_menu
 from infrastructure.openai import TransformadorServicios
 from services import actualizar_servicios
 from services.servicios_proveedor.constantes import SERVICIOS_MAXIMOS
+from services.servicios_proveedor.validacion_semantica import (
+    validar_servicio_semanticamente,
+)
+from services.servicios_proveedor.revision_catalogo import (
+    registrar_revision_catalogo_servicio,
+)
 from services.servicios_proveedor.utilidades import (
-    clasificar_servicio_critico,
     construir_listado_servicios,
     dividir_cadena_servicios,
-    es_servicio_critico_generico,
     limpiar_texto_servicio,
-    mensaje_pedir_precision_servicio,
-    registrar_evento_servicio_generico,
-    registrar_sugerencia_servicio_generico,
-    refrescar_taxonomia_dominios_criticos,
 )
 from templates.interfaz import (
     confirmar_servicio_eliminado,
@@ -36,6 +36,15 @@ from templates.interfaz import (
 )
 
 _FLUJO_KEY_SERVICIOS_TEMP = "service_add_temporales"
+
+
+def _resolver_supabase_runtime() -> Any:
+    try:
+        from principal import supabase  # Import dinámico por acoplamiento runtime
+
+        return supabase
+    except Exception:
+        return None
 
 
 def _menu_principal_desde_flujo(flujo: Dict[str, Any]) -> Dict[str, Any]:
@@ -61,18 +70,76 @@ async def _normalizar_servicios_ingresados(
     texto_mensaje: str,
     cliente_openai: Optional[Any],
     max_servicios: int,
-) -> Optional[List[str]]:
+    provider_id: Optional[str],
+    review_source: str,
+) -> Dict[str, Any]:
     if not cliente_openai:
-        return None
+        return {"ok": False, "response": error_normalizar_servicio()}
 
     try:
         transformador = TransformadorServicios(cliente_openai)
-        return await transformador.transformar_a_servicios(
+        servicios_transformados = await transformador.transformar_a_servicios(
             texto_mensaje or "",
             max_servicios=max_servicios,
         )
     except Exception:
-        return None
+        return {"ok": False, "response": error_normalizar_servicio()}
+
+    if not servicios_transformados:
+        return {"ok": False, "response": error_normalizar_servicio()}
+
+    servicios_validados: List[str] = []
+    supabase = _resolver_supabase_runtime()
+    for servicio in servicios_transformados:
+        validacion = await validar_servicio_semanticamente(
+            cliente_openai=cliente_openai,
+            supabase=supabase,
+            raw_service_text=texto_mensaje or "",
+            service_name=str(servicio or "").strip(),
+        )
+        if not validacion.get("is_valid_service") and validacion.get("needs_clarification"):
+            return {
+                "ok": False,
+                "response": str(
+                    validacion.get("clarification_question")
+                    or "Indica el servicio o especialidad exacta que ofreces."
+                ),
+            }
+        if not validacion.get("is_valid_service"):
+            return {
+                "ok": False,
+                "response": (
+                    "No identifiqué un servicio válido. "
+                    "Escribe el servicio o especialidad exacta que ofreces."
+                ),
+            }
+        if validacion.get("domain_resolution_status") == "catalog_review_required":
+            await registrar_revision_catalogo_servicio(
+                supabase=supabase,
+                provider_id=provider_id,
+                raw_service_text=texto_mensaje or "",
+                service_name=str(validacion.get("normalized_service") or servicio).strip()
+                or str(servicio or "").strip(),
+                suggested_domain_code=validacion.get("domain_code"),
+                proposed_category_name=validacion.get("proposed_category_name"),
+                proposed_service_summary=validacion.get("proposed_service_summary"),
+                review_reason=str(validacion.get("reason") or "catalog_review_required"),
+                source=review_source,
+            )
+            return {
+                "ok": False,
+                "response": (
+                    "Ese servicio sí se entiende, pero todavía no lo podemos clasificar bien dentro del sistema. "
+                    "Escríbelo con más detalle o usa una especialidad más cercana a lo que haces."
+                ),
+            }
+        servicio_validado = str(
+            validacion.get("normalized_service") or servicio
+        ).strip()
+        if servicio_validado:
+            servicios_validados.append(servicio_validado)
+
+    return {"ok": True, "services": servicios_validados}
 
 
 def _normalizar_lista_resultante(
@@ -80,11 +147,21 @@ def _normalizar_lista_resultante(
     servicios_actuales: List[str],
 ) -> List[str]:
     nuevos_sanitizados: List[str] = []
+    claves_actuales = {
+        limpiar_texto_servicio(servicio)
+        for servicio in servicios_actuales
+        if limpiar_texto_servicio(servicio)
+    }
+    claves_nuevas = set()
     for candidato in base_candidatos:
-        texto = limpiar_texto_servicio(candidato)
-        if not texto or texto in servicios_actuales or texto in nuevos_sanitizados:
+        texto_visible = " ".join(str(candidato or "").strip().split())
+        clave = limpiar_texto_servicio(texto_visible)
+        if not texto_visible or not clave:
             continue
-        nuevos_sanitizados.append(texto)
+        if clave in claves_actuales or clave in claves_nuevas:
+            continue
+        claves_nuevas.add(clave)
+        nuevos_sanitizados.append(texto_visible)
     return nuevos_sanitizados
 
 
@@ -215,21 +292,24 @@ async def manejar_agregar_servicios(
             ],
         }
 
-    servicios_transformados = await _normalizar_servicios_ingresados(
+    resultado_normalizacion = await _normalizar_servicios_ingresados(
         texto_mensaje=texto_mensaje or "",
         cliente_openai=cliente_openai,
         max_servicios=SERVICIOS_MAXIMOS,
+        provider_id=proveedor_id,
+        review_source="provider_service_add",
     )
 
-    if not servicios_transformados:
+    if not resultado_normalizacion.get("ok"):
         flujo["state"] = "awaiting_service_action"
         return {
             "success": True,
             "messages": [
-                {"response": error_normalizar_servicio()},
+                {"response": resultado_normalizacion["response"]},
                 {"response": _menu_servicios_desde_flujo(flujo, servicios_actuales)},
             ],
         }
+    servicios_transformados = resultado_normalizacion.get("services") or []
 
     nuevos_sanitizados = _normalizar_lista_resultante(
         servicios_transformados,
@@ -248,51 +328,6 @@ async def manejar_agregar_servicios(
                     )
                 },
                 {"response": _menu_servicios_desde_flujo(flujo, servicios_actuales)},
-            ],
-        }
-
-    await refrescar_taxonomia_dominios_criticos()
-    servicio_generico = next(
-        (
-            servicio
-            for servicio in nuevos_sanitizados
-            if es_servicio_critico_generico(servicio)
-        ),
-        None,
-    )
-    if servicio_generico:
-        clasificacion = clasificar_servicio_critico(servicio_generico)
-        await registrar_sugerencia_servicio_generico(
-            servicio_generico,
-            contexto=texto_mensaje,
-        )
-        await registrar_evento_servicio_generico(
-            event_name="generic_service_blocked",
-            servicio=servicio_generico,
-            dominio=clasificacion.get("domain"),
-            source=clasificacion.get("source") or "unknown",
-            contexto=texto_mensaje,
-        )
-        if not clasificacion.get("clarification_question"):
-            await registrar_evento_servicio_generico(
-                event_name="precision_prompt_fallback_used",
-                servicio=servicio_generico,
-                dominio=clasificacion.get("domain"),
-                source=clasificacion.get("source") or "unknown",
-                contexto=texto_mensaje,
-            )
-        await registrar_evento_servicio_generico(
-            event_name="clarification_requested",
-            servicio=servicio_generico,
-            dominio=clasificacion.get("domain"),
-            source=clasificacion.get("source") or "unknown",
-            contexto=texto_mensaje,
-        )
-        flujo["state"] = "awaiting_service_add"
-        return {
-            "success": True,
-            "messages": [
-                {"response": mensaje_pedir_precision_servicio(servicio_generico)}
             ],
         }
 
@@ -369,12 +404,19 @@ async def manejar_confirmacion_agregar_servicios(
                 "success": True,
                 "messages": [{"response": error_servicio_no_interpretado()}],
             }
-        servicios_transformados = await _normalizar_servicios_ingresados(
+        resultado_normalizacion = await _normalizar_servicios_ingresados(
             texto_mensaje=texto_mensaje or "",
             cliente_openai=cliente_openai,
             max_servicios=SERVICIOS_MAXIMOS,
+            provider_id=proveedor_id,
+            review_source="provider_service_add",
         )
-        base_candidatos = servicios_transformados or candidatos
+        if not resultado_normalizacion.get("ok"):
+            return {
+                "success": True,
+                "messages": [{"response": resultado_normalizacion["response"]}],
+            }
+        base_candidatos = resultado_normalizacion.get("services") or candidatos
         nuevos_sanitizados = _normalizar_lista_resultante(
             base_candidatos, servicios_actuales
         )
@@ -389,49 +431,6 @@ async def manejar_confirmacion_agregar_servicios(
                             "Escríbelos nuevamente separados por comas."
                         )
                     }
-                ],
-            }
-        await refrescar_taxonomia_dominios_criticos()
-        servicio_generico = next(
-            (
-                servicio
-                for servicio in nuevos_sanitizados
-                if es_servicio_critico_generico(servicio)
-            ),
-            None,
-        )
-        if servicio_generico:
-            clasificacion = clasificar_servicio_critico(servicio_generico)
-            await registrar_sugerencia_servicio_generico(
-                servicio_generico,
-                contexto=texto_mensaje,
-            )
-            await registrar_evento_servicio_generico(
-                event_name="generic_service_blocked",
-                servicio=servicio_generico,
-                dominio=clasificacion.get("domain"),
-                source=clasificacion.get("source") or "unknown",
-                contexto=texto_mensaje,
-            )
-            if not clasificacion.get("clarification_question"):
-                await registrar_evento_servicio_generico(
-                    event_name="precision_prompt_fallback_used",
-                    servicio=servicio_generico,
-                    dominio=clasificacion.get("domain"),
-                    source=clasificacion.get("source") or "unknown",
-                    contexto=texto_mensaje,
-                )
-            await registrar_evento_servicio_generico(
-                event_name="clarification_requested",
-                servicio=servicio_generico,
-                dominio=clasificacion.get("domain"),
-                source=clasificacion.get("source") or "unknown",
-                contexto=texto_mensaje,
-            )
-            return {
-                "success": True,
-                "messages": [
-                    {"response": mensaje_pedir_precision_servicio(servicio_generico)}
                 ],
             }
         espacio_restante = max(SERVICIOS_MAXIMOS - len(servicios_actuales), 0)

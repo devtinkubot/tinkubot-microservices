@@ -176,7 +176,7 @@ def _crear_prompt_sistema() -> str:
     return """Eres un experto en convertir lo que escribe un proveedor en servicios claros, específicos y buscables en Ecuador.
 
 TU OBJETIVO:
-Transformar profesiones, especialidades o descripciones libres en SERVICIOS CONCRETOS que un cliente realmente buscaría.
+Transformar profesiones, especialidades o descripciones libres en SERVICIOS CONCRETOS que un cliente realmente buscaría y que además se vean naturales en interfaz.
 
 PRIORIDAD SEMÁNTICA:
 - Si el proveedor dio detalle suficiente, conserva ese detalle.
@@ -190,6 +190,8 @@ REGLAS DE TRANSFORMACIÓN:
    - "plomero" → "reparación de fugas", "destape de cañerías"
    - "carpintero" → "fabricación de muebles a medida", "reparación de muebles de madera"
    - "ingeniero de sistemas" → "desarrollo de software"
+   - "contador" → "declaración de impuestos", "contabilidad para negocios"
+   - "psicólogo" → "terapia psicológica", "acompañamiento emocional"
 
 2. SI HAY DETALLE, NO LO GENERALICES:
    - "abogado para rebaja de pensión alimenticia" → "asesoría para rebaja de pensión alimenticia"
@@ -203,6 +205,8 @@ REGLAS DE TRANSFORMACIÓN:
    - mejor "reparación de fugas" que "plomería"
    - mejor "asesoría para pensión alimenticia" que "abogado"
    - mejor "gestión de redes sociales" que "community manager"
+   - mejor "declaración de impuestos" que "contador"
+   - mejor "terapia psicológica para ansiedad" que "psicólogo clínico"
 
 4. ESPAÑOL NEUTRO, SIN INGLÉS:
    - "community manager" → "gestión de redes sociales"
@@ -216,6 +220,7 @@ REGLAS DE TRANSFORMACIÓN:
    - No cambies el verbo principal si el proveedor ya fue específico.
      Ejemplo: "configuración" no se convierte en "instalación".
    - No conviertas "desarrollo de software" en formas telegráficas como "desarrollo software".
+   - No elimines conectores útiles como "de", "a", "para", "en" si la frase ya es natural.
 
 6. RESPETA LA CANTIDAD DECLARADA:
    - No excedas la cantidad de servicios que el proveedor escribió.
@@ -228,6 +233,9 @@ Devuelve SOLO una lista JSON de strings en español, sin explicaciones adicional
 
 IMPORTANTE:
 - Cada servicio debe ser corto, claro y entendible por un cliente sin conocimientos técnicos.
+- La salida debe poder mostrarse tal cual en frontend.
+- Prefiere frases naturales completas sobre etiquetas comprimidas.
+- Usa español claro y cotidiano que una persona en Ecuador entienda rápido.
 - Evita categorías demasiado amplias si el texto permite algo más específico.
 - Conserva términos de dominio relevantes cuando el proveedor ya los mencionó.
 - Prefiere conservar frases ya buscables casi textuales antes que reescribirlas de forma más agresiva.
@@ -304,6 +312,9 @@ def _ajustar_frase_natural(servicio: str) -> str:
     texto = " ".join((servicio or "").strip().split())
     reemplazos = {
         "desarrollo software": "desarrollo de software",
+        "desarrollo software a medida": "desarrollo de software a medida",
+        "automatizacion procesos negocio": "automatización de procesos de negocio",
+        "desarrollo aplicaciones moviles": "desarrollo de aplicaciones móviles",
         "configuracion redes": "configuración de redes",
         "instalacion internet": "instalación de internet",
         "servicios cableado estructurado": "cableado estructurado",

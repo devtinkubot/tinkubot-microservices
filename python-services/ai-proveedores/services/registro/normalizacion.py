@@ -1,11 +1,8 @@
-"""
-Funciones de normalización de datos de proveedores.
-"""
+"""Funciones de normalización de datos de proveedores."""
 
 from datetime import datetime, timezone
-import logging
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from models.proveedores import SolicitudCreacionProveedor
 from services.servicios_proveedor.constantes import SERVICIOS_MAXIMOS
@@ -16,7 +13,26 @@ from services.servicios_proveedor.utilidades import (
     sanitizar_lista_servicios as sanitizar_servicios,
 )
 
-logger = logging.getLogger(__name__)
+_CONECTORES_TITULO = {
+    "a",
+    "al",
+    "con",
+    "contra",
+    "de",
+    "del",
+    "e",
+    "el",
+    "en",
+    "la",
+    "las",
+    "los",
+    "o",
+    "para",
+    "por",
+    "sin",
+    "u",
+    "y",
+}
 
 
 def _normalizar_telefono_ecuador(telefono: str) -> str:
@@ -62,6 +78,25 @@ def _normalizar_jid_whatsapp(telefono: str) -> str:
     return f"{valor}@s.whatsapp.net"
 
 
+def _formatear_servicio_para_visualizacion(servicio: str) -> str:
+    """Genera una versión legible del servicio sin volverlo telegráfico."""
+    texto = " ".join((servicio or "").strip().split())
+    if not texto:
+        return ""
+
+    palabras = texto.lower().split()
+    if not palabras:
+        return ""
+
+    resultado: List[str] = []
+    for idx, palabra in enumerate(palabras):
+        if idx > 0 and palabra in _CONECTORES_TITULO:
+            resultado.append(palabra)
+            continue
+        resultado.append(palabra.capitalize())
+    return " ".join(resultado)
+
+
 def normalizar_datos_proveedor(
     datos_crudos: SolicitudCreacionProveedor,
 ) -> Dict[str, Any]:
@@ -85,9 +120,23 @@ def normalizar_datos_proveedor(
     if len(servicios) > SERVICIOS_MAXIMOS:
         raise ValueError(f"Máximo {SERVICIOS_MAXIMOS} servicios permitidos")
 
-    # Fase 5: Normalizar servicios (title case, trim)
+    # Fase 5: Normalizar servicios preservando una variante legible y el texto original.
     servicios_limpios = sanitizar_servicios(servicios)
-    servicios_normalizados = [s.strip().title() for s in servicios_limpios if s.strip()]
+    servicios_normalizados = [
+        _formatear_servicio_para_visualizacion(servicio)
+        for servicio in servicios_limpios
+        if servicio.strip()
+    ]
+    service_entries = []
+    for idx, servicio_normalizado in enumerate(servicios_normalizados):
+        raw_text = servicios_limpios[idx].strip() if idx < len(servicios_limpios) else ""
+        service_entries.append(
+            {
+                "raw_service_text": raw_text or servicio_normalizado,
+                "service_name": servicio_normalizado,
+                "service_summary": "",
+            }
+        )
 
     telefono = _normalizar_jid_whatsapp(datos_crudos.phone.strip())
     real_phone = (
@@ -117,6 +166,7 @@ def normalizar_datos_proveedor(
         "city_confirmed_at": ahora_iso,
         # Fase 5: Eliminado campo 'profession'
         "services_normalized": servicios_normalizados,  # Fase 5: Lista, no string
+        "service_entries": service_entries,
         "experience_years": datos_crudos.experience_years or 0,
         "has_consent": datos_crudos.has_consent,
         "verified": False,

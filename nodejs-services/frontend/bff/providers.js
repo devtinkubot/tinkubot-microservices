@@ -125,6 +125,26 @@ const invalidarCacheProveedor = async (phone, requestId = null) => {
   }
 };
 
+const crearClienteAiProveedores = (requestId = null) => {
+  if (!aiProveedoresUrl) {
+    const error = new Error("AI Proveedores no configurado.");
+    error.status = 500;
+    throw error;
+  }
+
+  const headers = {};
+  if (requestId) headers["x-request-id"] = requestId;
+  if (aiProveedoresInternalToken) {
+    headers["x-internal-token"] = aiProveedoresInternalToken;
+  }
+
+  return axios.create({
+    baseURL: aiProveedoresUrl.replace(/\/$/, ""),
+    timeout: requestTimeoutMs,
+    headers,
+  });
+};
+
 console.warn(
   `📦 Provider data source: Supabase REST (${supabaseProvidersTable})`,
 );
@@ -391,7 +411,192 @@ const normalizarEstadoProveedor = (registro) => {
   return registro?.verified ? "approved" : "pending";
 };
 
-const normalizarProveedorSupabase = (registro) => {
+const construirCatalogoTaxonomiaPublicado = (
+  domains = [],
+  rules = [],
+  aliases = [],
+  canonicalServices = [],
+  publication = null,
+) => {
+  const domainsById = new Map();
+  const rulesByDomainId = new Map();
+  const canonicalsByDomainId = new Map();
+  const canonicalsById = new Map();
+  const aliasesByDomainId = new Map();
+
+  for (const domain of domains) {
+    const id = limpiarTexto(domain?.id);
+    const code = limpiarTexto(domain?.code);
+    if (!id || !code) continue;
+    domainsById.set(id, {
+      id,
+      code,
+      displayName: limpiarTexto(domain?.display_name) || code,
+      status: limpiarTexto(domain?.status) || null,
+      aliases: [],
+      canonicalServices: [],
+      rules: [],
+    });
+  }
+
+  for (const rule of rules) {
+    const domainId = limpiarTexto(rule?.domain_id);
+    if (!domainId || !domainsById.has(domainId)) continue;
+    if (!rulesByDomainId.has(domainId)) {
+      rulesByDomainId.set(domainId, []);
+    }
+    rulesByDomainId.get(domainId).push({
+      id: limpiarTexto(rule?.id) || null,
+      required_dimensions: Array.isArray(rule?.required_dimensions)
+        ? rule.required_dimensions.filter(item => typeof item === "string" && item.trim())
+        : [],
+      generic_examples: Array.isArray(rule?.generic_examples)
+        ? rule.generic_examples.filter(item => typeof item === "string" && item.trim())
+        : [],
+      sufficient_examples: Array.isArray(rule?.sufficient_examples)
+        ? rule.sufficient_examples.filter(item => typeof item === "string" && item.trim())
+        : [],
+      client_prompt_template: limpiarTexto(rule?.client_prompt_template) || null,
+      provider_prompt_template: limpiarTexto(rule?.provider_prompt_template) || null,
+    });
+  }
+
+  for (const canonical of canonicalServices) {
+    const domainId = limpiarTexto(canonical?.domain_id);
+    if (!domainId || !domainsById.has(domainId)) continue;
+    const status = limpiarTexto(canonical?.status)?.toLowerCase() || "";
+    if (status && !["active", "published"].includes(status)) continue;
+    const record = {
+      id: limpiarTexto(canonical?.id) || null,
+      canonical_name: limpiarTexto(canonical?.canonical_name) || null,
+      canonical_normalized:
+        limpiarTexto(canonical?.canonical_normalized) ||
+        normalizarAliasTaxonomia(canonical?.canonical_name || ""),
+      status: limpiarTexto(canonical?.status) || null,
+      description: limpiarTexto(canonical?.description) || null,
+    };
+    if (!canonicalsByDomainId.has(domainId)) {
+      canonicalsByDomainId.set(domainId, []);
+    }
+    canonicalsByDomainId.get(domainId).push(record);
+    if (record.id) {
+      canonicalsById.set(record.id, record);
+    }
+  }
+
+  for (const alias of aliases) {
+    const domainId = limpiarTexto(alias?.domain_id);
+    if (!domainId || !domainsById.has(domainId)) continue;
+    const status = limpiarTexto(alias?.status)?.toLowerCase() || "";
+    if (status && !["active", "published"].includes(status)) continue;
+    const record = {
+      id: limpiarTexto(alias?.id) || null,
+      alias_text: limpiarTexto(alias?.alias_text) || null,
+      alias_normalized:
+        limpiarTexto(alias?.alias_normalized) ||
+        normalizarAliasTaxonomia(alias?.alias_text || ""),
+      canonical_service_id: limpiarTexto(alias?.canonical_service_id) || null,
+      canonical_name: null,
+      status: limpiarTexto(alias?.status) || null,
+    };
+    if (record.canonical_service_id && canonicalsById.has(record.canonical_service_id)) {
+      record.canonical_name =
+        canonicalsById.get(record.canonical_service_id)?.canonical_name || null;
+    }
+    if (!aliasesByDomainId.has(domainId)) {
+      aliasesByDomainId.set(domainId, []);
+    }
+    aliasesByDomainId.get(domainId).push(record);
+  }
+
+  const catalogDomains = Array.from(domainsById.values())
+    .map(domain => ({
+      ...domain,
+      aliases: (aliasesByDomainId.get(domain.id) || []).sort((a, b) =>
+        (a.alias_text || "").localeCompare(b.alias_text || "", "es", { sensitivity: "base" }),
+      ),
+      canonicalServices: (canonicalsByDomainId.get(domain.id) || []).sort((a, b) =>
+        (a.canonical_name || "").localeCompare(b.canonical_name || "", "es", {
+          sensitivity: "base",
+        }),
+      ),
+      rules: rulesByDomainId.get(domain.id) || [],
+    }))
+    .sort((a, b) =>
+      (a.displayName || a.code).localeCompare(b.displayName || b.code, "es", {
+        sensitivity: "base",
+      }),
+    );
+
+  return {
+    version: publication?.version ?? null,
+    publishedAt: publication?.published_at ?? null,
+    domains: catalogDomains,
+  };
+};
+
+const derivarTaxonomiaServiciosProveedor = (providerServices, taxonomyCatalog) => {
+  if (!Array.isArray(providerServices) || providerServices.length === 0) {
+    return [];
+  }
+
+  const domains = Array.isArray(taxonomyCatalog?.domains) ? taxonomyCatalog.domains : [];
+  if (domains.length === 0) {
+    return providerServices.map(item => ({
+      serviceName: item.serviceName,
+      normalizedName: item.normalizedName,
+      domainCode: null,
+      domainDisplayName: null,
+      canonicalName: null,
+      matchType: "unresolved",
+    }));
+  }
+
+  return providerServices.map(item => {
+    const normalizedName =
+      limpiarTexto(item.normalizedName) || normalizarAliasTaxonomia(item.serviceName || "");
+    for (const domain of domains) {
+      const canonical = (domain.canonicalServices || []).find(
+        entry => limpiarTexto(entry.canonical_normalized) === normalizedName,
+      );
+      if (canonical) {
+        return {
+          serviceName: item.serviceName,
+          normalizedName,
+          domainCode: domain.code,
+          domainDisplayName: domain.displayName || domain.code,
+          canonicalName: canonical.canonical_name || item.serviceName,
+          matchType: "canonical",
+        };
+      }
+
+      const alias = (domain.aliases || []).find(
+        entry => limpiarTexto(entry.alias_normalized) === normalizedName,
+      );
+      if (alias) {
+        return {
+          serviceName: item.serviceName,
+          normalizedName,
+          domainCode: domain.code,
+          domainDisplayName: domain.displayName || domain.code,
+          canonicalName: alias.canonical_name || null,
+          matchType: "alias",
+        };
+      }
+    }
+
+    return {
+      serviceName: item.serviceName,
+      normalizedName,
+      domainCode: null,
+      domainDisplayName: null,
+      canonicalName: null,
+      matchType: "unresolved",
+    };
+  });
+};
+
+const normalizarProveedorSupabase = (registro, taxonomyCatalog = null) => {
   const nombre =
     limpiarTexto(registro?.full_name) ||
     limpiarTexto(registro?.name) ||
@@ -411,13 +616,19 @@ const normalizarProveedorSupabase = (registro) => {
   const email = limpiarTexto(registro?.email) || null;
   const ciudad = limpiarTexto(registro?.city) || null;
   const provincia = limpiarTexto(registro?.province) || null;
-  const servicesFromRelation = Array.isArray(registro?.provider_services)
+  const providerServicesDetailed = Array.isArray(registro?.provider_services)
     ? registro.provider_services
         .filter((item) => item && typeof item.service_name === "string")
         .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
-        .map((item) => item.service_name.trim())
-        .filter((item) => item.length > 0)
+        .map(item => ({
+          serviceName: item.service_name.trim(),
+          normalizedName:
+            limpiarTexto(item.service_name_normalized) ||
+            normalizarAliasTaxonomia(item.service_name),
+        }))
+        .filter(item => item.serviceName.length > 0)
     : [];
+  const servicesFromRelation = providerServicesDetailed.map(item => item.serviceName);
   const servicesRaw =
     limpiarTexto(registro?.services) ||
     (servicesFromRelation.length > 0 ? servicesFromRelation.join(" | ") : null);
@@ -504,6 +715,10 @@ const normalizarProveedorSupabase = (registro) => {
         }))
         .filter(item => typeof item.fileUrl === "string" && item.fileUrl.length > 0)
     : [];
+  const serviceTaxonomy = derivarTaxonomiaServiciosProveedor(
+    providerServicesDetailed,
+    taxonomyCatalog,
+  );
 
   return {
     id: registro?.id,
@@ -532,6 +747,7 @@ const normalizarProveedorSupabase = (registro) => {
       face: facePhotoUrl,
     },
     certificates,
+    serviceTaxonomy,
     verificationReviewer,
     verificationReviewedAt,
   };
@@ -615,32 +831,50 @@ const obtenerProveedoresPendientesSupabase = async () => {
     return [];
   }
 
+  const cargarCatalogo = async () => {
+    try {
+      return await obtenerTaxonomiaCatalogo();
+    } catch (error) {
+      console.warn(
+        "⚠️ No se pudo cargar catálogo de taxonomía para proveedores:",
+        error?.data?.error || error?.message || error,
+      );
+      return null;
+    }
+  };
+
   try {
     const ruta = construirRutaSupabasePendientes(true);
-    const response = await supabaseClient.get(ruta, {
-      headers: {
-        Accept: "application/json",
-      },
-    });
+    const [response, taxonomyCatalog] = await Promise.all([
+      supabaseClient.get(ruta, {
+        headers: {
+          Accept: "application/json",
+        },
+      }),
+      cargarCatalogo(),
+    ]);
     const lista = Array.isArray(response.data)
-      ? response.data.map(normalizarProveedorSupabase)
+      ? response.data.map(item => normalizarProveedorSupabase(item, taxonomyCatalog))
       : normalizarListaProveedores(response.data).map(
-          normalizarProveedorSupabase,
+          item => normalizarProveedorSupabase(item, taxonomyCatalog),
         );
     return lista;
   } catch (error) {
     if (error.response?.status === 400) {
       // Columna verification_status podría no existir; reintentar sin filtro.
       const rutaFallback = construirRutaSupabasePendientes(false);
-      const response = await supabaseClient.get(rutaFallback, {
-        headers: {
-          Accept: "application/json",
-        },
-      });
+      const [response, taxonomyCatalog] = await Promise.all([
+        supabaseClient.get(rutaFallback, {
+          headers: {
+            Accept: "application/json",
+          },
+        }),
+        cargarCatalogo(),
+      ]);
       const lista = Array.isArray(response.data)
-        ? response.data.map(normalizarProveedorSupabase)
+        ? response.data.map(item => normalizarProveedorSupabase(item, taxonomyCatalog))
         : normalizarListaProveedores(response.data).map(
-            normalizarProveedorSupabase,
+            item => normalizarProveedorSupabase(item, taxonomyCatalog),
           );
       return lista;
     }
@@ -665,15 +899,24 @@ const obtenerProveedoresPostRevisionSupabase = async () => {
   }
 
   const ruta = construirRutaSupabasePostRevision();
+  let taxonomyCatalog = null;
+  try {
+    taxonomyCatalog = await obtenerTaxonomiaCatalogo();
+  } catch (error) {
+    console.warn(
+      "⚠️ No se pudo cargar catálogo de taxonomía para proveedores post-revisión:",
+      error?.data?.error || error?.message || error,
+    );
+  }
   const response = await supabaseClient.get(ruta, {
     headers: {
       Accept: "application/json",
     },
   });
   const lista = Array.isArray(response.data)
-    ? response.data.map(normalizarProveedorSupabase)
+    ? response.data.map(item => normalizarProveedorSupabase(item, taxonomyCatalog))
     : normalizarListaProveedores(response.data).map(
-        normalizarProveedorSupabase,
+        item => normalizarProveedorSupabase(item, taxonomyCatalog),
       );
   return lista;
 };
@@ -1325,6 +1568,293 @@ async function obtenerTaxonomiaSugerencias({
   }
 }
 
+async function obtenerGovernanceReviews({
+  status = "pending",
+  limit = 100,
+} = {}) {
+  if (!supabaseClient) {
+    const error = new Error(
+      "Supabase REST no configurado para consultar reviews de gobernanza.",
+    );
+    error.status = 500;
+    throw error;
+  }
+
+  try {
+    const params = {
+      select: [
+        "id",
+        "provider_id",
+        "raw_service_text",
+        "service_name",
+        "service_name_normalized",
+        "suggested_domain_code",
+        "proposed_category_name",
+        "proposed_service_summary",
+        "assigned_domain_code",
+        "assigned_category_name",
+        "assigned_service_name",
+        "assigned_service_summary",
+        "review_reason",
+        "review_status",
+        "source",
+        "reviewed_by",
+        "reviewed_at",
+        "review_notes",
+        "created_at",
+        "updated_at",
+        "published_provider_service_id",
+      ].join(","),
+      order: "created_at.desc",
+      limit,
+    };
+
+    if (status && status !== "all") {
+      params.review_status = `eq.${status}`;
+    }
+
+    const response = await supabaseClient.get(
+      "/provider_service_catalog_reviews",
+      { params },
+    );
+    const rows = Array.isArray(response.data) ? response.data : [];
+    const providerIds = [...new Set(rows.map(item => limpiarTexto(item.provider_id)).filter(Boolean))];
+
+    let providersById = new Map();
+    let servicesByProviderId = new Map();
+
+    if (providerIds.length > 0) {
+      const [providersResponse, providerServicesResponse] = await Promise.all([
+        supabaseClient.get("/providers", {
+          params: {
+            select: "id,full_name,phone,city,status",
+            id: `in.(${providerIds.map(id => `"${id}"`).join(",")})`,
+            limit: providerIds.length,
+          },
+        }),
+        supabaseClient.get("/provider_services", {
+          params: {
+            select: "provider_id,service_name,display_order",
+            provider_id: `in.(${providerIds.map(id => `"${id}"`).join(",")})`,
+            order: "display_order.asc",
+            limit: providerIds.length * 10,
+          },
+        }),
+      ]);
+
+      const providers = Array.isArray(providersResponse.data) ? providersResponse.data : [];
+      const providerServices = Array.isArray(providerServicesResponse.data)
+        ? providerServicesResponse.data
+        : [];
+
+      providersById = new Map(
+        providers.map(item => [item.id, item]),
+      );
+      servicesByProviderId = providerServices.reduce((acc, item) => {
+        const key = limpiarTexto(item.provider_id);
+        const serviceName = limpiarTexto(item.service_name);
+        if (!key || !serviceName) return acc;
+        const current = acc.get(key) || [];
+        current.push(serviceName);
+        acc.set(key, current);
+        return acc;
+      }, new Map());
+    }
+
+    return {
+      reviews: rows.map(item => {
+        const providerId = limpiarTexto(item.provider_id) || null;
+        const provider = providerId ? providersById.get(providerId) : null;
+        return {
+          id: item.id,
+          providerId,
+          providerName: limpiarTexto(provider?.full_name) || null,
+          providerPhone: limpiarTexto(provider?.phone) || null,
+          providerCity: limpiarTexto(provider?.city) || null,
+          rawServiceText: limpiarTexto(item.raw_service_text) || "",
+          serviceName: limpiarTexto(item.service_name) || "",
+          serviceNameNormalized: limpiarTexto(item.service_name_normalized) || "",
+          suggestedDomainCode: limpiarTexto(item.suggested_domain_code) || null,
+          proposedCategoryName: limpiarTexto(item.proposed_category_name) || null,
+          proposedServiceSummary: limpiarTexto(item.proposed_service_summary) || null,
+          assignedDomainCode: limpiarTexto(item.assigned_domain_code) || null,
+          assignedCategoryName: limpiarTexto(item.assigned_category_name) || null,
+          assignedServiceName: limpiarTexto(item.assigned_service_name) || null,
+          assignedServiceSummary: limpiarTexto(item.assigned_service_summary) || null,
+          reviewReason: limpiarTexto(item.review_reason) || null,
+          reviewStatus: limpiarTexto(item.review_status) || "pending",
+          source: limpiarTexto(item.source) || null,
+          reviewedBy: limpiarTexto(item.reviewed_by) || null,
+          reviewedAt: limpiarTexto(item.reviewed_at) || null,
+          reviewNotes: limpiarTexto(item.review_notes) || null,
+          createdAt: limpiarTexto(item.created_at) || null,
+          updatedAt: limpiarTexto(item.updated_at) || null,
+          publishedProviderServiceId: limpiarTexto(item.published_provider_service_id) || null,
+          currentProviderServices: providerId
+            ? servicesByProviderId.get(providerId) || []
+            : [],
+        };
+      }),
+    };
+  } catch (error) {
+    throw gestionarErrorAxios(error);
+  }
+}
+
+async function obtenerGovernanceDomains() {
+  if (!supabaseClient) {
+    const error = new Error(
+      "Supabase REST no configurado para consultar dominios de gobernanza.",
+    );
+    error.status = 500;
+    throw error;
+  }
+
+  try {
+    const response = await supabaseClient.get("/service_domains", {
+      params: {
+        select: "code,display_name,description,status",
+        order: "code.asc",
+        limit: 500,
+      },
+    });
+    const domains = Array.isArray(response.data) ? response.data : [];
+    return {
+      domains: domains.map(item => ({
+        code: limpiarTexto(item.code) || "",
+        displayName: limpiarTexto(item.display_name) || limpiarTexto(item.code) || "",
+        description: limpiarTexto(item.description) || null,
+        status: limpiarTexto(item.status) || null,
+      })),
+    };
+  } catch (error) {
+    throw gestionarErrorAxios(error);
+  }
+}
+
+async function obtenerGovernanceMetrics() {
+  if (!supabaseClient) {
+    const error = new Error(
+      "Supabase REST no configurado para consultar métricas de gobernanza.",
+    );
+    error.status = 500;
+    throw error;
+  }
+
+  try {
+    const [reviewsResponse, domainsResponse, providerServicesResponse] = await Promise.all([
+      supabaseClient.get("/provider_service_catalog_reviews", {
+        params: {
+          select: "review_status,suggested_domain_code",
+          limit: 5000,
+        },
+      }),
+      supabaseClient.get("/service_domains", {
+        params: {
+          select: "id,status",
+          limit: 500,
+        },
+      }),
+      supabaseClient.get("/provider_services", {
+        params: {
+          select: "id",
+          limit: 5000,
+        },
+      }),
+    ]);
+
+    const reviews = Array.isArray(reviewsResponse.data) ? reviewsResponse.data : [];
+    const domains = Array.isArray(domainsResponse.data) ? domainsResponse.data : [];
+    const providerServices = Array.isArray(providerServicesResponse.data)
+      ? providerServicesResponse.data
+      : [];
+
+    const summary = {
+      pending: 0,
+      approvedExistingDomain: 0,
+      approvedNewDomain: 0,
+      rejected: 0,
+      activeDomains: domains.filter(item => ["active", "published"].includes(limpiarTexto(item.status) || "")).length,
+      operationalServices: providerServices.length,
+    };
+    const suggestedDomainCounts = new Map();
+
+    for (const item of reviews) {
+      const status = limpiarTexto(item.review_status) || "pending";
+      if (status === "pending") summary.pending += 1;
+      else if (status === "approved_existing_domain") summary.approvedExistingDomain += 1;
+      else if (status === "approved_new_domain") summary.approvedNewDomain += 1;
+      else if (status === "rejected") summary.rejected += 1;
+
+      const domainCode = limpiarTexto(item.suggested_domain_code);
+      if (domainCode) {
+        suggestedDomainCounts.set(domainCode, (suggestedDomainCounts.get(domainCode) || 0) + 1);
+      }
+    }
+
+    const topSuggestedDomains = [...suggestedDomainCounts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([domainCode, count]) => ({ domainCode, count }));
+
+    return { summary, topSuggestedDomains };
+  } catch (error) {
+    throw gestionarErrorAxios(error);
+  }
+}
+
+async function aprobarGovernanceReview(reviewId, payload = {}, requestId = null) {
+  try {
+    const client = crearClienteAiProveedores(requestId);
+    const response = await client.post(
+      `/admin/service-governance/reviews/${encodeURIComponent(reviewId)}/approve`,
+      {
+        domain_code: payload.domainCode,
+        category_name: payload.categoryName,
+        service_name: payload.serviceName,
+        service_summary: payload.serviceSummary,
+        reviewer: payload.reviewer,
+        notes: payload.notes,
+        create_domain_if_missing: Boolean(payload.createDomainIfMissing),
+      },
+    );
+    return {
+      success: Boolean(response.data?.success),
+      reviewId: limpiarTexto(response.data?.reviewId) || reviewId,
+      providerId: limpiarTexto(response.data?.providerId) || null,
+      reviewStatus: limpiarTexto(response.data?.reviewStatus) || "approved_existing_domain",
+      domainCode: limpiarTexto(response.data?.domainCode) || null,
+      createdDomain: Boolean(response.data?.createdDomain),
+      publishedProviderServiceId: limpiarTexto(response.data?.publishedProviderServiceId) || null,
+      message: limpiarTexto(response.data?.message) || null,
+    };
+  } catch (error) {
+    throw gestionarErrorAxios(error);
+  }
+}
+
+async function rechazarGovernanceReview(reviewId, payload = {}, requestId = null) {
+  try {
+    const client = crearClienteAiProveedores(requestId);
+    const response = await client.post(
+      `/admin/service-governance/reviews/${encodeURIComponent(reviewId)}/reject`,
+      {
+        reviewer: payload.reviewer,
+        notes: payload.notes,
+      },
+    );
+    return {
+      success: Boolean(response.data?.success),
+      reviewId: limpiarTexto(response.data?.reviewId) || reviewId,
+      providerId: limpiarTexto(response.data?.providerId) || null,
+      reviewStatus: limpiarTexto(response.data?.reviewStatus) || "rejected",
+      message: limpiarTexto(response.data?.message) || null,
+    };
+  } catch (error) {
+    throw gestionarErrorAxios(error);
+  }
+}
+
 async function obtenerTaxonomiaClusters({
   status = "pending",
   limit = 50,
@@ -1335,6 +1865,87 @@ async function obtenerTaxonomiaClusters({
   });
   const clusters = construirClustersTaxonomia(result.suggestions || []).slice(0, limit);
   return { clusters };
+}
+
+async function obtenerTaxonomiaCatalogo() {
+  if (!supabaseClient) {
+    const error = new Error(
+      "Supabase REST no configurado para consultar catálogo de taxonomía.",
+    );
+    error.status = 500;
+    throw error;
+  }
+
+  try {
+    const [
+      publicationsResponse,
+      domainsResponse,
+      rulesResponse,
+      aliasesResponse,
+      canonicalServicesResponse,
+    ] = await Promise.all([
+      supabaseClient.get("/service_taxonomy_publications", {
+        params: {
+          select: "version,status,published_at",
+          status: "eq.published",
+          order: "version.desc",
+          limit: 1,
+        },
+      }),
+      supabaseClient.get("/service_domains", {
+        params: {
+          select: "id,code,display_name,status",
+          limit: 500,
+        },
+      }),
+      supabaseClient.get("/service_precision_rules", {
+        params: {
+          select: [
+            "id",
+            "domain_id",
+            "required_dimensions",
+            "generic_examples",
+            "sufficient_examples",
+            "client_prompt_template",
+            "provider_prompt_template",
+          ].join(","),
+          limit: 500,
+        },
+      }),
+      supabaseClient.get("/service_domain_aliases", {
+        params: {
+          select: "id,domain_id,alias_text,alias_normalized,canonical_service_id,status",
+          limit: 5000,
+        },
+      }),
+      supabaseClient.get("/service_canonical_services", {
+        params: {
+          select: "id,domain_id,canonical_name,canonical_normalized,status,description",
+          limit: 5000,
+        },
+      }),
+    ]);
+
+    const publications = Array.isArray(publicationsResponse.data)
+      ? publicationsResponse.data
+      : [];
+    const domains = Array.isArray(domainsResponse.data) ? domainsResponse.data : [];
+    const rules = Array.isArray(rulesResponse.data) ? rulesResponse.data : [];
+    const aliases = Array.isArray(aliasesResponse.data) ? aliasesResponse.data : [];
+    const canonicalServices = Array.isArray(canonicalServicesResponse.data)
+      ? canonicalServicesResponse.data
+      : [];
+
+    return construirCatalogoTaxonomiaPublicado(
+      domains,
+      rules,
+      aliases,
+      canonicalServices,
+      publications[0] || null,
+    );
+  } catch (error) {
+    throw gestionarErrorAxios(error);
+  }
 }
 
 async function obtenerTaxonomiaOverview() {
@@ -2688,6 +3299,12 @@ module.exports = {
   obtenerMonetizacionResumen,
   obtenerMonetizacionProveedores,
   obtenerMonetizacionProveedor,
+  obtenerGovernanceReviews,
+  obtenerGovernanceDomains,
+  obtenerGovernanceMetrics,
+  aprobarGovernanceReview,
+  rechazarGovernanceReview,
+  obtenerTaxonomiaCatalogo,
   obtenerTaxonomiaOverview,
   obtenerTaxonomiaSugerencias,
   obtenerTaxonomiaClusters,

@@ -24,6 +24,8 @@ class ServiceInfo(BaseModel):
 
     id: str
     service_name: str
+    raw_service_text: Optional[str] = None
+    service_summary: Optional[str] = None
     is_primary: bool
     display_order: int
 

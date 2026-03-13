@@ -58,7 +58,7 @@ class ValidadorProveedoresIA:
             proveedores: Lista de proveedores a validar
 
         Returns:
-            Lista solo con los proveedores validados por la IA.
+            Lista de proveedores enriquecidos con decisión, confianza y razón.
         """
         if not proveedores:
             return []
@@ -118,15 +118,13 @@ Criterios importantes:
    - "Error en base de datos" requiere conocimiento SQL/Base de datos
    - "App no funciona" requiere debugging de aplicaciones
 
-Responde SOLO con JSON (array de booleanos, en el mismo orden):
+Responde SOLO con JSON (array de objetos, en el mismo orden):
 [
-  true,   // Proveedor 1: SÍ puede ayudar
-  false,  // Proveedor 2: NO puede ayudar
-  true,   // Proveedor 3: SÍ puede ayudar
-  ...
+  {"can_help": true, "confidence": 0.91, "reason": "experiencia directa"},
+  {"can_help": false, "confidence": 0.22, "reason": "servicio no aplicable"}
 ]
 
-NO incluyas explicaciones. Solo el array de booleanos."""
+NO incluyas explicaciones fuera del JSON."""
 
         self.logger.info(f"📋 Prompt enviado a IA de validación:\n{prompt_sistema[:1000]}...")
 
@@ -177,11 +175,28 @@ NO incluyas explicaciones. Solo el array de booleanos."""
                 # Ajustar longitud si es necesario
                 lista_validacion = lista_validacion[: len(proveedores)]
 
-            # Filtrar proveedores validados
             proveedores_validados = []
-            for proveedor, es_valido in zip(proveedores, lista_validacion):
-                if es_valido and isinstance(es_valido, bool) and es_valido:
-                    proveedores_validados.append(proveedor)
+            for proveedor, decision in zip(proveedores, lista_validacion):
+                if isinstance(decision, bool):
+                    can_help = decision
+                    confidence = 1.0 if decision else 0.0
+                    reason = "legacy_boolean_response"
+                else:
+                    can_help = bool((decision or {}).get("can_help"))
+                    try:
+                        confidence = max(
+                            0.0,
+                            min(1.0, float((decision or {}).get("confidence") or 0.0)),
+                        )
+                    except (TypeError, ValueError):
+                        confidence = 0.0
+                    reason = str((decision or {}).get("reason") or "").strip()
+                if not can_help:
+                    continue
+                proveedor_enriquecido = dict(proveedor)
+                proveedor_enriquecido["validation_confidence"] = confidence
+                proveedor_enriquecido["validation_reason"] = reason or None
+                proveedores_validados.append(proveedor_enriquecido)
 
             self.logger.info(
                 f"✅ Validación IA: {len(proveedores_validados)}/{len(proveedores)} "

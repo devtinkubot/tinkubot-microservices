@@ -8,14 +8,14 @@ from services.servicios_proveedor.constantes import (
     SERVICIOS_MINIMOS_PERFIL_PROFESIONAL,
     SERVICIOS_MAXIMOS_ONBOARDING,
 )
+from services.servicios_proveedor.validacion_semantica import (
+    validar_servicio_semanticamente,
+)
+from services.servicios_proveedor.revision_catalogo import (
+    registrar_revision_catalogo_servicio,
+)
 from services.servicios_proveedor.utilidades import (
-    clasificar_servicio_critico,
-    es_servicio_critico_generico,
     limpiar_espacios,
-    mensaje_pedir_precision_servicio,
-    registrar_evento_servicio_generico,
-    registrar_sugerencia_servicio_generico,
-    refrescar_taxonomia_dominios_criticos,
     sanitizar_lista_servicios,
 )
 from templates.registro import (
@@ -29,6 +29,15 @@ from templates.registro import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _resolver_supabase_runtime() -> Any:
+    try:
+        from principal import supabase  # Import dinámico por acoplamiento runtime
+
+        return supabase
+    except Exception:
+        return None
 
 
 def _maximo_servicios(flujo: Dict[str, Any]) -> int:
@@ -50,6 +59,7 @@ async def normalizar_servicio_registro_individual(
     *,
     texto_mensaje: str,
     cliente_openai: Optional[Any],
+    review_source: str = "provider_onboarding",
 ) -> Dict[str, Any]:
     """Normaliza un solo servicio durante el onboarding."""
     especialidad_texto = limpiar_espacios(texto_mensaje)
@@ -131,46 +141,54 @@ async def normalizar_servicio_registro_individual(
         }
 
     servicio = servicios_transformados[0]
-    await refrescar_taxonomia_dominios_criticos()
-    if es_servicio_critico_generico(servicio):
-        clasificacion = clasificar_servicio_critico(servicio)
-        await registrar_sugerencia_servicio_generico(
-            servicio,
-            contexto=especialidad_texto,
-        )
-        await registrar_evento_servicio_generico(
-            event_name="generic_service_blocked",
-            servicio=servicio,
-            dominio=clasificacion.get("domain"),
-            source=clasificacion.get("source") or "unknown",
-            contexto=especialidad_texto,
-        )
-        if not clasificacion.get("clarification_question"):
-            await registrar_evento_servicio_generico(
-                event_name="precision_prompt_fallback_used",
-                servicio=servicio,
-                dominio=clasificacion.get("domain"),
-                source=clasificacion.get("source") or "unknown",
-                contexto=especialidad_texto,
-            )
-        await registrar_evento_servicio_generico(
-            event_name="clarification_requested",
-            servicio=servicio,
-            dominio=clasificacion.get("domain"),
-            source=clasificacion.get("source") or "unknown",
-            contexto=especialidad_texto,
-        )
-        logger.info(
-            "critical_generic_provider_service_blocked service='%s' raw='%s'",
-            servicio,
-            especialidad_texto[:120],
+    validacion = await validar_servicio_semanticamente(
+        cliente_openai=cliente_openai,
+        supabase=_resolver_supabase_runtime(),
+        raw_service_text=especialidad_texto,
+        service_name=servicio,
+    )
+    if not validacion.get("is_valid_service") and validacion.get("needs_clarification"):
+        return {
+            "ok": False,
+            "response": str(
+                validacion.get("clarification_question")
+                or "Indica el servicio o especialidad exacta que ofreces."
+            ),
+        }
+    if not validacion.get("is_valid_service"):
+        return {
+            "ok": False,
+            "response": (
+                "*No identifiqué un servicio válido.* "
+                "Escribe el servicio o especialidad exacta que ofreces."
+            ),
+        }
+    if validacion.get("domain_resolution_status") == "catalog_review_required":
+        await registrar_revision_catalogo_servicio(
+            supabase=_resolver_supabase_runtime(),
+            provider_id=None,
+            raw_service_text=especialidad_texto,
+            service_name=str(validacion.get("normalized_service") or servicio).strip()
+            or servicio,
+            suggested_domain_code=validacion.get("domain_code"),
+            proposed_category_name=validacion.get("proposed_category_name"),
+            proposed_service_summary=validacion.get("proposed_service_summary"),
+            review_reason=str(validacion.get("reason") or "catalog_review_required"),
+            source=review_source,
         )
         return {
             "ok": False,
-            "response": mensaje_pedir_precision_servicio(servicio),
+            "response": (
+                "*Ese servicio sí se entiende, pero todavía no lo podemos clasificar bien dentro del sistema.* "
+                "Escríbelo con más detalle o usa una especialidad más cercana a lo que haces."
+            ),
         }
 
-    return {"ok": True, "service": servicio}
+    return {
+        "ok": True,
+        "service": str(validacion.get("normalized_service") or servicio).strip() or servicio,
+        "validation": validacion,
+    }
 
 
 async def manejar_espera_especialidad(
@@ -220,6 +238,11 @@ async def manejar_espera_especialidad(
     resultado = await normalizar_servicio_registro_individual(
         texto_mensaje=texto_mensaje or "",
         cliente_openai=cliente_openai,
+        review_source=(
+            "provider_profile_completion"
+            if flujo.get("profile_completion_mode")
+            else "provider_onboarding"
+        ),
     )
     if not resultado.get("ok"):
         return {"success": True, "messages": [{"response": resultado["response"]}]}

@@ -353,6 +353,17 @@ class SearchService:
             years_of_experience=row.get("experience_years"),
             created_at=row.get("created_at", datetime.now()),
             similarity_score=similarity_score,
+            matched_service_name=row.get("matched_service_name"),
+            matched_service_summary=row.get("matched_service_summary"),
+            domain_code=row.get("domain_code"),
+            category_name=row.get("category_name"),
+            classification_confidence=row.get("classification_confidence"),
+            retrieval_score=self._calculate_retrieval_score(
+                similarity_score=similarity_score,
+                rating=float(row.get("rating", 0.0)),
+                verified=bool(row.get("verified", False)),
+                classification_confidence=row.get("classification_confidence"),
+            ),
             social_media_url=row.get("social_media_url"),
             social_media_type=row.get("social_media_type"),
             face_photo_url=row.get("face_photo_url"),
@@ -401,6 +412,31 @@ class SearchService:
         confidence = (avg_rating / 5.0) * 0.6 + verified_ratio * 0.4
 
         return min(1.0, confidence)
+
+    def _calculate_retrieval_score(
+        self,
+        *,
+        similarity_score: Optional[float],
+        rating: float,
+        verified: bool,
+        classification_confidence: Any,
+    ) -> float:
+        similarity = float(similarity_score or 0.0)
+        rating_score = max(0.0, min(1.0, rating / 5.0))
+        try:
+            classification = max(
+                0.0, min(1.0, float(classification_confidence or 0.0))
+            )
+        except (TypeError, ValueError):
+            classification = 0.0
+        verified_score = 1.0 if verified else 0.0
+        score = (
+            similarity * 0.65
+            + classification * 0.15
+            + rating_score * 0.10
+            + verified_score * 0.10
+        )
+        return max(0.0, min(1.0, score))
 
     def _normalize_available(self, available: Any, verified: Any) -> bool:
         """

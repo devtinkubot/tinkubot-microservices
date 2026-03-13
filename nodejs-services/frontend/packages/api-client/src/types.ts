@@ -34,6 +34,15 @@ export interface ProviderCertificate {
   updatedAt?: string | null;
 }
 
+export interface ProviderServiceTaxonomy {
+  serviceName: string;
+  normalizedName?: string | null;
+  domainCode?: string | null;
+  domainDisplayName?: string | null;
+  canonicalName?: string | null;
+  matchType: 'canonical' | 'alias' | 'unresolved';
+}
+
 export interface ProviderRecord {
   id: string;
   name: string;
@@ -57,6 +66,7 @@ export interface ProviderRecord {
   rating?: number | null;
   documents?: ProviderDocuments;
   certificates?: ProviderCertificate[];
+  serviceTaxonomy?: ProviderServiceTaxonomy[];
   verificationReviewer?: string | null;
   verificationReviewedAt?: string | null;
 }
@@ -223,6 +233,48 @@ export interface TaxonomyOverviewResponse {
   };
 }
 
+export interface TaxonomyCatalogRule {
+  id?: string | null;
+  required_dimensions?: string[] | null;
+  generic_examples?: string[] | null;
+  sufficient_examples?: string[] | null;
+  client_prompt_template?: string | null;
+  provider_prompt_template?: string | null;
+}
+
+export interface TaxonomyCatalogAlias {
+  id?: string | null;
+  alias_text?: string | null;
+  alias_normalized?: string | null;
+  canonical_service_id?: string | null;
+  canonical_name?: string | null;
+  status?: string | null;
+}
+
+export interface TaxonomyCatalogCanonicalService {
+  id?: string | null;
+  canonical_name?: string | null;
+  canonical_normalized?: string | null;
+  status?: string | null;
+  description?: string | null;
+}
+
+export interface TaxonomyCatalogDomain {
+  id?: string | null;
+  code: string;
+  displayName?: string | null;
+  status?: string | null;
+  aliases: TaxonomyCatalogAlias[];
+  canonicalServices: TaxonomyCatalogCanonicalService[];
+  rules: TaxonomyCatalogRule[];
+}
+
+export interface TaxonomyCatalogResponse {
+  version?: number | null;
+  publishedAt?: string | null;
+  domains: TaxonomyCatalogDomain[];
+}
+
 export interface TaxonomySuggestionReviewPayload {
   reviewStatus: Extract<TaxonomySuggestionStatus, 'pending' | 'rejected'>;
   reviewNotes?: string;
@@ -322,4 +374,90 @@ export interface TaxonomyPublishResponse {
   version: number;
   publishedCount: number;
   publishedAt: string;
+}
+
+export type ServiceGovernanceReviewStatus =
+  | 'pending'
+  | 'approved_existing_domain'
+  | 'approved_new_domain'
+  | 'rejected';
+
+export interface ServiceGovernanceDomainRecord {
+  code: string;
+  displayName: string;
+  description?: string | null;
+  status?: string | null;
+}
+
+export interface ServiceGovernanceReviewRecord {
+  id: string;
+  providerId?: string | null;
+  providerName?: string | null;
+  providerPhone?: string | null;
+  providerCity?: string | null;
+  rawServiceText: string;
+  serviceName: string;
+  serviceNameNormalized: string;
+  suggestedDomainCode?: string | null;
+  proposedCategoryName?: string | null;
+  proposedServiceSummary?: string | null;
+  assignedDomainCode?: string | null;
+  assignedCategoryName?: string | null;
+  assignedServiceName?: string | null;
+  assignedServiceSummary?: string | null;
+  reviewReason?: string | null;
+  reviewStatus: ServiceGovernanceReviewStatus;
+  source?: string | null;
+  reviewedBy?: string | null;
+  reviewedAt?: string | null;
+  reviewNotes?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  publishedProviderServiceId?: string | null;
+  currentProviderServices?: string[];
+}
+
+export interface ServiceGovernanceReviewsResponse {
+  reviews: ServiceGovernanceReviewRecord[];
+}
+
+export interface ServiceGovernanceMetricsResponse {
+  summary: {
+    pending: number;
+    approvedExistingDomain: number;
+    approvedNewDomain: number;
+    rejected: number;
+    activeDomains: number;
+    operationalServices: number;
+  };
+  topSuggestedDomains: Array<{
+    domainCode: string;
+    count: number;
+  }>;
+}
+
+export interface ServiceGovernanceApprovePayload {
+  domainCode: string;
+  categoryName: string;
+  serviceName: string;
+  serviceSummary?: string;
+  reviewer?: string;
+  notes?: string;
+  createDomainIfMissing?: boolean;
+}
+
+export interface ServiceGovernanceRejectPayload {
+  reviewer?: string;
+  notes?: string;
+}
+
+export interface ServiceGovernanceActionResponse {
+  success: boolean;
+  reviewId: string;
+  providerId?: string | null;
+  reviewStatus: ServiceGovernanceReviewStatus;
+  domainCode?: string | null;
+  createdDomain?: boolean;
+  publishedProviderServiceId?: string | null;
+  message?: string;
 }
