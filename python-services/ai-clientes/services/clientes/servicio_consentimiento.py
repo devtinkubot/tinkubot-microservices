@@ -97,10 +97,17 @@ class ServicioConsentimiento:
 
             # Actualizar has_consent a TRUE
             try:
-                await self.repo_clientes.actualizar_consentimiento(
+                cliente_actualizado = await self.repo_clientes.actualizar_consentimiento(
                     cliente_id=perfil_cliente.get("id"),
                     tiene_consentimiento=True,
                 )
+                if not cliente_actualizado or not cliente_actualizado.get("has_consent"):
+                    self.logger.error(
+                        "❌ Persistencia de consentimiento no confirmada para %s (cliente_id=%s)",
+                        telefono,
+                        perfil_cliente.get("id"),
+                    )
+                    return {"consent_status": "error"}
 
                 # Guardar registro legal en tabla consents con metadata completa
                 datos_consentimiento = {
@@ -132,6 +139,7 @@ class ServicioConsentimiento:
                 self.logger.error(
                     f"❌ Error guardando consentimiento para {telefono}: {exc}"
                 )
+                return {"consent_status": "error"}
 
             # Después de aceptar, continuar con prompt inicial + lista interactiva.
             payload = construir_prompt_lista_servicios()

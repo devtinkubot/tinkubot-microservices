@@ -33,8 +33,9 @@ class _RepoClientesStub:
 
 
 class _ServicioConsentimientoStub:
-    def __init__(self):
+    def __init__(self, *, consent_status="accepted"):
         self.calls = []
+        self.consent_status = consent_status
 
     async def solicitar_consentimiento(self, telefono: str):
         payload = payload_consentimiento_resumen()
@@ -51,14 +52,16 @@ class _ServicioConsentimientoStub:
                 "content": carga.get("content"),
             }
         )
-        return {"consent_status": "accepted"}
+        return {"consent_status": self.consent_status}
 
 
 class _OrquestadorStub:
     def __init__(self, flow, profile, consent_status="accepted"):
         self.repositorio_clientes = _RepoClientesStub(profile)
         self.repositorio_flujo = _RepoFlujoStub(flow)
-        self.servicio_consentimiento = _ServicioConsentimientoStub()
+        self.servicio_consentimiento = _ServicioConsentimientoStub(
+            consent_status=consent_status
+        )
         self._consent_status = consent_status
         self.logger = _LoggerStub()
         self.gestor_sesiones = _SesionStub()
@@ -168,6 +171,31 @@ async def test_precontractual_continue_con_ciudad_va_a_awaiting_service(monkeypa
     assert saved["state"] == "awaiting_service"
     assert saved["has_consent"] is True
     assert saved["city"] == "Cuenca"
+
+
+@pytest.mark.asyncio
+async def test_precontractual_no_avanza_si_persistencia_consentimiento_falla(monkeypatch):
+    monkeypatch.delenv("WA_ONBOARDING_STRATEGY", raising=False)
+
+    flow = {"state": "awaiting_city", "onboarding_intro_sent": True}
+    profile = {"id": "c5", "has_consent": False, "city": "Cuenca"}
+    orchestrator = _OrquestadorStub(flow, profile, consent_status="error")
+
+    result = await pre_enrutar_mensaje(
+        orchestrator,
+        {
+            "from_number": "+593555",
+            "selected_option": "continue_onboarding",
+            "content": "",
+        },
+    )
+
+    assert "messages" in result["response"]
+    saved = orchestrator.repositorio_flujo.last_saved
+    assert saved is not None
+    assert saved["state"] == "awaiting_consent"
+    assert saved["onboarding_intro_sent"] is True
+    assert saved.get("has_consent") is not True
 
 
 @pytest.mark.asyncio

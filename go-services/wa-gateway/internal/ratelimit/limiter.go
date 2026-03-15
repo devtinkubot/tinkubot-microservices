@@ -7,6 +7,16 @@ import (
 	"time"
 )
 
+// Decision captures the current limiter state for a destination.
+type Decision struct {
+	Window           string
+	MessagesLastHour int
+	MessagesLast24H  int
+	LimitPerHour     int
+	LimitPer24H      int
+	RetryAt          time.Time
+}
+
 // Config holds rate limiter configuration
 type Config struct {
 	MaxPerHour int
@@ -49,8 +59,11 @@ func getKey(accountID, destinationPhone string) string {
 	return accountID + ":" + destinationPhone
 }
 
-// Check checks if a message is allowed under rate limits
-func (rl *Limiter) Check(ctx context.Context, accountID, destinationPhone string) (bool, time.Duration, error) {
+// Check checks if a message is allowed under rate limits.
+func (rl *Limiter) Check(
+	ctx context.Context,
+	accountID, destinationPhone string,
+) (bool, time.Duration, Decision, error) {
 	key := getKey(accountID, destinationPhone)
 
 	rl.mu.Lock()
@@ -58,10 +71,14 @@ func (rl *Limiter) Check(ctx context.Context, accountID, destinationPhone string
 
 	entry, exists := rl.store[key]
 	now := time.Now()
+	decision := Decision{
+		LimitPerHour: rl.config.MaxPerHour,
+		LimitPer24H:  rl.config.MaxPer24h,
+	}
 
 	if !exists {
 		// First message, allow it
-		return true, 0, nil
+		return true, 0, decision, nil
 	}
 
 	// Reset hour window if needed
@@ -76,19 +93,34 @@ func (rl *Limiter) Check(ctx context.Context, accountID, destinationPhone string
 		entry.DayWindowStart = now
 	}
 
+	decision.MessagesLastHour = entry.MessagesLastHour
+	decision.MessagesLast24H = entry.MessagesLast24H
+
 	// Check hourly limit
 	if entry.MessagesLastHour >= rl.config.MaxPerHour {
 		retryAfter := time.Hour - now.Sub(entry.HourWindowStart)
-		return false, retryAfter, fmt.Errorf("hourly limit exceeded: %d/%d", entry.MessagesLastHour, rl.config.MaxPerHour)
+		decision.Window = "hourly"
+		decision.RetryAt = now.Add(retryAfter).UTC()
+		return false, retryAfter, decision, fmt.Errorf(
+			"hourly limit exceeded: %d/%d",
+			entry.MessagesLastHour,
+			rl.config.MaxPerHour,
+		)
 	}
 
 	// Check daily limit
 	if entry.MessagesLast24H >= rl.config.MaxPer24h {
 		retryAfter := (24 * time.Hour) - now.Sub(entry.DayWindowStart)
-		return false, retryAfter, fmt.Errorf("daily limit exceeded: %d/%d", entry.MessagesLast24H, rl.config.MaxPer24h)
+		decision.Window = "daily"
+		decision.RetryAt = now.Add(retryAfter).UTC()
+		return false, retryAfter, decision, fmt.Errorf(
+			"daily limit exceeded: %d/%d",
+			entry.MessagesLast24H,
+			rl.config.MaxPer24h,
+		)
 	}
 
-	return true, 0, nil
+	return true, 0, decision, nil
 }
 
 // Increment increments the rate limit counters

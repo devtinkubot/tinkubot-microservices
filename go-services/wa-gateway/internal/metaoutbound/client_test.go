@@ -167,6 +167,9 @@ func TestSendListSuccess(t *testing.T) {
 		"¿Qué necesitas resolver?. Describe lo que necesitas.",
 		webhook.UIConfig{
 			Type:             "list",
+			HeaderType:       "text",
+			HeaderText:       "Diego Unkuch Gonzalez",
+			FooterText:       "Tienes 5 min para responder.",
 			ListButtonText:   "Ver servicios populares",
 			ListSectionTitle: "Más solicitados",
 			Options: []webhook.UIOption{
@@ -188,6 +191,12 @@ func TestSendListSuccess(t *testing.T) {
 	if gotPayload.Interactive.Action.Button != "Ver servicios populares" {
 		t.Fatalf("unexpected list button text: %+v", gotPayload.Interactive.Action)
 	}
+	if gotPayload.Interactive.Header == nil || gotPayload.Interactive.Header.Text != "Diego Unkuch Gonzalez" {
+		t.Fatalf("unexpected list header: %+v", gotPayload.Interactive.Header)
+	}
+	if gotPayload.Interactive.Footer == nil || gotPayload.Interactive.Footer.Text != "Tienes 5 min para responder." {
+		t.Fatalf("unexpected list footer: %+v", gotPayload.Interactive.Footer)
+	}
 	if len(gotPayload.Interactive.Action.Sections) != 1 {
 		t.Fatalf("expected 1 section, got %+v", gotPayload.Interactive.Action.Sections)
 	}
@@ -196,6 +205,60 @@ func TestSendListSuccess(t *testing.T) {
 	}
 	if gotPayload.Interactive.Action.Sections[0].Rows[0].Description != "Plomero" {
 		t.Fatalf("unexpected row description: %+v", gotPayload.Interactive.Action.Sections[0].Rows[0])
+	}
+}
+
+func TestSendContactsSuccess(t *testing.T) {
+	var gotPayload sendMessagePayload
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&gotPayload); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	client := NewClient(Config{
+		BaseURL:     srv.URL,
+		APIVersion:  "v22.0",
+		AccessToken: "token-123",
+	})
+
+	err := client.SendContacts(
+		context.Background(),
+		"1022104724314763",
+		"593998823053",
+		[]webhook.Contact{
+			{
+				Name: webhook.ContactName{
+					FormattedName: "Diego Unkuch Gonzalez",
+					FirstName:     "Diego",
+				},
+				Phones: []webhook.ContactPhone{
+					{
+						Phone: "+593959091325",
+						Type:  "CELL",
+						WAID:  "593959091325",
+					},
+				},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("SendContacts returned error: %v", err)
+	}
+
+	if gotPayload.Type != "contacts" {
+		t.Fatalf("expected contacts payload, got %+v", gotPayload)
+	}
+	if len(gotPayload.Contacts) != 1 {
+		t.Fatalf("expected 1 contact, got %+v", gotPayload.Contacts)
+	}
+	if gotPayload.Contacts[0].Name.FormattedName != "Diego Unkuch Gonzalez" {
+		t.Fatalf("unexpected contact payload: %+v", gotPayload.Contacts[0])
+	}
+	if gotPayload.Contacts[0].Phones[0].WAID != "593959091325" {
+		t.Fatalf("unexpected contact phone payload: %+v", gotPayload.Contacts[0].Phones[0])
 	}
 }
 

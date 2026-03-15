@@ -1,6 +1,7 @@
 import pytest
 
 from flows.mensajes.mensajes_busqueda import mensajes_consentimiento
+from services.clientes.servicio_consentimiento import ServicioConsentimiento
 from services.sesion_clientes import validar_consentimiento
 from templates.mensajes.consentimiento import payload_consentimiento_resumen
 
@@ -105,3 +106,31 @@ def test_estrategia_invalida_hace_fallback_a_session_first(monkeypatch):
     payload = payload_consentimiento_resumen()
 
     assert payload["messages"][0]["ui"]["type"] == "buttons"
+
+
+@pytest.mark.asyncio
+async def test_servicio_consentimiento_no_acepta_si_no_persistio():
+    class _RepoStub:
+        async def actualizar_consentimiento(self, cliente_id, tiene_consentimiento):
+            return None
+
+        async def registrar_consentimiento(self, usuario_id, respuesta, datos_consentimiento):
+            return True
+
+    class _LoggerStub:
+        def info(self, *_args, **_kwargs):
+            return None
+
+        def error(self, *_args, **_kwargs):
+            return None
+
+    servicio = ServicioConsentimiento(_RepoStub(), _LoggerStub())
+
+    resultado = await servicio.procesar_respuesta(
+        telefono="+593999",
+        perfil_cliente={"id": "c1", "has_consent": False},
+        seleccionado="1",
+        carga={"from_number": "+593999", "selected_option": "consent_accept"},
+    )
+
+    assert resultado["consent_status"] == "error"

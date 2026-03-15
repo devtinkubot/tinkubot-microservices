@@ -158,7 +158,6 @@ def normalizar_datos_proveedor(
         "phone": telefono,
         "real_phone": real_phone,
         "full_name": datos_crudos.full_name.strip().title(),  # Formato legible
-        "email": datos_crudos.email.strip() if datos_crudos.email else None,
         "city": normalizar_texto_para_busqueda(datos_crudos.city),  # minúsculas
         "location_lat": datos_crudos.location_lat,
         "location_lng": datos_crudos.location_lng,

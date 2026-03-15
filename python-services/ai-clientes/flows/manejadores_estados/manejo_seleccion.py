@@ -2,7 +2,11 @@
 
 from typing import Any, Awaitable, Callable, Dict, Optional, Union
 
-from templates.proveedores.listado import instruccion_seleccion_numero
+from templates.proveedores.listado import (
+    construir_ui_lista_proveedores,
+    instruccion_seleccion_lista,
+    resolver_proveedor_desde_lista,
+)
 
 
 async def procesar_estado_presentando_resultados(
@@ -22,7 +26,8 @@ async def procesar_estado_presentando_resultados(
     logger: Any,
     titulo_confirmacion_por_defecto: str,
     bloque_detalle_proveedor_fn: Callable[[Dict[str, Any]], str],
-    prompt_opciones_detalle_proveedor_fn: Callable[[], str],
+    ui_detalle_proveedor_fn: Callable[[Dict[str, Any]], Dict[str, Any]],
+    preparar_proveedor_detalle_fn: Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]],
     prompt_inicial: str,
     mensaje_despedida: str,
 ) -> Dict[str, Any]:
@@ -30,7 +35,7 @@ async def procesar_estado_presentando_resultados(
 
     Este estado se activa cuando se muestran los resultados de la búsqueda
     de proveedores al usuario. El usuario debe seleccionar un proveedor
-    de la lista usando un número del 1 al 5.
+    desde la lista interactiva.
 
     Args:
         flujo: Diccionario con el estado del flujo conversacional.
@@ -45,7 +50,7 @@ async def procesar_estado_presentando_resultados(
         logger: Logger para registro de eventos.
         titulo_confirmacion_por_defecto: Título por defecto para mensajes de confirmación.
         bloque_detalle_proveedor_fn: Función que genera el bloque de detalle del proveedor.
-        prompt_opciones_detalle_proveedor_fn: Función que genera el prompt de opciones del detalle.
+        ui_detalle_proveedor_fn: Función que genera la UI interactiva del detalle.
         prompt_inicial: Mensaje inicial del bot.
         mensaje_despedida: Mensaje de despedida.
 
@@ -68,27 +73,28 @@ async def procesar_estado_presentando_resultados(
             "response": prompt_inicial,
         }
 
-    proveedor = None
-    if eleccion_normalizada in ("1", "2", "3", "4", "5"):
-        indice = int(eleccion_normalizada) - 1
-        if 0 <= indice < len(lista_proveedores):
-            proveedor = lista_proveedores[indice]
-
+    proveedor = resolver_proveedor_desde_lista(seleccionado, lista_proveedores)
     if not proveedor:
         return {
-            "response": instruccion_seleccion_numero()
+            "response": instruccion_seleccion_lista(),
+            "ui": construir_ui_lista_proveedores(lista_proveedores),
         }
 
+    indice_proveedor = lista_proveedores.index(proveedor)
+    proveedor_detalle = await preparar_proveedor_detalle_fn(proveedor)
+    lista_proveedores[indice_proveedor] = proveedor_detalle
+    flujo["providers"] = lista_proveedores
     flujo["state"] = "viewing_provider_detail"
-    flujo["provider_detail_idx"] = lista_proveedores.index(proveedor)
+    flujo["provider_detail_idx"] = indice_proveedor
+    flujo["provider_detail_view"] = "menu"
     await guardar_flujo_fn(flujo)
-    mensaje_detalle = bloque_detalle_proveedor_fn(proveedor)
-    mensaje_opciones = prompt_opciones_detalle_proveedor_fn()
+    mensaje_detalle = bloque_detalle_proveedor_fn(proveedor_detalle)
     await guardar_mensaje_bot_fn(mensaje_detalle)
-    await guardar_mensaje_bot_fn(mensaje_opciones)
     return {
         "messages": [
-            {"response": mensaje_detalle},
-            {"response": mensaje_opciones},
+            {
+                "response": mensaje_detalle,
+                "ui": ui_detalle_proveedor_fn(proveedor_detalle),
+            },
         ]
     }

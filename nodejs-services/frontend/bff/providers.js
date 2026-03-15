@@ -596,7 +596,7 @@ const derivarTaxonomiaServiciosProveedor = (providerServices, taxonomyCatalog) =
   });
 };
 
-const normalizarProveedorSupabase = (registro, taxonomyCatalog = null) => {
+const normalizarProveedorSupabase = (registro) => {
   const nombre =
     limpiarTexto(registro?.full_name) ||
     limpiarTexto(registro?.name) ||
@@ -604,16 +604,12 @@ const normalizarProveedorSupabase = (registro, taxonomyCatalog = null) => {
   const businessName = limpiarTexto(registro?.business_name) || null;
   const contact =
     limpiarTexto(registro?.contact_name) || nombre || "Contacto no definido";
-  const contactEmail =
-    limpiarTexto(registro?.contact_email) ||
-    limpiarTexto(registro?.email) ||
-    null;
   const contactPhone =
     limpiarTexto(registro?.contact_phone) ||
     limpiarTexto(registro?.phone) ||
     null;
+  const realPhone = limpiarTexto(registro?.real_phone) || null;
   const phone = limpiarTexto(registro?.phone) || null;
-  const email = limpiarTexto(registro?.email) || null;
   const ciudad = limpiarTexto(registro?.city) || null;
   const provincia = limpiarTexto(registro?.province) || null;
   const providerServicesDetailed = Array.isArray(registro?.provider_services)
@@ -715,23 +711,25 @@ const normalizarProveedorSupabase = (registro, taxonomyCatalog = null) => {
         }))
         .filter(item => typeof item.fileUrl === "string" && item.fileUrl.length > 0)
     : [];
-  const serviceTaxonomy = derivarTaxonomiaServiciosProveedor(
-    providerServicesDetailed,
-    taxonomyCatalog,
-  );
-
+  const contactStatus = phone?.endsWith("@lid")
+    ? realPhone
+      ? "lid_with_real_phone"
+      : "lid_missing_real_phone"
+    : realPhone
+      ? "real_phone_available"
+      : "basic_phone_only";
   return {
     id: registro?.id,
     name: nombre,
     businessName,
     contact,
-    contactEmail,
     contactPhone,
     registeredAt,
     status: normalizarEstadoProveedor(registro),
     notes,
     phone,
-    email,
+    realPhone,
+    contactStatus,
     city: ciudad,
     province: provincia,
     servicesRaw,
@@ -747,7 +745,6 @@ const normalizarProveedorSupabase = (registro, taxonomyCatalog = null) => {
       face: facePhotoUrl,
     },
     certificates,
-    serviceTaxonomy,
     verificationReviewer,
     verificationReviewedAt,
   };
@@ -831,50 +828,32 @@ const obtenerProveedoresPendientesSupabase = async () => {
     return [];
   }
 
-  const cargarCatalogo = async () => {
-    try {
-      return await obtenerTaxonomiaCatalogo();
-    } catch (error) {
-      console.warn(
-        "⚠️ No se pudo cargar catálogo de taxonomía para proveedores:",
-        error?.data?.error || error?.message || error,
-      );
-      return null;
-    }
-  };
-
   try {
     const ruta = construirRutaSupabasePendientes(true);
-    const [response, taxonomyCatalog] = await Promise.all([
-      supabaseClient.get(ruta, {
-        headers: {
-          Accept: "application/json",
-        },
-      }),
-      cargarCatalogo(),
-    ]);
+    const response = await supabaseClient.get(ruta, {
+      headers: {
+        Accept: "application/json",
+      },
+    });
     const lista = Array.isArray(response.data)
-      ? response.data.map(item => normalizarProveedorSupabase(item, taxonomyCatalog))
+      ? response.data.map(item => normalizarProveedorSupabase(item))
       : normalizarListaProveedores(response.data).map(
-          item => normalizarProveedorSupabase(item, taxonomyCatalog),
+          item => normalizarProveedorSupabase(item),
         );
     return lista;
   } catch (error) {
     if (error.response?.status === 400) {
       // Columna verification_status podría no existir; reintentar sin filtro.
       const rutaFallback = construirRutaSupabasePendientes(false);
-      const [response, taxonomyCatalog] = await Promise.all([
-        supabaseClient.get(rutaFallback, {
-          headers: {
-            Accept: "application/json",
-          },
-        }),
-        cargarCatalogo(),
-      ]);
+      const response = await supabaseClient.get(rutaFallback, {
+        headers: {
+          Accept: "application/json",
+        },
+      });
       const lista = Array.isArray(response.data)
-        ? response.data.map(item => normalizarProveedorSupabase(item, taxonomyCatalog))
+        ? response.data.map(item => normalizarProveedorSupabase(item))
         : normalizarListaProveedores(response.data).map(
-            item => normalizarProveedorSupabase(item, taxonomyCatalog),
+            item => normalizarProveedorSupabase(item),
           );
       return lista;
     }
@@ -899,24 +878,15 @@ const obtenerProveedoresPostRevisionSupabase = async () => {
   }
 
   const ruta = construirRutaSupabasePostRevision();
-  let taxonomyCatalog = null;
-  try {
-    taxonomyCatalog = await obtenerTaxonomiaCatalogo();
-  } catch (error) {
-    console.warn(
-      "⚠️ No se pudo cargar catálogo de taxonomía para proveedores post-revisión:",
-      error?.data?.error || error?.message || error,
-    );
-  }
   const response = await supabaseClient.get(ruta, {
     headers: {
       Accept: "application/json",
     },
   });
   const lista = Array.isArray(response.data)
-    ? response.data.map(item => normalizarProveedorSupabase(item, taxonomyCatalog))
+    ? response.data.map(item => normalizarProveedorSupabase(item))
     : normalizarListaProveedores(response.data).map(
-        item => normalizarProveedorSupabase(item, taxonomyCatalog),
+        item => normalizarProveedorSupabase(item),
       );
   return lista;
 };

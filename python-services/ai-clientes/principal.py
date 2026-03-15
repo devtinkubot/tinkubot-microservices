@@ -239,6 +239,12 @@ async def health_check():
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Service unhealthy: {str(e)}")
 
+
+@app.get("/admin/availability-metrics")
+async def availability_metrics():
+    """Métricas simples de disponibilidad para operación/admin."""
+    return servicio_disponibilidad.obtener_metricas()
+
 @app.post("/handle-whatsapp-message")
 async def handle_whatsapp_message(payload: Dict[str, Any]):
     """

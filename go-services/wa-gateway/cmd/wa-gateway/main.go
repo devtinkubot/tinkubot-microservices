@@ -53,6 +53,12 @@ func main() {
 	}
 	rl := ratelimit.NewLimiter(rateLimitConfig)
 	log.Println("✅ Rate limiter initialized (in-memory)")
+	rateLimitRecorder, err := ratelimit.NewSQLiteEventRecorder(databasePath)
+	if err != nil {
+		log.Printf("⚠️ Failed to initialize rate-limit recorder: %v", err)
+	} else {
+		log.Println("✅ Rate-limit recorder initialized (SQLite)")
+	}
 
 	// Create webhook client with dynamic routing
 	aiClientesURL := os.Getenv("AI_CLIENTES_URL")
@@ -103,6 +109,7 @@ func main() {
 	metaClientesPhoneNumberID := strings.TrimSpace(os.Getenv("META_PHONE_NUMBER_ID_CLIENTES"))
 	metaProveedoresPhoneNumberID := strings.TrimSpace(os.Getenv("META_PHONE_NUMBER_ID_PROVEEDORES"))
 	metaOutboundEnabled := parseBoolEnv("WA_META_OUTBOUND_ENABLED", false)
+	metaPreserveLIDForProviders := parseBoolEnv("WA_META_PRESERVE_JID_FOR_LID", false)
 	metaEnabledAccounts := parseEnabledAccounts(os.Getenv("WA_META_ENABLED_ACCOUNTS"))
 	metaGraphBaseURL := strings.TrimSpace(os.Getenv("META_GRAPH_BASE_URL"))
 	metaGraphAPIVersion := strings.TrimSpace(os.Getenv("META_GRAPH_API_VERSION"))
@@ -195,9 +202,10 @@ func main() {
 	)
 
 	outboundRouter := outbound.NewRouter(cm, metaOutboundClient, outbound.RouterConfig{
-		MetaOutboundEnabled: metaOutboundEnabled,
-		MetaEnabledAccounts: metaEnabledAccounts,
-		AccountPhoneNumber:  accountToPhoneNumber,
+		MetaOutboundEnabled:         metaOutboundEnabled,
+		MetaEnabledAccounts:         metaEnabledAccounts,
+		AccountPhoneNumber:          accountToPhoneNumber,
+		MetaPreserveLIDForProviders: metaPreserveLIDForProviders,
 	})
 
 	metaManagedAccounts := map[string]bool{}
@@ -209,6 +217,7 @@ func main() {
 
 	handlers := api.NewHandlers(cm, rl, sseHub, metaSvc, outboundRouter, api.HandlerConfig{
 		MetaManagedAccounts: metaManagedAccounts,
+		EventRecorder:       rateLimitRecorder,
 	})
 
 	// Start WhatsApp clients

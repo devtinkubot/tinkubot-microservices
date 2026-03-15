@@ -4,14 +4,17 @@ import re
 from typing import Any, Dict, List
 
 
-# ==================== CONSTANTES ====================
+DETALLE_PROVIDER_MENU = "provider_detail_menu"
+DETALLE_PROVIDER_PHOTO = "provider_detail_photo"
+DETALLE_PROVIDER_SERVICES = "provider_detail_services"
+DETALLE_PROVIDER_SOCIAL = "provider_detail_social"
+DETALLE_PROVIDER_CERTS = "provider_detail_certs"
+DETALLE_PROVIDER_CONTACT = "provider_detail_contact"
+DETALLE_PROVIDER_BACK = "provider_detail_back"
+DETALLE_PROVIDER_SUBVIEW_BACK = "provider_detail_subview_back"
 
-instruccion_seleccionar_proveedor = (
-    "*Responde con el número del proveedor para ver detalles.*"
-)
+FOOTER_DETALLE = "Tienes 5 min para responder."
 
-
-# ==================== FUNCIONES AUXILIARES ====================
 
 def _negrita(texto: str) -> str:
     texto_limpio = (texto or "").strip()
@@ -23,7 +26,7 @@ def _negrita(texto: str) -> str:
     return f"*{texto_limpio}*"
 
 
-def _parsear_servicios(valor: Any) -> List[str]:
+def _parsear_lista(valor: Any) -> List[str]:
     if valor is None:
         return []
     if isinstance(valor, list):
@@ -31,10 +34,7 @@ def _parsear_servicios(valor: Any) -> List[str]:
     texto = str(valor).strip()
     if not texto:
         return []
-    partes = [
-        parte.strip() for parte in re.split(r"[;,/|\n]+", texto) if parte.strip()
-    ]
-    return partes
+    return [parte.strip() for parte in re.split(r"[;,/|\n]+", texto) if parte.strip()]
 
 
 def _embellecer(texto: Any) -> str:
@@ -46,116 +46,185 @@ def _embellecer(texto: Any) -> str:
     return valor[0].upper() + valor[1:]
 
 
-def _formatear_precio(valor: Any) -> str:
-    if valor is None:
-        return ""
-    if isinstance(valor, (int, float)) and valor > 0:
-        return f"USD {valor:.2f}".rstrip("0").rstrip(".")
-    return str(valor).strip()
-
-
-def _formatear_linea(etiqueta: str, valor: Any) -> str:
-    if valor is None:
-        return ""
-    texto = str(valor).strip()
-    return f"{etiqueta}: {texto}" if texto else ""
-
-
-# ==================== FUNCIONES ====================
-
-def bloque_detalle_proveedor(proveedor: Dict[str, Any]) -> str:
-    """Ficha detallada del proveedor con submenú numérico."""
-    nombre = (
+def _nombre_proveedor(proveedor: Dict[str, Any]) -> str:
+    return (
         proveedor.get("name")
         or proveedor.get("provider_name")
         or proveedor.get("full_name")
         or "Proveedor"
     )
-    profesion = proveedor.get("profession") or proveedor.get("service_title") or ""
-    if not profesion and isinstance(proveedor.get("professions"), list):
-        profesion = ", ".join(
-            [
-                str(item).strip()
-                for item in proveedor.get("professions")
-                if str(item).strip()
-            ]
-        )
-    profesion = _embellecer(profesion)
+
+
+def _ubicacion_proveedor(proveedor: Dict[str, Any]) -> str:
     ciudad = _embellecer(proveedor.get("city") or proveedor.get("location_city") or "")
     provincia = _embellecer(proveedor.get("province") or proveedor.get("state") or "")
-    precio = _formatear_precio(
-        proveedor.get("price_formatted")
-        or proveedor.get("price_display")
-        or proveedor.get("price")
-    )
+    return ", ".join([valor for valor in [ciudad, provincia] if valor])
+
+
+def _experiencia_proveedor(proveedor: Dict[str, Any]) -> str:
     experiencia = (
         proveedor.get("experience_years")
         or proveedor.get("experienceYears")
         or proveedor.get("years_of_experience")
     )
+    if isinstance(experiencia, (int, float)):
+        return f"{int(experiencia)} año(s)"
+    return str(experiencia).strip() if experiencia is not None else ""
+
+
+def _calificacion_proveedor(proveedor: Dict[str, Any]) -> str:
     calificacion = proveedor.get("rating")
-    url_social = proveedor.get("social_media_url") or proveedor.get("socialMediaUrl")
-    tipo_social = proveedor.get("social_media_type") or proveedor.get("socialMediaType")
-    servicios = _parsear_servicios(
+    if isinstance(calificacion, (int, float)):
+        return f"{calificacion:.1f}"
+    return str(calificacion).strip() if calificacion is not None else ""
+
+
+def servicios_proveedor(proveedor: Dict[str, Any]) -> List[str]:
+    servicios = _parsear_lista(
         proveedor.get("services_list")
         or proveedor.get("servicesList")
         or proveedor.get("services")
         or proveedor.get("servicesRaw")
     )
-    servicios = [_embellecer(svc) for svc in servicios if _embellecer(svc)]
+    return [_embellecer(svc) for svc in servicios if _embellecer(svc)]
 
-    ubicacion = ", ".join([valor for valor in [ciudad, provincia] if valor])
-    lineas: List[str] = ["", _negrita(nombre)]
-    for entrada in [
-        _formatear_linea("Profesión", profesion),
-        _formatear_linea("Ubicación", ubicacion),
-        _formatear_linea(
-            "Experiencia",
-            f"{int(experiencia)} año(s)"
-            if isinstance(experiencia, (int, float))
-            else experiencia,
-        ),
-    ]:
-        if entrada:
-            lineas.append(entrada)
 
-    if servicios:
-        lineas.append("Servicios:")
-        lineas.extend([f"• {svc}" for svc in servicios])
-
-    if precio:
-        lineas.append(_formatear_linea("Precio", precio))
-
-    linea_social = _formatear_linea(
-        "Redes",
-        f"{tipo_social}: {url_social}" if url_social and tipo_social else url_social,
+def certificaciones_proveedor(proveedor: Dict[str, Any]) -> List[Dict[str, str]]:
+    candidatos = (
+        proveedor.get("certifications")
+        or proveedor.get("certification_images")
+        or proveedor.get("certification_urls")
+        or proveedor.get("certificate_images")
+        or proveedor.get("certificate_urls")
+        or []
     )
-    if linea_social:
-        lineas.append(linea_social)
+    certificaciones: List[Dict[str, str]] = []
+    if isinstance(candidatos, list):
+        for idx, item in enumerate(candidatos, start=1):
+            if isinstance(item, dict):
+                url = str(
+                    item.get("url")
+                    or item.get("image_url")
+                    or item.get("media_url")
+                    or item.get("photo_url")
+                    or item.get("file_url")
+                    or ""
+                ).strip()
+                titulo = str(item.get("title") or item.get("name") or "").strip()
+            else:
+                url = str(item).strip()
+                titulo = ""
+            if not url:
+                continue
+            certificaciones.append(
+                {
+                    "title": titulo or f"Certificación {idx}",
+                    "url": url,
+                }
+            )
+    return certificaciones
 
-    linea_calificacion = _formatear_linea(
-        "Calificación",
-        f"{calificacion:.1f}"
-        if isinstance(calificacion, (int, float))
-        else calificacion,
-    )
-    if linea_calificacion:
-        lineas.append(linea_calificacion)
 
-    lineas.append("")
-    return "\n".join(lineas)
+def resumen_detalle_proveedor(proveedor: Dict[str, Any]) -> str:
+    lineas: List[str] = []
+    ubicacion = _ubicacion_proveedor(proveedor)
+    experiencia = _experiencia_proveedor(proveedor)
+    calificacion = _calificacion_proveedor(proveedor)
+    if ubicacion:
+        lineas.append(f"*Ubicación:* {ubicacion}")
+    if experiencia:
+        lineas.append(f"*Experiencia:* {experiencia}")
+    if calificacion:
+        lineas.append(f"*Calificación:* {calificacion}")
+    return "\n".join(lineas) or "Selecciona una opción para ver más información."
 
 
-def menu_opciones_detalle_proveedor() -> str:
-    """Bloque de acciones para detalle de proveedor."""
-    from templates.comunes import pie_instrucciones_respuesta_numerica
+def bloque_detalle_proveedor(proveedor: Dict[str, Any]) -> str:
+    """Resumen corto para el menú principal de detalle."""
+    return resumen_detalle_proveedor(proveedor)
 
-    return "\n".join(
-        [
-            f"*{pie_instrucciones_respuesta_numerica}*",
-            "",
-            "*1.* Seleccionar a este proveedor",
-            "*2.* Regresar al listado de proveedores",
-            "*3.* Salir",
-        ]
-    )
+
+def ui_detalle_proveedor(proveedor: Dict[str, Any]) -> Dict[str, Any]:
+    """UI tipo lista para navegar los detalles del experto."""
+    opciones: List[Dict[str, Any]] = []
+    if str(proveedor.get("face_photo_url") or "").strip():
+        opciones.append({"id": DETALLE_PROVIDER_PHOTO, "title": "Foto de perfil"})
+    if servicios_proveedor(proveedor):
+        opciones.append({"id": DETALLE_PROVIDER_SERVICES, "title": "Servicios que ofrece"})
+    if str(proveedor.get("social_media_url") or "").strip():
+        opciones.append({"id": DETALLE_PROVIDER_SOCIAL, "title": "Redes sociales"})
+    if certificaciones_proveedor(proveedor):
+        opciones.append({"id": DETALLE_PROVIDER_CERTS, "title": "Certificaciones"})
+    opciones.append({"id": DETALLE_PROVIDER_CONTACT, "title": "Contactar"})
+    opciones.append({"id": DETALLE_PROVIDER_BACK, "title": "Regresar"})
+    return {
+        "type": "list",
+        "id": "provider_detail_menu_v1",
+        "header_type": "text",
+        "header_text": _nombre_proveedor(proveedor),
+        "footer_text": FOOTER_DETALLE,
+        "list_button_text": "Ver detalles",
+        "list_section_title": "Información del experto",
+        "options": opciones,
+    }
+
+
+def ui_subvista_detalle_proveedor(*, foto_url: str = "") -> Dict[str, Any]:
+    ui = {
+        "type": "buttons",
+        "id": "provider_detail_subview_v1",
+        "footer_text": FOOTER_DETALLE,
+        "options": [
+            {
+                "id": DETALLE_PROVIDER_SUBVIEW_BACK,
+                "title": "Regresar",
+            }
+        ],
+    }
+    foto_url = str(foto_url or "").strip()
+    if foto_url:
+        ui["header_type"] = "image"
+        ui["header_media_url"] = foto_url
+    return ui
+
+
+def mensaje_foto_perfil_proveedor(proveedor: Dict[str, Any]) -> Dict[str, Any]:
+    nombre = _nombre_proveedor(proveedor)
+    return {
+        "response": f"*{nombre}*\nFoto de perfil del experto.",
+        "ui": ui_subvista_detalle_proveedor(foto_url=str(proveedor.get("face_photo_url") or "").strip()),
+    }
+
+
+def mensaje_servicios_proveedor(proveedor: Dict[str, Any]) -> Dict[str, Any]:
+    nombre = _nombre_proveedor(proveedor)
+    servicios = servicios_proveedor(proveedor)
+    lineas = [f"*{nombre}*", "*Servicios que ofrece:*"]
+    lineas.extend([f"• {servicio}" for servicio in servicios])
+    return {
+        "response": "\n".join(lineas),
+        "ui": ui_subvista_detalle_proveedor(),
+    }
+
+
+def mensaje_redes_sociales_proveedor(proveedor: Dict[str, Any]) -> Dict[str, Any]:
+    nombre = _nombre_proveedor(proveedor)
+    red_social_url = str(proveedor.get("social_media_url") or "").strip()
+    red_social_tipo = _embellecer(proveedor.get("social_media_type") or "")
+    etiqueta = f"{red_social_tipo}: " if red_social_tipo else ""
+    return {
+        "response": f"*{nombre}*\n*Redes sociales:*\n{etiqueta}{red_social_url}",
+        "ui": ui_subvista_detalle_proveedor(),
+    }
+
+
+def mensaje_certificaciones_proveedor(proveedor: Dict[str, Any]) -> Dict[str, Any]:
+    nombre = _nombre_proveedor(proveedor)
+    certificaciones = certificaciones_proveedor(proveedor)
+    primera = certificaciones[0] if certificaciones else {}
+    lineas = [f"*{nombre}*", "*Certificaciones:*"]
+    lineas.extend([f"• {item['title']}" for item in certificaciones])
+    return {
+        "response": "\n".join(lineas),
+        "ui": ui_subvista_detalle_proveedor(foto_url=primera.get("url", "")),
+    }

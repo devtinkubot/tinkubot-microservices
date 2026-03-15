@@ -53,6 +53,7 @@ AVAILABILITY_RESULT_TTL_SECONDS = int(
 CLAVE_CONTEXTO_DISPONIBILIDAD = "availability:provider:{}:context"
 CLAVE_PENDIENTES_DISPONIBILIDAD = "availability:provider:{}:pending"
 CLAVE_CICLO_SOLICITUD = "availability:lifecycle:{}"
+CLAVE_ALIAS_DISPONIBILIDAD = "availability:alias:{}"
 ESTADO_ESPERANDO_DISPONIBILIDAD = "awaiting_availability_response"
 CLAVE_DEDUPE_MEDIA = "prov_media_dedupe:{}:{}"
 TTL_DEDUPE_MEDIA_SEGUNDOS = int(os.getenv("PROVIDER_MEDIA_DEDUPE_TTL_SECONDS", "900"))
@@ -247,6 +248,8 @@ def _parsear_respuesta_disponibilidad(texto: str) -> Optional[str]:
 
     normalizado = normalizado.strip("*").rstrip(".)")
 
+    if normalizado in {"availability_accept", "availability_reject"}:
+        return "accepted" if normalizado == "availability_accept" else "rejected"
     if normalizado in {"1", "si", "s", "ok", "dale", "disponible", "acepto"}:
         return "accepted"
     if normalizado in {"2", "no", "n", "ocupado", "no disponible"}:
@@ -276,6 +279,17 @@ def _es_continue_profile_completion(carga: Dict[str, Any]) -> bool:
 async def _hay_contexto_disponibilidad_activo(telefono: str) -> bool:
     contexto = await cliente_redis.get(CLAVE_CONTEXTO_DISPONIBILIDAD.format(telefono))
     return bool(isinstance(contexto, dict) and contexto.get("expecting_response"))
+
+
+async def _resolver_alias_disponibilidad(telefono: str) -> str:
+    if not telefono:
+        return telefono
+    alias = await cliente_redis.get(CLAVE_ALIAS_DISPONIBILIDAD.format(telefono))
+    if isinstance(alias, dict):
+        provider_phone = str(alias.get("provider_phone") or "").strip()
+        if provider_phone:
+            return provider_phone
+    return telefono
 
 
 def _resolver_message_id(carga: Dict[str, Any]) -> str:
@@ -785,6 +799,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
         raw_phone = (solicitud.phone or "").strip()
         raw_from = (solicitud.from_number or "").strip()
         telefono = _resolver_telefono_canonico(raw_from, raw_phone) or "unknown"
+        telefono_disponibilidad = await _resolver_alias_disponibilidad(telefono)
         phone_user = _extraer_user_jid(telefono)
         is_lid = telefono.endswith("@lid")
         texto_mensaje = (
@@ -819,7 +834,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
             )
             return {"success": True, "messages": []}
         hay_contexto_disponibilidad = await _hay_contexto_disponibilidad_activo(
-            telefono
+            telefono_disponibilidad
         )
         if hay_contexto_disponibilidad and flujo.get("state") in MENU_STATES:
             flujo["state"] = ESTADO_ESPERANDO_DISPONIBILIDAD
@@ -829,7 +844,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
         ):
             flujo["state"] = "awaiting_menu_option"
         respuesta_disponibilidad = await _registrar_respuesta_disponibilidad_si_aplica(
-            telefono, texto_mensaje, flujo.get("state")
+            telefono_disponibilidad, texto_mensaje, flujo.get("state")
         )
         if respuesta_disponibilidad:
             if flujo.get("state") == ESTADO_ESPERANDO_DISPONIBILIDAD:

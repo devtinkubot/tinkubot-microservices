@@ -29,7 +29,6 @@ from flows.gestores_estados import (
     manejar_eliminacion_servicio_registro,
     manejar_espera_ciudad,
     manejar_espera_certificado,
-    manejar_espera_correo,
     manejar_espera_especialidad,
     manejar_espera_experiencia,
     manejar_espera_nombre,
@@ -506,9 +505,9 @@ async def enrutar_estado(  # noqa: C901
                     {
                         "response": (
                             "📌 Tienes una solicitud pendiente de disponibilidad.\n"
-                            "Responde:\n"
-                            "*1.* Sí, estoy disponible\n"
-                            "*2.* No disponible\n\n"
+                            "Usa los botones del mensaje anterior o responde:\n"
+                            "*Disponible*\n"
+                            "*No disponible*\n\n"
                             "Si deseas volver al menú, escribe *menu*."
                         )
                     }
@@ -732,10 +731,6 @@ async def enrutar_estado(  # noqa: C901
 
     if estado == "awaiting_experience":
         respuesta = manejar_espera_experiencia(flujo, texto_mensaje)
-        return {"response": respuesta, "persist_flow": True}
-
-    if estado == "awaiting_email":
-        respuesta = manejar_espera_correo(flujo, texto_mensaje)
         return {"response": respuesta, "persist_flow": True}
 
     if estado == "awaiting_social_media":

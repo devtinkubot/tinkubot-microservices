@@ -347,6 +347,7 @@ class OrquestadorConversacional:
                 - limpiar_ubicacion_cliente
                 - limpiar_consentimiento_cliente
                 - mensaje_conexion_formal
+                - preparar_proveedor_para_detalle
                 - programar_solicitud_retroalimentacion
                 - enviar_texto_whatsapp
         """

@@ -65,7 +65,6 @@ def validar_y_construir_proveedor(
             phone=telefono,
             real_phone=flujo.get("real_phone") or flujo.get("phone_user"),
             full_name=flujo.get("name") or "",
-            email=flujo.get("email"),
             city=ciudad_canonica,
             # Fase 4: Eliminado campo profession - ya no existe en el modelo
             services_list=servicios_lista,
@@ -138,7 +137,6 @@ def _formatear_mensaje_error_validacion(error: Dict[str, Any]) -> str:
         "phone": "teléfono",
         "real_phone": "teléfono real",
         "full_name": "nombre",
-        "email": "correo electrónico",
         "city": "ciudad",
         # Fase 4: Eliminada referencia a profession del mapeo
         "services_list": "servicios",

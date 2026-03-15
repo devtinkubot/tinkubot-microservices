@@ -442,7 +442,6 @@ async def registrar_proveedor_en_base_datos(
                 "full_name": registro_insertado.get(
                     "full_name", datos_normalizados["full_name"]
                 ),
-                "email": registro_insertado.get("email", datos_normalizados["email"]),
                 "city": registro_insertado.get("city", datos_normalizados["city"]),
                 # Fase 6: Eliminado campo 'profession'
                 "services_normalized": servicios_normalizados,

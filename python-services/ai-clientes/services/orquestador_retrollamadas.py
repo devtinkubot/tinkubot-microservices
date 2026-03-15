@@ -8,6 +8,7 @@ from infrastructure.database import run_supabase
 from services.proveedores.conexion import (
     mensaje_conexion_formal as construir_mensaje_conexion_formal,
 )
+from services.proveedores.detalle import preparar_proveedor_para_detalle
 
 
 class OrquestadorRetrollamadas:
@@ -179,9 +180,8 @@ class OrquestadorRetrollamadas:
 
     async def enviar_prompt_proveedor(self, telefono: str, flujo: dict, ciudad: str):
         """Construye y retorna el listado de proveedores para WhatsApp."""
-        from templates.proveedores.detalle import instruccion_seleccionar_proveedor
         from templates.proveedores.listado import (
-            bloque_listado_proveedores_compacto,
+            construir_ui_lista_proveedores,
             mensaje_intro_listado_proveedores,
             mensaje_listado_sin_resultados,
         )
@@ -195,10 +195,10 @@ class OrquestadorRetrollamadas:
             )
             return {"response": mensaje_listado_sin_resultados(ciudad_texto)}
 
-        intro = mensaje_intro_listado_proveedores(ciudad_texto)
-        bloque = bloque_listado_proveedores_compacto(proveedores)
-        mensaje = f"{intro}\n\n{bloque}\n{instruccion_seleccionar_proveedor}"
-        return {"response": mensaje}
+        return {
+            "response": mensaje_intro_listado_proveedores(ciudad_texto),
+            "ui": construir_ui_lista_proveedores(proveedores),
+        }
 
     async def enviar_prompt_confirmacion(
         self, telefono: str, flujo: dict, titulo: str = None
@@ -268,6 +268,16 @@ class OrquestadorRetrollamadas:
             supabase_base_url=self.supabase_base_url,
         )
 
+    async def preparar_proveedor_para_detalle(
+        self, proveedor: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        return preparar_proveedor_para_detalle(
+            proveedor,
+            supabase=self.supabase,
+            bucket=self.supabase_bucket,
+            supabase_base_url=self.supabase_base_url,
+        )
+
     async def programar_solicitud_retroalimentacion(
         self,
         telefono: str,
@@ -311,10 +321,15 @@ class OrquestadorRetrollamadas:
             hired=hired,
         )
 
-    async def enviar_texto_whatsapp(self, telefono: str, texto: Any) -> bool:
+    async def enviar_texto_whatsapp(
+        self,
+        telefono: str,
+        texto: Any,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> bool:
         if self.programador_retroalimentacion:
             return await self.programador_retroalimentacion.enviar_texto_whatsapp(
-                telefono, texto
+                telefono, texto, metadata=metadata
             )
         return False
 
@@ -346,6 +361,7 @@ class OrquestadorRetrollamadas:
             "limpiar_ubicacion_cliente": self.limpiar_ubicacion_cliente,
             "limpiar_consentimiento_cliente": self.limpiar_consentimiento_cliente,
             "mensaje_conexion_formal": self.mensaje_conexion_formal,
+            "preparar_proveedor_para_detalle": self.preparar_proveedor_para_detalle,
             "programar_solicitud_retroalimentacion": self.programar_solicitud_retroalimentacion,
             "registrar_lead_contacto": self.registrar_lead_contacto,
             "registrar_feedback_contratacion": self.registrar_feedback_contratacion,

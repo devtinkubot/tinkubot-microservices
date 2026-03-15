@@ -7,8 +7,38 @@ from typing import Any, Dict, List
 
 def mensaje_intro_listado_proveedores(ciudad: str) -> str:
     if ciudad:
-        return f"*Encontré estas opciones en {ciudad}:*"
-    return "*Encontré estas opciones para ti:*"
+        return f"*Encontré estos expertos en {ciudad}*"
+    return "*Encontré estos expertos para ti*"
+
+
+def _provider_option_id(proveedor: Dict[str, Any], indice: int) -> str:
+    provider_id = str(proveedor.get("id") or proveedor.get("provider_id") or "").strip()
+    if provider_id:
+        return f"provider_select_{provider_id}"
+    return f"provider_select_idx_{indice}"
+
+
+def construir_ui_lista_proveedores(proveedores: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Construye una lista interactiva de hasta 5 proveedores."""
+    opciones: List[Dict[str, Any]] = []
+    for indice, proveedor in enumerate(proveedores[:5], start=1):
+        nombre = (
+            proveedor.get("name") or proveedor.get("provider_name") or "Proveedor"
+        ).strip()
+        opciones.append(
+            {
+                "id": _provider_option_id(proveedor, indice - 1),
+                "title": nombre[:24],
+            }
+        )
+
+    return {
+        "type": "list",
+        "id": "provider_results_v1",
+        "list_button_text": "Ver expertos",
+        "list_section_title": "Expertos disponibles",
+        "options": opciones,
+    }
 
 
 def bloque_listado_proveedores_compacto(proveedores: List[Dict[str, Any]]) -> str:
@@ -30,9 +60,27 @@ def mensaje_listado_sin_resultados(ciudad: str) -> str:
     return "❌ *No* encontré expertos."
 
 
-def instruccion_seleccion_numero() -> str:
-    """Instrucción para seleccionar proveedor por número."""
-    return "Indica el número del 1 al 5 del proveedor que quieres ver."
+def instruccion_seleccion_lista() -> str:
+    """Instrucción para seleccionar proveedor desde la lista interactiva."""
+    return "Selecciona un experto de la lista para ver su perfil."
+
+
+def resolver_proveedor_desde_lista(
+    selected_option: str | None,
+    proveedores: List[Dict[str, Any]],
+) -> Dict[str, Any] | None:
+    """Resuelve el proveedor seleccionado desde el id de lista interactiva."""
+    selected = (selected_option or "").strip().lower()
+    if not selected:
+        return None
+
+    for indice, proveedor in enumerate(proveedores[:5], start=1):
+        option_id = _provider_option_id(proveedor, indice - 1).lower()
+        if selected == option_id:
+            return proveedor
+    return None
+
+
 def error_proveedor_no_encontrado() -> str:
     """Error cuando no se encuentra el proveedor seleccionado."""
     return "No encontré ese proveedor, elige otra opción."

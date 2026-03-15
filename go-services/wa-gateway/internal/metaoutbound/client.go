@@ -98,6 +98,7 @@ type sendMessagePayload struct {
 	Type             string              `json:"type"`
 	Text             *textPayload        `json:"text,omitempty"`
 	Image            *imagePayload       `json:"image,omitempty"`
+	Contacts         []webhook.Contact   `json:"contacts,omitempty"`
 	Template         *templatePayload    `json:"template,omitempty"`
 	Interactive      *interactivePayload `json:"interactive,omitempty"`
 }
@@ -464,6 +465,59 @@ func (c *Client) SendList(
 				Sections: []interactiveSection{{Title: sectionTitle, Rows: rows}},
 			},
 		},
+	}
+
+	headerType := strings.ToLower(strings.TrimSpace(ui.HeaderType))
+	if headerType == "text" {
+		headerText := strings.TrimSpace(ui.HeaderText)
+		if headerText == "" {
+			return fmt.Errorf("list text header configured without header_text")
+		}
+		payload.Interactive.Header = &interactiveHeader{
+			Type: "text",
+			Text: headerText,
+		}
+	}
+
+	footerText := normalizeFooterText(ui.FooterText)
+	if footerText != "" {
+		payload.Interactive.Footer = &interactiveFooter{Text: footerText}
+	}
+
+	return c.sendMessage(ctx, phoneNumberID, c.accessTokenFor(phoneNumberID), payload)
+}
+
+// SendContacts sends a contact card message using Meta Cloud API.
+func (c *Client) SendContacts(
+	ctx context.Context,
+	phoneNumberID, to string,
+	contacts []webhook.Contact,
+) error {
+	phoneNumberID = strings.TrimSpace(phoneNumberID)
+	to = strings.TrimSpace(to)
+
+	if c == nil {
+		return fmt.Errorf("meta outbound client is nil")
+	}
+	if phoneNumberID == "" {
+		return fmt.Errorf("phone_number_id is empty")
+	}
+	if c.accessTokenFor(phoneNumberID) == "" {
+		return fmt.Errorf("meta outbound access token is empty for phone_number_id=%s", phoneNumberID)
+	}
+	if to == "" {
+		return fmt.Errorf("destination number is empty")
+	}
+	if len(contacts) == 0 {
+		return fmt.Errorf("contacts payload is empty")
+	}
+
+	payload := sendMessagePayload{
+		MessagingProduct: "whatsapp",
+		RecipientType:    "individual",
+		To:               to,
+		Type:             "contacts",
+		Contacts:         contacts,
 	}
 
 	return c.sendMessage(ctx, phoneNumberID, c.accessTokenFor(phoneNumberID), payload)

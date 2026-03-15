@@ -3,6 +3,21 @@
 import logging
 from typing import Any, Awaitable, Callable, Dict, Optional, Union
 
+from templates.proveedores.detalle import (
+    DETALLE_PROVIDER_BACK,
+    DETALLE_PROVIDER_CERTS,
+    DETALLE_PROVIDER_CONTACT,
+    DETALLE_PROVIDER_PHOTO,
+    DETALLE_PROVIDER_SERVICES,
+    DETALLE_PROVIDER_SOCIAL,
+    DETALLE_PROVIDER_SUBVIEW_BACK,
+    bloque_detalle_proveedor,
+    mensaje_certificaciones_proveedor,
+    mensaje_foto_perfil_proveedor,
+    mensaje_redes_sociales_proveedor,
+    mensaje_servicios_proveedor,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,14 +43,14 @@ async def procesar_estado_viendo_detalle_proveedor(
     enviar_prompt_proveedor_fn: Callable[[], Awaitable[Dict[str, Any]]],
     prompt_inicial: str,
     mensaje_despedida: str,
-    prompt_opciones_detalle_proveedor_fn: Callable[[], str],
+    ui_detalle_proveedor_fn: Callable[[Dict[str, Any]], Dict[str, Any]],
+    preparar_proveedor_detalle_fn: Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]],
 ) -> Dict[str, Any]:
-    """Procesa el estado `viewing_provider_detail` (submenú de detalle).
+    """Procesa el estado `viewing_provider_detail` (ficha interactiva).
 
     Maneja las opciones del usuario cuando está viendo el detalle de un proveedor:
-    - Opción 1: Conectar y confirmar selección del proveedor
-    - Opción 2: Regresar al listado de proveedores
-    - Opción 3: Salir/terminar conversación
+    - Contactar experto: conecta y confirma selección del proveedor
+    - Regresar: vuelve al listado de proveedores
     """
 
     eleccion = (seleccionado or texto or "").strip()
@@ -47,35 +62,38 @@ async def procesar_estado_viendo_detalle_proveedor(
     proveedor = None
     if isinstance(indice, int) and 0 <= indice < len(lista_proveedores):
         proveedor = lista_proveedores[indice]
+        proveedor = await preparar_proveedor_detalle_fn(proveedor)
+        lista_proveedores[indice] = proveedor
+        flujo["providers"] = lista_proveedores
 
-    # Opción 2: Regresar al listado de proveedores
-    if eleccion_normalizada in ("2", "opcion 2", "opción 2", "regresar", "0"):
+    vista_actual = str(flujo.get("provider_detail_view") or "menu").strip().lower()
+
+    if (
+        (vista_actual != "menu" and eleccion_normalizada in ("regresar",))
+        or seleccionado == DETALLE_PROVIDER_SUBVIEW_BACK
+    ):
+        flujo["provider_detail_view"] = "menu"
+        await guardar_flujo_fn(flujo)
+        return {
+            "response": bloque_detalle_proveedor(proveedor),
+            "ui": ui_detalle_proveedor_fn(proveedor),
+        }
+
+    if (eleccion_normalizada in ("regresar",) and vista_actual == "menu") or seleccionado == DETALLE_PROVIDER_BACK:
         flujo["state"] = "presenting_results"
         flujo.pop("provider_detail_idx", None)
+        flujo.pop("provider_detail_view", None)
         await guardar_flujo_fn(flujo)
         return await enviar_prompt_proveedor_fn()
 
-    # Opción 3: Salir/terminar conversación
-    if eleccion_normalizada in ("3", "opcion 3", "opción 3"):
-        for key in [
-            "providers",
-            "chosen_provider",
-            "confirm_attempts",
-            "confirm_title",
-            "confirm_include_city_option",
-            "",
-            "provider_detail_idx",
-            "service",
-        ]:
-            flujo.pop(key, None)
-        flujo["state"] = "awaiting_service"
-        await guardar_flujo_fn(flujo)
-        mensaje = {"response": mensaje_despedida}
-        await guardar_mensaje_bot_fn(mensaje["response"])
-        return mensaje
-
-    # Opción 1: Conectar y confirmar selección del proveedor
-    if eleccion_normalizada in ("1", "opcion 1", "opción 1", "elegir"):
+    if (
+        eleccion_normalizada in (
+            "elegir",
+            "contactar experto",
+            "contactar",
+        )
+        or seleccionado == DETALLE_PROVIDER_CONTACT
+    ):
         if not proveedor:
             return {"response": "No se encontró el proveedor seleccionado."}
         return await conectar_y_confirmar_proveedor(
@@ -93,11 +111,39 @@ async def procesar_estado_viendo_detalle_proveedor(
             titulo_confirmacion_por_defecto,
         )
 
-    # Si la opción no es reconocida, mostrar prompt de opciones nuevamente
-    if eleccion:
-        return {"response": prompt_opciones_detalle_proveedor_fn()}
+    if seleccionado == DETALLE_PROVIDER_PHOTO:
+        flujo["provider_detail_view"] = "photo"
+        await guardar_flujo_fn(flujo)
+        return mensaje_foto_perfil_proveedor(proveedor)
 
-    return {"response": prompt_opciones_detalle_proveedor_fn()}
+    if seleccionado == DETALLE_PROVIDER_SERVICES:
+        flujo["provider_detail_view"] = "services"
+        await guardar_flujo_fn(flujo)
+        return mensaje_servicios_proveedor(proveedor)
+
+    if seleccionado == DETALLE_PROVIDER_SOCIAL:
+        flujo["provider_detail_view"] = "social"
+        await guardar_flujo_fn(flujo)
+        return mensaje_redes_sociales_proveedor(proveedor)
+
+    if seleccionado == DETALLE_PROVIDER_CERTS:
+        flujo["provider_detail_view"] = "certifications"
+        await guardar_flujo_fn(flujo)
+        return mensaje_certificaciones_proveedor(proveedor)
+
+    if not proveedor:
+        return {"response": "No se encontró el proveedor seleccionado."}
+
+    flujo["provider_detail_view"] = "menu"
+    await guardar_flujo_fn(flujo)
+    return {
+        "response": (
+            "Selecciona una opción de la lista para continuar."
+            if eleccion
+            else "Abre la lista para continuar."
+        ),
+        "ui": ui_detalle_proveedor_fn(proveedor),
+    }
 
 
 async def conectar_y_confirmar_proveedor(
@@ -130,6 +176,7 @@ async def conectar_y_confirmar_proveedor(
     """
 
     flujo.pop("provider_detail_idx", None)
+    flujo.pop("provider_detail_view", None)
     lead_event_id = ""
     if registrar_lead_contacto_fn:
         provider_id = str(proveedor.get("id") or proveedor.get("provider_id") or "").strip()

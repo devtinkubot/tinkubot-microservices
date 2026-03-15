@@ -30,6 +30,15 @@ type fakeMetaSender struct {
 	lastUI        *webhook.UIConfig
 }
 
+type fakeEventRecorder struct {
+	events []ratelimit.Event
+}
+
+func (f *fakeEventRecorder) Record(_ context.Context, event ratelimit.Event) error {
+	f.events = append(f.events, event)
+	return nil
+}
+
 func (f *fakeMetaSender) SendText(_ context.Context, _ string, _ string, _ string) error {
 	return nil
 }
@@ -224,8 +233,8 @@ func TestPostSendDispatchesButtonsWhenUIProvided(t *testing.T) {
 		"ui": map[string]any{
 			"type": "buttons",
 			"options": []map[string]any{
-				{"id": "confirm_new_search_city", "title": "Buscar en otra ciudad"},
-				{"id": "confirm_new_search_service", "title": "Buscar otro servicio"},
+				{"id": "confirm_new_search_city", "title": "Cambiar ciudad"},
+				{"id": "confirm_new_search_service", "title": "Nueva solicitud"},
 				{"id": "confirm_new_search_exit", "title": "Salir"},
 			},
 		},
@@ -360,5 +369,79 @@ func TestPostSendRejectsUnsupportedUIType(t *testing.T) {
 	}
 	if metaSender.buttonCalls != 0 || metaSender.listCalls != 0 {
 		t.Fatalf("unexpected interactive dispatch: %+v", metaSender)
+	}
+}
+
+func TestPostSendReturnsRateLimitDetailsAndRecordsEvent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	metaSender := &fakeMetaSender{}
+	recorder := &fakeEventRecorder{}
+	router := outbound.NewRouter(
+		&fakeWebSender{},
+		metaSender,
+		outbound.RouterConfig{
+			MetaOutboundEnabled: true,
+			MetaEnabledAccounts: map[string]bool{"bot-clientes": true},
+			AccountPhoneNumber:  map[string]string{"bot-clientes": "12345"},
+		},
+	)
+	limiter := ratelimit.NewLimiter(ratelimit.Config{MaxPerHour: 1, MaxPer24h: 100})
+	if err := limiter.Increment(context.Background(), "bot-clientes", "593999111222"); err != nil {
+		t.Fatalf("seed limiter: %v", err)
+	}
+	handlers := NewHandlers(
+		nil,
+		limiter,
+		nil,
+		nil,
+		router,
+		HandlerConfig{
+			MetaManagedAccounts: map[string]bool{"bot-clientes": true},
+			EventRecorder:       recorder,
+		},
+	)
+
+	rec := httptest.NewRecorder()
+	_, ginRouter := gin.CreateTestContext(rec)
+	ginRouter.POST("/send", handlers.PostSend)
+
+	body := map[string]any{
+		"account_id": "bot-clientes",
+		"to":         "593999111222",
+		"message":    "Hola",
+		"metadata": map[string]any{
+			"source_service": "ai-clientes",
+			"flow_type":      "feedback_scheduler",
+			"task_type":      "request_hiring_feedback",
+		},
+	}
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal body: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/send", bytes.NewReader(raw))
+	req.Header.Set("Content-Type", "application/json")
+	ginRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected status 429, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if payload["window"] != "hourly" {
+		t.Fatalf("expected hourly window, got %+v", payload)
+	}
+	if payload["account_id"] != "bot-clientes" || payload["destination"] != "593999111222" {
+		t.Fatalf("unexpected account/destination payload: %+v", payload)
+	}
+	if len(recorder.events) != 1 {
+		t.Fatalf("expected 1 recorded event, got %d", len(recorder.events))
+	}
+	if recorder.events[0].MetadataJSON == "" {
+		t.Fatalf("expected metadata to be persisted, got empty")
 	}
 }

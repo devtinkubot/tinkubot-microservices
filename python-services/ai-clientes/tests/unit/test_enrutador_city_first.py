@@ -53,7 +53,10 @@ class _OrquestadorStub:
     async def obtener_o_crear_cliente(self, telefono: str):
         return await self.obtener_o_crear(telefono)
 
-    async def enviar_texto_whatsapp(self, telefono: str, mensaje: str):
+    async def enviar_texto_whatsapp(
+        self, telefono: str, mensaje: str, metadata: dict | None = None
+    ):
+        _ = metadata
         return True
 
     async def construir_prompt_inicial_servicio(self):

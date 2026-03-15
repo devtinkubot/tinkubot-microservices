@@ -32,7 +32,6 @@ from .gestor_documentos import (
 from .gestor_eliminacion import manejar_confirmacion_eliminacion
 from .gestor_espera_ciudad import manejar_espera_ciudad
 from .gestor_espera_certificado import manejar_espera_certificado
-from .gestor_espera_correo import manejar_espera_correo
 from .gestor_espera_especialidad import manejar_espera_especialidad
 from .gestor_espera_experiencia import manejar_espera_experiencia
 from .gestor_espera_nombre import manejar_espera_nombre
@@ -79,7 +78,6 @@ __all__ = [
     "manejar_selfie_registro",
     "manejar_espera_ciudad",
     "manejar_espera_certificado",
-    "manejar_espera_correo",
     "manejar_espera_especialidad",
     "manejar_espera_experiencia",
     "manejar_espera_nombre",

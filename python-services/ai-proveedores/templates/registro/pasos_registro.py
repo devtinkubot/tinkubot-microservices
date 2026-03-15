@@ -28,15 +28,6 @@ def mensaje_guia_proveedor() -> str:
     return MENSAJE_GUIA
 
 
-def preguntar_correo_opcional() -> str:
-    """Solicita el correo electrónico como dato opcional.
-
-    Returns:
-        Mensaje indicando que el correo es opcional y puede omitirse
-    """
-    return "Opcional: tu correo electrónico (o escribe 'omitir')."
-
-
 def preguntar_actualizar_ciudad() -> str:
     """Solicita actualizar la ciudad durante actualización de registro.
 

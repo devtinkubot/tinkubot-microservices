@@ -139,12 +139,7 @@ async def procesar_estado_confirmar_nueva_busqueda(
             "opción 2",
             "2)",
         }
-        elecciones_no = palabras_no_base | {
-            "3",
-            "opcion 3",
-            "opción 3",
-            "3)",
-        }
+        elecciones_no = set()
     else:
         elecciones_si = palabras_si_base | {
             "1",

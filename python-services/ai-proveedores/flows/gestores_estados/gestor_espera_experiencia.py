@@ -53,12 +53,8 @@ def manejar_espera_experiencia(
             "messages": [payload_red_social_opcional()],
         }
 
-    flujo["state"] = "awaiting_email"
+    flujo["state"] = "awaiting_social_media"
     return {
         "success": True,
-        "messages": [
-            {
-                "response": "*Escribe tu correo electrónico o escribe \"omitir\" si no deseas agregarlo.*"
-            }
-        ],
+        "messages": [payload_red_social_opcional()],
     }

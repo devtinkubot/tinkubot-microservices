@@ -77,6 +77,51 @@ def test_respuesta_disponibilidad_pendiente_valida_registra_accepted(monkeypatch
     assert redis_falso.data[clave_ciclo]["state"] == "provider_accepted"
 
 
+def test_respuesta_disponibilidad_boton_valida_registra_rejected(monkeypatch):
+    telefono = "593999111231@s.whatsapp.net"
+    req_id = "search-test-456"
+    clave_pendientes = f"availability:provider:{telefono}:pending"
+    clave_req = f"availability:request:{req_id}:provider:{telefono}"
+    clave_ciclo = f"availability:lifecycle:{req_id}"
+    redis_falso = RedisFalso(
+        {
+            clave_pendientes: [req_id],
+            clave_req: {"status": "pending"},
+        }
+    )
+    monkeypatch.setattr(principal, "cliente_redis", redis_falso)
+
+    resultado = asyncio.run(
+        principal._registrar_respuesta_disponibilidad_si_aplica(
+            telefono, "availability_reject"
+        )
+    )
+
+    assert resultado is not None
+    assert "no estás disponible" in resultado["messages"][0]["response"].lower()
+    assert redis_falso.data[clave_req]["status"] == "rejected"
+    assert redis_falso.data[clave_pendientes] == []
+    assert redis_falso.data[clave_ciclo]["state"] == "provider_rejected"
+
+
+def test_resuelve_alias_disponibilidad_a_telefono_canonico(monkeypatch):
+    telefono_lid = "39101516509235@lid"
+    telefono_real = "593998308695@s.whatsapp.net"
+    redis_falso = RedisFalso(
+        {
+            f"availability:alias:{telefono_lid}": {
+                "provider_phone": telefono_real,
+                "request_id": "search-test",
+            }
+        }
+    )
+    monkeypatch.setattr(principal, "cliente_redis", redis_falso)
+
+    resultado = asyncio.run(principal._resolver_alias_disponibilidad(telefono_lid))
+
+    assert resultado == telefono_real
+
+
 def test_respuesta_disponibilidad_sin_pendientes_pending_verification_no_intercepta(
     monkeypatch,
 ):

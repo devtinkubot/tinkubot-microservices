@@ -3,51 +3,39 @@
 from typing import Any, Dict, Optional
 
 
+def _contacto_whatsapp(nombre: str, telefono: str) -> Dict[str, Any]:
+    nombre_limpio = (nombre or "Proveedor").strip() or "Proveedor"
+    telefono_limpio = (telefono or "").strip().lstrip("+")
+    primer_nombre = nombre_limpio.split()[0] if nombre_limpio else "Proveedor"
+    return {
+        "name": {
+            "formatted_name": nombre_limpio,
+            "first_name": primer_nombre,
+        },
+        "phones": [
+            {
+                "phone": f"+{telefono_limpio}",
+                "type": "CELL",
+                "wa_id": telefono_limpio,
+            }
+        ],
+    }
+
+
 def mensaje_notificacion_conexion(
     proveedor: Dict[str, Any],
-    url_selfie: Optional[str] = None,
-    link_chat: Optional[str] = None
+    telefono_contacto: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Genera mensaje de notificación cuando se conecta cliente con proveedor.
-
-    Args:
-        proveedor: Diccionario con datos del proveedor (debe tener 'name').
-        url_selfie: URL de la selfie del proveedor (opcional).
-        link_chat: Enlace de WhatsApp para abrir chat directo (opcional).
-
-    Returns:
-        Diccionario con 'response' y opcionalmente 'media_url', 'media_type', 'media_caption'.
-    """
+    """Genera una tarjeta de contacto cuando se conecta cliente con experto."""
     nombre = proveedor.get("name") or proveedor.get("full_name") or "Proveedor"
-
-    # Línea de selfie
-    if url_selfie:
-        selfie_line = "📸 Selfie adjunta."
-    else:
-        selfie_line = "📸 Selfie no disponible por el momento."
-
-    # Línea de link
-    if link_chat:
-        link_line = f"🔗 Abrir chat: {link_chat}"
-    else:
-        link_line = "🔗 Chat disponible via WhatsApp."
-
-    # Mensaje base
-    mensaje = (
-        f"Proveedor asignado: {nombre}.\n"
-        f"{selfie_line}\n"
-        f"{link_line}\n\n"
-        f"💬 Chat abierto para coordinar tu servicio."
-    )
-
-    payload: Dict[str, Any] = {"response": mensaje}
-
-    # Incluir media si hay selfie
-    if url_selfie:
-        payload.update({
-            "media_url": url_selfie,
-            "media_type": "image",
-            "media_caption": mensaje,
-        })
-
-    return payload
+    telefono = (telefono_contacto or "").strip()
+    if not telefono:
+        return {
+            "response": (
+                f"Te comparto el contacto de *{nombre}* para que coordines tu servicio."
+            )
+        }
+    return {
+        "response": "",
+        "contacts": [_contacto_whatsapp(nombre, telefono)],
+    }

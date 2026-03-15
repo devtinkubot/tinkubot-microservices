@@ -27,7 +27,7 @@ from templates.busqueda.confirmacion import (
 )
 from templates.proveedores.detalle import (
     bloque_detalle_proveedor,
-    menu_opciones_detalle_proveedor,
+    ui_detalle_proveedor,
 )
 from templates.mensajes.sesion import informar_timeout_inactividad
 from templates.mensajes.validacion import (
@@ -80,6 +80,38 @@ async def manejar_mensaje(orquestador, carga: Dict[str, Any]) -> Dict[str, Any]:
                     (flujo.get("city") or "").strip()
                     or (contexto.get("customer_city") or "").strip()
                 )
+                estado_actual = flujo.get("state")
+                if estado_actual == "confirm_new_search":
+                    raise ValueError("skip_timeout_for_confirm_new_search")
+                estados_timeout_busqueda = {
+                    "searching",
+                    "presenting_results",
+                    "viewing_provider_detail",
+                    "confirm_service",
+                }
+                if estado_actual in estados_timeout_busqueda:
+                    flujo.pop("providers", None)
+                    flujo.pop("chosen_provider", None)
+                    flujo.pop("provider_detail_idx", None)
+                    flujo.pop("availability_request_id", None)
+                    flujo.pop("confirm_attempts", None)
+                    flujo["state"] = "confirm_new_search"
+                    flujo["confirm_title"] = titulo_confirmacion_repetir_busqueda
+                    flujo["confirm_include_city_option"] = False
+                    flujo["last_seen_at"] = ahora_iso
+                    flujo["last_seen_at_prev"] = ahora_iso
+
+                    if orquestador.repositorio_flujo:
+                        await orquestador.repositorio_flujo.guardar(telefono, flujo)
+                    else:
+                        await orquestador.guardar_flujo(telefono, flujo)
+
+                    return {
+                        "messages": mensajes_confirmacion_busqueda(
+                            titulo_confirmacion_repetir_busqueda,
+                            incluir_opcion_ciudad=False,
+                        )
+                    }
                 # Timeout detectado - reiniciar flujo
                 if orquestador.repositorio_flujo:
                     await orquestador.repositorio_flujo.resetear(telefono)
@@ -133,12 +165,13 @@ async def manejar_mensaje(orquestador, carga: Dict[str, Any]) -> Dict[str, Any]:
 
                 return {"messages": mensajes_timeout}
         except Exception as e:
-            orquestador.logger.warning(
-                "Error verificando timeout phone=%s last_seen_ref=%s error=%s",
-                telefono,
-                ultima_vista_cruda,
-                e,
-            )
+            if str(e) != "skip_timeout_for_confirm_new_search":
+                orquestador.logger.warning(
+                    "Error verificando timeout phone=%s last_seen_ref=%s error=%s",
+                    telefono,
+                    ultima_vista_cruda,
+                    e,
+                )
             pass
 
     # Actualizar timestamps - IMPORTANTE: guardar valor anterior ANTES de sobrescribir
@@ -294,7 +327,14 @@ async def enrutar_estado(
 
                     try:
                         enviado_confirmacion = await orquestador.enviar_texto_whatsapp(
-                            telefono, mensaje_confirmando_disponibilidad
+                            telefono,
+                            mensaje_confirmando_disponibilidad,
+                            metadata={
+                                "source_service": "ai-clientes",
+                                "flow_type": "conversation",
+                                "event_type": "availability_confirmation",
+                                "trace_id": f"search-{telefono}",
+                            },
                         )
                         if enviado_confirmacion:
                             orquestador.logger.info(
@@ -355,11 +395,12 @@ async def enrutar_estado(
                         return {"messages": respuesta_prompt["messages"]}
                     return {"messages": [respuesta_prompt]}
 
-                flujo["state"] = "confirm_new_search"
-                flujo["confirm_attempts"] = 0
-                flujo["confirm_title"] = mensaje_sin_disponibilidad(
+                mensaje_no_disponibles = mensaje_sin_disponibilidad(
                     texto_servicio, ciudad
                 )
+                flujo["state"] = "confirm_new_search"
+                flujo["confirm_attempts"] = 0
+                flujo["confirm_title"] = mensaje_no_disponibles
                 flujo["confirm_include_city_option"] = True
                 await orquestador.guardar_flujo(telefono, flujo)
                 await servicio_disponibilidad.cerrar_solicitud(
@@ -367,9 +408,8 @@ async def enrutar_estado(
                     cliente_redis=orquestador.redis_client,
                     motivo="no_provider_available",
                 )
-                titulo_confirmacion = flujo.get("confirm_title") or titulo_confirmacion_repetir_busqueda
                 mensajes_confirmacion = mensajes_confirmacion_busqueda(
-                    titulo_confirmacion, incluir_opcion_ciudad=True
+                    mensaje_no_disponibles, incluir_opcion_ciudad=True
                 )
                 for cmsg in mensajes_confirmacion:
                     await guardar_mensaje_bot(cmsg.get("response"))
@@ -467,7 +507,8 @@ async def enrutar_estado(
             orquestador.logger,
             "¿Te ayudo con otro servicio?",
             bloque_detalle_proveedor,
-            menu_opciones_detalle_proveedor,
+            ui_detalle_proveedor,
+            orquestador.preparar_proveedor_para_detalle,
             mensaje_inicial_solicitud(),
             orquestador.farewell_message,
         )
@@ -491,7 +532,8 @@ async def enrutar_estado(
             ),
             mensaje_inicial_solicitud(),
             orquestador.farewell_message,
-            menu_opciones_detalle_proveedor,
+            ui_detalle_proveedor,
+            orquestador.preparar_proveedor_para_detalle,
         )
 
     if estado == "confirm_new_search":

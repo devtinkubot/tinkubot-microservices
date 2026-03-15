@@ -10,10 +10,11 @@ mensaje_buscando_expertos = (
     "⏳ *Busco expertos.* Te aviso en breve."
 )
 
-texto_opcion_buscar_otro_servicio = "Buscar otro servicio"
+texto_opcion_nueva_solicitud = "Nueva solicitud"
+texto_opcion_cambiar_ciudad = "Cambiar ciudad"
 
 opciones_confirmar_nueva_busqueda_textos = [
-    f"{texto_opcion_buscar_otro_servicio}",
+    texto_opcion_nueva_solicitud,
     "No, por ahora está bien",
 ]
 
@@ -22,15 +23,21 @@ titulo_confirmacion_repetir_busqueda = "¿Te ayudo con otra solicitud?"
 
 # ==================== FUNCIONES ====================
 
+def mensaje_sin_proveedores_registrados(servicio: str, ciudad: str) -> str:
+    """Mensaje cuando no existen proveedores registrados para el servicio."""
+    ciudad_texto = (ciudad or "").strip() or "tu ciudad"
+    return (
+        f"*No hay expertos registrados* para atender tu solicitud en *{ciudad_texto}*.\n\n"
+        "*¿Te ayudo con otra solicitud o buscar expertos en otra ciudad?*"
+    )
+
+
 def mensaje_sin_disponibilidad(servicio: str, ciudad: str) -> str:
     """Mensaje cuando no hay disponibilidad inmediata en proveedores aceptados."""
-    servicio_texto = (servicio or "").strip() or "tu solicitud"
-    ciudad_texto = (ciudad or "").strip()
-    destino = f"*{servicio_texto}*" if servicio_texto else "este servicio"
-    ciudad_mensaje = f" en *{ciudad_texto}*" if ciudad_texto else ""
+    ciudad_texto = (ciudad or "").strip() or "tu ciudad"
     return (
-        f"No hay proveedores disponibles ahora mismo para {destino}{ciudad_mensaje}. "
-        "¿Quieres buscar en otra ciudad o intentarlo más tarde?"
+        f"*No hay expertos disponibles* para atender tu solicitud en *{ciudad_texto}*.\n\n"
+        "*¿Te ayudo con otra solicitud o buscar expertos en otra ciudad?*"
     )
 
 
@@ -59,7 +66,7 @@ def menu_opciones_confirmacion(incluir_opcion_ciudad: bool = False) -> str:
             [
                 f"{pie_instrucciones_respuesta_numerica}",
                 "",
-                "*1.* Buscar en otra ciudad",
+                f"*1.* {texto_opcion_cambiar_ciudad}",
                 f"*2.* {opciones_confirmar_nueva_busqueda_textos[0]}",
                 "*3.* Salir",
                 "",
@@ -88,7 +95,7 @@ def mensajes_confirmacion_busqueda(titulo: str, incluir_opcion_ciudad: bool = Fa
     Returns:
         Lista de diccionarios con 'response' y opcionalmente 'ui'.
     """
-    titulo_negrita = f"*{titulo}*"
+    titulo_negrita = titulo if ("*" in titulo or "\n" in titulo) else f"*{titulo}*"
     if incluir_opcion_ciudad:
         return [
             {
@@ -98,15 +105,11 @@ def mensajes_confirmacion_busqueda(titulo: str, incluir_opcion_ciudad: bool = Fa
                     "options": [
                         {
                             "id": "confirm_new_search_city",
-                            "title": "Otra ciudad",
+                            "title": texto_opcion_cambiar_ciudad,
                         },
                         {
                             "id": "confirm_new_search_service",
-                            "title": "Otro servicio",
-                        },
-                        {
-                            "id": "confirm_new_search_exit",
-                            "title": "Salir",
+                            "title": texto_opcion_nueva_solicitud,
                         },
                     ],
                 },
@@ -121,11 +124,7 @@ def mensajes_confirmacion_busqueda(titulo: str, incluir_opcion_ciudad: bool = Fa
                 "options": [
                     {
                         "id": "confirm_new_search_service",
-                        "title": "Buscar otro servicio",
-                    },
-                    {
-                        "id": "confirm_new_search_exit",
-                        "title": "Salir",
+                        "title": texto_opcion_nueva_solicitud,
                     },
                 ],
             },

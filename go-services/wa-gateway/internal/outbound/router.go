@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/tinkubot/wa-gateway/internal/webhook"
@@ -32,18 +33,20 @@ type MetaSender interface {
 
 // RouterConfig controls outbound routing strategy.
 type RouterConfig struct {
-	MetaOutboundEnabled bool
-	MetaEnabledAccounts map[string]bool
-	AccountPhoneNumber  map[string]string
+	MetaOutboundEnabled         bool
+	MetaEnabledAccounts         map[string]bool
+	AccountPhoneNumber          map[string]string
+	MetaPreserveLIDForProviders bool
 }
 
 // Router routes outbound sends per account to the proper transport.
 type Router struct {
-	webSender          WebSender
-	metaSender         MetaSender
-	metaOutboundOn     bool
-	metaEnabledAccount map[string]bool
-	accountPhoneNumber map[string]string
+	webSender               WebSender
+	metaSender              MetaSender
+	metaOutboundOn          bool
+	metaEnabledAccount      map[string]bool
+	accountPhoneNumber      map[string]string
+	preserveLIDForProviders bool
 }
 
 // NewRouter builds a transport router.
@@ -58,11 +61,12 @@ func NewRouter(webSender WebSender, metaSender MetaSender, cfg RouterConfig) *Ro
 	}
 
 	return &Router{
-		webSender:          webSender,
-		metaSender:         metaSender,
-		metaOutboundOn:     cfg.MetaOutboundEnabled,
-		metaEnabledAccount: metaEnabled,
-		accountPhoneNumber: accountPhoneNumber,
+		webSender:               webSender,
+		metaSender:              metaSender,
+		metaOutboundOn:          cfg.MetaOutboundEnabled,
+		metaEnabledAccount:      metaEnabled,
+		accountPhoneNumber:      accountPhoneNumber,
+		preserveLIDForProviders: cfg.MetaPreserveLIDForProviders,
 	}
 }
 
@@ -79,7 +83,7 @@ func (r *Router) SendText(ctx context.Context, accountID, to, message string) er
 		if phoneNumberID == "" {
 			return fmt.Errorf("%w: missing phone_number_id for account=%s", ErrMetaNotConfigured, accountID)
 		}
-		metaTo := normalizeMetaDestination(to)
+		metaTo := r.resolveMetaDestination(accountID, to)
 		if metaTo == "" {
 			return fmt.Errorf("invalid meta destination for account=%s", accountID)
 		}
@@ -109,7 +113,7 @@ func (r *Router) SendButtons(
 		if phoneNumberID == "" {
 			return fmt.Errorf("%w: missing phone_number_id for account=%s", ErrMetaNotConfigured, accountID)
 		}
-		metaTo := normalizeMetaDestination(to)
+		metaTo := r.resolveMetaDestination(accountID, to)
 		if metaTo == "" {
 			return fmt.Errorf("invalid meta destination for account=%s", accountID)
 		}
@@ -137,7 +141,7 @@ func (r *Router) SendList(
 		if phoneNumberID == "" {
 			return fmt.Errorf("%w: missing phone_number_id for account=%s", ErrMetaNotConfigured, accountID)
 		}
-		metaTo := normalizeMetaDestination(to)
+		metaTo := r.resolveMetaDestination(accountID, to)
 		if metaTo == "" {
 			return fmt.Errorf("invalid meta destination for account=%s", accountID)
 		}
@@ -163,7 +167,7 @@ func (r *Router) SendLocationRequest(
 		if phoneNumberID == "" {
 			return fmt.Errorf("%w: missing phone_number_id for account=%s", ErrMetaNotConfigured, accountID)
 		}
-		metaTo := normalizeMetaDestination(to)
+		metaTo := r.resolveMetaDestination(accountID, to)
 		if metaTo == "" {
 			return fmt.Errorf("invalid meta destination for account=%s", accountID)
 		}
@@ -190,7 +194,7 @@ func (r *Router) SendFlow(
 		if phoneNumberID == "" {
 			return fmt.Errorf("%w: missing phone_number_id for account=%s", ErrMetaNotConfigured, accountID)
 		}
-		metaTo := normalizeMetaDestination(to)
+		metaTo := r.resolveMetaDestination(accountID, to)
 		if metaTo == "" {
 			return fmt.Errorf("invalid meta destination for account=%s", accountID)
 		}
@@ -217,7 +221,7 @@ func (r *Router) SendTemplate(
 		if phoneNumberID == "" {
 			return fmt.Errorf("%w: missing phone_number_id for account=%s", ErrMetaNotConfigured, accountID)
 		}
-		metaTo := normalizeMetaDestination(to)
+		metaTo := r.resolveMetaDestination(accountID, to)
 		if metaTo == "" {
 			return fmt.Errorf("invalid meta destination for account=%s", accountID)
 		}
@@ -240,11 +244,28 @@ func (r *Router) shouldUseMeta(accountID string) bool {
 	return exists
 }
 
-// normalizeMetaDestination converts JID or formatted phone into plain digits.
-func normalizeMetaDestination(to string) string {
+func (r *Router) resolveMetaDestination(accountID, to string) string {
+	preserveJID := accountID == "bot-proveedores" && r.preserveLIDForProviders
+	metaTo, strategy := normalizeMetaDestination(to, preserveJID)
+	log.Printf(
+		"[MetaOutboundRouter] account=%s original_to=%s normalized_to=%s strategy=%s preserve_lid=%t",
+		accountID,
+		strings.TrimSpace(to),
+		metaTo,
+		strategy,
+		preserveJID,
+	)
+	return metaTo
+}
+
+// normalizeMetaDestination converts JID or formatted phone into the Meta outbound destination.
+func normalizeMetaDestination(to string, preserveJID bool) (string, string) {
 	to = strings.TrimSpace(to)
 	if to == "" {
-		return ""
+		return "", "empty"
+	}
+	if preserveJID && strings.Contains(to, "@") {
+		return to, "preserve_full_jid"
 	}
 	if idx := strings.Index(to, "@"); idx > 0 {
 		to = to[:idx]
@@ -256,5 +277,9 @@ func normalizeMetaDestination(to string) string {
 			b.WriteRune(r)
 		}
 	}
-	return b.String()
+	metaTo := b.String()
+	if metaTo == "" {
+		return "", "invalid"
+	}
+	return metaTo, "digits_only"
 }

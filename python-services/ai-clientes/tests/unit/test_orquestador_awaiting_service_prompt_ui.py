@@ -30,8 +30,7 @@ def _build_orquestador_stub():
 
     async def _prompt_lista():
         return {
-            "response": "*¿Qué necesitas resolver?*. Puedes ver un *listado de servicios populares* o escribir directamente el *problema o necesidad*.",
-            "ui": {"type": "list"},
+            "response": "*¿Qué necesitas resolver?*. Puedes escribir directamente el *problema o necesidad*.",
         }
 
     orquestador.verificar_si_bloqueado = _verificar_no_bloqueado
@@ -41,7 +40,7 @@ def _build_orquestador_stub():
 
 
 @pytest.mark.asyncio
-async def test_awaiting_service_saludo_devuelve_prompt_con_lista():
+async def test_awaiting_service_saludo_devuelve_prompt_sin_ui():
     orquestador = _build_orquestador_stub()
     flujo = {"state": "awaiting_service"}
 
@@ -53,12 +52,12 @@ async def test_awaiting_service_saludo_devuelve_prompt_con_lista():
         cliente_id=None,
     )
 
-    assert respuesta["ui"]["type"] == "list"
     assert "¿Qué necesitas resolver?" in respuesta["response"]
+    assert "ui" not in respuesta
 
 
 @pytest.mark.asyncio
-async def test_awaiting_service_vacio_devuelve_prompt_con_lista():
+async def test_awaiting_service_vacio_devuelve_prompt_sin_ui():
     orquestador = _build_orquestador_stub()
     flujo = {"state": "awaiting_service"}
 
@@ -70,8 +69,8 @@ async def test_awaiting_service_vacio_devuelve_prompt_con_lista():
         cliente_id=None,
     )
 
-    assert respuesta["ui"]["type"] == "list"
     assert "¿Qué necesitas resolver?" in respuesta["response"]
+    assert "ui" not in respuesta
 
 
 @pytest.mark.asyncio

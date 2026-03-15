@@ -10,13 +10,14 @@ import logging
 from typing import Any, Dict, List, Callable, Awaitable
 from templates.busqueda.confirmacion import (
     mensaje_sin_disponibilidad,
+    mensaje_sin_proveedores_registrados,
     mensaje_confirmando_disponibilidad,
     mensajes_confirmacion_busqueda,
     titulo_confirmacion_repetir_busqueda,
 )
-from templates.proveedores.detalle import instruccion_seleccionar_proveedor
 from templates.proveedores.listado import (
     bloque_listado_proveedores_compacto,
+    construir_ui_lista_proveedores,
     mensaje_intro_listado_proveedores,
     mensaje_listado_sin_resultados,
 )
@@ -293,27 +294,25 @@ async def _construir_mensajes_resultados(
     mensajes_por_enviar: List[Any] = []
 
     if proveedores_finales:
-        # Hay proveedores: construir listado
+        # Hay proveedores: construir lista interactiva
         intro = mensaje_intro_listado_proveedores(ciudad)
-        bloque = bloque_listado_proveedores_compacto(proveedores_finales)
-        bloque_encabezado = (
-            f"{intro}\n\n"
-            f"{bloque}\n"
-            f"{instruccion_seleccionar_proveedor}"
+        mensajes_por_enviar.append(
+            {
+                "response": intro,
+                "ui": construir_ui_lista_proveedores(proveedores_finales),
+            }
         )
-        mensajes_por_enviar.append(bloque_encabezado)
     else:
         # No hay proveedores: construir mensaje sin resultados y cambiar a confirm_new_search
         if cantidad_encontrada > 0:
             bloque = mensaje_sin_disponibilidad(servicio, ciudad)
         else:
-            bloque = mensaje_listado_sin_resultados(ciudad)
-        mensajes_por_enviar.append(bloque)
+            bloque = mensaje_sin_proveedores_registrados(servicio, ciudad)
 
         # Cambiar flujo a confirmación de nueva búsqueda
         flujo["state"] = "confirm_new_search"
         flujo["confirm_attempts"] = 0
-        flujo["confirm_title"] = titulo_confirmacion_repetir_busqueda
+        flujo["confirm_title"] = bloque
         flujo["confirm_include_city_option"] = True
         await guardar_flujo_callback(telefono, flujo)
 
@@ -321,7 +320,6 @@ async def _construir_mensajes_resultados(
             flujo["confirm_title"], incluir_opcion_ciudad=True
         )
 
-        # Preservar payload completo para no perder UI/buttons en el envío.
         mensajes_por_enviar.extend(mensajes_confirmacion)
 
         # Guardar mensajes de confirmación en sesión

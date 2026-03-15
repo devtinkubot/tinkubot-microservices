@@ -102,7 +102,12 @@ class ProgramadorRetroalimentacion:
         except Exception as exc:
             self.logger.warning(f"No se pudo agendar retroalimentación: {exc}")
 
-    async def enviar_texto_whatsapp(self, telefono: str, texto: Any) -> bool:
+    async def enviar_texto_whatsapp(
+        self,
+        telefono: str,
+        texto: Any,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> bool:
         try:
             url = f"{self.whatsapp_url}/send"
             if isinstance(texto, dict):
@@ -119,6 +124,8 @@ class ProgramadorRetroalimentacion:
                     "to": telefono,
                     "message": texto,
                 }
+            if metadata:
+                body["metadata"] = metadata
             async with httpx.AsyncClient(timeout=10.0) as client:
                 respuesta = await client.post(
                     url,
@@ -129,7 +136,11 @@ class ProgramadorRetroalimentacion:
                 return True
             await self._manejar_rate_limit_si_aplica(telefono, respuesta)
             self.logger.warning(
-                f"WhatsApp send fallo status={respuesta.status_code} body={respuesta.text[:200]}"
+                "WhatsApp send fallo telefono=%s status=%s metadata=%s body=%s",
+                telefono,
+                respuesta.status_code,
+                metadata or {},
+                respuesta.text[:200],
             )
             return False
         except Exception as exc:
@@ -313,7 +324,16 @@ class ProgramadorRetroalimentacion:
                 mensaje = carga.get("message")
                 exito = False
                 if telefono and mensaje:
-                    exito = await self.enviar_texto_whatsapp(telefono, mensaje)
+                    exito = await self.enviar_texto_whatsapp(
+                        telefono,
+                        mensaje,
+                        metadata={
+                            "source_service": "ai-clientes",
+                            "flow_type": "feedback_scheduler",
+                            "task_type": carga.get("type") or "send_whatsapp",
+                            "lead_event_id": carga.get("lead_event_id") or "",
+                        },
+                    )
                 if exito:
                     # Si es encuesta de contratación, dejar el flujo listo para captar 1/2.
                     if (

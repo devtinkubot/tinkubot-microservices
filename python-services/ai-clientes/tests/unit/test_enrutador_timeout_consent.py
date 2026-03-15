@@ -38,6 +38,8 @@ class _OrquestadorStub:
         self.repositorio_flujo = _RepoFlujoStub()
         self.servicio_consentimiento = _ConsentServiceStub()
         self.logger = logging.getLogger("test-timeout-consent")
+        self.farewell_message = "Hasta luego"
+        self.max_confirm_attempts = 3
 
     async def resetear_flujo(self, _telefono: str):
         return None
@@ -51,8 +53,21 @@ class _OrquestadorStub:
     async def construir_prompt_inicial_servicio(self):
         return {
             "response": "*¿Qué necesitas resolver?*. Describe lo que necesitas.",
-            "ui": {"type": "list"},
         }
+
+    async def enviar_prompt_confirmacion(self, _telefono: str, _flujo: dict, titulo: str):
+        return {
+            "response": f"*{titulo}*",
+            "ui": {
+                "type": "buttons",
+                "options": [
+                    {"id": "confirm_new_search_service", "title": "Nueva solicitud"},
+                ],
+            },
+        }
+
+    async def enviar_prompt_proveedor(self, _telefono: str, _flujo: dict, _ciudad: str):
+        return {"response": "listado"}
 
 
 def _pre_enrutado(flow: dict, has_consent: bool, customer_city: str = ""):
@@ -86,11 +101,13 @@ async def test_timeout_con_consent_y_ciudad_va_awaiting_service(monkeypatch):
 
     respuesta = await manejar_mensaje(orquestador, {"from_number": "593999111222@s.whatsapp.net"})
 
-    assert orquestador.repositorio_flujo.was_reset is True
-    assert orquestador.repositorio_flujo.last_saved["state"] == "awaiting_service"
+    assert orquestador.repositorio_flujo.was_reset is False
+    assert orquestador.repositorio_flujo.last_saved["state"] == "confirm_new_search"
     assert orquestador.repositorio_flujo.last_saved["city"] == "Cuenca"
-    assert respuesta["messages"][0]["response"] == TIMEOUT_MSG
-    assert "¿Qué necesitas resolver?" in respuesta["messages"][1]["response"]
+    assert respuesta["messages"][0]["response"] == "*¿Te ayudo con otra solicitud?*"
+    assert [opt["title"] for opt in respuesta["messages"][0]["ui"]["options"]] == [
+        "Nueva solicitud",
+    ]
 
 
 @pytest.mark.asyncio
@@ -107,10 +124,12 @@ async def test_timeout_con_consent_sin_ciudad_va_awaiting_city(monkeypatch):
 
     respuesta = await manejar_mensaje(orquestador, {"from_number": "593999111222@s.whatsapp.net"})
 
-    assert orquestador.repositorio_flujo.last_saved["state"] == "awaiting_city"
-    assert respuesta["messages"][0]["response"] == TIMEOUT_MSG
+    assert orquestador.repositorio_flujo.last_saved["state"] == "confirm_new_search"
+    assert respuesta["messages"][0]["response"] == "*¿Te ayudo con otra solicitud?*"
     assert "CONSENT_PROMPT" not in str(respuesta)
-    assert respuesta["messages"][1]["ui"]["type"] == "location_request"
+    assert [opt["title"] for opt in respuesta["messages"][0]["ui"]["options"]] == [
+        "Nueva solicitud",
+    ]
 
 
 @pytest.mark.asyncio
@@ -130,3 +149,28 @@ async def test_timeout_sin_consent_vuelve_a_consentimiento(monkeypatch):
     assert orquestador.repositorio_flujo.last_saved["state"] == "awaiting_consent"
     assert respuesta["messages"][0]["response"] == TIMEOUT_MSG
     assert respuesta["messages"][1]["response"] == "CONSENT_PROMPT"
+
+
+@pytest.mark.asyncio
+async def test_confirm_new_search_no_expira_por_timeout(monkeypatch):
+    flow = {
+        "state": "confirm_new_search",
+        "city": "Cuenca",
+        "confirm_include_city_option": True,
+        "last_seen_at_prev": "2026-03-02T23:00:00",
+    }
+
+    async def _fake_pre(_orq, _carga):
+        return _pre_enrutado(flow, True)
+
+    monkeypatch.setattr("flows.enrutador.pre_enrutar_mensaje", _fake_pre)
+    orquestador = _OrquestadorStub()
+
+    respuesta = await manejar_mensaje(orquestador, {"from_number": "593999111222@s.whatsapp.net"})
+
+    assert orquestador.repositorio_flujo.was_reset is False
+    assert orquestador.repositorio_flujo.last_saved["state"] == "confirm_new_search"
+    assert respuesta["response"] == "*¿Te ayudo con otra solicitud?*"
+    assert [opt["title"] for opt in respuesta["ui"]["options"]] == [
+        "Nueva solicitud",
+    ]

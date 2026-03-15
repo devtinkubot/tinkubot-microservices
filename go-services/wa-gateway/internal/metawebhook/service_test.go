@@ -53,6 +53,7 @@ type outboundRequest struct {
 	body          string
 	imageURL      string
 	imageCaption  string
+	contacts      []webhook.Contact
 	options       []webhook.UIOption
 	ui            *webhook.UIConfig
 }
@@ -91,6 +92,23 @@ func (f *fakeOutboundSender) SendImage(_ context.Context, phoneNumberID, to, ima
 		to:            to,
 		imageURL:      imageURL,
 		imageCaption:  caption,
+	})
+	return nil
+}
+
+func (f *fakeOutboundSender) SendContacts(
+	_ context.Context,
+	phoneNumberID, to string,
+	contacts []webhook.Contact,
+) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.requests = append(f.requests, outboundRequest{
+		kind:          "contacts",
+		phoneNumberID: phoneNumberID,
+		to:            to,
+		contacts:      contacts,
 	})
 	return nil
 }
@@ -741,6 +759,73 @@ func TestProcessEventOutboundEnabledSendsImageReply(t *testing.T) {
 	}
 	if fo.requests[0].imageCaption != "Texto onboarding" {
 		t.Fatalf("expected image caption, got %+v", fo.requests[0])
+	}
+}
+
+func TestProcessEventOutboundContactsReply(t *testing.T) {
+	fs := &fakeSender{}
+	fo := &fakeOutboundSender{}
+	svc := NewService(Config{
+		Enabled:         true,
+		AppSecret:       "secret-1",
+		OutboundEnabled: true,
+		PhoneNumberToAccount: map[string]string{
+			"123456789": "bot-clientes",
+		},
+	}, fs, fo, nil)
+
+	body := []byte(`{
+		"object":"whatsapp_business_account",
+		"entry":[
+			{
+				"id":"waba-1",
+				"changes":[
+					{
+						"field":"messages",
+						"value":{
+							"metadata":{"phone_number_id":"123456789"},
+							"messages":[{"from":"593999111222","id":"wamid.1","timestamp":"1730000000","type":"text","text":{"body":"hola"}}]
+						}
+					}
+				]
+			}
+		]
+	}`)
+	sig := buildSignature("secret-1", body)
+	fs.resp = &webhook.WebhookResponse{
+		Success: true,
+		Messages: []webhook.ResponseMessage{
+			{
+				Contacts: []webhook.Contact{
+					{
+						Name: webhook.ContactName{
+							FormattedName: "Diego Unkuch Gonzalez",
+							FirstName:     "Diego",
+						},
+						Phones: []webhook.ContactPhone{
+							{
+								Phone: "+593959091325",
+								Type:  "CELL",
+								WAID:  "593959091325",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	if err := svc.ProcessEvent(context.Background(), sig, body); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if len(fo.requests) != 1 {
+		t.Fatalf("expected 1 outbound send, got %d", len(fo.requests))
+	}
+	if fo.requests[0].kind != "contacts" {
+		t.Fatalf("expected contacts outbound kind, got %+v", fo.requests[0])
+	}
+	if len(fo.requests[0].contacts) != 1 || fo.requests[0].contacts[0].Phones[0].WAID != "593959091325" {
+		t.Fatalf("unexpected contact outbound payload: %+v", fo.requests[0].contacts)
 	}
 }
 

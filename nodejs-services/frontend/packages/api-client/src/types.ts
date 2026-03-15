@@ -34,24 +34,19 @@ export interface ProviderCertificate {
   updatedAt?: string | null;
 }
 
-export interface ProviderServiceTaxonomy {
-  serviceName: string;
-  normalizedName?: string | null;
-  domainCode?: string | null;
-  domainDisplayName?: string | null;
-  canonicalName?: string | null;
-  matchType: 'canonical' | 'alias' | 'unresolved';
-}
-
 export interface ProviderRecord {
   id: string;
   name: string;
   businessName?: string;
   contact?: string;
-  contactEmail?: string;
   contactPhone?: string;
   phone?: string | null;
-  email?: string | null;
+  realPhone?: string | null;
+  contactStatus?:
+    | 'lid_with_real_phone'
+    | 'lid_missing_real_phone'
+    | 'real_phone_available'
+    | 'basic_phone_only';
   registeredAt: string;
   status: ProviderStatus;
   notes?: string | null;
@@ -66,7 +61,6 @@ export interface ProviderRecord {
   rating?: number | null;
   documents?: ProviderDocuments;
   certificates?: ProviderCertificate[];
-  serviceTaxonomy?: ProviderServiceTaxonomy[];
   verificationReviewer?: string | null;
   verificationReviewedAt?: string | null;
 }

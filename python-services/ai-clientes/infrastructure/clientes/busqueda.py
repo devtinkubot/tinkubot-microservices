@@ -206,6 +206,11 @@ class ClienteBusqueda:
                 "social_media_url": proveedor.get("social_media_url"),
                 "social_media_type": proveedor.get("social_media_type"),
                 "face_photo_url": proveedor.get("face_photo_url"),
+                "certifications": proveedor.get("certifications"),
+                "certification_images": proveedor.get("certification_images"),
+                "certification_urls": proveedor.get("certification_urls"),
+                "certificate_images": proveedor.get("certificate_images"),
+                "certificate_urls": proveedor.get("certificate_urls"),
                 # Calcular score basado en rating y disponibilidad
                 "score": self._calcular_puntaje_legacy(proveedor),
             }

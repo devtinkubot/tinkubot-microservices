@@ -42,6 +42,8 @@ def test_estado_esperando_disponibilidad_mantiene_flujo():
     assert "solicitud pendiente de disponibilidad" in resultado["response"]["messages"][0][
         "response"
     ].lower()
+    assert "disponible" in resultado["response"]["messages"][0]["response"].lower()
+    assert "no disponible" in resultado["response"]["messages"][0]["response"].lower()
 
 
 def test_estado_esperando_disponibilidad_permite_volver_menu():

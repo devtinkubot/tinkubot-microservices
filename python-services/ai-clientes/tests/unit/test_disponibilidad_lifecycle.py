@@ -99,8 +99,12 @@ async def test_timeout_envia_push_proactivo_de_caducidad():
     redis_falso = RedisFalsoConLock()
     mensajes_enviados = []
 
-    async def enviar_whatsapp_falso(*, telefono: str, mensaje: str) -> bool:
-        mensajes_enviados.append({"telefono": telefono, "mensaje": mensaje})
+    async def enviar_whatsapp_falso(
+        *, telefono: str, mensaje: str, ui=None, metadata=None
+    ) -> bool:
+        mensajes_enviados.append(
+            {"telefono": telefono, "mensaje": mensaje, "ui": ui, "metadata": metadata}
+        )
         return True
 
     servicio._enviar_whatsapp = enviar_whatsapp_falso  # type: ignore[method-assign]
@@ -131,6 +135,7 @@ async def test_timeout_envia_push_proactivo_de_caducidad():
     ]
     assert len(mensajes_caducidad) == 1
     assert mensajes_caducidad[0]["telefono"] == "593999000001@s.whatsapp.net"
+    assert mensajes_caducidad[0]["metadata"]["task_type"] == "provider_availability_timeout"
 
 
 @pytest.mark.asyncio
@@ -142,8 +147,12 @@ async def test_verificar_disponibilidad_cierra_si_todos_ocupados():
     ]
     mensajes_enviados = []
 
-    async def enviar_whatsapp_falso(*, telefono: str, mensaje: str) -> bool:
-        mensajes_enviados.append({"telefono": telefono, "mensaje": mensaje})
+    async def enviar_whatsapp_falso(
+        *, telefono: str, mensaje: str, ui=None, metadata=None
+    ) -> bool:
+        mensajes_enviados.append(
+            {"telefono": telefono, "mensaje": mensaje, "ui": ui, "metadata": metadata}
+        )
         return True
 
     servicio._enviar_whatsapp = enviar_whatsapp_falso  # type: ignore[method-assign]
@@ -185,8 +194,12 @@ async def test_verificar_disponibilidad_excluye_ocupados_y_consulta_libres():
     ]
     mensajes_enviados = []
 
-    async def enviar_whatsapp_falso(*, telefono: str, mensaje: str) -> bool:
-        mensajes_enviados.append({"telefono": telefono, "mensaje": mensaje})
+    async def enviar_whatsapp_falso(
+        *, telefono: str, mensaje: str, ui=None, metadata=None
+    ) -> bool:
+        mensajes_enviados.append(
+            {"telefono": telefono, "mensaje": mensaje, "ui": ui, "metadata": metadata}
+        )
         return True
 
     servicio._enviar_whatsapp = enviar_whatsapp_falso  # type: ignore[method-assign]
@@ -221,6 +234,86 @@ async def test_verificar_disponibilidad_excluye_ocupados_y_consulta_libres():
 
 
 @pytest.mark.asyncio
+async def test_verificar_disponibilidad_prioriza_real_phone_sobre_lid():
+    servicio = ServicioDisponibilidad()
+    redis_falso = RedisFalsoConLock()
+    mensajes_enviados = []
+
+    async def enviar_whatsapp_falso(
+        *, telefono: str, mensaje: str, ui=None, metadata=None
+    ) -> bool:
+        mensajes_enviados.append(
+            {"telefono": telefono, "mensaje": mensaje, "ui": ui, "metadata": metadata}
+        )
+        return True
+
+    servicio._enviar_whatsapp = enviar_whatsapp_falso  # type: ignore[method-assign]
+    servicio.timeout_seconds = 0
+    servicio.grace_seconds = 0
+    servicio.poll_interval_seconds = 0
+
+    resultado = await servicio.verificar_disponibilidad(
+        req_id="search-lid-real-phone",
+        servicio="coach de comunicación",
+        ciudad="Cuenca",
+        descripcion_problema="hablar en público",
+        candidatos=[
+            {
+                "provider_id": "prov-lid",
+                "name": "Coach Uno",
+                "phone": "39101516509235@lid",
+                "real_phone": "593998308695",
+            }
+        ],
+        cliente_redis=redis_falso,
+    )
+
+    assert resultado["excluded_missing_real_phone_count"] == 0
+    telefonos_contactados = {m["telefono"] for m in mensajes_enviados}
+    assert "593998308695@s.whatsapp.net" in telefonos_contactados
+    assert "39101516509235@lid" not in telefonos_contactados
+    assert mensajes_enviados[0]["metadata"]["task_type"] == "provider_availability_request"
+
+
+@pytest.mark.asyncio
+async def test_verificar_disponibilidad_excluye_lid_sin_real_phone():
+    servicio = ServicioDisponibilidad()
+    redis_falso = RedisFalsoConLock()
+    mensajes_enviados = []
+
+    async def enviar_whatsapp_falso(
+        *, telefono: str, mensaje: str, ui=None, metadata=None
+    ) -> bool:
+        mensajes_enviados.append(
+            {"telefono": telefono, "mensaje": mensaje, "ui": ui, "metadata": metadata}
+        )
+        return True
+
+    servicio._enviar_whatsapp = enviar_whatsapp_falso  # type: ignore[method-assign]
+
+    resultado = await servicio.verificar_disponibilidad(
+        req_id="search-lid-missing-real-phone",
+        servicio="coach de comunicación",
+        ciudad="Cuenca",
+        descripcion_problema="hablar en público",
+        candidatos=[
+            {
+                "provider_id": "prov-lid-missing",
+                "name": "Coach Dos",
+                "phone": "39101516509235@lid",
+            }
+        ],
+        cliente_redis=redis_falso,
+    )
+
+    assert mensajes_enviados == []
+    assert resultado["aceptados"] == []
+    assert resultado["excluded_missing_real_phone_count"] == 1
+    metricas = servicio.obtener_metricas()
+    assert metricas["excluded_missing_real_phone_total"] == 1
+
+
+@pytest.mark.asyncio
 async def test_lock_atomico_descarta_proveedor_ocupado():
     servicio = ServicioDisponibilidad()
     redis_falso = RedisFalsoConLock()
@@ -228,8 +321,12 @@ async def test_lock_atomico_descarta_proveedor_ocupado():
     redis_falso.data[f"availability:provider:{telefono}:lock"] = "otra-solicitud"
     mensajes_enviados = []
 
-    async def enviar_whatsapp_falso(*, telefono: str, mensaje: str) -> bool:
-        mensajes_enviados.append({"telefono": telefono, "mensaje": mensaje})
+    async def enviar_whatsapp_falso(
+        *, telefono: str, mensaje: str, ui=None, metadata=None
+    ) -> bool:
+        mensajes_enviados.append(
+            {"telefono": telefono, "mensaje": mensaje, "ui": ui, "metadata": metadata}
+        )
         return True
 
     servicio._enviar_whatsapp = enviar_whatsapp_falso  # type: ignore[method-assign]
@@ -264,8 +361,10 @@ async def test_lock_atomico_se_libera_al_finalizar():
     servicio.grace_seconds = 0
     servicio.poll_interval_seconds = 0
 
-    async def enviar_whatsapp_falso(*, telefono: str, mensaje: str) -> bool:
-        _ = telefono, mensaje
+    async def enviar_whatsapp_falso(
+        *, telefono: str, mensaje: str, ui=None, metadata=None
+    ) -> bool:
+        _ = telefono, mensaje, ui, metadata
         return True
 
     servicio._enviar_whatsapp = enviar_whatsapp_falso  # type: ignore[method-assign]

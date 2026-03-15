@@ -41,7 +41,6 @@ class SolicitudCreacionProveedor(BaseModel):
         phone: Número de teléfono del proveedor (10-20 caracteres)
         real_phone: Número real del proveedor para contacto (opcional)
         full_name: Nombre completo del proveedor (2-255 caracteres)
-        email: Correo electrónico (opcional)
         city: Ciudad donde opera el proveedor (2-100 caracteres)
         services_list: Lista de 0-SERVICIOS_MAXIMOS servicios ofrecidos
         experience_years: Años de experiencia (default: 0)
@@ -58,7 +57,6 @@ class SolicitudCreacionProveedor(BaseModel):
     phone: str = Field(..., min_length=3, max_length=64)
     real_phone: Optional[str] = None
     full_name: str = Field(..., min_length=2, max_length=255)
-    email: Optional[str] = None
     city: str = Field(..., min_length=2, max_length=100)
     # profession: ELIMINADO - Ahora se usa provider_services
     services_list: List[str] = Field(default_factory=list)
@@ -123,7 +121,6 @@ class RespuestaProveedor(BaseModel):
         phone: Número de teléfono
         real_phone: Número real del proveedor (opcional)
         full_name: Nombre completo
-        email: Correo electrónico (opcional)
         city: Ciudad de operación
         services: Lista de servicios del proveedor (nueva estructura)
         total_services: Total de servicios registrados
@@ -145,7 +142,6 @@ class RespuestaProveedor(BaseModel):
     phone: str
     real_phone: Optional[str] = None
     full_name: str
-    email: Optional[str]
     city: str
     # profession: ELIMINADO
     services: Optional[List[ServiceInfo]] = (

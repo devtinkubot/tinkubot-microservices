@@ -9,8 +9,12 @@ DEFAULT_TEXT="${DEFAULT_TEXT:-Prueba salida wa-gateway (Cloud API)}"
 TO_RAW="${1:-$DEFAULT_TO}"
 TEXT="${2:-$DEFAULT_TEXT}"
 
-# Normalize common phone formats to E.164 digits without plus/spaces.
-TO="$(printf '%s' "$TO_RAW" | tr -d ' +()-')"
+# Preserve raw JIDs for controlled @lid experiments; otherwise normalize to digits.
+if [[ "$TO_RAW" == *"@"* ]]; then
+  TO="$(printf '%s' "$TO_RAW" | tr -d ' ')"
+else
+  TO="$(printf '%s' "$TO_RAW" | tr -d ' +()-')"
+fi
 
 if [[ -z "$TO" ]]; then
   echo "error: destination number is empty" >&2

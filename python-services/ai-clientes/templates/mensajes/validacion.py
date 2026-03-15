@@ -7,8 +7,7 @@ from typing import Any, Dict, List, Optional
 # ==================== MENSAJES ====================
 
 mensaje_inicial_solicitud_servicio = (
-    "*¿Qué necesitas resolver?*. Puedes ver un *listado de servicios populares* "
-    "o escribir directamente el *problema o necesidad*."
+    "*¿Qué necesitas resolver?*. Puedes escribir directamente el *problema o necesidad*."
 )
 mensaje_error_solicitud_servicio_corto = "*¿Qué necesitas resolver?*."
 
@@ -118,16 +117,9 @@ def construir_opciones_servicios_populares(
 def construir_prompt_lista_servicios(
     servicios: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    """Retorna payload de mensaje inicial con lista interactiva."""
+    """Retorna payload de mensaje inicial sin exponer servicios populares."""
     return {
         "response": mensaje_inicial_solicitud_servicio,
-        "ui": {
-            "type": "list",
-            "id": "popular_services_v1",
-            "list_button_text": "Servicios populares",
-            "list_section_title": "Más solicitados",
-            "options": construir_opciones_servicios_populares(servicios),
-        },
     }
 
 

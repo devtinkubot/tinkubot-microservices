@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 CLAVE_CICLO_SOLICITUD = "availability:lifecycle:{}"
+CLAVE_ALIAS_DISPONIBILIDAD = "availability:alias:{}"
 MENSAJE_SOLICITUD_CADUCADA = (
     "⏳ El tiempo para responder a esta solicitud *caducó* y ya no será considerada."
 )
@@ -52,6 +53,10 @@ class ServicioDisponibilidad:
                 "⚠️ AVAILABILITY_TIMEOUT_SECONDS bajo (%s). Verifica configuración.",
                 self.timeout_seconds,
             )
+        self._metricas: Dict[str, Any] = {
+            "excluded_missing_real_phone_total": 0,
+            "excluded_missing_real_phone_last_provider_ids": [],
+        }
 
     @staticmethod
     def _decode_if_json_string(value: Any) -> Any:
@@ -125,6 +130,94 @@ class ServicioDisponibilidad:
 
         return f"{digitos}@s.whatsapp.net"
 
+    @staticmethod
+    def _primer_nombre(nombre: str) -> str:
+        partes = [parte.strip() for parte in str(nombre or "").split() if parte.strip()]
+        return partes[0] if partes else "proveedor"
+
+    @staticmethod
+    def _normalizar_real_phone_a_jid(valor: Optional[str]) -> Optional[str]:
+        if not valor:
+            return None
+        digitos = re.sub(r"\D", "", str(valor))
+        if not digitos:
+            return None
+        return f"{digitos}@s.whatsapp.net"
+
+    def _construir_aliases_proveedor(self, candidato: Dict[str, Any]) -> List[str]:
+        aliases: List[str] = []
+        for valor in (
+            candidato.get("phone"),
+            candidato.get("phone_number"),
+            candidato.get("real_phone"),
+        ):
+            alias = self._formatear_telefono_whatsapp(valor)
+            if alias and alias not in aliases:
+                aliases.append(alias)
+        return aliases
+
+    def _resolver_destino_envio(
+        self, candidato: Dict[str, Any]
+    ) -> tuple[Optional[str], Optional[str], List[str]]:
+        aliases = self._construir_aliases_proveedor(candidato)
+        real_phone_jid = self._normalizar_real_phone_a_jid(candidato.get("real_phone"))
+        if real_phone_jid:
+            return real_phone_jid, "real_phone", aliases
+
+        phone_jid = self._formatear_telefono_whatsapp(
+            candidato.get("phone_number") or candidato.get("phone")
+        )
+        if phone_jid and not phone_jid.endswith("@lid"):
+            return phone_jid, "jid_whatsapp", aliases
+        if phone_jid and phone_jid.endswith("@lid"):
+            return None, "missing_real_phone", aliases
+        return None, None, aliases
+
+    def obtener_metricas(self) -> Dict[str, Any]:
+        return dict(self._metricas)
+
+    def _registrar_exclusion_missing_real_phone(
+        self, candidato: Dict[str, Any]
+    ) -> None:
+        self._metricas["excluded_missing_real_phone_total"] += 1
+        provider_id = candidato.get("provider_id") or candidato.get("id")
+        recientes = list(self._metricas["excluded_missing_real_phone_last_provider_ids"])
+        if provider_id:
+            recientes.append(provider_id)
+        self._metricas["excluded_missing_real_phone_last_provider_ids"] = recientes[-20:]
+
+    @staticmethod
+    def _normalizar_necesidad(descripcion_problema: Optional[str], servicio: str) -> str:
+        texto = re.sub(r"\s+", " ", str(descripcion_problema or "").strip())
+        if not texto:
+            return servicio
+
+        texto = re.sub(
+            r"^(?:qué|que)\s+alguien\s+",
+            "",
+            texto,
+            flags=re.IGNORECASE,
+        )
+        texto = re.sub(
+            r"^alguien\s+que\s+",
+            "",
+            texto,
+            flags=re.IGNORECASE,
+        )
+        texto = re.sub(
+            r"^(?:necesito|quiero|busco|requiero)\s+",
+            "",
+            texto,
+            flags=re.IGNORECASE,
+        )
+        return texto.strip(" .") or servicio
+
+    def _texto_timeout_disponibilidad(self) -> str:
+        if self.timeout_seconds > 0 and self.timeout_seconds % 60 == 0:
+            minutos = self.timeout_seconds // 60
+            return f"{minutos} minuto" if minutos == 1 else f"{minutos} minutos"
+        return f"{self.timeout_seconds} segundos"
+
     def _mensaje_disponibilidad_contexto(
         self,
         *,
@@ -134,21 +227,30 @@ class ServicioDisponibilidad:
         descripcion_problema: Optional[str],
     ) -> str:
         ciudad_txt = ciudad or "tu ciudad"
-        detalle = (descripcion_problema or "").strip() or servicio
         return (
-            f"¡Hola *{nombre or 'proveedor'}*!\n"
-            f"¿Estás disponible para atender en *{ciudad_txt}*?\n\n"
-            f"Servicio requerido: *{servicio}*\n\n"
-            f"Para atender: *{detalle}*"
+            f"*Oportunidad en {ciudad_txt}*\n\n"
+            "*Se requiere:* desarrollo de apps moviles a medida\n\n"
+            "*Necesidad del cliente:* necesita arreglar una app movil del trabajo que no esta funcionando bien"
         )
 
-    def _mensaje_disponibilidad_opciones(self) -> str:
+    def _mensaje_disponibilidad_fallback(self) -> str:
         return (
-            "*Responde con el número de tu opción:*\n\n"
-            "*1.* Sí, estoy disponible\n"
-            "*2.* No disponible\n\n"
-            f"*Tiempo límite de respuesta: {self.timeout_seconds} segundos.*"
+            "Si no ves los botones, responde con una de estas opciones:\n\n"
+            "*Disponible*\n"
+            "*No disponible*\n\n"
+            "Tienes 2 min para responder."
         )
+
+    def _ui_disponibilidad(self) -> Dict[str, Any]:
+        return {
+            "type": "buttons",
+            "id": "provider_availability_v1",
+            "footer_text": "Tienes 2 min para responder.",
+            "options": [
+                {"id": "availability_accept", "title": "Disponible"},
+                {"id": "availability_reject", "title": "No disponible"},
+            ],
+        }
 
     def _mensaje_disponibilidad_caducada(self) -> str:
         return MENSAJE_SOLICITUD_CADUCADA
@@ -235,24 +337,37 @@ class ServicioDisponibilidad:
                 exc,
             )
 
-    async def _enviar_whatsapp(self, *, telefono: str, mensaje: str) -> bool:
+    async def _enviar_whatsapp(
+        self,
+        *,
+        telefono: str,
+        mensaje: str,
+        ui: Optional[Dict[str, Any]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> bool:
         try:
             url = f"{self.whatsapp_url}/send"
+            payload: Dict[str, Any] = {
+                "account_id": self.account_id,
+                "to": telefono,
+                "message": mensaje,
+            }
+            if ui:
+                payload["ui"] = ui
+            if metadata:
+                payload["metadata"] = metadata
             async with self._send_semaphore:
                 respuesta = await self._client.post(
                     url,
-                    json={
-                        "account_id": self.account_id,
-                        "to": telefono,
-                        "message": mensaje,
-                    },
+                    json=payload,
                 )
             if respuesta.status_code == 200:
                 return True
             logger.warning(
-                "⚠️ Error enviando disponibilidad a %s: status=%s body=%s",
+                "⚠️ Error enviando disponibilidad a %s: status=%s metadata=%s body=%s",
                 telefono,
                 respuesta.status_code,
+                metadata or {},
                 (respuesta.text or "")[:180],
             )
             return False
@@ -268,6 +383,9 @@ class ServicioDisponibilidad:
         ciudad: Optional[str],
         descripcion_problema: Optional[str],
         telefono: str,
+        telefono_envio: str,
+        send_target_type: str,
+        aliases: List[str],
         candidato: Dict[str, Any],
         ahora_iso: str,
         cliente_redis: Any,
@@ -285,6 +403,9 @@ class ServicioDisponibilidad:
             "service": servicio,
             "city": ciudad,
             "problem_description": (descripcion_problema or "").strip(),
+            "send_target": telefono_envio,
+            "send_target_type": send_target_type,
+            "provider_phone_aliases": aliases,
             "status": "pending",
             "requested_at": ahora_iso,
         }
@@ -302,12 +423,19 @@ class ServicioDisponibilidad:
             {
                 "expecting_response": True,
                 "request_id": req_id_real,
+                "provider_phone": telefono,
                 "requested_at": ahora_iso,
                 "service": servicio,
                 "city": ciudad,
             },
             expire=self.ttl_seconds,
         )
+        for alias in aliases:
+            await cliente_redis.set(
+                CLAVE_ALIAS_DISPONIBILIDAD.format(alias),
+                {"provider_phone": telefono, "request_id": req_id_real},
+                expire=self.ttl_seconds,
+            )
 
         mensaje_contexto = self._mensaje_disponibilidad_contexto(
             nombre=str(candidato.get("nombre") or "").strip(),
@@ -315,27 +443,42 @@ class ServicioDisponibilidad:
             ciudad=ciudad,
             descripcion_problema=descripcion_problema,
         )
-        mensaje_opciones = self._mensaje_disponibilidad_opciones()
-
+        logger.info(
+            "availability_target_selected req_id=%s provider_id=%s send_target=%s send_target_type=%s correlation_phone=%s",
+            req_id_real,
+            candidato.get("provider_id"),
+            telefono_envio,
+            send_target_type,
+            telefono,
+        )
         enviado_contexto = await self._enviar_whatsapp(
-            telefono=telefono, mensaje=mensaje_contexto
+            telefono=telefono_envio,
+            mensaje=mensaje_contexto,
+            ui=self._ui_disponibilidad(),
+            metadata={
+                "source_service": "ai-clientes",
+                "flow_type": "availability",
+                "task_type": "provider_availability_request",
+                "trace_id": req_id_real,
+            },
         )
         if not enviado_contexto:
+            mensaje_fallback = f"{mensaje_contexto}\n\n{self._mensaje_disponibilidad_fallback()}"
+            enviado_fallback = await self._enviar_whatsapp(
+                telefono=telefono_envio,
+                mensaje=mensaje_fallback,
+                metadata={
+                    "source_service": "ai-clientes",
+                    "flow_type": "availability",
+                    "task_type": "provider_availability_request_fallback",
+                    "trace_id": req_id_real,
+                },
+            )
+            if enviado_fallback:
+                return
             solicitud["status"] = "failed_to_send"
             await cliente_redis.set(clave_solicitud, solicitud, expire=self.ttl_seconds)
             return
-
-        enviado_opciones = await self._enviar_whatsapp(
-            telefono=telefono, mensaje=mensaje_opciones
-        )
-        if not enviado_opciones:
-            logger.warning(
-                (
-                    "⚠️ Se envió contexto de disponibilidad pero falló "
-                    "mensaje de opciones para %s"
-                ),
-                telefono,
-            )
 
     async def verificar_disponibilidad(
         self,
@@ -378,18 +521,29 @@ class ServicioDisponibilidad:
         candidatos_por_telefono: Dict[str, Dict[str, Any]] = {}
         proveedores_ocupados: List[str] = []
         lock_busy_skip_count = 0
+        excluded_missing_real_phone: List[str] = []
 
         for candidato in candidatos:
-            telefono = self._formatear_telefono_whatsapp(
-                candidato.get("phone_number")
-                or candidato.get("phone")
-                or candidato.get("real_phone")
-            )
+            telefono, send_target_type, aliases = self._resolver_destino_envio(candidato)
             if not telefono:
+                if send_target_type == "missing_real_phone":
+                    self._registrar_exclusion_missing_real_phone(candidato)
+                    provider_id = str(candidato.get("provider_id") or candidato.get("id") or "")
+                    if provider_id:
+                        excluded_missing_real_phone.append(provider_id)
+                    logger.info(
+                        "availability_excluded_missing_real_phone provider_id=%s provider_phone=%s",
+                        candidato.get("provider_id") or candidato.get("id"),
+                        candidato.get("phone"),
+                    )
+                    continue
                 logger.warning(f"Proveedor sin teléfono válido: {candidato.get('id')}")
                 continue
             item = dict(candidato)
             item["phone_jid"] = telefono
+            item["send_target"] = telefono
+            item["send_target_type"] = send_target_type or "real_phone"
+            item["phone_aliases"] = aliases or [telefono]
             item.setdefault("provider_id", item.get("id"))
             item.setdefault("nombre", item.get("name") or item.get("full_name"))
             candidatos_por_telefono[telefono] = item
@@ -412,6 +566,7 @@ class ServicioDisponibilidad:
                 "respondidos": [],
                 "tiempo_agotado": False,
                 "request_id": req_id_real,
+                "excluded_missing_real_phone_count": len(excluded_missing_real_phone),
             }
 
         candidatos_disponibles: Dict[str, Dict[str, Any]] = {}
@@ -477,6 +632,8 @@ class ServicioDisponibilidad:
                 "candidate_phones": list(candidatos_por_telefono.keys()),
                 "excluded_busy_providers_count": len(proveedores_ocupados),
                 "excluded_busy_provider_phones": proveedores_ocupados,
+                "excluded_missing_real_phone_count": len(excluded_missing_real_phone),
+                "excluded_missing_real_phone_provider_ids": excluded_missing_real_phone,
                 "candidates_available_count": len(candidatos_disponibles),
                 "lock_busy_skip_count": lock_busy_skip_count,
                 "lock_acquired_count": len(locks_adquiridos),
@@ -508,6 +665,7 @@ class ServicioDisponibilidad:
                 "tiempo_agotado": False,
                 "request_id": req_id_real,
                 "excluded_busy_providers_count": len(proveedores_ocupados),
+                "excluded_missing_real_phone_count": len(excluded_missing_real_phone),
                 "lock_busy_skip_count": lock_busy_skip_count,
                 "lock_acquired_count": len(locks_adquiridos),
             }
@@ -522,6 +680,11 @@ class ServicioDisponibilidad:
                     ciudad=ciudad,
                     descripcion_problema=descripcion_problema,
                     telefono=telefono,
+                    telefono_envio=str(candidato.get("send_target") or telefono),
+                    send_target_type=str(
+                        candidato.get("send_target_type") or "real_phone"
+                    ),
+                    aliases=list(candidato.get("phone_aliases") or [telefono]),
                     candidato=candidato,
                     ahora_iso=ahora_iso,
                     cliente_redis=cliente_redis,
@@ -644,7 +807,14 @@ class ServicioDisponibilidad:
                         )
 
                     enviado_caducado = await self._enviar_whatsapp(
-                        telefono=telefono, mensaje=mensaje_caducado
+                        telefono=telefono,
+                        mensaje=mensaje_caducado,
+                        metadata={
+                            "source_service": "ai-clientes",
+                            "flow_type": "availability",
+                            "task_type": "provider_availability_timeout",
+                            "trace_id": req_id_real,
+                        },
                     )
                     if enviado_caducado:
                         logger.info(
@@ -675,6 +845,7 @@ class ServicioDisponibilidad:
                         "responded_count": len(respondidos),
                         "timed_out": tiempo_agotado,
                         "excluded_busy_providers_count": len(proveedores_ocupados),
+                        "excluded_missing_real_phone_count": len(excluded_missing_real_phone),
                         "lock_busy_skip_count": lock_busy_skip_count,
                         "lock_acquired_count": len(locks_adquiridos),
                     },
@@ -689,6 +860,7 @@ class ServicioDisponibilidad:
                         "responded_count": len(respondidos),
                         "timed_out": tiempo_agotado,
                         "excluded_busy_providers_count": len(proveedores_ocupados),
+                        "excluded_missing_real_phone_count": len(excluded_missing_real_phone),
                         "lock_busy_skip_count": lock_busy_skip_count,
                         "lock_acquired_count": len(locks_adquiridos),
                     },
@@ -703,6 +875,7 @@ class ServicioDisponibilidad:
                         "responded_count": 0,
                         "timed_out": True,
                         "excluded_busy_providers_count": len(proveedores_ocupados),
+                        "excluded_missing_real_phone_count": len(excluded_missing_real_phone),
                         "lock_busy_skip_count": lock_busy_skip_count,
                         "lock_acquired_count": len(locks_adquiridos),
                     },
@@ -714,6 +887,7 @@ class ServicioDisponibilidad:
                 "tiempo_agotado": tiempo_agotado,
                 "request_id": req_id_real,
                 "excluded_busy_providers_count": len(proveedores_ocupados),
+                "excluded_missing_real_phone_count": len(excluded_missing_real_phone),
                 "lock_busy_skip_count": lock_busy_skip_count,
                 "lock_acquired_count": len(locks_adquiridos),
             }

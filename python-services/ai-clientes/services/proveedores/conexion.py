@@ -2,7 +2,6 @@
 
 from typing import Any, Dict, Optional
 
-from infrastructure.storage import construir_url_media_publica
 from templates.proveedores.conexion import mensaje_notificacion_conexion
 
 
@@ -21,6 +20,13 @@ def _construir_enlace_whatsapp(telefono: str) -> Optional[str]:
     return f"https://wa.me/{bruto}"
 
 
+def _normalizar_telefono_contacto(telefono: Optional[str]) -> Optional[str]:
+    link = _construir_enlace_whatsapp(telefono) if telefono else None
+    if not link:
+        return None
+    return link.replace("https://wa.me/", "")
+
+
 def mensaje_conexion_formal(
     proveedor: Dict[str, Any],
     *,
@@ -35,26 +41,7 @@ def mensaje_conexion_formal(
         or proveedor.get("phone_number")
     )
 
-    link = _construir_enlace_whatsapp(telefono_bruto) if telefono_bruto else None
-
-    selfie_url_raw = (
-        proveedor.get("face_photo_url")
-        or proveedor.get("selfie_url")
-        or proveedor.get("photo_url")
-    )
-    selfie_url = (
-        construir_url_media_publica(
-            selfie_url_raw,
-            supabase=supabase,
-            bucket=bucket,
-            supabase_base_url=supabase_base_url,
-        )
-        if selfie_url_raw
-        else None
-    )
-
     return mensaje_notificacion_conexion(
         proveedor={"name": nombre},
-        url_selfie=selfie_url,
-        link_chat=link,
+        telefono_contacto=_normalizar_telefono_contacto(telefono_bruto),
     )

@@ -11,6 +11,7 @@ def _firma_mensaje(mensaje: Dict[str, Any]) -> str:
             "media_url": (mensaje.get("media_url") or "").strip(),
             "media_type": (mensaje.get("media_type") or "").strip(),
             "media_caption": (mensaje.get("media_caption") or "").strip(),
+            "contacts": mensaje.get("contacts"),
             "ui": mensaje.get("ui"),
         },
         sort_keys=True,

@@ -34,13 +34,19 @@ class IProgramadorRetroalimentacion(Protocol):
         """
         ...
 
-    async def enviar_texto_whatsapp(self, telefono: str, texto: str) -> bool:
+    async def enviar_texto_whatsapp(
+        self,
+        telefono: str,
+        texto: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> bool:
         """
         Envía un mensaje de WhatsApp.
 
         Args:
             telefono: Teléfono destinatario
             texto: Texto del mensaje
+            metadata: Contexto opcional del flujo emisor
 
         Returns:
             True si el envío fue exitoso

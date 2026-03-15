@@ -32,6 +32,7 @@ type Sender interface {
 type OutboundSender interface {
 	SendText(ctx context.Context, phoneNumberID, to, body string) error
 	SendImage(ctx context.Context, phoneNumberID, to, imageURL, caption string) error
+	SendContacts(ctx context.Context, phoneNumberID, to string, contacts []webhook.Contact) error
 	SendButtons(ctx context.Context, phoneNumberID, to, body string, ui webhook.UIConfig) error
 	SendList(ctx context.Context, phoneNumberID, to, body string, ui webhook.UIConfig) error
 	SendLocationRequest(ctx context.Context, phoneNumberID, to, body string) error
@@ -199,6 +200,19 @@ func (s *Service) dispatchOutboundReplies(
 		imageURL := strings.TrimSpace(reply.MediaURL)
 		imageCaption := strings.TrimSpace(reply.MediaCaption)
 		mediaType := strings.ToLower(strings.TrimSpace(reply.MediaType))
+		if len(reply.Contacts) > 0 {
+			sendCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+			err := s.outboundSender.SendContacts(sendCtx, phoneNumberID, to, reply.Contacts)
+			cancel()
+			if err != nil {
+				log.Printf("[MetaWebhook] Outbound contacts send failed account=%s phone_number_id=%s to=%s index=%d err=%v", accountID, phoneNumberID, to, idx, err)
+				continue
+			}
+			log.Printf("[MetaWebhook] Outbound contacts send ok account=%s phone_number_id=%s to=%s index=%d", accountID, phoneNumberID, to, idx)
+			if body == "" && reply.UI == nil && imageURL == "" {
+				continue
+			}
+		}
 		if imageURL != "" && (mediaType == "" || mediaType == "image") {
 			if imageCaption == "" {
 				imageCaption = body

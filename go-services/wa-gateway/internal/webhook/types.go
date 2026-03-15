@@ -56,6 +56,23 @@ type UIConfig struct {
 	FlowActionPayload  map[string]any   `json:"flow_action_payload,omitempty"`
 }
 
+type ContactName struct {
+	FormattedName string `json:"formatted_name"`
+	FirstName     string `json:"first_name,omitempty"`
+	LastName      string `json:"last_name,omitempty"`
+}
+
+type ContactPhone struct {
+	Phone string `json:"phone"`
+	Type  string `json:"type,omitempty"`
+	WAID  string `json:"wa_id,omitempty"`
+}
+
+type Contact struct {
+	Name   ContactName    `json:"name"`
+	Phones []ContactPhone `json:"phones,omitempty"`
+}
+
 // WebhookResponse represents the response from AI services
 type WebhookResponse struct {
 	Success  bool              `json:"success"`
@@ -70,6 +87,7 @@ type ResponseMessage struct {
 	MediaURL     string    `json:"media_url,omitempty"`
 	MediaType    string    `json:"media_type,omitempty"`
 	MediaCaption string    `json:"media_caption,omitempty"`
+	Contacts     []Contact `json:"contacts,omitempty"`
 	UI           *UIConfig `json:"ui,omitempty"`
 }
 

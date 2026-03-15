@@ -10,6 +10,14 @@ from openai import AsyncOpenAI
 from config.configuracion import configuracion
 
 
+EJEMPLO_RESPUESTA_JSON_VALIDACION = """{
+  "results": [
+    {"can_help": true, "confidence": 0.91, "reason": "experiencia directa"},
+    {"can_help": false, "confidence": 0.22, "reason": "servicio no aplicable"}
+  ]
+}"""
+
+
 class ValidadorProveedoresIA:
     """
     Servicio de validación de proveedores usando IA.
@@ -38,6 +46,79 @@ class ValidadorProveedoresIA:
         self.semaforo_openai = semaforo_openai
         self.tiempo_espera_openai = tiempo_espera_openai
         self.logger = logger
+
+    @staticmethod
+    def _extraer_json_parseable(contenido: str) -> Optional[Any]:
+        texto = (contenido or "").strip()
+        if not texto:
+            return None
+
+        if texto.startswith("```"):
+            texto = re.sub(r"^```(?:json)?", "", texto, flags=re.IGNORECASE).strip()
+            texto = re.sub(r"```$", "", texto).strip()
+
+        candidatos = [texto]
+        inicio_objeto = texto.find("{")
+        fin_objeto = texto.rfind("}")
+        if inicio_objeto != -1 and fin_objeto > inicio_objeto:
+            candidatos.append(texto[inicio_objeto : fin_objeto + 1])
+        inicio_lista = texto.find("[")
+        fin_lista = texto.rfind("]")
+        if inicio_lista != -1 and fin_lista > inicio_lista:
+            candidatos.append(texto[inicio_lista : fin_lista + 1])
+
+        for candidato in candidatos:
+            try:
+                return json.loads(candidato)
+            except json.JSONDecodeError:
+                continue
+        return None
+
+    def _normalizar_lista_validacion(
+        self, payload: Any, total_proveedores: int
+    ) -> Optional[List[Any]]:
+        if isinstance(payload, dict):
+            resultados = payload.get("results")
+            if isinstance(resultados, list):
+                payload = resultados
+
+        if not isinstance(payload, list):
+            return None
+
+        if len(payload) != total_proveedores:
+            self.logger.warning(
+                "⚠️ Respuesta IA tiene %s valores, pero esperaba %s",
+                len(payload),
+                total_proveedores,
+            )
+        return payload[:total_proveedores]
+
+    async def _solicitar_validacion(
+        self,
+        *,
+        prompt_usuario: str,
+        max_tokens: int,
+        response_format: Optional[Dict[str, Any]] = None,
+    ) -> Any:
+        parametros: Dict[str, Any] = {
+            "model": self.MODELO_VALIDACION,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "Eres un experto analista de servicios profesionales. "
+                        "Responde solo JSON válido."
+                    ),
+                },
+                {"role": "user", "content": prompt_usuario},
+            ],
+            "temperature": 0.2,
+            "max_tokens": max_tokens,
+        }
+        if response_format:
+            parametros["response_format"] = response_format
+
+        return await self.cliente_openai.chat.completions.create(**parametros)
 
     async def validar_proveedores(
         self,
@@ -118,30 +199,26 @@ Criterios importantes:
    - "Error en base de datos" requiere conocimiento SQL/Base de datos
    - "App no funciona" requiere debugging de aplicaciones
 
-Responde SOLO con JSON (array de objetos, en el mismo orden):
-[
-  {"can_help": true, "confidence": 0.91, "reason": "experiencia directa"},
-  {"can_help": false, "confidence": 0.22, "reason": "servicio no aplicable"}
-]
+Responde SOLO con JSON válido, usando exactamente este formato:
+{EJEMPLO_RESPUESTA_JSON_VALIDACION}
 
-NO incluyas explicaciones fuera del JSON."""
+NO incluyas markdown, fences ni explicaciones fuera del JSON."""
 
         self.logger.info(f"📋 Prompt enviado a IA de validación:\n{prompt_sistema[:1000]}...")
 
         try:
             async with self.semaforo_openai:
+                self.logger.info(
+                    "validator_request_started providers=%s model=%s format=%s",
+                    len(proveedores),
+                    self.MODELO_VALIDACION,
+                    "json_object",
+                )
                 respuesta = await asyncio.wait_for(
-                    self.cliente_openai.chat.completions.create(
-                        model=self.MODELO_VALIDACION,
-                        messages=[
-                            {
-                                "role": "system",
-                                "content": "Eres un experto analista de servicios profesionales. Analizas si un proveedor puede ayudar con una necesidad específica basándote en los servicios que ofrece y el contexto del problema.",
-                            },
-                            {"role": "user", "content": prompt_sistema},
-                        ],
-                        temperature=0.3,
-                        max_tokens=150,
+                    self._solicitar_validacion(
+                        prompt_usuario=prompt_sistema,
+                        max_tokens=400,
+                        response_format={"type": "json_object"},
                     ),
                     timeout=self.tiempo_espera_openai,
                 )
@@ -151,29 +228,36 @@ NO incluyas explicaciones fuera del JSON."""
                 return []
 
             contenido = (respuesta.choices[0].message.content or "").strip()
-            if contenido.startswith("```"):
-                contenido = re.sub(
-                    r"^```(?:json)?", "", contenido, flags=re.IGNORECASE
-                ).strip()
-                contenido = re.sub(r"```$", "", contenido).strip()
-
             self.logger.debug(f"🤖 Respuesta validación IA: {contenido[:200]}")
+            payload = self._extraer_json_parseable(contenido)
+            lista_validacion = self._normalizar_lista_validacion(payload, len(proveedores))
 
-            lista_validacion = json.loads(contenido)
-
-            if not isinstance(lista_validacion, list):
-                self.logger.warning(
-                    f"⚠️ Respuesta de validación no es array: {type(lista_validacion)}"
+            if lista_validacion is None:
+                self.logger.warning("validator_parse_error stage=primary")
+                prompt_reintento = (
+                    f"Necesidad: {necesidad_usuario}\n"
+                    f"Problema: {problema}\n"
+                    f"Proveedores:\n{bloque_proveedores}\n\n"
+                    "Devuelve SOLO un objeto JSON con la clave 'results'. "
+                    "Cada item debe tener can_help, confidence y reason."
                 )
-                return []
-
-            if len(lista_validacion) != len(proveedores):
-                self.logger.warning(
-                    f"⚠️ Respuesta IA tiene {len(lista_validacion)} valores, "
-                    f"pero esperaba {len(proveedores)}"
+                self.logger.info("validator_retry_used providers=%s", len(proveedores))
+                respuesta = await asyncio.wait_for(
+                    self._solicitar_validacion(
+                        prompt_usuario=prompt_reintento,
+                        max_tokens=300,
+                        response_format={"type": "json_object"},
+                    ),
+                    timeout=self.tiempo_espera_openai,
                 )
-                # Ajustar longitud si es necesario
-                lista_validacion = lista_validacion[: len(proveedores)]
+                contenido = (respuesta.choices[0].message.content or "").strip()
+                payload = self._extraer_json_parseable(contenido)
+                lista_validacion = self._normalizar_lista_validacion(
+                    payload, len(proveedores)
+                )
+                if lista_validacion is None:
+                    self.logger.warning("validator_parse_error stage=retry")
+                    return []
 
             proveedores_validados = []
             for proveedor, decision in zip(proveedores, lista_validacion):
@@ -202,14 +286,16 @@ NO incluyas explicaciones fuera del JSON."""
                 f"✅ Validación IA: {len(proveedores_validados)}/{len(proveedores)} "
                 f"proveedores validados para '{necesidad_usuario}'"
             )
+            self.logger.info(
+                "validator_final_pass_count passed=%s total=%s",
+                len(proveedores_validados),
+                len(proveedores),
+            )
 
             return proveedores_validados
 
         except asyncio.TimeoutError:
             self.logger.warning("⚠️ Timeout en validar_proveedores, fail-closed")
-            return []
-        except json.JSONDecodeError as exc:
-            self.logger.warning(f"⚠️ Error parseando JSON validación: {exc}")
             return []
         except Exception as exc:
             self.logger.warning(f"⚠️ Error en validación IA, fail-closed: {exc}")

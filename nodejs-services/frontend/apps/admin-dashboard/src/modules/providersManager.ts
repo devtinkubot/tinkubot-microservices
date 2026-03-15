@@ -318,13 +318,24 @@ function actualizarCertificados(proveedor: ProviderRecord) {
 }
 
 function actualizarContacto(proveedor: ProviderRecord) {
-  const telefono = proveedor.contactPhone ?? proveedor.phone ?? null;
+  const telefono = proveedor.contactPhone ?? proveedor.realPhone ?? proveedor.phone ?? null;
+  const realPhone = proveedor.realPhone ?? null;
   const nombre = proveedor.contact ?? proveedor.name ?? 'Contacto';
-  const correo = proveedor.contactEmail ?? proveedor.email ?? null;
+  const estadoContacto =
+    proveedor.contactStatus === 'lid_with_real_phone'
+      ? 'LID con número real confirmado'
+      : proveedor.contactStatus === 'lid_missing_real_phone'
+        ? 'LID sin número real'
+        : proveedor.contactStatus === 'real_phone_available'
+          ? 'Número real disponible'
+          : 'Solo teléfono base';
 
   establecerTexto('#provider-detail-phone', telefono, { fallback: 'Sin número' });
+  establecerTexto('#provider-detail-real-phone', realPhone, {
+    fallback: 'Sin número real',
+  });
+  establecerTexto('#provider-detail-contact-status', estadoContacto);
   establecerTexto('#provider-detail-contact-name', nombre);
-  establecerTexto('#provider-detail-email', correo, { fallback: 'Sin correo registrado' });
 
   const telefonoBtn = obtenerElemento<HTMLButtonElement>('#provider-detail-copy-phone');
   if (telefonoBtn) {
@@ -371,7 +382,6 @@ function actualizarNotas(proveedor: ProviderRecord) {
 
 function actualizarPerfilProfesional(proveedor: ProviderRecord) {
   const servicios = obtenerElemento<HTMLDivElement>('#provider-detail-services');
-  const taxonomia = obtenerElemento<HTMLDivElement>('#provider-detail-service-taxonomy');
   const experiencia = obtenerElemento<HTMLElement>('#provider-detail-experience');
   const redSocial = obtenerElemento<HTMLElement>('#provider-detail-social-media');
   const tituloPerfil = obtenerElemento<HTMLElement>('#provider-professional-title');
@@ -392,12 +402,6 @@ function actualizarPerfilProfesional(proveedor: ProviderRecord) {
       ? `${tipoRedSocial}: ${urlRedSocial}`
       : urlRedSocial
     : null;
-  const serviceTaxonomy = Array.isArray(proveedor.serviceTaxonomy)
-    ? proveedor.serviceTaxonomy.filter(
-        item => typeof item?.serviceName === 'string' && item.serviceName.trim().length > 0
-      )
-    : [];
-
   if (tituloPerfil) {
     tituloPerfil.textContent = esRevisionProfesional
       ? 'Servicios principales para revisión'
@@ -427,35 +431,6 @@ function actualizarPerfilProfesional(proveedor: ProviderRecord) {
     establecerTexto('#provider-detail-experience', experienciaValor, {
       fallback: 'Sin experiencia registrada'
     });
-  }
-
-  if (taxonomia) {
-    if (serviceTaxonomy.length > 0) {
-      taxonomia.innerHTML = `
-        <ul class="mb-0 ps-3">
-          ${serviceTaxonomy
-            .map(item => {
-              const dominio = item.domainDisplayName ?? item.domainCode ?? 'Sin dominio';
-              const canonico = item.canonicalName?.trim();
-              const etiquetaMatch =
-                item.matchType === 'canonical'
-                  ? 'Canónico'
-                  : item.matchType === 'alias'
-                    ? 'Alias'
-                    : 'Sin resolver';
-              const detalleCanonico = canonico ? ` · Canónico: ${escaparHtml(canonico)}` : '';
-              return `<li><strong>${escaparHtml(item.serviceName)}</strong> · ${escaparHtml(
-                dominio
-              )} · ${etiquetaMatch}${detalleCanonico}</li>`;
-            })
-            .join('')}
-        </ul>
-      `;
-      taxonomia.classList.remove('text-muted');
-    } else {
-      taxonomia.textContent = 'Sin resolución taxonómica disponible';
-      taxonomia.classList.add('text-muted');
-    }
   }
 
   if (redSocial) {
