@@ -7,6 +7,7 @@ from .almacenamiento_imagenes import (
     subir_imagen_proveedor,
     subir_medios_identidad,
 )
+from .rutas import construir_url_media_publica
 
 __all__ = [
     "subir_imagen_proveedor",
@@ -14,4 +15,5 @@ __all__ = [
     "procesar_imagen_base64",
     "obtener_urls_imagenes_proveedor",
     "subir_medios_identidad",
+    "construir_url_media_publica",
 ]

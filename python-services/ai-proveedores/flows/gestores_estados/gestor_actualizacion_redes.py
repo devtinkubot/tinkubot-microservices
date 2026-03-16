@@ -61,7 +61,26 @@ async def manejar_actualizacion_redes_sociales(
             ],
         }
 
-    flujo["state"] = "awaiting_menu_option"
+    retorno_estado = str(flujo.pop("profile_return_state", "") or "").strip()
+    flujo["state"] = retorno_estado or "awaiting_menu_option"
+    if retorno_estado:
+        from .gestor_vistas_perfil import render_profile_view
+
+        return {
+            "success": True,
+            "messages": [
+                {
+                    "response": confirmar_actualizacion_redes_sociales(
+                        bool(red_social_parseada["url"])
+                    )
+                },
+                await render_profile_view(
+                    flujo=flujo,
+                    estado=retorno_estado,
+                    proveedor_id=proveedor_id,
+                ),
+            ],
+        }
     return {
         "success": True,
         "messages": [

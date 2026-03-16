@@ -1,83 +1,36 @@
-# wa-gateway Migration Summary: Node.js -> Go + whatsmeow + SQLite
+# wa-gateway Migration Summary
 
 ## Overview
-This document records the migration from Node.js/Baileys to Go/whatsmeow and clarifies the current production-like behavior.
+This document records the current state after removing the legacy `whatsmeow` transport and standardizing `wa-gateway` as a Meta Cloud API gateway only.
 
-**Migration date:** 2026-01-30  
-**Clarification update:** 2026-02-19
-
----
+**Update date:** 2026-03-16
 
 ## Technology Change
+
 | Component | Before | After |
 |-----------|--------|-------|
-| Language | Node.js (TypeScript) | Go |
-| WA library | Baileys | whatsmeow |
-| Session persistence | Filesystem/session artifacts | SQLite via whatsmeow sqlstore |
-| Rate limiting | DB-backed design (legacy intent) | In-memory limiter |
+| WhatsApp transport | `whatsmeow` + local device session | Meta WhatsApp Cloud API |
+| Session persistence | Local SQLite / filesystem artifacts | None in repo |
+| QR login flow | Supported | Removed |
+| Outbound delivery | Mixed web session + Meta | Meta only |
 
----
-
-## Current State (As-Built)
-1. `wa-gateway` persists WhatsApp session/state in local SQLite (`wa-gateway.db`) through `whatsmeow` sqlstore.
-2. The database currently contains `whatsmeow_*` tables managed by the library.
-3. Rate limiting is implemented in memory and is not persisted.
-4. Account metadata exposed by API is derived from service code and live client state.
-
-## What This Means
-- SQLite persistence is real and active for WhatsApp sessions.
-- A container restart preserves `whatsmeow` session data as long as `wa-data` volume persists.
-- Rate-limit counters reset on restart.
-
----
-
-## API Contract (unchanged)
+## Current API Contract
 - `GET /health`
+- `GET /meta/webhook`
+- `POST /meta/webhook`
+- `POST /api/send`
+- `POST /send`
+
+## What Was Removed
 - `GET /api/accounts`
 - `GET /api/accounts/:id`
 - `GET /api/accounts/:id/qr`
 - `POST /api/accounts/:id/login`
 - `POST /api/accounts/:id/logout`
-- `POST /api/send`
 - `GET /api/events/stream`
+- Local runtime artifacts `wa-data/` and `wa-sessions/`
 
-(Compatibility aliases without `/api` are still exposed.)
-
----
-
-## Data Persistence Checklist
-- [ ] `./wa-data/wa-gateway.db` exists
-- [ ] Service restarts without forcing QR re-link when sessions already exist
-- [ ] `GET /api/accounts` reflects expected status transitions
-
-## Runtime Verification Commands
-```bash
-# DB file exists on host
-ls -lh ./wa-data/wa-gateway.db
-
-# Service health
-curl http://localhost:7000/health
-
-# Account states
-curl http://localhost:7000/api/accounts
-```
-
----
-
-## Limitations
-1. Rate limiting is not persisted.
-2. Account inventory is static (`bot-clientes`, `bot-proveedores`).
-3. No built-in historical message store in this service.
-
----
-
-## Rollback Reminder
-If needed, rollback is done at git/deployment level (restore previous service implementation and compose wiring).
-
----
-
-## References
-- `go-services/wa-gateway/cmd/wa-gateway/main.go`
-- `go-services/wa-gateway/internal/whatsmeow/client_manager.go`
-- `go-services/wa-gateway/internal/ratelimit/limiter.go`
-- `go-services/wa-gateway/internal/api/handlers.go`
+## Operational Notes
+1. Inbound webhook forwarding to `ai-clientes` / `ai-proveedores` is unchanged.
+2. Outbound sends still go through `POST /send`.
+3. No QR-based reconnect or WhatsApp Web session recovery exists anymore.

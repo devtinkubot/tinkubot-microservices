@@ -97,6 +97,16 @@ def solicitar_dni_actualizacion() -> str:
     )
 
 
+def solicitar_dni_frontal_actualizacion() -> str:
+    """Solicita solo la foto frontal de la cédula para actualización directa."""
+    return "*Envíame una foto clara de la parte frontal de tu cédula.*"
+
+
+def solicitar_dni_reverso_actualizacion() -> str:
+    """Solicita solo la foto reverso de la cédula para actualización directa."""
+    return "*Envíame una foto clara de la parte posterior de tu cédula.*"
+
+
 def confirmar_documentos_actualizados() -> str:
     """Confirma actualización exitosa de documentos."""
     return "Cédula actualizada correctamente."

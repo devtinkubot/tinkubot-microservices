@@ -240,7 +240,22 @@ async def manejar_espera_ciudad(
 
     if flujo.get("profile_edit_mode") == "personal_city":
         flujo.pop("profile_edit_mode", None)
-        flujo["state"] = "awaiting_menu_option"
+        retorno_estado = str(flujo.pop("profile_return_state", "") or "").strip()
+        flujo["state"] = retorno_estado or "awaiting_menu_option"
+        if retorno_estado:
+            from .gestor_vistas_perfil import render_profile_view
+
+            return {
+                "success": True,
+                "messages": [
+                    {"response": "✅ Tu ubicación principal fue actualizada correctamente."},
+                    await render_profile_view(
+                        flujo=flujo,
+                        estado=retorno_estado,
+                        proveedor_id=proveedor_id,
+                    ),
+                ],
+            }
         return {
             "success": True,
             "messages": [

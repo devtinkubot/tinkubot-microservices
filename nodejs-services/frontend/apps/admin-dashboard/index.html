@@ -69,53 +69,6 @@
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
       }
 
-      .status-indicator {
-        width: 12px;
-        height: 12px;
-        border-radius: 50%;
-        display: inline-block;
-        margin-right: 8px;
-        animation: pulse 2s infinite;
-      }
-
-      .status-indicator.connected {
-        background-color: var(--success-color);
-      }
-
-      .status-indicator.disconnected {
-        background-color: var(--danger-color);
-      }
-
-      .status-indicator.loading {
-        background-color: var(--warning-color);
-      }
-
-      @keyframes pulse {
-        0% {
-          opacity: 1;
-        }
-        50% {
-          opacity: 0.5;
-        }
-        100% {
-          opacity: 1;
-        }
-      }
-
-      .qr-container {
-        text-align: center;
-        padding: 1rem;
-        background: #f8f9fa;
-        border-radius: 8px;
-        margin-top: 1rem;
-      }
-
-      .qr-container img {
-        max-width: 200px;
-        border: 1px solid #dee2e6;
-        border-radius: 8px;
-      }
-
       .badge {
         font-size: 0.75rem;
         padding: 0.4rem 0.8rem;
@@ -148,61 +101,6 @@
         width: 1rem;
         height: 1rem;
         margin-left: 0.5rem;
-      }
-
-      .instance-actions {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-      }
-
-      .instance-refresh-btn {
-        border: none;
-        background: none;
-        color: var(--primary-color);
-        border-radius: 0;
-        padding: 0;
-        font-size: 0.85rem;
-        font-weight: 500;
-        display: inline-flex;
-        align-items: center;
-        gap: 0.4rem;
-        transition: all 0.2s ease;
-        text-decoration: underline;
-      }
-
-      .instance-refresh-btn:hover:not(:disabled) {
-        color: #5558e3;
-      }
-
-      .instance-refresh-btn:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-        text-decoration: none;
-      }
-
-      .instance-refresh-btn .spinner-border {
-        display: none;
-        width: 1rem;
-        height: 1rem;
-      }
-
-      .instance-refresh-btn[data-loading='true'] .spinner-border {
-        display: inline-block;
-      }
-
-      .status-message {
-        display: none;
-        margin-top: 0.75rem;
-        font-size: 0.9rem;
-      }
-
-      .status-message.success {
-        color: var(--success-color);
-      }
-
-      .status-message.error {
-        color: var(--danger-color);
       }
 
       .provider-detail-modal .modal-header {
@@ -362,88 +260,14 @@
 
           <!-- Dashboard Section -->
           <div id="dashboard-section">
-            <!-- WhatsApp Status Cards -->
-            <div class="row mb-4">
-              <div class="col-md-6">
-                <div class="status-card">
-                  <div class="d-flex justify-content-between align-items-center mb-3">
-                    <div>
-                      <h5 class="mb-0">
-                        <i class="fab fa-whatsapp me-2 text-success"></i>
-                        WhatsApp Clientes
-                      </h5>
-                      <p class="text-muted small mb-0">Número asignado: +593998823053</p>
-                    </div>
-                    <div class="instance-actions">
-                      <span class="status-indicator loading" id="bot-clientes-status"></span>
-                      <button
-                        type="button"
-                        class="instance-refresh-btn"
-                        data-refresh="bot-clientes"
-                        data-loading="false"
-                        onclick="regenerarConexionWhatsApp('bot-clientes')"
-                      >
-                        <i class="fas fa-sync-alt"></i>
-                        <span>Actualizar QR</span>
-                        <span
-                          class="spinner-border spinner-border-sm"
-                          role="status"
-                          aria-hidden="true"
-                        ></span>
-                      </button>
-                    </div>
-                  </div>
-                  <div id="bot-clientes-info">
-                    <p class="text-muted">Verificando estado...</p>
-                  </div>
-                  <div id="bot-clientes-qr" class="qr-container" style="display: none">
-                    <h6 class="mb-3">Escanea este código QR</h6>
-                    <img id="bot-clientes-qr-img" src="" alt="QR Clientes" />
-                    <p class="text-muted small mt-2">Abre WhatsApp Web > Dispositivos vinculados</p>
-                  </div>
-                  <div class="status-message" id="bot-clientes-message" role="status"></div>
-                </div>
-              </div>
-              <div class="col-md-6">
-                <div class="status-card">
-                  <div class="d-flex justify-content-between align-items-center mb-3">
-                    <div>
-                      <h5 class="mb-0">
-                        <i class="fab fa-whatsapp me-2 text-success"></i>
-                        WhatsApp Proveedores
-                      </h5>
-                      <p class="text-muted small mb-0">Número asignado: +593983455575</p>
-                    </div>
-                    <div class="instance-actions">
-                      <span class="status-indicator loading" id="bot-proveedores-status"></span>
-                      <button
-                        type="button"
-                        class="instance-refresh-btn"
-                        data-refresh="bot-proveedores"
-                        data-loading="false"
-                        onclick="regenerarConexionWhatsApp('bot-proveedores')"
-                      >
-                        <i class="fas fa-sync-alt"></i>
-                        <span>Actualizar QR</span>
-                        <span
-                          class="spinner-border spinner-border-sm"
-                          role="status"
-                          aria-hidden="true"
-                        ></span>
-                      </button>
-                    </div>
-                  </div>
-                  <div id="bot-proveedores-info">
-                    <p class="text-muted">Verificando estado...</p>
-                  </div>
-                  <div id="bot-proveedores-qr" class="qr-container" style="display: none">
-                    <h6 class="mb-3">Escanea este código QR</h6>
-                    <img id="bot-proveedores-qr-img" src="" alt="QR Proveedores" />
-                    <p class="text-muted small mt-2">Abre WhatsApp Web > Dispositivos vinculados</p>
-                  </div>
-                  <div class="status-message" id="bot-proveedores-message" role="status"></div>
-                </div>
-              </div>
+            <div class="status-card mb-4">
+              <h5 class="mb-2">
+                <i class="fas fa-circle-info me-2 text-primary"></i>
+                Estado del panel
+              </h5>
+              <p class="text-muted mb-0">
+                La gestión operativa de sesiones QR de WhatsApp Web fue retirada. Este panel conserva los módulos administrativos de proveedores, monetización y gobernanza.
+              </p>
             </div>
           </div>
 
@@ -995,24 +819,6 @@
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="modal fade" id="qr-reset-modal" tabindex="-1" aria-hidden="true">
-      <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">Regenerar QR</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-          </div>
-          <div class="modal-body">
-            Esto cerrará la sesión actual y requerirá volver a escanear el QR. ¿Deseas continuar?
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
-            <button type="button" class="btn btn-primary" id="qr-reset-confirm">Regenerar</button>
           </div>
         </div>
       </div>

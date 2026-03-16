@@ -10,6 +10,7 @@ sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import flows.gestores_estados.gestor_servicios as modulo_gestor_servicios  # noqa: E402
+import flows.gestores_estados.gestor_vistas_perfil as modulo_gestor_vistas_perfil  # noqa: E402
 from flows.gestores_estados.gestor_menu import manejar_estado_menu  # noqa: E402
 from flows.gestores_estados.gestor_menu import (  # noqa: E402
     manejar_submenu_informacion_personal,
@@ -42,6 +43,80 @@ from flows.gestores_estados.gestor_espera_certificado import (  # noqa: E402
 from flows.gestores_estados.gestor_espera_especialidad import (  # noqa: E402
     manejar_espera_especialidad,
 )
+
+
+def test_render_profile_view_normaliza_url_dni_reverso_desde_storage(monkeypatch):
+    class _Bucket:
+        def create_signed_url(self, path, _ttl):
+            return {"signedURL": f"https://signed.example/{path}"}
+
+        def get_public_url(self, path):
+            return f"https://public.example/{path}"
+
+    class _Storage:
+        def from_(self, _bucket):
+            return _Bucket()
+
+    supabase = SimpleNamespace(storage=_Storage())
+
+    monkeypatch.setattr(
+        modulo_gestor_vistas_perfil,
+        "get_supabase_client",
+        lambda: supabase,
+    )
+    monkeypatch.setattr(
+        modulo_gestor_vistas_perfil,
+        "SUPABASE_PROVIDERS_BUCKET",
+        "tinkubot-providers",
+    )
+
+    flujo = {
+        "dni_back_photo_url": (
+            "https://euescxureboitxqjduym.supabase.co/storage/v1/object/public/"
+            "tinkubot-providers/dni-backs/prov-1.jpg?"
+        )
+    }
+
+    respuesta = asyncio.run(
+        modulo_gestor_vistas_perfil.render_profile_view(
+            flujo=flujo,
+            estado="viewing_personal_dni_back",
+            proveedor_id="prov-1",
+        )
+    )
+
+    assert respuesta["ui"]["header_type"] == "image"
+    assert (
+        respuesta["ui"]["header_media_url"]
+        == "https://signed.example/dni-backs/prov-1.jpg"
+    )
+
+
+def test_render_profile_view_limpia_query_string_en_foto_perfil(monkeypatch):
+    monkeypatch.setattr(
+        modulo_gestor_vistas_perfil,
+        "get_supabase_client",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        modulo_gestor_vistas_perfil,
+        "SUPABASE_PROVIDERS_BUCKET",
+        "tinkubot-providers",
+    )
+
+    flujo = {"face_photo_url": "https://broken.example/photo.jpg?"}
+
+    respuesta = asyncio.run(
+        modulo_gestor_vistas_perfil.render_profile_view(
+            flujo=flujo,
+            estado="viewing_personal_photo",
+            proveedor_id="prov-1",
+        )
+    )
+
+    assert respuesta["ui"]["type"] == "buttons"
+    assert respuesta["ui"]["header_type"] == "image"
+    assert respuesta["ui"]["header_media_url"] == "https://broken.example/photo.jpg"
 
 
 def test_selector_servicios_abre_agregado_directo():
@@ -205,7 +280,7 @@ def test_menu_aprobado_abre_submenu_informacion_personal():
 
 
 def test_submenu_personal_nombre_inicia_actualizacion():
-    flujo = {"approved_basic": False}
+    flujo = {"approved_basic": False, "full_name": "Maria Lopez"}
 
     respuesta = asyncio.run(
         manejar_submenu_informacion_personal(
@@ -215,14 +290,18 @@ def test_submenu_personal_nombre_inicia_actualizacion():
         )
     )
 
-    assert flujo["state"] == "awaiting_name"
-    assert flujo["profile_edit_mode"] == "personal_name"
-    assert "nombre completo" in respuesta["messages"][0]["response"].lower()
+    assert flujo["state"] == "viewing_personal_name"
+    assert respuesta["messages"][0]["ui"]["type"] == "buttons"
+    assert respuesta["messages"][0]["ui"]["options"][0]["id"] == "provider_detail_name_change"
 
 
 def test_submenu_personal_foto_no_se_interpreta_como_opcion_dos():
     texto = "provider_submenu_personal_foto"
-    flujo = {"state": "awaiting_personal_info_action", "approved_basic": False}
+    flujo = {
+        "state": "awaiting_personal_info_action",
+        "approved_basic": False,
+        "face_photo_url": "https://example.com/photo.jpg",
+    }
 
     respuesta = asyncio.run(
         enrutar_estado(
@@ -243,12 +322,173 @@ def test_submenu_personal_foto_no_se_interpreta_como_opcion_dos():
         )
     )
 
-    assert flujo["state"] == "awaiting_face_photo_update"
-    assert "foto de perfil" in respuesta["response"]["messages"][0]["response"].lower()
+    assert flujo["state"] == "viewing_personal_photo"
+    assert respuesta["response"]["messages"][0]["ui"]["type"] == "buttons"
+    assert respuesta["response"]["messages"][0]["ui"]["options"][0]["id"] == "provider_detail_photo_change"
+
+
+def test_vista_dni_reverso_cambia_solo_reverso():
+    flujo = {"approved_basic": False}
+
+    respuesta = asyncio.run(
+        modulo_gestor_vistas_perfil.manejar_vista_perfil(
+            flujo=flujo,
+            estado="viewing_personal_dni_back",
+            texto_mensaje="provider_detail_dni_back_change",
+            proveedor_id="prov-1",
+        )
+    )
+
+    assert flujo["profile_edit_mode"] == "personal_dni_back_update"
+    assert flujo["state"] == "awaiting_dni_back_photo_update"
+    assert "parte posterior" in respuesta["messages"][0]["response"].lower()
+
+
+def test_headers_menus_interactivos_son_consistentes():
+    from templates.interfaz import (
+        payload_lista_eliminar_servicios,
+        payload_menu_post_registro_proveedor,
+        payload_detalle_servicios,
+        payload_submenu_informacion_personal,
+        payload_submenu_informacion_profesional,
+        SERVICE_DELETE_BACK_ID,
+    )
+
+    principal = payload_menu_post_registro_proveedor()
+    personal = payload_submenu_informacion_personal()
+    profesional = payload_submenu_informacion_profesional()
+    servicios = payload_detalle_servicios(["Plomeria", "Electricidad"], 7)
+
+    assert principal["ui"]["header_text"] == "Menu - Principal"
+    assert personal["ui"]["header_text"] == "Menu - Informacion Personal"
+    assert profesional["ui"]["header_text"] == "Menu - Informacion Profesional"
+    assert servicios["ui"]["header_text"] == "Servicios registrados (2/7)"
+    assert "Se listan los servicios" not in servicios["response"]
+
+    eliminacion = payload_lista_eliminar_servicios(
+        [
+            "Servicio extremadamente largo que supera el maximo permitido por Meta para la descripcion de una fila",
+        ]
+    )
+    assert eliminacion["ui"]["header_text"] == "Menu - Eliminar Servicios"
+    assert len(eliminacion["ui"]["options"][0]["description"]) <= 72
+    assert eliminacion["ui"]["options"][-1]["id"] == SERVICE_DELETE_BACK_ID
+
+
+def test_eliminar_servicio_acepta_selected_option_interactivo(monkeypatch):
+    async def _actualizar_servicios(_proveedor_id, servicios):
+        return servicios
+
+    monkeypatch.setattr(
+        "flows.gestores_estados.gestor_servicios.actualizar_servicios",
+        _actualizar_servicios,
+    )
+
+    flujo = {
+        "state": "awaiting_service_remove",
+        "provider_id": "prov-1",
+        "services": ["Plomeria", "Electricidad"],
+    }
+
+    respuesta = asyncio.run(
+        enrutar_estado(
+            estado="awaiting_service_remove",
+            flujo=flujo,
+            texto_mensaje="",
+            carga={"selected_option": "provider_service_delete:1"},
+            telefono="593999111200@s.whatsapp.net",
+            opcion_menu=None,
+            tiene_consentimiento=True,
+            esta_registrado=True,
+            perfil_proveedor=None,
+            supabase=None,
+            servicio_embeddings=None,
+            cliente_openai=None,
+            subir_medios_identidad=None,
+            logger=SimpleNamespace(info=lambda *a, **k: None),
+        )
+    )
+
+    assert flujo["state"] == "viewing_professional_services"
+    assert flujo["services"] == ["Plomeria"]
+    assert "electricidad" in respuesta["response"]["messages"][0]["response"].lower()
+
+
+def test_eliminar_servicio_regresar_vuelve_a_detalle():
+    flujo = {
+        "state": "awaiting_service_remove",
+        "provider_id": "prov-1",
+        "services": ["Plomeria", "Electricidad"],
+    }
+
+    respuesta = asyncio.run(
+        enrutar_estado(
+            estado="awaiting_service_remove",
+            flujo=flujo,
+            texto_mensaje="",
+            carga={"selected_option": "provider_service_delete_back"},
+            telefono="593999111200@s.whatsapp.net",
+            opcion_menu=None,
+            tiene_consentimiento=True,
+            esta_registrado=True,
+            perfil_proveedor=None,
+            supabase=None,
+            servicio_embeddings=None,
+            cliente_openai=None,
+            subir_medios_identidad=None,
+            logger=SimpleNamespace(info=lambda *a, **k: None),
+        )
+    )
+
+    assert flujo["state"] == "viewing_professional_services"
+    assert (
+        respuesta["response"]["messages"][0]["ui"]["header_text"]
+        == "Servicios registrados (2/7)"
+    )
 
 
 def test_submenu_profesional_certificado_inicia_reemplazo():
-    flujo = {"approved_basic": False}
+    async def _listar_certificados(_proveedor_id):
+        return [{"id": "cert-1", "file_url": "https://example.com/cert.jpg"}]
+
+    monkeypatch = __import__("pytest").MonkeyPatch()
+    monkeypatch.setattr(
+        "flows.gestores_estados.gestor_menu.listar_certificados_proveedor",
+        _listar_certificados,
+    )
+    monkeypatch.setattr(
+        "flows.gestores_estados.gestor_vistas_perfil.listar_certificados_proveedor",
+        _listar_certificados,
+    )
+
+    flujo = {"approved_basic": False, "provider_id": "prov-1"}
+
+    try:
+        respuesta = asyncio.run(
+            manejar_submenu_informacion_profesional(
+                flujo=flujo,
+                texto_mensaje="provider_submenu_profesional_certificados",
+                opcion_menu=None,
+            )
+        )
+    finally:
+        monkeypatch.undo()
+
+    assert flujo["state"] == "viewing_professional_certificates"
+    assert respuesta["messages"][0]["ui"]["type"] == "list"
+    assert respuesta["messages"][0]["ui"]["options"][0]["id"] == "provider_certificate_select:cert-1"
+
+
+def test_submenu_profesional_certificados_sin_items_abre_carga(monkeypatch):
+    async def _listar_certificados(_proveedor_id):
+        return []
+
+    monkeypatch.setattr(
+        "flows.gestores_estados.gestor_menu.listar_certificados_proveedor",
+        _listar_certificados,
+    )
+
+    flujo = {"approved_basic": False, "provider_id": "prov-1"}
 
     respuesta = asyncio.run(
         manejar_submenu_informacion_profesional(
@@ -259,8 +499,44 @@ def test_submenu_profesional_certificado_inicia_reemplazo():
     )
 
     assert flujo["state"] == "awaiting_certificate"
-    assert flujo["profile_edit_mode"] == "provider_certificate_update"
+    assert flujo["profile_edit_mode"] == "provider_certificate_add"
+    assert flujo["profile_return_state"] == "viewing_professional_certificate"
+    assert "certificado profesional" in respuesta["messages"][0]["response"].lower()
+
+
+def test_submenu_profesional_redes_abre_vista_directa():
+    flujo = {
+        "approved_basic": False,
+        "provider_id": "prov-1",
+        "social_media_url": "https://instagram.com/test",
+    }
+
+    respuesta = asyncio.run(
+        manejar_submenu_informacion_profesional(
+            flujo=flujo,
+            texto_mensaje="provider_submenu_profesional_redes",
+            opcion_menu=None,
+        )
+    )
+
+    assert flujo["state"] == "viewing_professional_social"
     assert respuesta["messages"][0]["ui"]["type"] == "buttons"
+    assert respuesta["messages"][0]["ui"]["options"][0]["id"] == "provider_detail_social_change"
+    assert "instagram.com/test" in respuesta["messages"][0]["response"].lower()
+
+
+def test_redes_sociales_sin_dato_muestra_no_registrada():
+    respuesta = asyncio.run(
+        modulo_gestor_vistas_perfil.render_profile_view(
+            flujo={"social_media_url": None},
+            estado="viewing_professional_social",
+            proveedor_id="prov-1",
+        )
+    )
+
+    assert respuesta["ui"]["type"] == "buttons"
+    assert respuesta["ui"]["options"][0]["id"] == "provider_detail_social_change"
+    assert "no registrada" in respuesta["response"].lower()
 
 
 def test_actualizacion_nombre_regresa_menu_interactivo(monkeypatch):
@@ -275,8 +551,10 @@ def test_actualizacion_nombre_regresa_menu_interactivo(monkeypatch):
     flujo = {
         "state": "awaiting_name",
         "profile_edit_mode": "personal_name",
+        "profile_return_state": "viewing_personal_name",
         "menu_limitado": False,
         "approved_basic": False,
+        "full_name": "Maria Lopez",
     }
 
     respuesta = asyncio.run(
@@ -288,9 +566,9 @@ def test_actualizacion_nombre_regresa_menu_interactivo(monkeypatch):
         )
     )
 
-    assert flujo["state"] == "awaiting_menu_option"
-    assert respuesta["messages"][1]["ui"]["type"] == "list"
-    assert respuesta["messages"][1]["ui"]["options"][0]["id"] == "provider_menu_info_personal"
+    assert flujo["state"] == "viewing_personal_name"
+    assert respuesta["messages"][1]["ui"]["type"] == "buttons"
+    assert respuesta["messages"][1]["ui"]["options"][0]["id"] == "provider_detail_name_change"
 
 
 def test_completar_perfil_envia_a_revision_humana(monkeypatch):
@@ -440,6 +718,16 @@ def test_servicio_perfil_pide_confirmacion_individual(monkeypatch):
     monkeypatch.setattr(
         "infrastructure.openai.transformador_servicios.TransformadorServicios",
         _TransformadorOK,
+    )
+    async def _validar_servicio_semanticamente(**kwargs):
+        return {
+            "is_valid_service": True,
+            "normalized_service": "desarrollo aplicaciones moviles inteligencia artificial",
+        }
+
+    monkeypatch.setattr(
+        "flows.gestores_estados.gestor_espera_especialidad.validar_servicio_semanticamente",
+        _validar_servicio_semanticamente,
     )
 
     flujo = {

@@ -106,6 +106,14 @@ def sincronizar_flujo_con_perfil(
         if perfil_proveedor.get("city_confirmed_at") is not None:
             flujo["city_confirmed_at"] = perfil_proveedor.get("city_confirmed_at")
         flujo["services"] = _fusionar_servicios_perfil(perfil_proveedor)
+        if perfil_proveedor.get("social_media_url") is not None:
+            flujo["social_media_url"] = perfil_proveedor.get("social_media_url")
+        if perfil_proveedor.get("face_photo_url") is not None:
+            flujo["face_photo_url"] = perfil_proveedor.get("face_photo_url")
+        if perfil_proveedor.get("dni_front_photo_url") is not None:
+            flujo["dni_front_photo_url"] = perfil_proveedor.get("dni_front_photo_url")
+        if perfil_proveedor.get("dni_back_photo_url") is not None:
+            flujo["dni_back_photo_url"] = perfil_proveedor.get("dni_back_photo_url")
         if perfil_proveedor.get("real_phone") is not None:
             flujo["real_phone"] = perfil_proveedor.get("real_phone")
         flujo["menu_limitado"] = perfil_tiene_menu_limitado(perfil_proveedor)

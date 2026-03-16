@@ -7,10 +7,12 @@ from flows.constructores import (
     construir_menu_servicios,
     construir_payload_menu_principal,
 )
+from services import listar_certificados_proveedor
 from services.servicios_proveedor.constantes import SERVICIOS_MAXIMOS
+from .gestor_vistas_perfil import render_profile_view
 from templates.registro import (
     mensaje_inicio_perfil_profesional,
-    solicitar_ciudad_actualizacion,
+    payload_certificado_opcional,
 )
 from templates.interfaz import (
     MENU_ID_ELIMINAR_REGISTRO,
@@ -23,21 +25,21 @@ from templates.interfaz import (
     informar_cierre_sesion,
     solicitar_confirmacion_eliminacion,
     solicitar_dni_actualizacion,
-    solicitar_red_social_actualizacion,
-    solicitar_selfie_actualizacion,
     SUBMENU_ID_PERSONAL_DOCUMENTOS,
+    SUBMENU_ID_PERSONAL_DNI_FRONTAL,
+    SUBMENU_ID_PERSONAL_DNI_REVERSO,
     SUBMENU_ID_PERSONAL_FOTO,
     SUBMENU_ID_PERSONAL_NOMBRE,
+    SUBMENU_ID_PERSONAL_REGRESAR,
     SUBMENU_ID_PERSONAL_UBICACION,
     SUBMENU_ID_PROF_CERTIFICADOS,
+    SUBMENU_ID_PROF_REGRESAR,
     SUBMENU_ID_PROF_REDES,
     SUBMENU_ID_PROF_SERVICIOS,
 )
 from templates.registro import (
     PROMPT_INICIO_REGISTRO,
     preguntar_real_phone,
-    preguntar_nombre,
-    payload_certificado_opcional,
     solicitar_ciudad_registro,
 )
 
@@ -98,11 +100,16 @@ async def manejar_submenu_informacion_personal(
         or texto == SUBMENU_ID_PERSONAL_NOMBRE
         or "nombre" in texto
     ):
-        flujo["profile_edit_mode"] = "personal_name"
-        flujo["state"] = "awaiting_name"
+        flujo["state"] = "viewing_personal_name"
         return {
             "success": True,
-            "messages": [{"response": preguntar_nombre()}],
+            "messages": [
+                await render_profile_view(
+                    flujo=flujo,
+                    estado="viewing_personal_name",
+                    proveedor_id=flujo.get("provider_id"),
+                )
+            ],
         }
 
     if (
@@ -112,40 +119,72 @@ async def manejar_submenu_informacion_personal(
         or "ubicación" in texto
         or "ciudad" in texto
     ):
-        flujo["profile_edit_mode"] = "personal_city"
-        flujo["state"] = "awaiting_city"
+        flujo["state"] = "viewing_personal_city"
         return {
             "success": True,
-            "messages": [solicitar_ciudad_actualizacion()],
+            "messages": [
+                await render_profile_view(
+                    flujo=flujo,
+                    estado="viewing_personal_city",
+                    proveedor_id=flujo.get("provider_id"),
+                )
+            ],
         }
 
     if (
         opcion_menu == "3"
-        or texto == SUBMENU_ID_PERSONAL_DOCUMENTOS
-        or "documento" in texto
-        or "cedula" in texto
-        or "cédula" in texto
-        or "dni" in texto
-    ):
-        flujo["state"] = "awaiting_dni_front_photo_update"
-        return {
-            "success": True,
-            "messages": [{"response": solicitar_dni_actualizacion()}],
-        }
-
-    if (
-        opcion_menu == "4"
         or texto == SUBMENU_ID_PERSONAL_FOTO
         or "foto" in texto
         or "selfie" in texto
     ):
-        flujo["state"] = "awaiting_face_photo_update"
+        flujo["state"] = "viewing_personal_photo"
         return {
             "success": True,
-            "messages": [{"response": solicitar_selfie_actualizacion()}],
+            "messages": [
+                await render_profile_view(
+                    flujo=flujo,
+                    estado="viewing_personal_photo",
+                    proveedor_id=flujo.get("provider_id"),
+                )
+            ],
         }
 
-    if "menu" in texto or "volver" in texto or "salir" in texto:
+    if (
+        opcion_menu == "4"
+        or texto == SUBMENU_ID_PERSONAL_DNI_FRONTAL
+        or "frontal" in texto
+    ):
+        flujo["state"] = "viewing_personal_dni_front"
+        return {
+            "success": True,
+            "messages": [
+                await render_profile_view(
+                    flujo=flujo,
+                    estado="viewing_personal_dni_front",
+                    proveedor_id=flujo.get("provider_id"),
+                )
+            ],
+        }
+
+    if (
+        opcion_menu == "5"
+        or texto == SUBMENU_ID_PERSONAL_DNI_REVERSO
+        or "reverso" in texto
+        or "posterior" in texto
+    ):
+        flujo["state"] = "viewing_personal_dni_back"
+        return {
+            "success": True,
+            "messages": [
+                await render_profile_view(
+                    flujo=flujo,
+                    estado="viewing_personal_dni_back",
+                    proveedor_id=flujo.get("provider_id"),
+                )
+            ],
+        }
+
+    if texto == SUBMENU_ID_PERSONAL_REGRESAR or "menu" in texto or "volver" in texto or "salir" in texto:
         flujo["state"] = "awaiting_menu_option"
         return {
             "success": True,
@@ -155,7 +194,7 @@ async def manejar_submenu_informacion_personal(
     return {
         "success": True,
         "messages": [
-            {"response": error_opcion_no_reconocida(1, 4)},
+            {"response": error_opcion_no_reconocida(1, 5)},
             payload_submenu_informacion_personal(),
         ],
     }
@@ -169,23 +208,21 @@ async def manejar_submenu_informacion_profesional(
 ) -> Dict[str, Any]:
     """Procesa el submenú de información profesional."""
     texto = (texto_mensaje or "").strip().lower()
-    servicios_actuales = flujo.get("services") or []
 
     if (
         opcion_menu == "1"
         or texto == SUBMENU_ID_PROF_SERVICIOS
         or "servicio" in texto
     ):
-        flujo["state"] = "awaiting_service_action"
+        flujo["state"] = "viewing_professional_services"
         return {
             "success": True,
             "messages": [
-                {
-                    "response": construir_menu_servicios(
-                        servicios_actuales,
-                        SERVICIOS_MAXIMOS,
-                    )
-                }
+                await render_profile_view(
+                    flujo=flujo,
+                    estado="viewing_professional_services",
+                    proveedor_id=flujo.get("provider_id"),
+                )
             ],
         }
 
@@ -194,11 +231,23 @@ async def manejar_submenu_informacion_profesional(
         or texto == SUBMENU_ID_PROF_CERTIFICADOS
         or "certificado" in texto
     ):
-        flujo["profile_edit_mode"] = "provider_certificate_update"
-        flujo["state"] = "awaiting_certificate"
+        certificados = await listar_certificados_proveedor(str(flujo.get("provider_id") or ""))
+        if not certificados:
+            flujo["profile_edit_mode"] = "provider_certificate_add"
+            flujo["profile_return_state"] = "viewing_professional_certificate"
+            flujo["state"] = "awaiting_certificate"
+            flujo.pop("selected_certificate_id", None)
+            return {"success": True, "messages": [payload_certificado_opcional()]}
+        flujo["state"] = "viewing_professional_certificates"
         return {
             "success": True,
-            "messages": [payload_certificado_opcional()],
+            "messages": [
+                await render_profile_view(
+                    flujo=flujo,
+                    estado="viewing_professional_certificates",
+                    proveedor_id=flujo.get("provider_id"),
+                )
+            ],
         }
 
     if (
@@ -208,13 +257,19 @@ async def manejar_submenu_informacion_profesional(
         or "social" in texto
         or "instagram" in texto
     ):
-        flujo["state"] = "awaiting_social_media_update"
+        flujo["state"] = "viewing_professional_social"
         return {
             "success": True,
-            "messages": [{"response": solicitar_red_social_actualizacion()}],
+            "messages": [
+                await render_profile_view(
+                    flujo=flujo,
+                    estado="viewing_professional_social",
+                    proveedor_id=flujo.get("provider_id"),
+                )
+            ],
         }
 
-    if "menu" in texto or "volver" in texto or "salir" in texto:
+    if texto == SUBMENU_ID_PROF_REGRESAR or "menu" in texto or "volver" in texto or "salir" in texto:
         flujo["state"] = "awaiting_menu_option"
         return {
             "success": True,
@@ -224,7 +279,7 @@ async def manejar_submenu_informacion_profesional(
     return {
         "success": True,
         "messages": [
-            {"response": error_opcion_no_reconocida(1, 3)},
+            {"response": error_opcion_no_reconocida(1, 4)},
             payload_submenu_informacion_profesional(),
         ],
     }

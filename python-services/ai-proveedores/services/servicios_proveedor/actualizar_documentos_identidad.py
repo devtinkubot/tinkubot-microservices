@@ -9,26 +9,28 @@ logger = logging.getLogger(__name__)
 async def actualizar_documentos_identidad(
     servicio_almacenamiento,
     proveedor_id: str,
-    dni_front_base64: str,
-    dni_back_base64: str,
+    dni_front_base64: str | None,
+    dni_back_base64: str | None,
 ) -> Dict[str, Any]:
-    """Actualiza frontal y reverso de cédula para un proveedor existente."""
+    """Actualiza frontal y/o reverso de cédula para un proveedor existente."""
     if not proveedor_id:
         raise ValueError("proveedor_id es requerido")
 
-    if not dni_front_base64 or not dni_back_base64:
+    if not dni_front_base64 and not dni_back_base64:
         return {
             "success": False,
-            "message": "Se requieren ambas fotos de la cédula.",
+            "message": "Se requiere al menos una foto de la cédula.",
         }
 
     try:
+        payload = {}
+        if dni_front_base64:
+            payload["dni_front_image"] = dni_front_base64
+        if dni_back_base64:
+            payload["dni_back_image"] = dni_back_base64
         await servicio_almacenamiento(
             proveedor_id,
-            {
-                "dni_front_image": dni_front_base64,
-                "dni_back_image": dni_back_base64,
-            },
+            payload,
         )
         logger.info("✅ Documentos de identidad actualizados para proveedor %s", proveedor_id)
         return {

@@ -19,6 +19,8 @@ from services.servicios_proveedor.utilidades import (
     limpiar_texto_servicio,
 )
 from templates.interfaz import (
+    SERVICE_DELETE_BACK_ID,
+    SERVICE_DELETE_PREFIX,
     confirmar_servicio_eliminado,
     confirmar_servicios_agregados,
     error_eliminar_servicio,
@@ -31,6 +33,7 @@ from templates.interfaz import (
     informar_sin_servicios_eliminar,
     mensaje_confirmacion_servicios_menu,
     mensaje_correccion_servicios_menu,
+    payload_lista_eliminar_servicios,
     preguntar_nuevo_servicio,
     preguntar_servicio_eliminar,
 )
@@ -505,12 +508,24 @@ async def manejar_confirmacion_agregar_servicios(
         }
 
     flujo["services"] = servicios_finales
-    flujo["state"] = "awaiting_service_action"
+    retorno_detalle = flujo.get("profile_return_state") == "viewing_professional_services"
+    flujo["state"] = "viewing_professional_services" if retorno_detalle else "awaiting_service_action"
     flujo.pop(_FLUJO_KEY_SERVICIOS_TEMP, None)
+
+    if retorno_detalle:
+        from .gestor_vistas_perfil import render_profile_view
+
+        vista_actualizada = await render_profile_view(
+            flujo=flujo,
+            estado="viewing_professional_services",
+            proveedor_id=proveedor_id,
+        )
+    else:
+        vista_actualizada = {"response": _menu_servicios_desde_flujo(flujo, servicios_finales)}
 
     mensajes_respuesta = [
         {"response": confirmar_servicios_agregados(nuevos_recortados)},
-        {"response": _menu_servicios_desde_flujo(flujo, servicios_finales)},
+        vista_actualizada,
     ]
     if aviso_limite:
         mensajes_respuesta.insert(
@@ -529,6 +544,7 @@ async def manejar_eliminar_servicio(
     flujo: Dict[str, Any],
     proveedor_id: Optional[str],
     texto_mensaje: str,
+    selected_option: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Elimina un servicio del proveedor."""
     servicios_actuales = flujo.get("services") or []
@@ -539,9 +555,28 @@ async def manejar_eliminar_servicio(
             "messages": [_menu_principal_desde_flujo(flujo)],
         }
 
-    texto_ingresado = (texto_mensaje or "").strip()
+    texto_ingresado = (selected_option or texto_mensaje or "").strip()
+    if texto_ingresado == SERVICE_DELETE_BACK_ID:
+        flujo["state"] = "viewing_professional_services"
+        from .gestor_vistas_perfil import render_profile_view
+
+        return {
+            "success": True,
+            "messages": [
+                await render_profile_view(
+                    flujo=flujo,
+                    estado="viewing_professional_services",
+                    proveedor_id=proveedor_id,
+                )
+            ],
+        }
     indice_servicio = None
-    if texto_ingresado.isdigit():
+    if texto_ingresado.startswith(SERVICE_DELETE_PREFIX):
+        try:
+            indice_servicio = int(texto_ingresado.removeprefix(SERVICE_DELETE_PREFIX))
+        except ValueError:
+            indice_servicio = None
+    elif texto_ingresado.isdigit():
         indice_servicio = int(texto_ingresado) - 1
     else:
         try:
@@ -557,8 +592,7 @@ async def manejar_eliminar_servicio(
         return {
             "success": True,
             "messages": [
-                {"response": preguntar_servicio_eliminar()},
-                {"response": construir_listado_servicios(servicios_actuales)},
+                payload_lista_eliminar_servicios(servicios_actuales),
             ],
         }
 
@@ -577,11 +611,17 @@ async def manejar_eliminar_servicio(
         }
 
     flujo["services"] = servicios_finales
-    flujo["state"] = "awaiting_service_action"
+    flujo["state"] = "viewing_professional_services"
+    from .gestor_vistas_perfil import render_profile_view
+
     return {
         "success": True,
         "messages": [
             {"response": confirmar_servicio_eliminado(servicio_eliminado)},
-            {"response": _menu_servicios_desde_flujo(flujo, servicios_finales)},
+            await render_profile_view(
+                flujo=flujo,
+                estado="viewing_professional_services",
+                proveedor_id=proveedor_id,
+            ),
         ],
     }

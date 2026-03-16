@@ -44,6 +44,7 @@ from flows.gestores_estados import (
     manejar_selfie_registro,
     manejar_submenu_informacion_personal,
     manejar_submenu_informacion_profesional,
+    manejar_vista_perfil,
 )
 from flows.sesion import reiniciar_flujo
 from services import (
@@ -574,6 +575,7 @@ async def enrutar_estado(  # noqa: C901
             flujo=flujo,
             proveedor_id=flujo.get("provider_id"),
             texto_mensaje=texto_mensaje,
+            selected_option=carga.get("selected_option"),
         )
         return {"response": respuesta, "persist_flow": True}
 
@@ -759,6 +761,17 @@ async def enrutar_estado(  # noqa: C901
 
     if estado == "awaiting_dni_front_photo_update":
         respuesta = manejar_dni_frontal_actualizacion(flujo, carga)
+        if (
+            flujo.get("profile_edit_mode") == "personal_dni_front_update"
+            and respuesta.get("messages")
+            and respuesta["messages"][0].get("response") == "__persistir_dni_frontal__"
+        ):
+            respuesta = await manejar_dni_trasera_actualizacion(
+                flujo=flujo,
+                carga={},
+                proveedor_id=flujo.get("provider_id"),
+                subir_medios_identidad=subir_medios_identidad,
+            )
         return {"response": respuesta, "persist_flow": True}
 
     if estado == "awaiting_dni_back_photo_update":
@@ -806,6 +819,25 @@ async def enrutar_estado(  # noqa: C901
             flujo=flujo,
             texto_mensaje=texto_mensaje,
             opcion_menu=opcion_menu,
+        )
+        return {"response": respuesta, "persist_flow": True}
+
+    if estado in {
+        "viewing_personal_name",
+        "viewing_personal_city",
+        "viewing_personal_photo",
+        "viewing_personal_dni_front",
+        "viewing_personal_dni_back",
+        "viewing_professional_services",
+        "viewing_professional_social",
+        "viewing_professional_certificates",
+        "viewing_professional_certificate",
+    }:
+        respuesta = await manejar_vista_perfil(
+            flujo=flujo,
+            estado=estado,
+            texto_mensaje=texto_mensaje,
+            proveedor_id=flujo.get("provider_id"),
         )
         return {"response": respuesta, "persist_flow": True}
 

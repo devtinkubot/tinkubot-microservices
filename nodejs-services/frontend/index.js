@@ -43,27 +43,8 @@ const resolverPuerto = (valorPorDefecto, ...candidatos) => {
 
 // Configuración
 const PORT = resolverPuerto(5000, process.env.FRONTEND_SERVICE_PORT);
-const clientesPort = resolverPuerto(
-  5001,
-  process.env.CLIENTES_WHATSAPP_PORT,
-  process.env.WHATSAPP_CLIENTES_PORT
-);
-const proveedoresPort = resolverPuerto(
-  5002,
-  process.env.PROVEEDORES_WHATSAPP_PORT,
-  process.env.WHATSAPP_PROVEEDORES_PORT
-);
-
-const serverDomain = process.env.SERVER_DOMAIN;
-const clientesHost = serverDomain || 'wa-clientes';
-const proveedoresHost = serverDomain || 'wa-proveedores';
 const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS || '8000', 10);
 const STATIC_MAX_AGE_SECONDS = parseInt(process.env.STATIC_MAX_AGE_SECONDS || '86400', 10);
-
-const WHATSAPP_CLIENTES_URL =
-  process.env.WHATSAPP_CLIENTES_URL || `http://${clientesHost}:${clientesPort}`;
-const WHATSAPP_PROVEEDORES_URL =
-  process.env.WHATSAPP_PROVEEDORES_URL || `http://${proveedoresHost}:${proveedoresPort}`;
 
 const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 20 });
 const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 20 });
@@ -73,36 +54,8 @@ const axiosClient = axios.create({
   timeout: 5000
 });
 
-const CLIENTES_INSTANCE_ID = process.env.CLIENTES_INSTANCE_ID || 'bot-clientes';
-const CLIENTES_INSTANCE_NAME = process.env.CLIENTES_INSTANCE_NAME || 'TinkuBot Clientes';
-const PROVEEDORES_INSTANCE_ID =
-  process.env.PROVEEDORES_INSTANCE_ID || 'bot-proveedores';
-const PROVEEDORES_INSTANCE_NAME =
-  process.env.PROVEEDORES_INSTANCE_NAME || 'TinkuBot Proveedores';
-
 // WA-Gateway configuration
 const WA_GATEWAY_URL = process.env.WA_GATEWAY_URL || 'http://wa-gateway:7000';
-
-// Configuración de instancias
-const WHATSAPP_INSTANCES = [
-  {
-    id: CLIENTES_INSTANCE_ID,
-    name: CLIENTES_INSTANCE_NAME,
-    url: WHATSAPP_CLIENTES_URL,
-    port: clientesPort,
-  },
-  {
-    id: PROVEEDORES_INSTANCE_ID,
-    name: PROVEEDORES_INSTANCE_NAME,
-    url: WHATSAPP_PROVEEDORES_URL,
-    port: proveedoresPort,
-  },
-];
-
-console.warn('🔧 Configuración de instancias:');
-WHATSAPP_INSTANCES.forEach(instance => {
-  console.warn(`  - ${instance.name}: ${instance.url}`);
-});
 
 const dashboardDistPath = path.join(__dirname, 'apps', 'admin-dashboard', 'dist');
 const publicPath = path.join(__dirname, 'public');
@@ -166,7 +119,7 @@ app.use(session({
 // Middleware de autenticación con sesiones
 const requireAuth = (req, res, next) => {
   // Rutas públicas (sin autenticación)
-  const publicPaths = ['/health', '/login', '/api/login', '/api/logout', '/api/auth/status', '/qr'];
+  const publicPaths = ['/health', '/login', '/api/login', '/api/logout', '/api/auth/status'];
   if (publicPaths.includes(req.path)) return next();
 
   // Verificar si está autenticado
@@ -213,7 +166,7 @@ app.use('/admin/providers', adminProvidersRouter);
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
-    instances: WHATSAPP_INSTANCES.map(({ id, name, url }) => ({ id, name, url })),
+    whatsapp_gateway_url: WA_GATEWAY_URL,
     uptime_seconds: Math.round(process.uptime()),
   });
 });
@@ -275,80 +228,6 @@ app.get('/admin-dashboard', (req, res) => {
   return res.sendFile(path.join(publicPath, 'admin-dashboard.html'));
 });
 
-// ============================================================================
-// WA-Gateway API Proxy (replaces wa-clientes/wa-proveedores)
-// ============================================================================
-
-// Proxy for GET /accounts
-app.get('/api/accounts', async (req, res) => {
-  try {
-    const response = await axiosClient.get(`${WA_GATEWAY_URL}/accounts`);
-    res.json(response.data);
-  } catch (error) {
-    console.error('Error al obtener cuentas de wa-gateway:', error);
-    res.status(500).json({ error: 'Error al obtener cuentas' });
-  }
-});
-
-// Proxy for GET /accounts/:id
-app.get('/api/accounts/:accountId', async (req, res) => {
-  try {
-    const { accountId } = req.params;
-    const response = await axiosClient.get(`${WA_GATEWAY_URL}/accounts/${accountId}`);
-    res.json(response.data);
-  } catch (error) {
-    console.error('Error al obtener cuenta de wa-gateway:', error);
-    const status = error.response?.status || 500;
-    const payload = error.response?.data || { error: 'Error al obtener cuenta' };
-    res.status(status).json(payload);
-  }
-});
-
-// Proxy for GET /accounts/:id/qr
-app.get('/api/accounts/:accountId/qr', async (req, res) => {
-  try {
-    const { accountId } = req.params;
-    const response = await axiosClient.get(`${WA_GATEWAY_URL}/accounts/${accountId}/qr`);
-    res.json(response.data);
-  } catch (error) {
-    console.error('Error al obtener QR de wa-gateway:', error);
-    const status = error.response?.status || 500;
-    const payload = error.response?.data || { error: 'Error al obtener QR' };
-    res.status(status).json(payload);
-  }
-});
-
-// Proxy for POST /accounts/:id/login
-app.post('/api/accounts/:accountId/login', async (req, res) => {
-  try {
-    const { accountId } = req.params;
-    const response = await axiosClient.post(
-      `${WA_GATEWAY_URL}/accounts/${accountId}/login`,
-      req.body
-    );
-    res.json(response.data);
-  } catch (error) {
-    console.error('Error al iniciar sesión en wa-gateway:', error);
-    const status = error.response?.status || 500;
-    const payload = error.response?.data || { error: 'Error al iniciar sesión' };
-    res.status(status).json(payload);
-  }
-});
-
-// Proxy for POST /accounts/:id/logout
-app.post('/api/accounts/:accountId/logout', async (req, res) => {
-  try {
-    const { accountId } = req.params;
-    const response = await axiosClient.post(`${WA_GATEWAY_URL}/accounts/${accountId}/logout`);
-    res.json(response.data);
-  } catch (error) {
-    console.error('Error al cerrar sesión en wa-gateway:', error);
-    const status = error.response?.status || 500;
-    const payload = error.response?.data || { error: 'Error al cerrar sesión' };
-    res.status(status).json(payload);
-  }
-});
-
 // Proxy for POST /send
 app.post('/api/send', async (req, res) => {
   try {
@@ -362,31 +241,9 @@ app.post('/api/send', async (req, res) => {
   }
 });
 
-// Proxy for SSE /events/stream
-app.get('/api/events/stream', async (req, res) => {
-  try {
-    const response = await axiosClient.get(`${WA_GATEWAY_URL}/events/stream`, {
-      responseType: 'stream'
-    });
-
-    // Set SSE headers
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-
-    // Pipe events to client
-    response.data.pipe(res);
-  } catch (error) {
-    console.error('Error en SSE stream:', error);
-    if (!res.headersSent) {
-      res.status(500).json({ error: 'Error en stream de eventos' });
-    }
-  }
-});
-
 // Iniciar servidor
 app.listen(PORT, '0.0.0.0', () => {
   console.warn(`🚀 Frontend Service corriendo en puerto ${PORT}`);
   console.warn(`📱 Dashboard disponible en: http://localhost:${PORT}`);
-  console.warn(`🔗 Conectado a ${WHATSAPP_INSTANCES.length} instancias de WhatsApp`);
+  console.warn(`🔗 Proxy saliente conectado a wa-gateway: ${WA_GATEWAY_URL}`);
 });

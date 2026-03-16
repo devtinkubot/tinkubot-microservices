@@ -28,24 +28,54 @@ def test_mensaje_disponibilidad_contexto_usa_primer_nombre_y_copy_nuevo():
     )
 
     assert "*Oportunidad en Cuenca*" in mensaje
-    assert "*Se requiere:* desarrollo de apps moviles a medida" in mensaje
     assert (
-        "*Necesidad del cliente:* necesita arreglar una app movil del trabajo "
-        "que no esta funcionando bien"
-    ) in mensaje
+        "*Se requiere:* desarrollo y mantenimiento de aplicaciones móviles" in mensaje
+    )
+    assert (
+        "*Necesidad del cliente:* desarrolle la app movil y arregle los errores "
+        "que tiene" in mensaje
+    )
     assert "Hola *Diego*" not in mensaje
     assert "*Para resolver:*" not in mensaje
 
 
-def test_ui_disponibilidad_expone_botones_esperados():
+def test_ui_disponibilidad_expone_template_esperado():
     servicio = ServicioDisponibilidad()
 
-    ui = servicio._ui_disponibilidad()
+    ui = servicio._ui_disponibilidad(
+        servicio="desarrollo y mantenimiento de aplicaciones móviles",
+        ciudad="Cuenca",
+        descripcion_problema="Qué alguien desarrolle la app movil y arregle los errores que tiene",
+    )
 
-    assert ui["type"] == "buttons"
-    assert ui["id"] == "provider_availability_v1"
-    assert ui["footer_text"] == "Tienes 2 min para responder."
-    assert ui["options"] == [
-        {"id": "availability_accept", "title": "Disponible"},
-        {"id": "availability_reject", "title": "No disponible"},
+    assert ui["type"] == "template"
+    assert ui["template_name"] == "provider_availability_request_v1"
+    assert ui["template_language"] == "es"
+    assert ui["template_components"] == [
+        {
+            "type": "body",
+            "parameters": [
+                {"type": "text", "text": "Cuenca"},
+                {
+                    "type": "text",
+                    "text": "desarrollo y mantenimiento de aplicaciones móviles",
+                },
+                {
+                    "type": "text",
+                    "text": "desarrolle la app movil y arregle los errores que tiene",
+                },
+            ],
+        },
+        {
+            "type": "button",
+            "sub_type": "quick_reply",
+            "index": "0",
+            "parameters": [{"type": "payload", "payload": "availability_accept"}],
+        },
+        {
+            "type": "button",
+            "sub_type": "quick_reply",
+            "index": "1",
+            "parameters": [{"type": "payload", "payload": "availability_reject"}],
+        },
     ]

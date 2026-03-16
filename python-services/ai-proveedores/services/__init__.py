@@ -38,6 +38,10 @@ _EXPORTS = {
         "services.servicios_proveedor",
         "agregar_certificado_proveedor",
     ),
+    "actualizar_certificado_proveedor": (
+        "services.servicios_proveedor",
+        "actualizar_certificado_proveedor",
+    ),
     "listar_certificados_proveedor": (
         "services.servicios_proveedor",
         "listar_certificados_proveedor",

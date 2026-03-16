@@ -90,6 +90,15 @@ MENU_STATES = {
     "awaiting_face_photo_update",
     "awaiting_dni_front_photo_update",
     "awaiting_dni_back_photo_update",
+    "viewing_personal_name",
+    "viewing_personal_city",
+    "viewing_personal_photo",
+    "viewing_personal_dni_front",
+    "viewing_personal_dni_back",
+    "viewing_professional_services",
+    "viewing_professional_social",
+    "viewing_professional_certificates",
+    "viewing_professional_certificate",
 }
 PROFILE_COMPLETION_STATES = {
     "awaiting_experience",

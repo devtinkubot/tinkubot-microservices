@@ -54,6 +54,7 @@ from .gestor_servicios import (
     manejar_confirmacion_agregar_servicios,
     manejar_eliminar_servicio,
 )
+from .gestor_vistas_perfil import manejar_vista_perfil, render_profile_view
 
 __all__ = [
     "manejar_confirmacion",
@@ -67,6 +68,8 @@ __all__ = [
     "manejar_agregar_servicios",
     "manejar_confirmacion_agregar_servicios",
     "manejar_eliminar_servicio",
+    "manejar_vista_perfil",
+    "render_profile_view",
     "manejar_actualizacion_selfie",
     "manejar_confirmacion_eliminacion",
     "manejar_inicio_documentos",

@@ -61,3 +61,43 @@ def test_dni_trasera_actualizacion_persiste_y_vuelve_menu():
     ]
     assert "cédula actualizada" in respuesta["messages"][0]["response"].lower()
     assert "actualizar cédula" in respuesta["messages"][1]["response"].lower()
+
+
+def test_dni_trasera_actualizacion_permite_actualizar_solo_reverso():
+    llamadas = []
+
+    async def subir_medios_identidad(proveedor_id, payload):
+        llamadas.append((proveedor_id, payload))
+
+    flujo = {
+        "menu_limitado": False,
+        "provider_id": "prov-10",
+        "profile_edit_mode": "personal_dni_back_update",
+        "profile_return_state": "viewing_personal_dni_back",
+    }
+
+    respuesta = asyncio.run(
+        manejar_dni_trasera_actualizacion(
+            flujo=flujo,
+            carga={"image_base64": "back-image"},
+            proveedor_id="prov-10",
+            subir_medios_identidad=subir_medios_identidad,
+        )
+    )
+
+    assert llamadas == [("prov-10", {"dni_back_image": "back-image"})]
+    assert flujo["state"] == "viewing_personal_dni_back"
+    assert respuesta["messages"][1]["ui"]["options"][0]["id"] == "provider_detail_dni_back_change"
+
+
+def test_dni_frontal_actualizacion_directa_marca_persistencia():
+    flujo = {"profile_edit_mode": "personal_dni_front_update"}
+
+    respuesta = manejar_dni_frontal_actualizacion(
+        flujo,
+        {"image_base64": "front-image"},
+    )
+
+    assert flujo["state"] == "awaiting_dni_back_photo_update"
+    assert flujo["dni_front_image"] == "front-image"
+    assert respuesta["messages"][0]["response"] == "__persistir_dni_frontal__"

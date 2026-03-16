@@ -1,16 +1,3 @@
-export type WhatsAppInstanceKey = 'bot-clientes' | 'bot-proveedores' | string;
-
-export interface WhatsAppInstanceStatus {
-  connected: boolean;
-  qr?: string | null;
-  phone?: string | null;
-  battery?: number | null;
-}
-
-export interface WhatsAppStatusResponse {
-  [key: WhatsAppInstanceKey]: WhatsAppInstanceStatus | undefined;
-}
-
 export type ProviderStatus =
   | 'pending'
   | 'approved_basic'

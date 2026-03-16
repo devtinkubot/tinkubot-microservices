@@ -16,11 +16,6 @@ var (
 	ErrMetaNotConfigured = errors.New("meta outbound not configured")
 )
 
-// WebSender sends messages through WhatsMeow/Web transport.
-type WebSender interface {
-	SendTextMessage(accountID string, to string, message string) error
-}
-
 // MetaSender sends messages through Meta Cloud API.
 type MetaSender interface {
 	SendText(ctx context.Context, phoneNumberID, to, body string) error
@@ -41,7 +36,6 @@ type RouterConfig struct {
 
 // Router routes outbound sends per account to the proper transport.
 type Router struct {
-	webSender               WebSender
 	metaSender              MetaSender
 	metaOutboundOn          bool
 	metaEnabledAccount      map[string]bool
@@ -50,7 +44,7 @@ type Router struct {
 }
 
 // NewRouter builds a transport router.
-func NewRouter(webSender WebSender, metaSender MetaSender, cfg RouterConfig) *Router {
+func NewRouter(metaSender MetaSender, cfg RouterConfig) *Router {
 	metaEnabled := cfg.MetaEnabledAccounts
 	if metaEnabled == nil {
 		metaEnabled = map[string]bool{}
@@ -61,7 +55,6 @@ func NewRouter(webSender WebSender, metaSender MetaSender, cfg RouterConfig) *Ro
 	}
 
 	return &Router{
-		webSender:               webSender,
 		metaSender:              metaSender,
 		metaOutboundOn:          cfg.MetaOutboundEnabled,
 		metaEnabledAccount:      metaEnabled,
@@ -75,25 +68,21 @@ func (r *Router) SendText(ctx context.Context, accountID, to, message string) er
 	if r == nil {
 		return fmt.Errorf("outbound router is nil")
 	}
-	if r.shouldUseMeta(accountID) {
-		if r.metaSender == nil {
-			return fmt.Errorf("%w: sender unavailable for account=%s", ErrMetaNotConfigured, accountID)
-		}
-		phoneNumberID := strings.TrimSpace(r.accountPhoneNumber[accountID])
-		if phoneNumberID == "" {
-			return fmt.Errorf("%w: missing phone_number_id for account=%s", ErrMetaNotConfigured, accountID)
-		}
-		metaTo := r.resolveMetaDestination(accountID, to)
-		if metaTo == "" {
-			return fmt.Errorf("invalid meta destination for account=%s", accountID)
-		}
-		return r.metaSender.SendText(ctx, phoneNumberID, metaTo, message)
+	if !r.shouldUseMeta(accountID) {
+		return fmt.Errorf("%w: account=%s", ErrMetaNotConfigured, accountID)
 	}
-
-	if r.webSender == nil {
-		return fmt.Errorf("web sender unavailable for account=%s", accountID)
+	if r.metaSender == nil {
+		return fmt.Errorf("%w: sender unavailable for account=%s", ErrMetaNotConfigured, accountID)
 	}
-	return r.webSender.SendTextMessage(accountID, to, message)
+	phoneNumberID := strings.TrimSpace(r.accountPhoneNumber[accountID])
+	if phoneNumberID == "" {
+		return fmt.Errorf("%w: missing phone_number_id for account=%s", ErrMetaNotConfigured, accountID)
+	}
+	metaTo := r.resolveMetaDestination(accountID, to)
+	if metaTo == "" {
+		return fmt.Errorf("invalid meta destination for account=%s", accountID)
+	}
+	return r.metaSender.SendText(ctx, phoneNumberID, metaTo, message)
 }
 
 // SendButtons sends buttons through Meta when available, or falls back to text.
@@ -120,7 +109,6 @@ func (r *Router) SendButtons(
 		return r.metaSender.SendButtons(ctx, phoneNumberID, metaTo, message, ui)
 	}
 
-	// WhatsMeow path no soporta botones en este endpoint; degradar a texto.
 	return r.SendText(ctx, accountID, to, message)
 }
 

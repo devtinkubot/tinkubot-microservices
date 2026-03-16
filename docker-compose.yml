@@ -1,7 +1,7 @@
  
 
 services:
-  # WA-Gateway Service - Go + whatsmeow + SQLite
+  # WA-Gateway Service - Go + Meta Cloud API
   wa-gateway:
     build:
       context: ./go-services/wa-gateway
@@ -15,7 +15,6 @@ services:
     dns_search: .
     environment:
       - GATEWAY_PORT=${WA_GATEWAY_PORT:-7000}
-      - DATABASE_PATH=file:./data/wa-gateway.db?_foreign_keys=on
       - RATE_LIMIT_MAX_PER_HOUR=${WA_RATE_LIMIT_MAX_PER_HOUR:-20}
       - RATE_LIMIT_MAX_PER_24H=${WA_RATE_LIMIT_MAX_PER24H:-100}
       # Webhook Configuration (Dynamic Routing)
@@ -38,10 +37,6 @@ services:
       - META_WABA_ID_PROVEEDORES=${META_WABA_ID_PROVEEDORES:-}
       - META_CLIENTES_ACCESS_TOKEN=${META_CLIENTES_ACCESS_TOKEN:-}
       - META_PROVEEDORES_ACCESS_TOKEN=${META_PROVEEDORES_ACCESS_TOKEN:-}
-      - WA_CLIENTES_DEVICE_JID=${WA_CLIENTES_DEVICE_JID}
-      - WA_PROVEEDORES_DEVICE_JID=${WA_PROVEEDORES_DEVICE_JID}
-    volumes:
-      - ./wa-data:/app/data
     networks:
       - wa-gateway-ipv4
     restart: unless-stopped
@@ -230,6 +225,4 @@ networks:
 
 volumes:
   redis-data:
-    driver: local
-  wa-data:
     driver: local

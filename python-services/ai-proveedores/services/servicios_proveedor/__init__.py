@@ -7,6 +7,7 @@ from .actualizar_selfie import actualizar_selfie
 from .actualizar_datos_personales import actualizar_nombre_proveedor
 from .certificados import (
     agregar_certificado_proveedor,
+    actualizar_certificado_proveedor,
     eliminar_certificado_proveedor,
     listar_certificados_proveedor,
 )
@@ -20,6 +21,7 @@ __all__ = [
     "actualizar_nombre_proveedor",
     "actualizar_documentos_identidad",
     "agregar_certificado_proveedor",
+    "actualizar_certificado_proveedor",
     "eliminar_certificado_proveedor",
     "listar_certificados_proveedor",
 ]

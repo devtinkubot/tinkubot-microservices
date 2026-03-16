@@ -7,13 +7,6 @@ import (
 	"github.com/tinkubot/wa-gateway/internal/webhook"
 )
 
-type fakeWebSender struct{}
-
-func (f *fakeWebSender) SendTextMessage(accountID string, to string, message string) error {
-	_, _, _ = accountID, to, message
-	return nil
-}
-
 type fakeMetaSender struct {
 	lastTo string
 }
@@ -106,7 +99,6 @@ func TestNormalizeMetaDestinationPreservesWhatsAppJIDWhenEnabled(t *testing.T) {
 func TestRouterSendButtonsPreservesLIDOnlyForBotProveedores(t *testing.T) {
 	meta := &fakeMetaSender{}
 	router := NewRouter(
-		&fakeWebSender{},
 		meta,
 		RouterConfig{
 			MetaOutboundEnabled: true,
@@ -138,7 +130,6 @@ func TestRouterSendButtonsPreservesLIDOnlyForBotProveedores(t *testing.T) {
 func TestRouterSendButtonsPreservesWhatsAppJIDForBotProveedores(t *testing.T) {
 	meta := &fakeMetaSender{}
 	router := NewRouter(
-		&fakeWebSender{},
 		meta,
 		RouterConfig{
 			MetaOutboundEnabled: true,
@@ -170,7 +161,6 @@ func TestRouterSendButtonsPreservesWhatsAppJIDForBotProveedores(t *testing.T) {
 func TestRouterSendButtonsKeepsDigitsForOtherAccounts(t *testing.T) {
 	meta := &fakeMetaSender{}
 	router := NewRouter(
-		&fakeWebSender{},
 		meta,
 		RouterConfig{
 			MetaOutboundEnabled: true,

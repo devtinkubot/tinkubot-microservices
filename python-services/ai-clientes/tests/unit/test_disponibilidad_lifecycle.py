@@ -272,6 +272,11 @@ async def test_verificar_disponibilidad_prioriza_real_phone_sobre_lid():
     telefonos_contactados = {m["telefono"] for m in mensajes_enviados}
     assert "593998308695@s.whatsapp.net" in telefonos_contactados
     assert "39101516509235@lid" not in telefonos_contactados
+    assert mensajes_enviados[0]["ui"]["type"] == "template"
+    assert (
+        mensajes_enviados[0]["ui"]["template_name"]
+        == "provider_availability_request_v1"
+    )
     assert mensajes_enviados[0]["metadata"]["task_type"] == "provider_availability_request"
 
 

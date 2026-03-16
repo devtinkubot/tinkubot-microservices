@@ -12,13 +12,9 @@
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
       rel="stylesheet"
     />
-    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
     <style>
       :root {
         --primary-color: #6366f1;
-        --success-color: #10b981;
-        --warning-color: #f59e0b;
-        --danger-color: #ef4444;
         --dark-color: #1f2937;
         --light-bg: #f8fafc;
       }
@@ -32,7 +28,6 @@
         background: linear-gradient(135deg, var(--dark-color) 0%, #374151 100%);
         min-height: 100vh;
         color: white;
-        box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
       }
 
       .sidebar .nav-link {
@@ -40,177 +35,35 @@
         padding: 12px 20px;
         border-radius: 8px;
         margin: 4px 0;
-        transition: all 0.3s ease;
       }
 
-      .sidebar .nav-link:hover,
-      .sidebar .nav-link.active {
+      .sidebar .nav-link.active,
+      .sidebar .nav-link:hover {
         background-color: var(--primary-color);
         color: white;
-        transform: translateX(5px);
       }
 
       .main-content {
         padding: 2rem;
       }
 
-      .status-card {
+      .status-card,
+      .header-section {
         background: white;
         border-radius: 12px;
         padding: 1.5rem;
         box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
         border: 1px solid rgba(0, 0, 0, 0.05);
-        transition:
-          transform 0.2s ease,
-          box-shadow 0.2s ease;
-      }
-
-      .status-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
-      }
-
-      .status-indicator {
-        width: 12px;
-        height: 12px;
-        border-radius: 50%;
-        display: inline-block;
-        margin-right: 8px;
-        animation: pulse 2s infinite;
-      }
-
-      .status-indicator.connected {
-        background-color: var(--success-color);
-      }
-
-      .status-indicator.disconnected {
-        background-color: var(--danger-color);
-      }
-
-      .status-indicator.loading {
-        background-color: var(--warning-color);
-      }
-
-      @keyframes pulse {
-        0% {
-          opacity: 1;
-        }
-        50% {
-          opacity: 0.5;
-        }
-        100% {
-          opacity: 1;
-        }
-      }
-
-      .qr-container {
-        text-align: center;
-        padding: 1rem;
-        background: #f8f9fa;
-        border-radius: 8px;
-        margin-top: 1rem;
-      }
-
-      .qr-container img {
-        max-width: 200px;
-        border: 1px solid #dee2e6;
-        border-radius: 8px;
-      }
-
-      .badge {
-        font-size: 0.75rem;
-        padding: 0.4rem 0.8rem;
       }
 
       .header-section {
-        background: white;
-        border-radius: 12px;
-        padding: 2rem;
         margin-bottom: 2rem;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
-      }
-
-      .refresh-btn {
-        background-color: var(--primary-color);
-        border: none;
-        color: white;
-        padding: 0.5rem 1rem;
-        border-radius: 6px;
-        transition: background-color 0.3s ease;
-      }
-
-      .refresh-btn:hover {
-        background-color: #5558e3;
-        color: white;
-      }
-
-      .loading-spinner {
-        display: none;
-        width: 1rem;
-        height: 1rem;
-        margin-left: 0.5rem;
-      }
-
-      .instance-actions {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-      }
-
-      .instance-refresh-btn {
-        border: none;
-        background: none;
-        color: var(--primary-color);
-        border-radius: 0;
-        padding: 0;
-        font-size: 0.85rem;
-        font-weight: 500;
-        display: inline-flex;
-        align-items: center;
-        gap: 0.4rem;
-        transition: all 0.2s ease;
-        text-decoration: underline;
-      }
-
-      .instance-refresh-btn:hover:not(:disabled) {
-        color: #5558e3;
-      }
-
-      .instance-refresh-btn:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-        text-decoration: none;
-      }
-
-      .instance-refresh-btn .spinner-border {
-        display: none;
-        width: 1rem;
-        height: 1rem;
-      }
-
-      .instance-refresh-btn[data-loading='true'] .spinner-border {
-        display: inline-block;
-      }
-
-      .status-message {
-        display: none;
-        margin-top: 0.75rem;
-        font-size: 0.9rem;
-      }
-
-      .status-message.success {
-        color: var(--success-color);
-      }
-
-      .status-message.error {
-        color: var(--danger-color);
       }
     </style>
   </head>
   <body>
     <div class="container-fluid">
       <div class="row">
-        <!-- Sidebar -->
         <div class="col-md-3 col-lg-2 sidebar">
           <div class="p-3">
             <h4 class="mb-4">
@@ -230,9 +83,7 @@
           </div>
         </div>
 
-        <!-- Main Content -->
         <div class="col-md-9 col-lg-10 main-content">
-          <!-- Header -->
           <div class="header-section">
             <div class="d-flex justify-content-between align-items-center">
               <div>
@@ -244,14 +95,7 @@
                   <i class="fas fa-user me-1"></i>
                   <span id="usernameDisplay">Cargando...</span>
                 </span>
-                <button class="refresh-btn me-2" onclick="actualizarTodosDatos()">
-                  <i class="fas fa-sync-alt me-1"></i>
-                  Actualizar
-                  <div class="spinner-border spinner-border-sm loading-spinner" role="status">
-                    <span class="visually-hidden">Cargando...</span>
-                  </div>
-                </button>
-                <button class="btn btn-outline-danger btn-sm" onclick="cerrarSesion()">
+                <button class="btn btn-outline-danger btn-sm" id="logoutBtn">
                   <i class="fas fa-sign-out-alt me-1"></i>
                   Salir
                 </button>
@@ -259,573 +103,63 @@
             </div>
           </div>
 
-          <!-- Dashboard Section -->
           <div id="dashboard-section">
-            <!-- WhatsApp Status Cards -->
-            <div class="row mb-4">
-              <div class="col-md-6">
-                <div class="status-card">
-                  <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h5 class="mb-0">
-                      <i class="fab fa-whatsapp me-2 text-success"></i>
-                      WhatsApp Clientes
-                    </h5>
-                <div class="instance-actions">
-                  <span class="status-indicator loading" id="bot-clientes-status"></span>
-                  <button
-                    type="button"
-                    class="instance-refresh-btn"
-                    data-refresh="bot-clientes"
-                    data-loading="false"
-                    onclick="regenerarConexionWhatsApp('bot-clientes')"
-                  >
-                    <i class="fas fa-sync-alt"></i>
-                    <span>Regenerar QR</span>
-                        <span
-                          class="spinner-border spinner-border-sm"
-                          role="status"
-                          aria-hidden="true"
-                        ></span>
-                      </button>
-                    </div>
-                  </div>
-                  <div id="bot-clientes-info">
-                    <p class="text-muted">Verificando estado...</p>
-                  </div>
-                  <div id="bot-clientes-qr" class="qr-container" style="display: none">
-                    <h6 class="mb-3">Escanea este código QR</h6>
-                    <img id="bot-clientes-qr-img" src="" alt="QR Clientes" />
-                    <p class="text-muted small mt-2">Abre WhatsApp Web > Dispositivos vinculados</p>
-                  </div>
-                  <div class="status-message" id="bot-clientes-message" role="status"></div>
-                </div>
-              </div>
-              <div class="col-md-6">
-                <div class="status-card">
-                  <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h5 class="mb-0">
-                      <i class="fab fa-whatsapp me-2 text-success"></i>
-                      WhatsApp Proveedores
-                    </h5>
-                <div class="instance-actions">
-                  <span class="status-indicator loading" id="bot-proveedores-status"></span>
-                  <button
-                    type="button"
-                    class="instance-refresh-btn"
-                    data-refresh="bot-proveedores"
-                    data-loading="false"
-                    onclick="regenerarConexionWhatsApp('bot-proveedores')"
-                  >
-                    <i class="fas fa-sync-alt"></i>
-                    <span>Regenerar QR</span>
-                        <span
-                          class="spinner-border spinner-border-sm"
-                          role="status"
-                          aria-hidden="true"
-                        ></span>
-                      </button>
-                    </div>
-                  </div>
-                  <div id="bot-proveedores-info">
-                    <p class="text-muted">Verificando estado...</p>
-                  </div>
-                  <div id="bot-proveedores-qr" class="qr-container" style="display: none">
-                    <h6 class="mb-3">Escanea este código QR</h6>
-                    <img id="bot-proveedores-qr-img" src="" alt="QR Proveedores" />
-                    <p class="text-muted small mt-2">Abre WhatsApp Web > Dispositivos vinculados</p>
-                  </div>
-                  <div class="status-message" id="bot-proveedores-message" role="status"></div>
-                </div>
-              </div>
+            <div class="status-card mb-4">
+              <h5 class="mb-2">
+                <i class="fas fa-circle-info me-2 text-primary"></i>
+                WhatsApp Web retirado
+              </h5>
+              <p class="text-muted mb-0">
+                La gestión de sesiones QR y conexión por WhatsApp Web fue eliminada de este panel. Si necesitas las funciones administrativas completas, usa la versión compilada actual del dashboard.
+              </p>
             </div>
           </div>
 
-          <!-- Settings Section -->
           <div id="settings-section" style="display: none">
             <div class="status-card">
-              <h5 class="mb-4">
+              <h5 class="mb-3">
                 <i class="fas fa-cog me-2"></i>
-                Configuración del Sistema
+                Configuración del sistema
               </h5>
-              <div class="row">
-                <div class="col-md-6">
-                  <h6>Información del Sistema</h6>
-                  <p class="text-muted">Versión: 1.0.0</p>
-                  <p class="text-muted">Entorno: Desarrollo</p>
-                  <p class="text-muted">Última actualización: <span id="last-update"></span></p>
-                </div>
-                <div class="col-md-6">
-                  <h6>Información</h6>
-                  <p class="text-muted small mb-2">
-                    <i class="fas fa-info-circle me-1"></i>
-                    Para actualizar datos, usa el botón "Actualizar" en el header principal
-                  </p>
-                </div>
-              </div>
+              <p class="text-muted mb-0">
+                Este fallback legacy ya no incluye controles operativos de WhatsApp Web.
+              </p>
             </div>
           </div>
         </div>
       </div>
     </div>
 
-    <div class="modal fade" id="qr-reset-modal" tabindex="-1" aria-hidden="true">
-      <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">Regenerar QR</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-          </div>
-          <div class="modal-body">
-            Esto cerrará la sesión actual y requerirá volver a escanear el QR. ¿Deseas continuar?
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
-            <button type="button" class="btn btn-primary" id="qr-reset-confirm">Regenerar</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-      /**
-       * Namespace global TinkuBot - Module Pattern Implementation
-       * Organización del código en módulos para mejor mantenibilidad
-       */
-      window.TinkuBot = window.TinkuBot || {};
-      const TinkuBot = window.TinkuBot;
-
-      /**
-       * Módulo de utilidades generales
-       */
-      TinkuBot.Utils = (function() {
-        'use strict';
-
-        // Configuración global
-        const API_BASE_URL = '';
-
-        return {
-          obtenerUrlBaseApi: () => API_BASE_URL,
-
-          /**
-           * Formatea timestamp a string local
-           */
-          formatearMarcaDeTiempo: function() {
-            return new Date().toLocaleString();
-          },
-
-          /**
-           * Muestra/oculta spinner de carga
-           */
-          alternarSpinner: function(mostrar) {
-            const spinner = document.querySelector('.refresh-btn .loading-spinner');
-            if (spinner) {
-              spinner.style.display = mostrar ? 'inline-block' : 'none';
-            }
-          }
-        };
-      })();
-
-      /**
-       * Módulo de navegación del dashboard
-       */
-      TinkuBot.Navigation = (function() {
-        'use strict';
-
-        function inicializarNavegacionLateral() {
-          document.querySelectorAll('.sidebar .nav-link[data-section]').forEach(link => {
-            link.addEventListener('click', manejarClicDeSeccion);
+      document.querySelectorAll('.sidebar .nav-link[data-section]').forEach(link => {
+        link.addEventListener('click', event => {
+          event.preventDefault();
+          const section = event.currentTarget.dataset.section;
+          document.querySelectorAll('.sidebar .nav-link').forEach(item => item.classList.remove('active'));
+          event.currentTarget.classList.add('active');
+          document.querySelectorAll('[id$="-section"]').forEach(node => {
+            node.style.display = 'none';
           });
-        }
-
-        function manejarClicDeSeccion(evento) {
-          evento.preventDefault();
-          const section = evento.currentTarget.dataset.section;
-
-          // Actualizar navegación activa
-          document.querySelectorAll('.sidebar .nav-link')
-            .forEach(l => l.classList.remove('active'));
-          evento.currentTarget.classList.add('active');
-
-          // Mostrar sección correspondiente
-          document.querySelectorAll('[id$="-section"]').forEach(s => (s.style.display = 'none'));
           document.getElementById(`${section}-section`).style.display = 'block';
-        }
-
-        return {
-          iniciar: function() {
-            inicializarNavegacionLateral();
-          }
-        };
-      })();
-
-      /**
-       * Módulo de gestión de WhatsApp (WA-Gateway)
-       */
-      TinkuBot.WhatsAppManager = (function() {
-        'use strict';
-
-        let eventSource = null;
-        let pendingInstanceId = null;
-        let qrResetModal = null;
-
-        /**
-         * Establece estado de botón de actualización
-         */
-        function establecerEstadoBotonActualizacion(instanceId, isLoading) {
-          const button = document.querySelector(
-            `.instance-refresh-btn[data-refresh="${instanceId}"]`
-          );
-          if (!button) return;
-
-          button.dataset.loading = isLoading ? 'true' : 'false';
-          button.disabled = isLoading;
-        }
-
-        /**
-         * Muestra mensajes de estado en la interfaz
-         */
-        function mostrarMensajeEstado(instanceId, message, type = 'success') {
-          const messageDiv = document.getElementById(`${instanceId}-message`);
-          if (!messageDiv) return;
-
-          messageDiv.classList.remove('success', 'error');
-
-          if (!message) {
-            messageDiv.style.display = 'none';
-            messageDiv.textContent = '';
-            return;
-          }
-
-          messageDiv.textContent = message;
-          messageDiv.classList.add(type === 'error' ? 'error' : 'success');
-          messageDiv.style.display = 'block';
-        }
-
-        /**
-         * Conecta al stream de eventos SSE de wa-gateway
-         */
-        function conectarEventStream() {
-          if (eventSource) {
-            eventSource.close();
-          }
-
-          eventSource = new EventSource('/api/events/stream');
-
-          eventSource.addEventListener('qr_ready', (e) => {
-            const data = JSON.parse(e.data);
-            console.log('QR listo para:', data.account_id);
-            cargarEstadoWhatsApp();
-          });
-
-          eventSource.addEventListener('connected', (e) => {
-            const data = JSON.parse(e.data);
-            console.log('Conectado:', data.account_id);
-            cargarEstadoWhatsApp();
-          });
-
-          eventSource.addEventListener('disconnected', (e) => {
-            const data = JSON.parse(e.data);
-            console.log('Desconectado:', data.account_id, data.reason);
-            cargarEstadoWhatsApp();
-          });
-
-          eventSource.addEventListener('error', (e) => {
-            console.error('Error en SSE:', e);
-            // Reconnect after 5 seconds
-            setTimeout(conectarEventStream, 5000);
-          });
-
-          console.log('SSE conectado');
-        }
-
-        /**
-         * Regenera conexión de WhatsApp (genera nuevo QR)
-         */
-        async function regenerarConexionWhatsApp(instanceId) {
-          pendingInstanceId = instanceId;
-          if (qrResetModal) {
-            qrResetModal.show();
-          }
-          return;
-        }
-
-        async function confirmarRegeneracionWhatsApp() {
-          if (!pendingInstanceId) {
-            return;
-          }
-          const instanceId = pendingInstanceId;
-          pendingInstanceId = null;
-          if (qrResetModal) {
-            qrResetModal.hide();
-          }
-          establecerEstadoBotonActualizacion(instanceId, true);
-          mostrarMensajeEstado(instanceId, '');
-
-          const infoDiv = document.getElementById(`${instanceId}-info`);
-          if (infoDiv) {
-            infoDiv.innerHTML = `
-              <p class="text-primary mb-0"><strong>Generando nuevo código QR...</strong></p>
-              <p class="text-muted small mb-0">Solicitando nuevo código, espera unos segundos...</p>
-            `;
-          }
-
-          try {
-            // Usar endpoint de wa-gateway para regenerar conexión
-            const response = await fetch(`/api/accounts/${instanceId}/login`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ force: true })
-            });
-            const payload = await response.json().catch(() => ({}));
-
-            if (!response.ok) {
-              throw new Error(payload.error || payload.message || 'No se pudo generar el nuevo QR.');
-            }
-
-            mostrarMensajeEstado(
-              instanceId,
-              payload.message || 'Escanea el nuevo código QR generado.',
-              'success'
-            );
-            // NO hacer polling manual - SSE notificará cuando esté listo
-          } catch (error) {
-            console.error('Error al generar QR:', error);
-            mostrarMensajeEstado(
-              instanceId,
-              error?.message || 'Ocurrió un problema al generar el nuevo QR.',
-              'error'
-            );
-          } finally {
-            establecerEstadoBotonActualizacion(instanceId, false);
-          }
-        }
-
-        /**
-         * Carga estado actual de conexiones WhatsApp desde wa-gateway
-         */
-        async function cargarEstadoWhatsApp() {
-          try {
-            // Usar wa-gateway API para obtener estado de todas las cuentas
-            const response = await fetch('/api/accounts');
-            const accounts = await response.json();
-
-            // Convertir array de cuentas al formato esperado
-            const statusMap = {};
-            accounts.forEach(account => {
-              statusMap[account.account_id] = {
-                connected: account.connection_status === 'connected',
-                qr: account.qr_code ? account.qr_code : null,
-                phone: account.phone_number || null,
-                battery: null
-              };
-            });
-
-            // Actualizar visualización con datos del backend
-            actualizarVisualizacionWhatsApp('bot-clientes', statusMap['bot-clientes']);
-            actualizarVisualizacionWhatsApp('bot-proveedores', statusMap['bot-proveedores']);
-          } catch (error) {
-            console.error('Error al cargar estado de WhatsApp:', error);
-            mostrarMensajeEstado(
-              'bot-clientes',
-              'No se pudo cargar el estado. Intenta nuevamente.',
-              'error'
-            );
-            mostrarMensajeEstado(
-              'bot-proveedores',
-              'No se pudo cargar el estado. Intenta nuevamente.',
-              'error'
-            );
-          }
-        }
-
-        /**
-         * Actualiza visualización del estado de WhatsApp
-         */
-        function actualizarVisualizacionWhatsApp(service, data) {
-          const statusIndicator = document.getElementById(`${service}-status`);
-          const infoDiv = document.getElementById(`${service}-info`);
-          const qrDiv = document.getElementById(`${service}-qr`);
-          const messageDiv = document.getElementById(`${service}-message`);
-          const statusData = data || {};
-
-          if (statusData.connected) {
-            statusIndicator.className = 'status-indicator connected';
-            infoDiv.innerHTML = `
-              <p class="text-success mb-0"><strong>Conectado</strong></p>
-              <p class="text-muted small mb-0">${statusData.phone || 'Listo para enviar mensajes'}</p>
-            `;
-            qrDiv.style.display = 'none';
-            if (messageDiv) {
-              messageDiv.style.display = 'none';
-              messageDiv.textContent = '';
-              messageDiv.classList.remove('success', 'error');
-            }
-          } else {
-            statusIndicator.className = 'status-indicator disconnected';
-            infoDiv.innerHTML = `
-              <p class="text-danger mb-0"><strong>Desconectado</strong></p>
-              <p class="text-muted small mb-0">Necesita escanear código QR</p>
-            `;
-            qrDiv.style.display = 'block';
-            const qrImg = document.getElementById(`${service}-qr-img`);
-            if (qrImg) {
-              qrImg.src = '';
-              qrImg.alt = 'QR no disponible';
-            }
-            if (statusData.qr && qrImg) {
-              // Generar QR code usando la librería qrcode.js
-              QRCode.toDataURL(statusData.qr, {
-                width: 256,
-                margin: 2,
-                color: {
-                  dark: '#000000',
-                  light: '#FFFFFF'
-                }
-              }, function(error, url) {
-                if (error) {
-                  console.error('Error generando QR:', error);
-                  qrImg.alt = 'Error generando QR';
-                } else {
-                  qrImg.src = url;
-                }
-              });
-            }
-            if (messageDiv) {
-              messageDiv.style.display = 'none';
-              messageDiv.textContent = '';
-              messageDiv.classList.remove('success', 'error');
-            }
-          }
-        }
-
-        /**
-         * Actualiza todos los datos del dashboard
-         */
-        async function actualizarTodosDatos() {
-          TinkuBot.Utils.alternarSpinner(true);
-          await Promise.all([cargarEstadoWhatsApp()]);
-          TinkuBot.Utils.alternarSpinner(false);
-          actualizarHoraUltimaActualizacion();
-        }
-
-        /**
-         * Actualiza timestamp de última actualización
-         */
-        function actualizarHoraUltimaActualizacion() {
-          const timestampElement = document.getElementById('last-update');
-          if (timestampElement) {
-            timestampElement.textContent = TinkuBot.Utils.formatearMarcaDeTiempo();
-          }
-        }
-
-        // API pública del módulo
-        return {
-          iniciar: function() {
-            // Inicialización del módulo
-            conectarEventStream();
-          },
-
-          // Funciones públicas para compatibilidad con HTML
-          actualizarTodosDatos: actualizarTodosDatos,
-          regenerarConexionWhatsApp: regenerarConexionWhatsApp,
-          confirmarRegeneracionWhatsApp: confirmarRegeneracionWhatsApp,
-          cargarEstadoWhatsApp: cargarEstadoWhatsApp,
-          actualizarHoraUltimaActualizacion: actualizarHoraUltimaActualizacion,
-          _setQrResetModal: function(modalInstance) {
-            qrResetModal = modalInstance;
-          }
-        };
-      })();
-
-      /**
-       * Punto de entrada principal - Inicialización de la aplicación
-       */
-      document.addEventListener('DOMContentLoaded', () => {
-        const modalEl = document.getElementById('qr-reset-modal');
-        if (modalEl && window.bootstrap) {
-          TinkuBot.WhatsAppManager._setQrResetModal(
-            new bootstrap.Modal(modalEl, { backdrop: 'static' })
-          );
-        }
-        const confirmBtn = document.getElementById('qr-reset-confirm');
-        if (confirmBtn) {
-          confirmBtn.addEventListener('click', () => {
-            TinkuBot.WhatsAppManager.confirmarRegeneracionWhatsApp();
-          });
-        }
-        // Verificar autenticación primero
-        verificarAutenticacion().then(authenticated => {
-          if (!authenticated) {
-            window.location.href = '/login';
-            return;
-          }
-
-          // Inicializar módulos
-          TinkuBot.Navigation.iniciar();
-          TinkuBot.WhatsAppManager.iniciar();
-
-          // Cargar datos iniciales
-          TinkuBot.WhatsAppManager.cargarEstadoWhatsApp();
-          TinkuBot.WhatsAppManager.actualizarHoraUltimaActualizacion();
         });
       });
 
-      /**
-       * Verifica si el usuario está autenticado
-       */
-      async function verificarAutenticacion() {
-        try {
-          const response = await fetch('/api/auth/status');
-          const data = await response.json();
-
-          if (data.authenticated && data.username) {
-            document.getElementById('usernameDisplay').textContent = data.username;
-            return true;
-          }
-          return false;
-        } catch (error) {
-          console.error('Error verificando autenticación:', error);
-          return false;
-        }
-      }
-
-      /**
-       * Cierra la sesión del usuario
-       */
-      async function cerrarSesion() {
-        if (!confirm('¿Estás seguro de que deseas cerrar la sesión?')) {
+      async function verificarSesion() {
+        const response = await fetch('/api/auth/status');
+        const data = await response.json();
+        if (!data.authenticated) {
+          window.location.href = '/login';
           return;
         }
-
-        try {
-          const response = await fetch('/api/logout', {
-            method: 'POST'
-          });
-          const data = await response.json();
-
-          if (data.success) {
-            window.location.href = '/login';
-          } else {
-            alert('Error al cerrar sesión: ' + (data.message || 'Error desconocido'));
-          }
-        } catch (error) {
-          console.error('Error al cerrar sesión:', error);
-          alert('Error de conexión al cerrar sesión');
-        }
+        document.getElementById('usernameDisplay').textContent = data.username || 'Administrador';
       }
 
-      /**
-       * Funciones globales para compatibilidad con eventos onclick del HTML
-       * Mantienen la misma funcionalidad pero usan los módulos internamente
-       */
-      function actualizarTodosDatos() {
-        TinkuBot.WhatsAppManager.actualizarTodosDatos();
-      }
+      document.getElementById('logoutBtn').addEventListener('click', async () => {
+        await fetch('/api/logout', { method: 'POST' });
+        window.location.href = '/login';
+      });
 
-      function regenerarConexionWhatsApp(instanceId) {
-        TinkuBot.WhatsAppManager.regenerarConexionWhatsApp(instanceId);
-      }
+      verificarSesion();
     </script>
   </body>
 </html>

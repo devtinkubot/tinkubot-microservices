@@ -12,6 +12,7 @@ from infrastructure.storage.utilidades.extractor_imagen_base64 import (
 from flows.constructores import construir_payload_menu_principal
 from services import (
     agregar_certificado_proveedor,
+    actualizar_certificado_proveedor,
     eliminar_certificado_proveedor,
     listar_certificados_proveedor,
 )
@@ -36,6 +37,62 @@ async def manejar_espera_certificado(
         carga.get("message") or carga.get("content") or carga.get("selected_option") or ""
     ).strip().lower()
     if texto in {"omitir", CERTIFICATE_SKIP_ID, "skip", "no"}:
+        if flujo.get("profile_edit_mode") == "provider_certificate_add":
+            flujo.pop("profile_edit_mode", None)
+            certificados_activos = await listar_certificados_proveedor(
+                str(flujo.get("provider_id") or "")
+            )
+            if certificados_activos:
+                retorno_estado = (
+                    str(
+                        flujo.pop(
+                            "profile_return_state", "viewing_professional_certificates"
+                        )
+                        or ""
+                    ).strip()
+                    or "viewing_professional_certificates"
+                )
+                flujo["state"] = retorno_estado
+                from .gestor_vistas_perfil import render_profile_view
+
+                return {
+                    "success": True,
+                    "messages": [
+                        await render_profile_view(
+                            flujo=flujo,
+                            estado=retorno_estado,
+                            proveedor_id=str(flujo.get("provider_id") or ""),
+                        )
+                    ],
+                }
+            flujo.pop("profile_return_state", None)
+            flujo["state"] = "awaiting_professional_info_action"
+            from .gestor_vistas_perfil import payload_submenu_informacion_profesional
+
+            return {
+                "success": True,
+                "messages": [payload_submenu_informacion_profesional()],
+            }
+        if flujo.get("profile_edit_mode") == "provider_certificate_replace":
+            flujo.pop("profile_edit_mode", None)
+            retorno_estado = (
+                str(flujo.pop("profile_return_state", "viewing_professional_certificate") or "")
+                .strip()
+                or "viewing_professional_certificate"
+            )
+            flujo["state"] = retorno_estado
+            from .gestor_vistas_perfil import render_profile_view
+
+            return {
+                "success": True,
+                "messages": [
+                    await render_profile_view(
+                        flujo=flujo,
+                        estado=retorno_estado,
+                        proveedor_id=str(flujo.get("provider_id") or ""),
+                    )
+                ],
+            }
         flujo["pending_certificate_file_url"] = None
         flujo["certificate_uploaded"] = False
         if flujo.get("profile_edit_mode") == "certificate":
@@ -134,10 +191,13 @@ async def manejar_espera_certificado(
                     proveedor_id=proveedor_id,
                     certificate_id=certificate_id,
                 )
-        await agregar_certificado_proveedor(
+        agregado = await agregar_certificado_proveedor(
             proveedor_id=proveedor_id,
             file_url=file_url,
         )
+        flujo["selected_certificate_id"] = str(
+            ((agregado.get("certificate") or {}).get("id") or "")
+        ).strip()
         flujo["certificate_uploaded"] = True
         flujo["pending_certificate_file_url"] = file_url
         flujo.pop("profile_edit_mode", None)
@@ -150,6 +210,72 @@ async def manejar_espera_certificado(
                     esta_registrado=True,
                     menu_limitado=bool(flujo.get("menu_limitado")),
                     approved_basic=bool(flujo.get("approved_basic")),
+                ),
+            ],
+        }
+
+    if flujo.get("profile_edit_mode") == "provider_certificate_add":
+        agregado = await agregar_certificado_proveedor(
+            proveedor_id=proveedor_id,
+            file_url=file_url,
+        )
+        flujo["selected_certificate_id"] = str(
+            ((agregado.get("certificate") or {}).get("id") or "")
+        ).strip()
+        flujo["certificate_uploaded"] = True
+        flujo["pending_certificate_file_url"] = file_url
+        flujo.pop("profile_edit_mode", None)
+        retorno_estado = str(
+            flujo.pop("profile_return_state", "viewing_professional_certificate") or ""
+        ).strip() or "viewing_professional_certificate"
+        flujo["state"] = retorno_estado
+        from .gestor_vistas_perfil import render_profile_view
+
+        return {
+            "success": True,
+            "messages": [
+                {"response": "✅ Tu certificado fue agregado correctamente."},
+                await render_profile_view(
+                    flujo=flujo,
+                    estado=retorno_estado,
+                    proveedor_id=proveedor_id,
+                ),
+            ],
+        }
+
+    if flujo.get("profile_edit_mode") == "provider_certificate_replace":
+        certificate_id = str(flujo.get("selected_certificate_id") or "").strip()
+        if not certificate_id:
+            return {
+                "success": True,
+                "messages": [
+                    {
+                        "response": "No pude identificar el certificado a reemplazar. Intenta nuevamente."
+                    }
+                ],
+            }
+        await actualizar_certificado_proveedor(
+            proveedor_id=proveedor_id,
+            certificate_id=certificate_id,
+            file_url=file_url,
+        )
+        flujo["certificate_uploaded"] = True
+        flujo["pending_certificate_file_url"] = file_url
+        flujo.pop("profile_edit_mode", None)
+        retorno_estado = str(
+            flujo.pop("profile_return_state", "viewing_professional_certificate") or ""
+        ).strip() or "viewing_professional_certificate"
+        flujo["state"] = retorno_estado
+        from .gestor_vistas_perfil import render_profile_view
+
+        return {
+            "success": True,
+            "messages": [
+                {"response": "✅ Tu certificado fue actualizado correctamente."},
+                await render_profile_view(
+                    flujo=flujo,
+                    estado=retorno_estado,
+                    proveedor_id=proveedor_id,
                 ),
             ],
         }

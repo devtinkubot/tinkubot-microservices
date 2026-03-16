@@ -19,7 +19,6 @@ import (
 	"github.com/tinkubot/wa-gateway/internal/outbound"
 	"github.com/tinkubot/wa-gateway/internal/ratelimit"
 	"github.com/tinkubot/wa-gateway/internal/webhook"
-	"github.com/tinkubot/wa-gateway/internal/whatsmeow"
 )
 
 func main() {
@@ -34,15 +33,9 @@ func main() {
 		port = "7000"
 	}
 
-	// SQLite database path (can be overridden via env var)
-	databasePath := os.Getenv("DATABASE_PATH")
-	if databasePath == "" {
-		databasePath = "file:./data/wa-gateway.db?_foreign_keys=on"
-	}
-
 	// If healthcheck flag is set, run healthcheck and exit
 	if *healthcheck {
-		runHealthcheck(databasePath)
+		runHealthcheck()
 		return
 	}
 
@@ -53,12 +46,6 @@ func main() {
 	}
 	rl := ratelimit.NewLimiter(rateLimitConfig)
 	log.Println("✅ Rate limiter initialized (in-memory)")
-	rateLimitRecorder, err := ratelimit.NewSQLiteEventRecorder(databasePath)
-	if err != nil {
-		log.Printf("⚠️ Failed to initialize rate-limit recorder: %v", err)
-	} else {
-		log.Println("✅ Rate-limit recorder initialized (SQLite)")
-	}
 
 	// Create webhook client with dynamic routing
 	aiClientesURL := os.Getenv("AI_CLIENTES_URL")
@@ -85,22 +72,6 @@ func main() {
 	)
 	log.Printf("✅ Webhook client created - clientes: %s%s, proveedores: %s%s",
 		aiClientesURL, webhookEndpoint, aiProveedoresURL, webhookEndpoint)
-
-	// Create client manager with SQLite and webhook client
-	cm, err := whatsmeow.NewClientManager(databasePath, webhookClient)
-	if err != nil {
-		log.Fatalf("❌ Failed to create client manager: %v", err)
-	}
-	log.Println("✅ Client manager created (SQLite)")
-
-	// Create SSE hub
-	sseHub := api.NewSSEHub()
-	log.Println("✅ SSE hub created")
-
-	// Add SSE broadcaster to client manager
-	cm.AddEventHandler(func(event whatsmeow.Event) {
-		sseHub.Broadcast(event)
-	})
 
 	// Create API handlers
 	metaEnabled := parseBoolEnv("WA_META_WEBHOOK_ENABLED", false)
@@ -201,37 +172,16 @@ func main() {
 		metaOutboundClient,
 	)
 
-	outboundRouter := outbound.NewRouter(cm, metaOutboundClient, outbound.RouterConfig{
+	outboundRouter := outbound.NewRouter(metaOutboundClient, outbound.RouterConfig{
 		MetaOutboundEnabled:         metaOutboundEnabled,
 		MetaEnabledAccounts:         metaEnabledAccounts,
 		AccountPhoneNumber:          accountToPhoneNumber,
 		MetaPreserveLIDForProviders: metaPreserveLIDForProviders,
 	})
 
-	metaManagedAccounts := map[string]bool{}
-	for accountID := range accountToPhoneNumber {
-		if isMetaAccountEnabled(metaEnabled || metaOutboundEnabled, metaEnabledAccounts, accountToPhoneNumber, accountID) {
-			metaManagedAccounts[accountID] = true
-		}
-	}
-
-	handlers := api.NewHandlers(cm, rl, sseHub, metaSvc, outboundRouter, api.HandlerConfig{
-		MetaManagedAccounts: metaManagedAccounts,
-		EventRecorder:       rateLimitRecorder,
+	handlers := api.NewHandlers(rl, metaSvc, outboundRouter, api.HandlerConfig{
+		EventRecorder: nil,
 	})
-
-	// Start WhatsApp clients
-	log.Println("📱 Starting WhatsApp clients...")
-	accountIDs := []string{"bot-clientes", "bot-proveedores"}
-	for _, accountID := range accountIDs {
-		if accountID == "bot-proveedores" && metaManagedAccounts[accountID] {
-			log.Printf("ℹ️ Skipping whatsmeow startup for %s because Meta is active", accountID)
-			continue
-		}
-		if err := cm.StartClient(accountID); err != nil {
-			log.Printf("⚠️  Failed to start client %s: %v", accountID, err)
-		}
-	}
 
 	// Set up Gin router
 	gin.SetMode(gin.ReleaseMode)
@@ -245,28 +195,11 @@ func main() {
 	// API routes
 	apiGroup := router.Group("/api")
 	{
-		// Accounts
-		apiGroup.GET("/accounts", handlers.GetAccounts)
-		apiGroup.GET("/accounts/:accountId", handlers.GetAccount)
-		apiGroup.GET("/accounts/:accountId/qr", handlers.GetQR)
-		apiGroup.POST("/accounts/:accountId/login", handlers.PostLogin)
-		apiGroup.POST("/accounts/:accountId/logout", handlers.PostLogout)
-
-		// Messages
 		apiGroup.POST("/send", handlers.PostSend)
-
-		// SSE
-		apiGroup.GET("/events/stream", handlers.EventStream)
 	}
 
 	// Also expose routes without /api prefix for compatibility
-	router.GET("/accounts", handlers.GetAccounts)
-	router.GET("/accounts/:accountId", handlers.GetAccount)
-	router.GET("/accounts/:accountId/qr", handlers.GetQR)
-	router.POST("/accounts/:accountId/login", handlers.PostLogin)
-	router.POST("/accounts/:accountId/logout", handlers.PostLogout)
 	router.POST("/send", handlers.PostSend)
-	router.GET("/events/stream", handlers.EventStream)
 
 	// Start HTTP server
 	srv := &http.Server{
@@ -364,20 +297,8 @@ func isMetaAccountEnabled(enabled bool, allowList map[string]bool, accountToPhon
 	return exists
 }
 
-// runHealthcheck performs a health check and exits with appropriate code
-func runHealthcheck(databasePath string) {
-	_, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	// Try to create client manager (will fail if SQLite is broken)
-	// Note: webhookClient is nil during healthcheck, which is fine
-	_, err := whatsmeow.NewClientManager(databasePath, nil)
-	if err != nil {
-		log.Printf("❌ Health check failed: cannot initialize SQLite: %v", err)
-		os.Exit(1)
-	}
-
-	// All checks passed
+// runHealthcheck performs a lightweight health check and exits.
+func runHealthcheck() {
 	log.Println("✅ Health check passed")
 	os.Exit(0)
 }

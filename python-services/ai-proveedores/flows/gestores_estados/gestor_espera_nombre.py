@@ -34,7 +34,22 @@ async def manejar_espera_nombre(
         resultado = await actualizar_nombre_proveedor(supabase, proveedor_id, nombre)
         flujo["full_name"] = resultado.get("full_name") or nombre.title()
         flujo.pop("profile_edit_mode", None)
-        flujo["state"] = "awaiting_menu_option"
+        retorno_estado = str(flujo.pop("profile_return_state", "") or "").strip()
+        flujo["state"] = retorno_estado or "awaiting_menu_option"
+        if retorno_estado:
+            from .gestor_vistas_perfil import render_profile_view
+
+            return {
+                "success": True,
+                "messages": [
+                    {"response": "✅ Tu nombre fue actualizado correctamente."},
+                    await render_profile_view(
+                        flujo=flujo,
+                        estado=retorno_estado,
+                        proveedor_id=proveedor_id,
+                    ),
+                ],
+            }
         return {
             "success": True,
             "messages": [

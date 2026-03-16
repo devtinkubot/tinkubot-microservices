@@ -15,6 +15,8 @@ logger = logging.getLogger(__name__)
 
 CLAVE_CICLO_SOLICITUD = "availability:lifecycle:{}"
 CLAVE_ALIAS_DISPONIBILIDAD = "availability:alias:{}"
+AVAILABILITY_TEMPLATE_NAME = "provider_availability_request_v1"
+AVAILABILITY_TEMPLATE_LANGUAGE = "es"
 MENSAJE_SOLICITUD_CADUCADA = (
     "⏳ El tiempo para responder a esta solicitud *caducó* y ya no será considerada."
 )
@@ -227,10 +229,12 @@ class ServicioDisponibilidad:
         descripcion_problema: Optional[str],
     ) -> str:
         ciudad_txt = ciudad or "tu ciudad"
+        servicio_txt = re.sub(r"\s+", " ", str(servicio or "").strip()) or "el servicio solicitado"
+        necesidad_txt = self._normalizar_necesidad(descripcion_problema, servicio_txt)
         return (
             f"*Oportunidad en {ciudad_txt}*\n\n"
-            "*Se requiere:* desarrollo de apps moviles a medida\n\n"
-            "*Necesidad del cliente:* necesita arreglar una app movil del trabajo que no esta funcionando bien"
+            f"*Se requiere:* {servicio_txt}\n\n"
+            f"*Necesidad del cliente:* {necesidad_txt}"
         )
 
     def _mensaje_disponibilidad_fallback(self) -> str:
@@ -241,14 +245,45 @@ class ServicioDisponibilidad:
             "Tienes 2 min para responder."
         )
 
-    def _ui_disponibilidad(self) -> Dict[str, Any]:
+    def _ui_disponibilidad(
+        self,
+        *,
+        servicio: str,
+        ciudad: Optional[str],
+        descripcion_problema: Optional[str],
+    ) -> Dict[str, Any]:
+        ciudad_txt = re.sub(r"\s+", " ", str(ciudad or "").strip()) or "tu ciudad"
+        servicio_txt = re.sub(r"\s+", " ", str(servicio or "").strip()) or "el servicio solicitado"
+        necesidad_txt = self._normalizar_necesidad(descripcion_problema, servicio_txt)
         return {
-            "type": "buttons",
-            "id": "provider_availability_v1",
-            "footer_text": "Tienes 2 min para responder.",
-            "options": [
-                {"id": "availability_accept", "title": "Disponible"},
-                {"id": "availability_reject", "title": "No disponible"},
+            "type": "template",
+            "template_name": AVAILABILITY_TEMPLATE_NAME,
+            "template_language": AVAILABILITY_TEMPLATE_LANGUAGE,
+            "template_components": [
+                {
+                    "type": "body",
+                    "parameters": [
+                        {"type": "text", "text": ciudad_txt},
+                        {"type": "text", "text": servicio_txt},
+                        {"type": "text", "text": necesidad_txt},
+                    ],
+                },
+                {
+                    "type": "button",
+                    "sub_type": "quick_reply",
+                    "index": "0",
+                    "parameters": [
+                        {"type": "payload", "payload": "availability_accept"}
+                    ],
+                },
+                {
+                    "type": "button",
+                    "sub_type": "quick_reply",
+                    "index": "1",
+                    "parameters": [
+                        {"type": "payload", "payload": "availability_reject"}
+                    ],
+                },
             ],
         }
 
@@ -454,7 +489,11 @@ class ServicioDisponibilidad:
         enviado_contexto = await self._enviar_whatsapp(
             telefono=telefono_envio,
             mensaje=mensaje_contexto,
-            ui=self._ui_disponibilidad(),
+            ui=self._ui_disponibilidad(
+                servicio=servicio,
+                ciudad=ciudad,
+                descripcion_problema=descripcion_problema,
+            ),
             metadata={
                 "source_service": "ai-clientes",
                 "flow_type": "availability",

@@ -78,6 +78,40 @@ async def agregar_certificado_proveedor(
     return {"success": True, "certificate": fila}
 
 
+async def actualizar_certificado_proveedor(
+    *,
+    proveedor_id: str,
+    certificate_id: str,
+    file_url: str,
+) -> Dict[str, object]:
+    supabase = get_supabase_client()
+    url = _normalizar_url(file_url)
+    if not proveedor_id:
+        raise ValueError("proveedor_id es requerido")
+    if not certificate_id:
+        raise ValueError("certificate_id es requerido")
+    if not url:
+        raise ValueError("file_url es requerido")
+    if not supabase:
+        return {"success": True, "certificate": {"id": certificate_id, "file_url": url}}
+
+    ahora = datetime.utcnow().isoformat()
+    resultado = await run_supabase(
+        lambda: supabase.table("provider_certificates")
+        .update({"file_url": url, "updated_at": ahora})
+        .eq("id", certificate_id)
+        .eq("provider_id", proveedor_id)
+        .eq("status", "active")
+        .execute(),
+        label="provider_certificates.update",
+    )
+    fila = (resultado.data or [{"id": certificate_id, "file_url": url}])[0]
+    logger.info(
+        "✅ Certificado %s actualizado para proveedor %s", certificate_id, proveedor_id
+    )
+    return {"success": True, "certificate": fila}
+
+
 async def eliminar_certificado_proveedor(
     *,
     proveedor_id: str,

@@ -4,10 +4,6 @@ from typing import Any, Dict, List
 
 from .componentes import pie_instrucciones_respuesta_numerica
 
-# ==================== MENSAJES ====================
-
-MENU_HEADER_TEXT = "TinkuBot Proveedores"
-
 MENU_ID_INFO_PERSONAL = "provider_menu_info_personal"
 MENU_ID_INFO_PROFESIONAL = "provider_menu_info_profesional"
 MENU_ID_ELIMINAR_REGISTRO = "provider_menu_eliminar_registro"
@@ -17,10 +13,33 @@ SUBMENU_ID_PERSONAL_NOMBRE = "provider_submenu_personal_nombre"
 SUBMENU_ID_PERSONAL_UBICACION = "provider_submenu_personal_ubicacion"
 SUBMENU_ID_PERSONAL_DOCUMENTOS = "provider_submenu_personal_documentos"
 SUBMENU_ID_PERSONAL_FOTO = "provider_submenu_personal_foto"
+SUBMENU_ID_PERSONAL_DNI_FRONTAL = "provider_submenu_personal_dni_frontal"
+SUBMENU_ID_PERSONAL_DNI_REVERSO = "provider_submenu_personal_dni_reverso"
+SUBMENU_ID_PERSONAL_REGRESAR = "provider_submenu_personal_regresar"
 
 SUBMENU_ID_PROF_SERVICIOS = "provider_submenu_profesional_servicios"
 SUBMENU_ID_PROF_CERTIFICADOS = "provider_submenu_profesional_certificados"
 SUBMENU_ID_PROF_REDES = "provider_submenu_profesional_redes"
+SUBMENU_ID_PROF_REGRESAR = "provider_submenu_profesional_regresar"
+
+DETAIL_ACTION_NAME_CHANGE = "provider_detail_name_change"
+DETAIL_ACTION_CITY_CHANGE = "provider_detail_city_change"
+DETAIL_ACTION_PHOTO_CHANGE = "provider_detail_photo_change"
+DETAIL_ACTION_DNI_FRONT_CHANGE = "provider_detail_dni_front_change"
+DETAIL_ACTION_DNI_BACK_CHANGE = "provider_detail_dni_back_change"
+DETAIL_ACTION_SOCIAL_CHANGE = "provider_detail_social_change"
+DETAIL_ACTION_SERVICES_ADD = "provider_detail_services_add"
+DETAIL_ACTION_SERVICES_REMOVE = "provider_detail_services_remove"
+DETAIL_ACTION_CERTIFICATES_ADD = "provider_detail_certificates_add"
+DETAIL_ACTION_CERTIFICATES_DELETE = "provider_detail_certificates_delete"
+DETAIL_ACTION_BACK = "provider_detail_back"
+
+SERVICE_DELETE_PREFIX = "provider_service_delete:"
+SERVICE_DELETE_BACK_ID = "provider_service_delete_back"
+CERTIFICATE_SELECT_PREFIX = "provider_certificate_select:"
+CERTIFICATE_ADD_ID = "provider_certificate_add"
+CERTIFICATE_BACK_ID = "provider_certificate_back"
+LIST_OPTION_DESCRIPTION_MAX = 72
 
 MENU_PRINCIPAL_PROVEEDOR = (
     "*Menú de Proveedores*\n"
@@ -91,13 +110,12 @@ def mensaje_menu_post_registro_proveedor(
 def payload_menu_post_registro_proveedor() -> Dict[str, Any]:
     """Genera el menú principal operativo como lista interactiva."""
     return {
-        "response": (
-            f"*{MENU_HEADER_TEXT}*\n\n"
-            "Elige la opción de interés."
-        ),
+        "response": "Elige la opción de interés.",
         "ui": {
             "type": "list",
             "id": "provider_main_menu_v1",
+            "header_type": "text",
+            "header_text": "Menu - Principal",
             "list_button_text": "Ver menú",
             "list_section_title": "Menú del Proveedor",
             "options": [
@@ -129,13 +147,12 @@ def payload_menu_post_registro_proveedor() -> Dict[str, Any]:
 def payload_submenu_informacion_personal() -> Dict[str, Any]:
     """Genera el submenú de información personal."""
     return {
-        "response": (
-            f"*{MENU_HEADER_TEXT}*\n\n"
-            "Información personal. Elige lo que deseas gestionar."
-        ),
+        "response": "Información personal. Elige lo que deseas gestionar.",
         "ui": {
             "type": "list",
             "id": "provider_personal_info_menu_v1",
+            "header_type": "text",
+            "header_text": "Menu - Informacion Personal",
             "list_button_text": "Ver opciones",
             "list_section_title": "Información personal",
             "options": [
@@ -150,14 +167,24 @@ def payload_submenu_informacion_personal() -> Dict[str, Any]:
                     "description": "Cambiar ciudad o compartir ubicación",
                 },
                 {
-                    "id": SUBMENU_ID_PERSONAL_DOCUMENTOS,
-                    "title": "Documentos de identidad",
-                    "description": "Actualizar cédula frontal y posterior",
-                },
-                {
                     "id": SUBMENU_ID_PERSONAL_FOTO,
                     "title": "Foto de perfil",
-                    "description": "Actualizar tu foto de perfil",
+                    "description": "Ver o actualizar tu foto de perfil",
+                },
+                {
+                    "id": SUBMENU_ID_PERSONAL_DNI_FRONTAL,
+                    "title": "Cédula frontal",
+                    "description": "Ver o actualizar la foto frontal",
+                },
+                {
+                    "id": SUBMENU_ID_PERSONAL_DNI_REVERSO,
+                    "title": "Cédula reverso",
+                    "description": "Ver o actualizar la foto posterior",
+                },
+                {
+                    "id": SUBMENU_ID_PERSONAL_REGRESAR,
+                    "title": "Regresar",
+                    "description": "Volver al menú principal",
                 },
             ],
         },
@@ -167,30 +194,34 @@ def payload_submenu_informacion_personal() -> Dict[str, Any]:
 def payload_submenu_informacion_profesional() -> Dict[str, Any]:
     """Genera el submenú de información profesional."""
     return {
-        "response": (
-            f"*{MENU_HEADER_TEXT}*\n\n"
-            "Información profesional. Elige lo que deseas gestionar."
-        ),
+        "response": "Información profesional. Elige lo que deseas gestionar.",
         "ui": {
             "type": "list",
             "id": "provider_professional_info_menu_v1",
+            "header_type": "text",
+            "header_text": "Menu - Informacion Profesional",
             "list_button_text": "Ver opciones",
             "list_section_title": "Información profesional",
             "options": [
                 {
                     "id": SUBMENU_ID_PROF_SERVICIOS,
                     "title": "Servicios",
-                    "description": "Agregar o eliminar servicios",
+                    "description": "Ver, agregar o eliminar servicios",
                 },
                 {
                     "id": SUBMENU_ID_PROF_CERTIFICADOS,
                     "title": "Certificados",
-                    "description": "Subir o reemplazar tu certificado activo",
+                    "description": "Ver, agregar o eliminar certificados",
                 },
                 {
                     "id": SUBMENU_ID_PROF_REDES,
                     "title": "Redes sociales",
-                    "description": "Actualizar tu red social profesional",
+                    "description": "Ver o actualizar tu red social profesional",
+                },
+                {
+                    "id": SUBMENU_ID_PROF_REGRESAR,
+                    "title": "Regresar",
+                    "description": "Volver al menú principal",
                 },
             ],
         },
@@ -227,3 +258,194 @@ def mensaje_menu_servicios_proveedor(
         ]
     )
     return "\n".join(cuerpo)
+
+
+def _payload_botones_detalle(
+    *,
+    body: str,
+    options: List[Dict[str, str]],
+    header_text: str = "",
+    header_media_url: str = "",
+) -> Dict[str, Any]:
+    ui: Dict[str, Any] = {
+        "type": "buttons",
+        "id": "provider_detail_actions_v1",
+        "options": options,
+    }
+    media = str(header_media_url or "").strip()
+    if media:
+        ui["header_type"] = "image"
+        ui["header_media_url"] = media
+    elif header_text:
+        ui["header_type"] = "text"
+        ui["header_text"] = header_text
+    return {"response": body, "ui": ui}
+
+
+def _truncar_descripcion_lista(valor: str, limite: int = LIST_OPTION_DESCRIPTION_MAX) -> str:
+    texto = " ".join(str(valor or "").strip().split())
+    if len(texto) <= limite:
+        return texto
+    return texto[: max(limite - 1, 0)].rstrip() + "…"
+
+
+def payload_detalle_nombre(nombre: str) -> Dict[str, Any]:
+    nombre_visible = str(nombre or "").strip() or "No registrado"
+    return _payload_botones_detalle(
+        header_text="Información personal",
+        body=f"*Nombre actual*\n{nombre_visible}",
+        options=[
+            {"id": DETAIL_ACTION_NAME_CHANGE, "title": "Cambiar"},
+            {"id": DETAIL_ACTION_BACK, "title": "Regresar"},
+        ],
+    )
+
+
+def payload_detalle_ubicacion(ciudad: str) -> Dict[str, Any]:
+    ciudad_visible = str(ciudad or "").strip() or "No registrada"
+    return _payload_botones_detalle(
+        header_text="Información personal",
+        body=f"*Ubicación actual*\n{ciudad_visible}",
+        options=[
+            {"id": DETAIL_ACTION_CITY_CHANGE, "title": "Cambiar"},
+            {"id": DETAIL_ACTION_BACK, "title": "Regresar"},
+        ],
+    )
+
+
+def payload_detalle_foto(
+    *,
+    titulo: str,
+    descripcion: str,
+    media_url: str,
+    change_id: str,
+) -> Dict[str, Any]:
+    return _payload_botones_detalle(
+        header_text=titulo,
+        header_media_url=media_url,
+        body=descripcion,
+        options=[
+            {"id": change_id, "title": "Cambiar"},
+            {"id": DETAIL_ACTION_BACK, "title": "Regresar"},
+        ],
+    )
+
+
+def payload_detalle_red_social(url: str) -> Dict[str, Any]:
+    url_visible = str(url or "").strip() or "No registrada"
+    return _payload_botones_detalle(
+        header_text="Redes sociales",
+        body=f"*Red social actual*\n{url_visible}",
+        options=[
+            {"id": DETAIL_ACTION_SOCIAL_CHANGE, "title": "Cambiar"},
+            {"id": DETAIL_ACTION_BACK, "title": "Regresar"},
+        ],
+    )
+
+
+def payload_detalle_servicios(servicios: List[str], max_servicios: int) -> Dict[str, Any]:
+    lineas: List[str] = []
+    if servicios:
+        lineas.extend([f"• {servicio}" for servicio in servicios])
+    else:
+        lineas.append("Todavía no registras servicios.")
+    return _payload_botones_detalle(
+        header_text=f"Servicios registrados ({len(servicios)}/{max_servicios})",
+        body="\n".join(lineas),
+        options=[
+            {"id": DETAIL_ACTION_SERVICES_ADD, "title": "Agregar"},
+            {"id": DETAIL_ACTION_SERVICES_REMOVE, "title": "Eliminar"},
+            {"id": DETAIL_ACTION_BACK, "title": "Regresar"},
+        ],
+    )
+
+
+def payload_lista_eliminar_servicios(servicios: List[str]) -> Dict[str, Any]:
+    options = [
+        {
+            "id": f"{SERVICE_DELETE_PREFIX}{idx}",
+            "title": f"Servicio {idx + 1}",
+            "description": _truncar_descripcion_lista(servicio),
+        }
+        for idx, servicio in enumerate(servicios)
+    ]
+    options.append(
+        {
+            "id": SERVICE_DELETE_BACK_ID,
+            "title": "Regresar",
+            "description": "Volver a servicios registrados",
+        }
+    )
+    return {
+        "response": "Selecciona el servicio que deseas eliminar.",
+        "ui": {
+            "type": "list",
+            "id": "provider_service_delete_list_v1",
+            "header_type": "text",
+            "header_text": "Menu - Eliminar Servicios",
+            "list_button_text": "Ver servicios",
+            "list_section_title": "Eliminar servicios",
+            "options": options,
+        },
+    }
+
+
+def payload_lista_certificados(
+    certificados: List[Dict[str, Any]],
+    *,
+    max_certificados: int,
+) -> Dict[str, Any]:
+    options = [
+        {
+            "id": f"{CERTIFICATE_SELECT_PREFIX}{certificado.get('id')}",
+            "title": f"Certificado {idx + 1}",
+            "description": _truncar_descripcion_lista(
+                str(certificado.get("file_url") or "Archivo registrado")
+            ),
+        }
+        for idx, certificado in enumerate(certificados)
+    ]
+    if len(certificados) < max_certificados:
+        options.append(
+            {
+                "id": CERTIFICATE_ADD_ID,
+                "title": "Agregar certificado",
+                "description": "Subir un nuevo certificado",
+            }
+        )
+    options.append(
+        {
+            "id": CERTIFICATE_BACK_ID,
+            "title": "Regresar",
+            "description": "Volver a información profesional",
+        }
+    )
+    return {
+        "response": f"*Certificados registrados ({len(certificados)}/{max_certificados})*",
+        "ui": {
+            "type": "list",
+            "id": "provider_certificates_list_v1",
+            "header_type": "text",
+            "header_text": "Menu - Certificados",
+            "list_button_text": "Ver certificados",
+            "list_section_title": "Certificados",
+            "options": options,
+        },
+    }
+
+
+def payload_detalle_certificado(
+    *,
+    certificado: Dict[str, Any],
+    total: int,
+    max_certificados: int,
+) -> Dict[str, Any]:
+    return _payload_botones_detalle(
+        header_text=f"Certificado ({total}/{max_certificados})",
+        header_media_url=str(certificado.get("file_url") or "").strip(),
+        body="Certificado seleccionado.",
+        options=[
+            {"id": DETAIL_ACTION_CERTIFICATES_ADD, "title": "Cambiar"},
+            {"id": DETAIL_ACTION_BACK, "title": "Regresar"},
+        ],
+    )

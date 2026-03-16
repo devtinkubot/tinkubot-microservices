@@ -85,6 +85,13 @@ def manejar_dni_frontal_actualizacion(
             "messages": [{"response": solicitar_foto_dni_frontal()}],
         }
     flujo["dni_front_image"] = imagen_b64
+    if flujo.get("profile_edit_mode") == "personal_dni_front_update":
+        flujo["state"] = "awaiting_dni_back_photo_update"
+        flujo["dni_back_image"] = None
+        return {
+            "success": True,
+            "messages": [{"response": "__persistir_dni_frontal__"}],
+        }
     flujo["state"] = "awaiting_dni_back_photo_update"
     return {
         "success": True,
@@ -106,7 +113,8 @@ async def manejar_dni_trasera_actualizacion(
             "messages": [{"response": solicitar_foto_dni_trasera_requerida()}],
         }
 
-    flujo["dni_back_image"] = imagen_b64
+    if imagen_b64:
+        flujo["dni_back_image"] = imagen_b64
     if not proveedor_id or not subir_medios_identidad:
         flujo["state"] = "awaiting_menu_option"
         return {
@@ -131,7 +139,9 @@ async def manejar_dni_trasera_actualizacion(
     )
     flujo.pop("dni_front_image", None)
     flujo.pop("dni_back_image", None)
-    flujo["state"] = "awaiting_menu_option"
+    flujo.pop("profile_edit_mode", None)
+    retorno_estado = str(flujo.pop("profile_return_state", "") or "").strip()
+    flujo["state"] = retorno_estado or "awaiting_menu_option"
 
     if not resultado.get("success"):
         return {
@@ -145,6 +155,21 @@ async def manejar_dni_trasera_actualizacion(
                         approved_basic=bool(flujo.get("approved_basic")),
                     )
                 },
+            ],
+        }
+
+    if retorno_estado:
+        from .gestor_vistas_perfil import render_profile_view
+
+        return {
+            "success": True,
+            "messages": [
+                {"response": confirmar_documentos_actualizados()},
+                await render_profile_view(
+                    flujo=flujo,
+                    estado=retorno_estado,
+                    proveedor_id=proveedor_id,
+                ),
             ],
         }
 
