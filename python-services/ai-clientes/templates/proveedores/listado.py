@@ -5,6 +5,17 @@ from typing import Any, Dict, List
 
 # ==================== FUNCIONES ====================
 
+
+def _nombre_corto_proveedor(proveedor: Dict[str, Any]) -> str:
+    nombre = (
+        proveedor.get("name") or proveedor.get("provider_name") or "Proveedor"
+    ).strip()
+    partes = [parte for parte in nombre.split() if parte]
+    if not partes:
+        return "Proveedor"
+    return partes[0]
+
+
 def mensaje_intro_listado_proveedores(ciudad: str) -> str:
     if ciudad:
         return f"*Encontré estos expertos en {ciudad}*"
@@ -22,13 +33,10 @@ def construir_ui_lista_proveedores(proveedores: List[Dict[str, Any]]) -> Dict[st
     """Construye una lista interactiva de hasta 5 proveedores."""
     opciones: List[Dict[str, Any]] = []
     for indice, proveedor in enumerate(proveedores[:5], start=1):
-        nombre = (
-            proveedor.get("name") or proveedor.get("provider_name") or "Proveedor"
-        ).strip()
         opciones.append(
             {
                 "id": _provider_option_id(proveedor, indice - 1),
-                "title": nombre[:24],
+                "title": _nombre_corto_proveedor(proveedor)[:24],
             }
         )
 
@@ -45,9 +53,7 @@ def bloque_listado_proveedores_compacto(proveedores: List[Dict[str, Any]]) -> st
     """Genera listado de proveedores con números (1-5) y solo nombre."""
     lineas: List[str] = [""]
     for indice, proveedor in enumerate(proveedores[:5], start=1):
-        nombre = (
-            proveedor.get("name") or proveedor.get("provider_name") or "Proveedor"
-        ).strip()
+        nombre = _nombre_corto_proveedor(proveedor)
         lineas.append(f"*{indice}.* {nombre}")
     lineas.append("")
     return "\n".join(lineas)

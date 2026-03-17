@@ -261,9 +261,14 @@ class ServicioDisponibilidad:
             "template_language": AVAILABILITY_TEMPLATE_LANGUAGE,
             "template_components": [
                 {
-                    "type": "body",
+                    "type": "header",
                     "parameters": [
                         {"type": "text", "text": ciudad_txt},
+                    ],
+                },
+                {
+                    "type": "body",
+                    "parameters": [
                         {"type": "text", "text": servicio_txt},
                         {"type": "text", "text": necesidad_txt},
                     ],

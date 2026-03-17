@@ -53,9 +53,12 @@ def test_ui_disponibilidad_expone_template_esperado():
     assert ui["template_language"] == "es"
     assert ui["template_components"] == [
         {
+            "type": "header",
+            "parameters": [{"type": "text", "text": "Cuenca"}],
+        },
+        {
             "type": "body",
             "parameters": [
-                {"type": "text", "text": "Cuenca"},
                 {
                     "type": "text",
                     "text": "desarrollo y mantenimiento de aplicaciones móviles",

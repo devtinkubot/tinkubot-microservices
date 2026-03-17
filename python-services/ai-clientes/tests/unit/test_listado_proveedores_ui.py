@@ -2,6 +2,7 @@ from flows.manejadores_estados.manejo_seleccion import (
     procesar_estado_presentando_resultados,
 )
 from templates.proveedores.listado import (
+    bloque_listado_proveedores_compacto,
     construir_ui_lista_proveedores,
     mensaje_intro_listado_proveedores,
 )
@@ -21,7 +22,31 @@ def test_construir_ui_lista_proveedores_limita_a_cinco():
     assert ui["list_button_text"] == "Ver expertos"
     assert len(ui["options"]) == 5
     assert ui["options"][0]["id"] == "provider_select_prov-1"
-    assert ui["options"][0]["title"] == "Proveedor 1"
+    assert ui["options"][0]["title"] == "Proveedor"
+
+
+def test_construir_ui_lista_proveedores_usa_solo_primer_nombre():
+    proveedores = [
+        {"id": "prov-1", "name": "Diego Unkuch Gonzalez"},
+        {"id": "prov-2", "name": "Jose Fernando Andrade Lazo"},
+    ]
+
+    ui = construir_ui_lista_proveedores(proveedores)
+
+    assert ui["options"][0]["title"] == "Diego"
+    assert ui["options"][1]["title"] == "Jose"
+
+
+def test_bloque_listado_proveedores_compacto_usa_solo_primer_nombre():
+    proveedores = [
+        {"id": "prov-1", "name": "Diego Unkuch Gonzalez"},
+        {"id": "prov-2", "name": "Jose Fernando Andrade Lazo"},
+    ]
+
+    bloque = bloque_listado_proveedores_compacto(proveedores)
+
+    assert "*1.* Diego" in bloque
+    assert "*2.* Jose" in bloque
 
 
 async def _guardar_flujo_stub(_flujo):
