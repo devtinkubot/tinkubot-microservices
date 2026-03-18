@@ -227,3 +227,85 @@ def test_respuesta_disponibilidad_en_completar_perfil_no_intercepta(monkeypatch)
     )
 
     assert resultado is None
+
+
+def test_respuesta_disponibilidad_en_flujo_activo_con_pendiente_valido_registra(
+    monkeypatch,
+):
+    telefono = "593999111232@s.whatsapp.net"
+    req_id = "search-active-flow-1"
+    clave_pendientes = f"availability:provider:{telefono}:pending"
+    clave_req = f"availability:request:{req_id}:provider:{telefono}"
+    redis_falso = RedisFalso(
+        {
+            clave_pendientes: [req_id],
+            clave_req: {"status": "pending"},
+        }
+    )
+    monkeypatch.setattr(principal, "cliente_redis", redis_falso)
+
+    resultado = asyncio.run(
+        principal._registrar_respuesta_disponibilidad_si_aplica(
+            telefono, "1", "awaiting_city"
+        )
+    )
+
+    assert resultado is not None
+    assert redis_falso.data[clave_req]["status"] == "accepted"
+
+
+def test_respuesta_disponibilidad_recupera_request_id_desde_contexto_si_pending_esta_corrupto(
+    monkeypatch,
+):
+    telefono = "593999111233@s.whatsapp.net"
+    req_id = "search-context-fallback-1"
+    clave_pendientes = f"availability:provider:{telefono}:pending"
+    clave_contexto = f"availability:provider:{telefono}:context"
+    clave_req = f"availability:request:{req_id}:provider:{telefono}"
+    redis_falso = RedisFalso(
+        {
+            clave_pendientes: "{json-invalido",
+            clave_contexto: {"expecting_response": True, "request_id": req_id},
+            clave_req: {"status": "pending"},
+        }
+    )
+    monkeypatch.setattr(principal, "cliente_redis", redis_falso)
+
+    resultado = asyncio.run(
+        principal._registrar_respuesta_disponibilidad_si_aplica(telefono, "1")
+    )
+
+    assert resultado is not None
+    assert redis_falso.data[clave_req]["status"] == "accepted"
+
+
+def test_respuesta_disponibilidad_tardia_queda_auditada_sin_contar(monkeypatch):
+    telefono = "593999111234@s.whatsapp.net"
+    req_id = "search-late-response-1"
+    clave_contexto = f"availability:provider:{telefono}:context"
+    clave_req = f"availability:request:{req_id}:provider:{telefono}"
+    clave_ciclo = f"availability:lifecycle:{req_id}"
+    redis_falso = RedisFalso(
+        {
+            clave_contexto: {
+                "expecting_response": False,
+                "request_id": req_id,
+                "status": "expired",
+            },
+            clave_req: {"status": "expired"},
+        }
+    )
+    monkeypatch.setattr(principal, "cliente_redis", redis_falso)
+
+    resultado = asyncio.run(
+        principal._registrar_respuesta_disponibilidad_si_aplica(
+            telefono, "availability_reject", "awaiting_menu_option"
+        )
+    )
+
+    assert resultado is not None
+    assert "caducado" in resultado["messages"][0]["response"].lower()
+    assert redis_falso.data[clave_req]["status"] == "expired"
+    assert redis_falso.data[clave_req]["late_response_status"] == "rejected"
+    assert redis_falso.data[clave_ciclo]["state"] == "expired"
+    assert redis_falso.data[clave_ciclo]["late_response_received"] is True

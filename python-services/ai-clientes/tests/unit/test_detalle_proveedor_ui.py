@@ -50,7 +50,7 @@ def test_ui_detalle_proveedor_usa_lista_dinamica():
     assert ui["id"] == "provider_detail_menu_v1"
     assert ui["header_type"] == "text"
     assert ui["header_text"] == "Diego Unkuch Gonzalez"
-    assert ui["footer_text"] == "Tienes 5 min para responder."
+    assert ui["footer_text"] == "Tienes 3 min para responder."
     assert ui["list_button_text"] == "Ver detalles"
     assert [opt["id"] for opt in ui["options"]] == [
         "provider_detail_photo",

@@ -6,7 +6,7 @@ def test_mensaje_disponibilidad_incluye_timeout_por_defecto(monkeypatch):
     servicio = ServicioDisponibilidad()
     mensaje = servicio._mensaje_disponibilidad_fallback()
 
-    assert "Tienes 2 min para responder." in mensaje
+    assert "Tienes 3 min para responder." in mensaje
 
 
 def test_mensaje_disponibilidad_incluye_timeout_configurado(monkeypatch):
@@ -14,7 +14,7 @@ def test_mensaje_disponibilidad_incluye_timeout_configurado(monkeypatch):
     servicio = ServicioDisponibilidad()
     mensaje = servicio._mensaje_disponibilidad_fallback()
 
-    assert "Tienes 2 min para responder." in mensaje
+    assert "Tienes 3 min para responder." in mensaje
 
 
 def test_mensaje_disponibilidad_contexto_usa_primer_nombre_y_copy_nuevo():

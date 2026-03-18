@@ -8,7 +8,10 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from infrastructure.database import run_supabase
-from templates.mensajes.retroalimentacion import mensaje_solicitud_retroalimentacion
+from templates.mensajes.retroalimentacion import (
+    mensaje_solicitud_retroalimentacion,
+    ui_retroalimentacion_contratacion,
+)
 
 CLAVE_NOTIFICACION_RATE_LIMIT = "rate_limit_notification_scheduled_at"
 
@@ -55,6 +58,10 @@ class ProgramadorRetroalimentacion:
                 flujo["pending_feedback_provider_name"] = (
                     carga.get("provider_name") or "Proveedor"
                 )
+                # Actualizar timestamps para reiniciar contador de timeout
+                ahora_iso = datetime.now(timezone.utc).isoformat()
+                flujo["last_seen_at"] = ahora_iso
+                flujo["last_seen_at_prev"] = ahora_iso
                 await self.repositorio_flujo.guardar(telefono, flujo)
         except Exception as e:
             self.logger.warning(f"No se pudo preparar estado de retroalimentación: {e}")
@@ -68,10 +75,11 @@ class ProgramadorRetroalimentacion:
         try:
             retraso = self.retraso_retroalimentacion_segundos
             nombre = proveedor.get("name") or "Proveedor"
-            mensaje = mensaje_solicitud_retroalimentacion(nombre)
+            mensaje = f"¿Cómo te fue con {nombre}?"  # Header simple
             carga = {
                 "phone": telefono,
                 "message": mensaje,
+                "ui": ui_retroalimentacion_contratacion(nombre),
                 "type": "request_hiring_feedback",
                 "lead_event_id": lead_event_id or "",
                 "provider_name": nombre,

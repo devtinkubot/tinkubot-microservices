@@ -5,7 +5,7 @@ import json
 import logging
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -88,8 +88,31 @@ class ServicioDisponibilidad:
 
         actual.update(datos or {})
         actual["state"] = nuevo_estado
-        actual["updated_at"] = datetime.utcnow().isoformat()
+        actual["updated_at"] = datetime.now(timezone.utc).isoformat()
         await cliente_redis.set(clave, actual, expire=self.ttl_seconds)
+
+    async def _archivar_contexto_expirado(
+        self,
+        *,
+        cliente_redis: Any,
+        telefono: str,
+        request_id: str,
+        servicio: str,
+        ciudad: Optional[str],
+    ) -> None:
+        await cliente_redis.set(
+            f"availability:provider:{telefono}:context",
+            {
+                "expecting_response": False,
+                "request_id": request_id,
+                "provider_phone": telefono,
+                "service": servicio,
+                "city": ciudad,
+                "expired_at": datetime.now(timezone.utc).isoformat(),
+                "status": "expired",
+            },
+            expire=self.ttl_seconds,
+        )
 
     @staticmethod
     def _formatear_telefono_whatsapp(valor: Optional[str]) -> Optional[str]:
@@ -242,7 +265,7 @@ class ServicioDisponibilidad:
             "Si no ves los botones, responde con una de estas opciones:\n\n"
             "*Disponible*\n"
             "*No disponible*\n\n"
-            "Tienes 2 min para responder."
+            "Tienes 3 min para responder."
         )
 
     def _ui_disponibilidad(
@@ -419,6 +442,7 @@ class ServicioDisponibilidad:
         self,
         *,
         req_id_real: str,
+        telefono_cliente: Optional[str],
         servicio: str,
         ciudad: Optional[str],
         descripcion_problema: Optional[str],
@@ -484,13 +508,24 @@ class ServicioDisponibilidad:
             descripcion_problema=descripcion_problema,
         )
         logger.info(
-            "availability_target_selected req_id=%s provider_id=%s send_target=%s send_target_type=%s correlation_phone=%s",
+            "availability_target_selected req_id=%s customer_phone=%s provider_id=%s send_target=%s send_target_type=%s correlation_phone=%s same_phone_customer_provider=%s",
             req_id_real,
+            telefono_cliente,
             candidato.get("provider_id"),
             telefono_envio,
             send_target_type,
             telefono,
+            bool(telefono_cliente and telefono_cliente == telefono),
         )
+        if telefono_cliente and telefono_cliente == telefono:
+            logger.warning(
+                "availability_self_match_detected req_id=%s customer_phone=%s provider_id=%s provider_phone=%s send_target=%s",
+                req_id_real,
+                telefono_cliente,
+                candidato.get("provider_id"),
+                telefono,
+                telefono_envio,
+            )
         enviado_contexto = await self._enviar_whatsapp(
             telefono=telefono_envio,
             mensaje=mensaje_contexto,
@@ -528,6 +563,7 @@ class ServicioDisponibilidad:
         self,
         *,
         req_id: str,
+        telefono_cliente: Optional[str] = None,
         servicio: str,
         ciudad: Optional[str],
         descripcion_problema: Optional[str],
@@ -552,10 +588,11 @@ class ServicioDisponibilidad:
         )
         logger.info(
             (
-                "📍 Verificando disponibilidad: req_id=%s, "
+                "📍 Verificando disponibilidad: req_id=%s, customer_phone=%s, "
                 "servicio='%s', ciudad=%s, %s candidatos"
             ),
             req_id_real,
+            telefono_cliente or "",
             servicio,
             ciudad or "N/A",
             len(candidatos),
@@ -720,6 +757,7 @@ class ServicioDisponibilidad:
             tareas_envio = [
                 self._registrar_y_enviar_a_proveedor(
                     req_id_real=req_id_real,
+                    telefono_cliente=telefono_cliente,
                     servicio=servicio,
                     ciudad=ciudad,
                     descripcion_problema=descripcion_problema,
@@ -849,6 +887,13 @@ class ServicioDisponibilidad:
                         await cliente_redis.set(
                             clave_solicitud, estado, expire=self.ttl_seconds
                         )
+                    await self._archivar_contexto_expirado(
+                        cliente_redis=cliente_redis,
+                        telefono=telefono,
+                        request_id=req_id_real,
+                        servicio=servicio,
+                        ciudad=ciudad,
+                    )
 
                     enviado_caducado = await self._enviar_whatsapp(
                         telefono=telefono,

@@ -24,6 +24,12 @@ from templates.busqueda.confirmacion import mensaje_sin_disponibilidad
 from templates.busqueda.confirmacion import (
     mensajes_confirmacion_busqueda,
     titulo_confirmacion_repetir_busqueda,
+    titulo_ayuda_otro_servicio,
+    opciones_confirmar_nueva_busqueda_textos,
+)
+from templates.mensajes.retroalimentacion import (
+    mensaje_gracias_feedback,
+    mensaje_opcion_invalida_feedback,
 )
 from templates.proveedores.detalle import (
     bloque_detalle_proveedor,
@@ -81,8 +87,13 @@ async def manejar_mensaje(orquestador, carga: Dict[str, Any]) -> Dict[str, Any]:
                     or (contexto.get("customer_city") or "").strip()
                 )
                 estado_actual = flujo.get("state")
+                # Estados exentos de timeout normal (tienen manejo especial)
                 if estado_actual == "confirm_new_search":
                     raise ValueError("skip_timeout_for_confirm_new_search")
+                # Eximir retroalimentación de contratación del timeout de 5 min
+                # Es razonable que el usuario tarde horas en responder
+                if estado_actual == "awaiting_hiring_feedback":
+                    raise ValueError("skip_timeout_for_awaiting_hiring_feedback")
                 estados_timeout_busqueda = {
                     "searching",
                     "presenting_results",
@@ -141,14 +152,15 @@ async def manejar_mensaje(orquestador, carga: Dict[str, Any]) -> Dict[str, Any]:
                     mensajes_timeout = [{"response": informar_timeout_inactividad()}]
                     mensajes_timeout.extend(prompt_consentimiento.get("messages", [prompt_consentimiento]))
                 elif ciudad_conocida:
-                    flujo["state"] = "awaiting_service"
+                    flujo["state"] = "confirm_new_search"
+                    flujo["confirm_title"] = titulo_ayuda_otro_servicio
+                    flujo["confirm_include_city_option"] = False
                     flujo["city"] = ciudad_conocida
                     flujo["city_confirmed"] = True
-                    prompt_servicio = await _prompt_inicial_servicio(orquestador)
-                    mensajes_timeout = [
-                        {"response": informar_timeout_inactividad()},
-                        prompt_servicio,
-                    ]
+                    mensajes_timeout = mensajes_confirmacion_busqueda(
+                        titulo_ayuda_otro_servicio,
+                        incluir_opcion_ciudad=False,
+                    )
                 else:
                     flujo["state"] = "awaiting_city"
                     flujo["onboarding_intro_sent"] = False
@@ -165,7 +177,11 @@ async def manejar_mensaje(orquestador, carga: Dict[str, Any]) -> Dict[str, Any]:
 
                 return {"messages": mensajes_timeout}
         except Exception as e:
-            if str(e) != "skip_timeout_for_confirm_new_search":
+            errores_skip = [
+                "skip_timeout_for_confirm_new_search",
+                "skip_timeout_for_awaiting_hiring_feedback",
+            ]
+            if str(e) not in errores_skip:
                 orquestador.logger.warning(
                     "Error verificando timeout phone=%s last_seen_ref=%s error=%s",
                     telefono,
@@ -259,7 +275,7 @@ async def enrutar_estado(
         flujo.update({"state": "awaiting_service"})
         return await responder(flujo, await _prompt_inicial_servicio(orquestador))
 
-    if seleccionado == "No, por ahora está bien":
+    if seleccionado == opciones_confirmar_nueva_busqueda_textos[1]:
         if orquestador.repositorio_flujo:
             await orquestador.repositorio_flujo.resetear(telefono)
         else:
@@ -454,14 +470,39 @@ async def enrutar_estado(
         return await orquestador._procesar_searching(telefono, flujo, do_search)
 
     if estado == "awaiting_hiring_feedback":
-        eleccion = (seleccionado or texto or "").strip().strip("*").rstrip(".)")
-        if eleccion in {"1", "2"}:
+        # Mapear opciones de lista a hired/rating
+        respuesta_a_datos = {
+            "excellent": (True, 5),
+            "good": (True, 4),
+            "regular": (True, 3),
+            "not_hired": (False, None),
+            "bad": (True, 1),
+        }
+
+        eleccion = (seleccionado or texto or "").strip().strip("*").rstrip(".)").lower()
+
+        # Si es respuesta de lista, usar el mapeo
+        if eleccion in respuesta_a_datos:
+            hired, rating = respuesta_a_datos[eleccion]
+        elif eleccion in {"1", "2", "3", "4", "5"}:
+            # Fallback para texto numérico
+            mapeo_numerico = {
+                "1": (True, 5),      # Excelente
+                "2": (True, 4),      # Bien
+                "3": (True, 3),      # Regular
+                "4": (False, None),  # No contraté
+                "5": (True, 1),      # Mal
+            }
+            hired, rating = mapeo_numerico.get(eleccion, (None, None))
+        else:
+            hired, rating = None, None
+
+        if hired is not None:
             lead_event_id = str(flujo.get("pending_feedback_lead_event_id") or "")
-            hired = eleccion == "1"
             registrar_feedback = getattr(orquestador, "registrar_feedback_contratacion", None)
             if registrar_feedback and lead_event_id:
                 try:
-                    await registrar_feedback(lead_event_id=lead_event_id, hired=hired)
+                    await registrar_feedback(lead_event_id=lead_event_id, hired=hired, rating=rating)
                 except Exception as exc:
                     orquestador.logger.warning(
                         "No se pudo registrar feedback contratación lead=%s: %s",
@@ -479,18 +520,13 @@ async def enrutar_estado(
             return {
                 "messages": [
                     {
-                        "response": (
-                            "*¡Gracias por tu respuesta!*\n"
-                            "Si necesitas otro apoyo, solo escríbeme."
-                        )
+                        "response": mensaje_gracias_feedback()
                     }
                 ]
             }
 
         return {
-            "response": (
-                "Por favor elige una opción: Sí o No."
-            )
+            "response": mensaje_opcion_invalida_feedback()
         }
 
     if estado == "presenting_results":
@@ -505,7 +541,7 @@ async def enrutar_estado(
             mensajes_confirmacion_busqueda,
             orquestador.programar_solicitud_retroalimentacion,
             orquestador.logger,
-            "¿Te ayudo con otro servicio?",
+            titulo_ayuda_otro_servicio,
             bloque_detalle_proveedor,
             ui_detalle_proveedor,
             orquestador.preparar_proveedor_para_detalle,
@@ -526,7 +562,7 @@ async def enrutar_estado(
             orquestador.programar_solicitud_retroalimentacion,
             getattr(orquestador, "registrar_lead_contacto", None),
             orquestador.logger,
-            "¿Te ayudo con otro servicio?",
+            titulo_ayuda_otro_servicio,
             lambda: orquestador.enviar_prompt_proveedor(
                 telefono, flujo, flujo.get("city", "")
             ),

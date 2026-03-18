@@ -18,8 +18,8 @@ def _nombre_corto_proveedor(proveedor: Dict[str, Any]) -> str:
 
 def mensaje_intro_listado_proveedores(ciudad: str) -> str:
     if ciudad:
-        return f"*Encontré estos expertos en {ciudad}*"
-    return "*Encontré estos expertos para ti*"
+        return f"*Encontré estas opciones en {ciudad}:*"
+    return "*Encontré estas opciones para ti:*"
 
 
 def _provider_option_id(proveedor: Dict[str, Any], indice: int) -> str:
@@ -29,16 +29,26 @@ def _provider_option_id(proveedor: Dict[str, Any], indice: int) -> str:
     return f"provider_select_idx_{indice}"
 
 
+def _descripcion_servicio_proveedor(proveedor: Dict[str, Any]) -> str:
+    """Extrae el servicio más relevante del proveedor para mostrar en el listado."""
+    servicio = proveedor.get("matched_service_name") or ""
+    if servicio:
+        return servicio[:72]  # WhatsApp limit: 72 chars para descripción
+    return ""
+
+
 def construir_ui_lista_proveedores(proveedores: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Construye una lista interactiva de hasta 5 proveedores."""
     opciones: List[Dict[str, Any]] = []
     for indice, proveedor in enumerate(proveedores[:5], start=1):
-        opciones.append(
-            {
-                "id": _provider_option_id(proveedor, indice - 1),
-                "title": _nombre_corto_proveedor(proveedor)[:24],
-            }
-        )
+        opcion = {
+            "id": _provider_option_id(proveedor, indice - 1),
+            "title": _nombre_corto_proveedor(proveedor)[:24],
+        }
+        descripcion = _descripcion_servicio_proveedor(proveedor)
+        if descripcion:
+            opcion["description"] = descripcion
+        opciones.append(opcion)
 
     return {
         "type": "list",

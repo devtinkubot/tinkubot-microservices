@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"time"
@@ -41,6 +42,17 @@ func (wc *WebhookClient) Send(ctx context.Context, payload *WebhookPayload) (*We
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("User-Agent", "wa-gateway/1.0")
 		req.Header.Set("X-Account-ID", payload.AccountID)
+		log.Printf(
+			"[Webhook] dispatch account=%s url=%s from=%s phone=%s context_from=%s context_id=%s message_type=%s selected_option=%q",
+			payload.AccountID,
+			url,
+			payload.FromNumber,
+			payload.Phone,
+			payload.ContextFrom,
+			payload.ContextID,
+			payload.MessageType,
+			payload.SelectedOption,
+		)
 
 		resp, err := wc.httpClient.Do(req)
 		if err != nil {
@@ -49,7 +61,15 @@ func (wc *WebhookClient) Send(ctx context.Context, payload *WebhookPayload) (*We
 		}
 
 		if resp.StatusCode != http.StatusOK {
+			bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 			lastErr = fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+			log.Printf(
+				"[Webhook] dispatch_failed account=%s url=%s status=%d body=%q",
+				payload.AccountID,
+				url,
+				resp.StatusCode,
+				string(bodyBytes),
+			)
 			resp.Body.Close()
 			continue
 		}
@@ -61,7 +81,16 @@ func (wc *WebhookClient) Send(ctx context.Context, payload *WebhookPayload) (*We
 		}
 		resp.Body.Close()
 
-		log.Printf("[Webhook] Message sent successfully to %s (account: %s)", url, payload.AccountID)
+		log.Printf(
+			"[Webhook] Message sent successfully to %s (account: %s, from: %s, context_from: %s, context_id: %s, message_type: %s, selected_option: %q)",
+			url,
+			payload.AccountID,
+			payload.FromNumber,
+			payload.ContextFrom,
+			payload.ContextID,
+			payload.MessageType,
+			payload.SelectedOption,
+		)
 		return &webhookResp, nil
 	}
 

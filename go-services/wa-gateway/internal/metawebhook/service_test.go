@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/tinkubot/wa-gateway/internal/webhook"
@@ -329,6 +330,104 @@ func TestProcessEventInteractiveButtonReply(t *testing.T) {
 	}
 	if got.Content != "" {
 		t.Fatalf("expected empty content for interactive reply, got %s", got.Content)
+	}
+}
+
+func TestProcessEventRoutesBotProveedoresInteractiveReply(t *testing.T) {
+	fs := &fakeSender{}
+	svc := NewService(Config{
+		Enabled:   true,
+		AppSecret: "secret-1",
+		PhoneNumberToAccount: map[string]string{
+			"987654321": "bot-proveedores",
+		},
+	}, fs, nil, nil)
+
+	body := []byte(`{
+		"object":"whatsapp_business_account",
+		"entry":[
+			{
+				"id":"waba-1",
+				"changes":[
+					{
+						"field":"messages",
+						"value":{
+							"metadata":{"phone_number_id":"987654321"},
+							"messages":[{"from":"593999111222","id":"wamid.2","timestamp":"1730000001","type":"interactive","interactive":{"type":"button_reply","button_reply":{"id":"availability_accept","title":"Disponible"}}}]
+						}
+					}
+				]
+			}
+		]
+	}`)
+	sig := buildSignature("secret-1", body)
+
+	if err := svc.ProcessEvent(context.Background(), sig, body); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if len(fs.payloads) != 1 {
+		t.Fatalf("expected 1 forwarded payload, got %d", len(fs.payloads))
+	}
+	got := fs.payloads[0]
+	if got.AccountID != "bot-proveedores" {
+		t.Fatalf("expected account bot-proveedores, got %s", got.AccountID)
+	}
+	if got.MessageType != "interactive_button_reply" {
+		t.Fatalf("expected message_type interactive_button_reply, got %s", got.MessageType)
+	}
+	if got.SelectedOption != "availability_accept" {
+		t.Fatalf("expected selected_option availability_accept, got %s", got.SelectedOption)
+	}
+}
+
+func TestProcessEventCapturesReplyContext(t *testing.T) {
+	fs := &fakeSender{}
+	svc := NewService(Config{
+		Enabled:   true,
+		AppSecret: "secret-1",
+		PhoneNumberToAccount: map[string]string{
+			"987654321": "bot-proveedores",
+		},
+	}, fs, nil, nil)
+
+	body := []byte(`{
+		"object":"whatsapp_business_account",
+		"entry":[
+			{
+				"id":"waba-1",
+				"changes":[
+					{
+						"field":"messages",
+						"value":{
+							"metadata":{"phone_number_id":"987654321"},
+							"messages":[{
+								"from":"593999111222",
+								"id":"wamid.reply.1",
+								"timestamp":"1730000001",
+								"context":{"from":"593111222333","id":"wamid.template.1"},
+								"type":"interactive",
+								"interactive":{"type":"button_reply","button_reply":{"id":"availability_accept","title":"Disponible"}}
+							}]
+						}
+					}
+				]
+			}
+		]
+	}`)
+	sig := buildSignature("secret-1", body)
+
+	if err := svc.ProcessEvent(context.Background(), sig, body); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if len(fs.payloads) != 1 {
+		t.Fatalf("expected 1 forwarded payload, got %d", len(fs.payloads))
+	}
+	got := fs.payloads[0]
+	if got.ContextFrom != "593111222333" {
+		t.Fatalf("expected context_from 593111222333, got %s", got.ContextFrom)
+	}
+	if got.ContextID != "wamid.template.1" {
+		t.Fatalf("expected context_id wamid.template.1, got %s", got.ContextID)
 	}
 }
 
@@ -1130,8 +1229,346 @@ func TestProcessEventOutboundTemplate(t *testing.T) {
 	}
 }
 
+func TestRedactInboundPayload(t *testing.T) {
+	raw := []byte(`{
+		"entry":[{
+			"changes":[{
+				"value":{
+					"metadata":{"phone_number_id":"987654321"},
+					"messages":[{
+						"from":"593999111222",
+						"context":{"from":"593111222333","id":"wamid.template.1"},
+						"type":"text",
+						"text":{"body":"acepto"}
+					}]
+				}
+			}]
+		}]
+	}`)
+
+	redacted := redactInboundPayload(raw, 4096)
+	for _, expected := range []string{
+		`"phone_number_id":"987654321"`,
+		`"from":"593999111222"`,
+		`"context":{"from":"593111222333","id":"wamid.template.1"}`,
+		`"body":"\u003credacted\u003e"`,
+	} {
+		if !contains(redacted, expected) {
+			t.Fatalf("expected redacted payload to contain %s, got %s", expected, redacted)
+		}
+	}
+	if contains(redacted, `"body":"acepto"`) {
+		t.Fatalf("expected redacted payload to hide text body, got %s", redacted)
+	}
+}
+
+func contains(haystack, needle string) bool {
+	return strings.Contains(haystack, needle)
+}
+
 func buildSignature(secret string, body []byte) string {
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(body)
 	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
+}
+
+func TestProcessEventBSUIDWithFallback(t *testing.T) {
+	fs := &fakeSender{}
+	svc := NewService(Config{
+		Enabled:   true,
+		AppSecret: "secret-1",
+		PhoneNumberToAccount: map[string]string{
+			"123456789": "bot-clientes",
+		},
+	}, fs, nil, nil)
+
+	// Test with BSUID present
+	body := []byte(`{
+		"object":"whatsapp_business_account",
+		"entry":[
+			{
+				"id":"waba-1",
+				"changes":[
+					{
+						"field":"messages",
+						"value":{
+							"metadata":{"phone_number_id":"123456789"},
+							"contacts":[{
+								"profile":{"name":"Test User","username":"testuser","country_code":"US"},
+								"wa_id":"593999111222",
+								"user_id":"user.9373795779eb6441c8adb2eaee5b848e7dd174ddd302d7db62142f4722d574b6"
+							}],
+							"messages":[{
+								"from":"593999111222",
+								"from_user_id":"user.abc123def456",
+								"id":"wamid.1",
+								"timestamp":"1730000000",
+								"type":"text",
+								"text":{"body":"hola"}
+							}]
+						}
+					}
+				]
+			}
+		]
+	}`)
+	sig := buildSignature("secret-1", body)
+
+	if err := svc.ProcessEvent(context.Background(), sig, body); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if len(fs.payloads) != 1 {
+		t.Fatalf("expected 1 forwarded payload, got %d", len(fs.payloads))
+	}
+	got := fs.payloads[0]
+	// Phone should be the BSUID when available
+	if got.Phone != "user.abc123def456" {
+		t.Fatalf("expected phone to be BSUID user.abc123def456, got %s", got.Phone)
+	}
+	// UserID should be set
+	if got.UserID != "user.abc123def456" {
+		t.Fatalf("expected user_id user.abc123def456, got %s", got.UserID)
+	}
+	// Username should be extracted from contact
+	if got.Username != "testuser" {
+		t.Fatalf("expected username testuser, got %s", got.Username)
+	}
+	// CountryCode should be extracted from contact
+	if got.CountryCode != "US" {
+		t.Fatalf("expected country_code US, got %s", got.CountryCode)
+	}
+	// FromNumber should still be the original phone number
+	if got.FromNumber != "593999111222@s.whatsapp.net" {
+		t.Fatalf("expected from_number 593999111222@s.whatsapp.net, got %s", got.FromNumber)
+	}
+}
+
+func TestProcessEventBSUIDFallbackToContact(t *testing.T) {
+	fs := &fakeSender{}
+	svc := NewService(Config{
+		Enabled:   true,
+		AppSecret: "secret-1",
+		PhoneNumberToAccount: map[string]string{
+			"123456789": "bot-clientes",
+		},
+	}, fs, nil, nil)
+
+	// Test with BSUID only in contact, not in message
+	body := []byte(`{
+		"object":"whatsapp_business_account",
+		"entry":[
+			{
+				"id":"waba-1",
+				"changes":[
+					{
+						"field":"messages",
+						"value":{
+							"metadata":{"phone_number_id":"123456789"},
+							"contacts":[{
+								"profile":{"name":"Test User"},
+								"wa_id":"593999111222",
+								"user_id":"user.from.contact"
+							}],
+							"messages":[{
+								"from":"593999111222",
+								"id":"wamid.1",
+								"timestamp":"1730000000",
+								"type":"text",
+								"text":{"body":"hola"}
+							}]
+						}
+					}
+				]
+			}
+		]
+	}`)
+	sig := buildSignature("secret-1", body)
+
+	if err := svc.ProcessEvent(context.Background(), sig, body); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if len(fs.payloads) != 1 {
+		t.Fatalf("expected 1 forwarded payload, got %d", len(fs.payloads))
+	}
+	got := fs.payloads[0]
+	// Phone should be the contact's BSUID when message doesn't have from_user_id
+	if got.Phone != "user.from.contact" {
+		t.Fatalf("expected phone to be BSUID user.from.contact, got %s", got.Phone)
+	}
+	if got.UserID != "user.from.contact" {
+		t.Fatalf("expected user_id user.from.contact, got %s", got.UserID)
+	}
+}
+
+func TestProcessEventNoBSUIDFallbackToPhone(t *testing.T) {
+	fs := &fakeSender{}
+	svc := NewService(Config{
+		Enabled:   true,
+		AppSecret: "secret-1",
+		PhoneNumberToAccount: map[string]string{
+			"123456789": "bot-clientes",
+		},
+	}, fs, nil, nil)
+
+	// Test without BSUID - should fallback to phone number
+	body := []byte(`{
+		"object":"whatsapp_business_account",
+		"entry":[
+			{
+				"id":"waba-1",
+				"changes":[
+					{
+						"field":"messages",
+						"value":{
+							"metadata":{"phone_number_id":"123456789"},
+							"contacts":[{
+								"profile":{"name":"Test User"},
+								"wa_id":"593999111222"
+							}],
+							"messages":[{
+								"from":"593999111222",
+								"id":"wamid.1",
+								"timestamp":"1730000000",
+								"type":"text",
+								"text":{"body":"hola"}
+							}]
+						}
+					}
+				]
+			}
+		]
+	}`)
+	sig := buildSignature("secret-1", body)
+
+	if err := svc.ProcessEvent(context.Background(), sig, body); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if len(fs.payloads) != 1 {
+		t.Fatalf("expected 1 forwarded payload, got %d", len(fs.payloads))
+	}
+	got := fs.payloads[0]
+	// Phone should fallback to the original phone number
+	if got.Phone != "593999111222" {
+		t.Fatalf("expected phone to fallback to 593999111222, got %s", got.Phone)
+	}
+	// UserID should be empty
+	if got.UserID != "" {
+		t.Fatalf("expected user_id to be empty, got %s", got.UserID)
+	}
+}
+
+func TestProcessEventAudioMessage(t *testing.T) {
+	fs := &fakeSender{}
+	media := &fakeMediaDownloader{
+		data:     []byte("audio-bytes"),
+		mimetype: "audio/ogg",
+		filename: "",
+	}
+	svc := NewService(Config{
+		Enabled:   true,
+		AppSecret: "secret-1",
+		PhoneNumberToAccount: map[string]string{
+			"123456789": "bot-clientes",
+		},
+	}, fs, nil, media)
+
+	body := []byte(`{
+		"object":"whatsapp_business_account",
+		"entry":[
+			{
+				"id":"waba-1",
+				"changes":[
+					{
+						"field":"messages",
+						"value":{
+							"metadata":{"phone_number_id":"123456789"},
+							"messages":[{
+								"from":"593999111222",
+								"id":"wamid.audio.1",
+								"timestamp":"1730000000",
+								"type":"audio",
+								"audio":{"id":"audio123","mime_type":"audio/ogg"}
+							}]
+						}
+					}
+				]
+			}
+		]
+	}`)
+	sig := buildSignature("secret-1", body)
+
+	if err := svc.ProcessEvent(context.Background(), sig, body); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if len(fs.payloads) != 1 {
+		t.Fatalf("expected 1 forwarded payload, got %d", len(fs.payloads))
+	}
+	got := fs.payloads[0]
+	if got.MessageType != "audio" {
+		t.Fatalf("expected message_type audio, got %s", got.MessageType)
+	}
+	if got.MediaMimetype != "audio/ogg" {
+		t.Fatalf("expected media_mimetype audio/ogg, got %s", got.MediaMimetype)
+	}
+	if got.MediaBase64 != "YXVkaW8tYnl0ZXM=" {
+		t.Fatalf("expected media_base64 YXVkaW8tYnl0ZXM=, got %s", got.MediaBase64)
+	}
+}
+
+func TestProcessEventVideoMessage(t *testing.T) {
+	fs := &fakeSender{}
+	media := &fakeMediaDownloader{
+		data:     []byte("video-bytes"),
+		mimetype: "video/mp4",
+		filename: "",
+	}
+	svc := NewService(Config{
+		Enabled:   true,
+		AppSecret: "secret-1",
+		PhoneNumberToAccount: map[string]string{
+			"123456789": "bot-clientes",
+		},
+	}, fs, nil, media)
+
+	body := []byte(`{
+		"object":"whatsapp_business_account",
+		"entry":[
+			{
+				"id":"waba-1",
+				"changes":[
+					{
+						"field":"messages",
+						"value":{
+							"metadata":{"phone_number_id":"123456789"},
+							"messages":[{
+								"from":"593999111222",
+								"id":"wamid.video.1",
+								"timestamp":"1730000000",
+								"type":"video",
+								"video":{"id":"video123","mime_type":"video/mp4","caption":"Mira este video"}
+							}]
+						}
+					}
+				]
+			}
+		]
+	}`)
+	sig := buildSignature("secret-1", body)
+
+	if err := svc.ProcessEvent(context.Background(), sig, body); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if len(fs.payloads) != 1 {
+		t.Fatalf("expected 1 forwarded payload, got %d", len(fs.payloads))
+	}
+	got := fs.payloads[0]
+	if got.MessageType != "video" {
+		t.Fatalf("expected message_type video, got %s", got.MessageType)
+	}
+	if got.Message != "Mira este video" {
+		t.Fatalf("expected message 'Mira este video', got %s", got.Message)
+	}
+	if got.MediaMimetype != "video/mp4" {
+		t.Fatalf("expected media_mimetype video/mp4, got %s", got.MediaMimetype)
+	}
 }

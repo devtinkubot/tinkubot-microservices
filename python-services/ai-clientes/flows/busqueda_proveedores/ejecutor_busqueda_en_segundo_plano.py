@@ -181,6 +181,7 @@ async def ejecutar_busqueda_y_notificar_en_segundo_plano(
 
             resultado_disponibilidad = await servicio_disponibilidad.verificar_disponibilidad(
                 req_id=f"search-{telefono}",
+                telefono_cliente=telefono,
                 servicio=servicio,
                 ciudad=ciudad,
                 descripcion_problema=descripcion_problema,

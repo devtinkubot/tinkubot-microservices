@@ -9,7 +9,7 @@ from templates.proveedores.listado import (
 
 
 def test_mensaje_intro_listado_proveedores_usa_copy_nuevo():
-    assert mensaje_intro_listado_proveedores("Cuenca") == "*Encontré estos expertos en Cuenca*"
+    assert mensaje_intro_listado_proveedores("Cuenca") == "*Encontré estas opciones en Cuenca:*"
 
 
 def test_construir_ui_lista_proveedores_limita_a_cinco():
@@ -35,6 +35,30 @@ def test_construir_ui_lista_proveedores_usa_solo_primer_nombre():
 
     assert ui["options"][0]["title"] == "Diego"
     assert ui["options"][1]["title"] == "Jose"
+
+
+def test_construir_ui_lista_incluye_descripcion_servicio():
+    proveedores = [
+        {
+            "id": "prov-1",
+            "name": "Diego Unkuch",
+            "matched_service_name": "Desarrollo de aplicaciones móviles"
+        },
+    ]
+
+    ui = construir_ui_lista_proveedores(proveedores)
+
+    assert ui["options"][0]["description"] == "Desarrollo de aplicaciones móviles"
+
+
+def test_construir_ui_lista_sin_descripcion_cuando_no_hay_servicio():
+    proveedores = [
+        {"id": "prov-1", "name": "Diego Unkuch"},
+    ]
+
+    ui = construir_ui_lista_proveedores(proveedores)
+
+    assert "description" not in ui["options"][0]
 
 
 def test_bloque_listado_proveedores_compacto_usa_solo_primer_nombre():

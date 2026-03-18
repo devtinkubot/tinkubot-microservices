@@ -51,6 +51,8 @@ type Config struct {
 	VerifyToken          string
 	AppSecret            string
 	OutboundEnabled      bool
+	LogRawInbound        bool
+	LogRawInboundMaxLen  int
 	EnabledAccounts      map[string]bool
 	PhoneNumberToAccount map[string]string
 }
@@ -84,6 +86,27 @@ func NewService(cfg Config, sender Sender, outboundSender OutboundSender, mediaD
 	}
 }
 
+func buildInboundTraceID(accountID string, msg incomingMessage) string {
+	seed := strings.Join(
+		[]string{
+			accountID,
+			msg.PhoneNumberID,
+			msg.From,
+			msg.FromUserID,
+			msg.MessageID,
+			msg.MessageTS,
+			msg.ContextFrom,
+			msg.ContextID,
+			msg.MessageType,
+			msg.SelectedOption,
+			msg.Content,
+		},
+		"|",
+	)
+	sum := sha256.Sum256([]byte(seed))
+	return hex.EncodeToString(sum[:8])
+}
+
 // VerifyChallenge validates Meta's initial verification challenge.
 func (s *Service) VerifyChallenge(mode, verifyToken, challenge string) (int, string) {
 	if !s.cfg.Enabled {
@@ -106,13 +129,26 @@ func (s *Service) ProcessEvent(ctx context.Context, signature string, body []byt
 	if !validSignature(signature, body, s.cfg.AppSecret) {
 		return ErrUnauthorized
 	}
+	if s.cfg.LogRawInbound {
+		log.Printf(
+			"[MetaWebhook] inbound_raw payload=%s",
+			redactInboundPayload(body, s.cfg.LogRawInboundMaxLen),
+		)
+	}
+
+	log.Printf("[MetaWebhook] DEBUG raw_payload bytes=%d", len(body))
 
 	var evt webhookEvent
 	if err := json.Unmarshal(body, &evt); err != nil {
 		return fmt.Errorf("invalid payload: %w", err)
 	}
 
-	for _, msg := range extractIncomingMessages(evt) {
+	log.Printf("[MetaWebhook] DEBUG parsed_webhook object=%s entry_count=%d", evt.Object, len(evt.Entry))
+
+	messages := extractIncomingMessages(evt)
+	log.Printf("[MetaWebhook] DEBUG extracted_messages count=%d", len(messages))
+
+	for _, msg := range messages {
 		accountID, ok := s.cfg.PhoneNumberToAccount[msg.PhoneNumberID]
 		if !ok || accountID == "" {
 			log.Printf("[MetaWebhook] Unknown phone_number_id=%s, skipping", msg.PhoneNumberID)
@@ -122,10 +158,51 @@ func (s *Service) ProcessEvent(ctx context.Context, signature string, body []byt
 			log.Printf("[MetaWebhook] Account %s disabled by WA_META_ENABLED_ACCOUNTS", accountID)
 			continue
 		}
+		inboundTraceID := buildInboundTraceID(accountID, msg)
+
+		// Determine user identifier: prefer BSUID, fallback to phone number
+		userIdentifier := msg.FromUserID
+		if userIdentifier == "" {
+			userIdentifier = msg.From
+		}
+
+		log.Printf(
+			"[MetaWebhook] inbound_received inbound_trace_id=%s account=%s phone_number_id=%s from=%s from_user_id=%s username=%s country_code=%s context_from=%s context_id=%s message_id=%s message_ts=%s message_type=%s selected_option=%q content=%q",
+			inboundTraceID,
+			accountID,
+			msg.PhoneNumberID,
+			msg.From,
+			msg.FromUserID,
+			msg.Username,
+			msg.CountryCode,
+			msg.ContextFrom,
+			msg.ContextID,
+			msg.MessageID,
+			msg.MessageTS,
+			msg.MessageType,
+			msg.SelectedOption,
+			msg.Content,
+		)
+		if accountID == "bot-proveedores" {
+			log.Printf(
+				"[MetaWebhook] provider_inbound_received inbound_trace_id=%s phone_number_id=%s from=%s from_user_id=%s message_type=%s selected_option=%q",
+				inboundTraceID,
+				msg.PhoneNumberID,
+				msg.From,
+				msg.FromUserID,
+				msg.MessageType,
+				msg.SelectedOption,
+			)
+		}
 
 		payload := &webhook.WebhookPayload{
-			Phone:          msg.From,
+			Phone:          userIdentifier, // BSUID with fallback to phone number
 			FromNumber:     msg.From + "@s.whatsapp.net",
+			UserID:         msg.FromUserID,  // BSUID - may be empty for backwards compatibility
+			Username:       msg.Username,
+			CountryCode:    msg.CountryCode,
+			ContextFrom:    msg.ContextFrom,
+			ContextID:      msg.ContextID,
 			Content:        msg.Content,
 			Message:        msg.Content,
 			MessageType:    msg.MessageType,
@@ -167,15 +244,34 @@ func (s *Service) ProcessEvent(ctx context.Context, signature string, body []byt
 			}
 		}
 
+		log.Printf(
+			"[MetaWebhook] forwarding inbound_trace_id=%s account=%s destination=%s from=%s phone_number_id=%s message_type=%s selected_option=%q",
+			inboundTraceID,
+			accountID,
+			payload.AccountID,
+			msg.From,
+			msg.PhoneNumberID,
+			msg.MessageType,
+			msg.SelectedOption,
+		)
 		sendCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		resp, err := s.sender.Send(sendCtx, payload)
 		cancel()
 		if err != nil {
-			log.Printf("[MetaWebhook] Failed forwarding event account=%s from=%s: %v", accountID, msg.From, err)
+			log.Printf("[MetaWebhook] Failed forwarding event inbound_trace_id=%s account=%s from=%s destination=%s: %v", inboundTraceID, accountID, msg.From, payload.AccountID, err)
 			continue
 		}
+		log.Printf(
+			"[MetaWebhook] forwarding_ok inbound_trace_id=%s account=%s destination=%s from=%s success=%t outbound_messages=%d",
+			inboundTraceID,
+			accountID,
+			payload.AccountID,
+			msg.From,
+			resp.Success,
+			len(resp.Messages),
+		)
 		if !resp.Success {
-			log.Printf("[MetaWebhook] Downstream returned error account=%s from=%s err=%s", accountID, msg.From, resp.Error)
+			log.Printf("[MetaWebhook] Downstream returned error inbound_trace_id=%s account=%s from=%s err=%s", inboundTraceID, accountID, msg.From, resp.Error)
 		}
 		outboundMessages := normalizeOutboundMessages(resp)
 		if len(outboundMessages) > 0 && s.cfg.OutboundEnabled {
@@ -184,6 +280,74 @@ func (s *Service) ProcessEvent(ctx context.Context, signature string, body []byt
 	}
 
 	return nil
+}
+
+func redactInboundPayload(body []byte, maxLen int) string {
+	const defaultMaxLen = 4096
+	if maxLen <= 0 {
+		maxLen = defaultMaxLen
+	}
+
+	var payload any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		raw := strings.TrimSpace(string(body))
+		if len(raw) > maxLen {
+			return raw[:maxLen] + "...(truncated)"
+		}
+		return raw
+	}
+
+	redacted := redactJSONValue(payload, "")
+	data, err := json.Marshal(redacted)
+	if err != nil {
+		raw := strings.TrimSpace(string(body))
+		if len(raw) > maxLen {
+			return raw[:maxLen] + "...(truncated)"
+		}
+		return raw
+	}
+
+	raw := string(data)
+	if len(raw) > maxLen {
+		return raw[:maxLen] + "...(truncated)"
+	}
+	return raw
+}
+
+func redactJSONValue(value any, key string) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(typed))
+		for childKey, childValue := range typed {
+			out[childKey] = redactJSONValue(childValue, childKey)
+		}
+		return out
+	case []any:
+		out := make([]any, len(typed))
+		for idx, item := range typed {
+			out[idx] = redactJSONValue(item, key)
+		}
+		return out
+	case string:
+		if shouldRedactKey(key) {
+			if strings.TrimSpace(typed) == "" {
+				return ""
+			}
+			return "<redacted>"
+		}
+		return typed
+	default:
+		return typed
+	}
+}
+
+func shouldRedactKey(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "body", "caption", "address", "name", "formatted_name", "first_name", "last_name":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Service) dispatchOutboundReplies(

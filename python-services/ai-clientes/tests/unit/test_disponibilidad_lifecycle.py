@@ -136,6 +136,11 @@ async def test_timeout_envia_push_proactivo_de_caducidad():
     assert len(mensajes_caducidad) == 1
     assert mensajes_caducidad[0]["telefono"] == "593999000001@s.whatsapp.net"
     assert mensajes_caducidad[0]["metadata"]["task_type"] == "provider_availability_timeout"
+    request_id = resultado["request_id"]
+    clave_contexto = "availability:provider:593999000001@s.whatsapp.net:context"
+    assert redis_falso.data[clave_contexto]["request_id"] == request_id
+    assert redis_falso.data[clave_contexto]["expecting_response"] is False
+    assert redis_falso.data[clave_contexto]["status"] == "expired"
 
 
 @pytest.mark.asyncio

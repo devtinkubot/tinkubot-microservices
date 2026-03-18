@@ -3,7 +3,7 @@
 # ==================== MENSAJES ====================
 
 mensaje_confirmando_disponibilidad = (
-    "⏳ *Confirmo disponibilidad.* Te aviso en 2 min."
+    "⏳ *Confirmo disponibilidad.* Te aviso en 3 min."
 )
 
 mensaje_buscando_expertos = (
@@ -19,6 +19,8 @@ opciones_confirmar_nueva_busqueda_textos = [
 ]
 
 titulo_confirmacion_repetir_busqueda = "¿Te ayudo con otra solicitud?"
+
+titulo_ayuda_otro_servicio = "¿Te ayudo con otro servicio?"
 
 
 # ==================== FUNCIONES ====================

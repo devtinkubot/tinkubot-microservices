@@ -80,6 +80,8 @@ func main() {
 	metaClientesPhoneNumberID := strings.TrimSpace(os.Getenv("META_PHONE_NUMBER_ID_CLIENTES"))
 	metaProveedoresPhoneNumberID := strings.TrimSpace(os.Getenv("META_PHONE_NUMBER_ID_PROVEEDORES"))
 	metaOutboundEnabled := parseBoolEnv("WA_META_OUTBOUND_ENABLED", false)
+	metaLogRawInbound := parseBoolEnv("WA_META_LOG_RAW_INBOUND", false)
+	metaLogRawInboundMaxLen := parseIntEnv("WA_META_LOG_RAW_INBOUND_MAX_BYTES", 4096)
 	metaPreserveLIDForProviders := parseBoolEnv("WA_META_PRESERVE_JID_FOR_LID", false)
 	metaEnabledAccounts := parseEnabledAccounts(os.Getenv("WA_META_ENABLED_ACCOUNTS"))
 	metaGraphBaseURL := strings.TrimSpace(os.Getenv("META_GRAPH_BASE_URL"))
@@ -164,6 +166,8 @@ func main() {
 			VerifyToken:          metaVerifyToken,
 			AppSecret:            metaAppSecret,
 			OutboundEnabled:      metaOutboundEnabled,
+			LogRawInbound:        metaLogRawInbound,
+			LogRawInboundMaxLen:  metaLogRawInboundMaxLen,
 			EnabledAccounts:      metaEnabledAccounts,
 			PhoneNumberToAccount: phoneNumberToAccount,
 		},

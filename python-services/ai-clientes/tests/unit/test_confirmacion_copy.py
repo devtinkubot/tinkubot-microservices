@@ -12,7 +12,7 @@ def test_mensaje_buscando_expertos_copy():
 def test_mensaje_confirmando_disponibilidad_copy():
     assert (
         mensaje_confirmando_disponibilidad
-        == "⏳ *Confirmo disponibilidad.* Te aviso en 2 min."
+        == "⏳ *Confirmo disponibilidad.* Te aviso en 3 min."
     )
 
 

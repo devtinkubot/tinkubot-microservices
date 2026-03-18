@@ -13,7 +13,7 @@ DETALLE_PROVIDER_CONTACT = "provider_detail_contact"
 DETALLE_PROVIDER_BACK = "provider_detail_back"
 DETALLE_PROVIDER_SUBVIEW_BACK = "provider_detail_subview_back"
 
-FOOTER_DETALLE = "Tienes 5 min para responder."
+FOOTER_DETALLE = "Tienes 3 min para responder."
 
 
 def _negrita(texto: str) -> str:
