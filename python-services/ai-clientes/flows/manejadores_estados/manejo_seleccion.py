@@ -1,3 +1,4 @@
+# flake8: noqa
 """Módulo para el manejo de la selección de proveedores."""
 
 from typing import Any, Awaitable, Callable, Dict, Optional, Union
@@ -5,6 +6,8 @@ from typing import Any, Awaitable, Callable, Dict, Optional, Union
 from templates.proveedores.listado import (
     construir_ui_lista_proveedores,
     instruccion_seleccion_lista,
+    limpiar_ventana_listado_proveedores,
+    marcar_ventana_listado_proveedores,
     resolver_proveedor_desde_lista,
 )
 
@@ -17,7 +20,7 @@ async def procesar_estado_presentando_resultados(
     guardar_flujo_fn: Callable[[Dict[str, Any]], Awaitable[None]],
     guardar_mensaje_bot_fn: Callable[[Optional[str]], Awaitable[None]],
     mensaje_conexion_formal_fn: Callable[
-        [Dict[str, Any]], Awaitable[Union[Dict[str, Any],str]]
+        [Dict[str, Any]], Awaitable[Union[Dict[str, Any], str]]
     ],
     mensajes_confirmacion_busqueda_fn: Callable[..., list[Dict[str, Any]]],
     programar_retroalimentacion_fn: Optional[
@@ -27,7 +30,9 @@ async def procesar_estado_presentando_resultados(
     titulo_confirmacion_por_defecto: str,
     bloque_detalle_proveedor_fn: Callable[[Dict[str, Any]], str],
     ui_detalle_proveedor_fn: Callable[[Dict[str, Any]], Dict[str, Any]],
-    preparar_proveedor_detalle_fn: Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]],
+    preparar_proveedor_detalle_fn: Callable[
+        [Dict[str, Any]], Awaitable[Dict[str, Any]]
+    ],
     prompt_inicial: str,
     mensaje_despedida: str,
 ) -> Dict[str, Any]:
@@ -59,10 +64,6 @@ async def procesar_estado_presentando_resultados(
             (respuesta única).
     """
 
-    eleccion = (seleccionado or texto or "").strip()
-    eleccion_minusculas = eleccion.lower()
-    eleccion_normalizada = eleccion_minusculas.strip().strip("*").rstrip(".)")
-
     lista_proveedores = flujo.get("providers", [])
 
     # Si por alguna razón no hay proveedores en este estado, reiniciar a pedir servicio
@@ -75,6 +76,8 @@ async def procesar_estado_presentando_resultados(
 
     proveedor = resolver_proveedor_desde_lista(seleccionado, lista_proveedores)
     if not proveedor:
+        marcar_ventana_listado_proveedores(flujo)
+        await guardar_flujo_fn(flujo)
         return {
             "response": instruccion_seleccion_lista(),
             "ui": construir_ui_lista_proveedores(lista_proveedores),
@@ -87,6 +90,7 @@ async def procesar_estado_presentando_resultados(
     flujo["state"] = "viewing_provider_detail"
     flujo["provider_detail_idx"] = indice_proveedor
     flujo["provider_detail_view"] = "menu"
+    limpiar_ventana_listado_proveedores(flujo)
     await guardar_flujo_fn(flujo)
     mensaje_detalle = bloque_detalle_proveedor_fn(proveedor_detalle)
     await guardar_mensaje_bot_fn(mensaje_detalle)

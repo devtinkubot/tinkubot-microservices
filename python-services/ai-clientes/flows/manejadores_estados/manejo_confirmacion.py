@@ -1,3 +1,4 @@
+# flake8: noqa
 """Manejo del estado de confirmación de nueva búsqueda."""
 
 from typing import Any, Awaitable, Callable, Dict, Optional
@@ -10,9 +11,7 @@ async def procesar_estado_confirmar_nueva_busqueda(
     texto: Optional[str],
     seleccionado: Optional[str],
     resetear_flujo_fn: Callable[[], Awaitable[None]],
-    responder_fn: Callable[
-        [Dict[str, Any], Dict[str, Any]], Awaitable[Dict[str, Any]]
-    ],
+    responder_fn: Callable[[Dict[str, Any], Dict[str, Any]], Awaitable[Dict[str, Any]]],
     reenviar_proveedores_fn: Callable[[], Awaitable[Dict[str, Any]]],
     enviar_prompt_confirmacion_fn: Callable[
         [Dict[str, Any], str], Awaitable[Dict[str, Any]]
@@ -22,6 +21,7 @@ async def procesar_estado_confirmar_nueva_busqueda(
     mensaje_despedida: str,
     titulo_confirmacion_por_defecto: str,
     max_intentos: int,
+    guardar_flujo_fn: Optional[Callable[[Dict[str, Any]], Awaitable[None]]] = None,
 ) -> Dict[str, Any]:
     """Procesa el estado `confirm_new_search` cuando el usuario decide buscar otro servicio.
 
@@ -29,7 +29,6 @@ async def procesar_estado_confirmar_nueva_busqueda(
     realizar una nueva búsqueda después de haber completado una búsqueda anterior.
     Soporta múltiples opciones:
 
-    - Opción 0 (si está habilitada): Ver otros proveedores de la misma búsqueda
     - Opción 1 (si opcion_ciudad_habilitada): Cambiar la ciudad
     - Opciones "sí": Reiniciar el flujo para buscar un nuevo servicio (mantiene ciudad)
     - Opciones "no": Terminar la conversación
@@ -62,16 +61,7 @@ async def procesar_estado_confirmar_nueva_busqueda(
     eleccion = eleccion_raw.lower().strip()
     eleccion = eleccion.rstrip(".!¡¿)")
 
-    opcion_proveedores_habilitada = bool(flujo.get(""))
     opcion_ciudad_habilitada = bool(flujo.get("confirm_include_city_option"))
-
-    if eleccion in {"0", "opcion 0", "opción 0"} and opcion_proveedores_habilitada:
-        flujo["state"] = "presenting_results"
-        flujo.pop("chosen_provider", None)
-        flujo[""] = False
-        flujo["confirm_include_city_option"] = False
-        flujo["confirm_attempts"] = 0
-        return await reenviar_proveedores_fn()
 
     opciones_ciudad = {"0", "opcion 0", "opción 0"}
     if opcion_ciudad_habilitada:
@@ -163,7 +153,6 @@ async def procesar_estado_confirmar_nueva_busqueda(
             flujo.pop("confirm_title", None)
             flujo.pop("confirm_prompt", None)
             flujo.pop("confirm_include_city_option", None)
-            flujo.pop("", None)
         nuevo_flujo: Dict[str, Any] = {"state": "awaiting_service"}
         if ciudad_preservada:
             nuevo_flujo["city"] = ciudad_preservada
@@ -177,7 +166,6 @@ async def procesar_estado_confirmar_nueva_busqueda(
     if eleccion in elecciones_no or seleccionado == "confirm_new_search_exit":
         await resetear_flujo_fn()
         flujo.pop("confirm_include_city_option", None)
-        flujo.pop("", None)
         return await responder_fn(
             {"state": "ended"},
             {"response": mensaje_despedida},
@@ -189,7 +177,6 @@ async def procesar_estado_confirmar_nueva_busqueda(
     if intentos >= max_intentos:
         await resetear_flujo_fn()
         flujo.pop("confirm_include_city_option", None)
-        flujo.pop("", None)
         return await responder_fn(
             {"state": "awaiting_service"},
             prompt_inicial,

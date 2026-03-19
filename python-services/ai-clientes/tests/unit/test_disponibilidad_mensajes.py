@@ -10,7 +10,7 @@ def test_mensaje_disponibilidad_incluye_timeout_por_defecto(monkeypatch):
 
 
 def test_mensaje_disponibilidad_incluye_timeout_configurado(monkeypatch):
-    monkeypatch.setenv("AVAILABILITY_TIMEOUT_SECONDS", "120")
+    monkeypatch.setenv("AVAILABILITY_TIMEOUT_SECONDS", "180")
     servicio = ServicioDisponibilidad()
     mensaje = servicio._mensaje_disponibilidad_fallback()
 
@@ -24,7 +24,9 @@ def test_mensaje_disponibilidad_contexto_usa_primer_nombre_y_copy_nuevo():
         nombre="Diego Unkuch Gonzalez",
         servicio="desarrollo y mantenimiento de aplicaciones móviles",
         ciudad="Cuenca",
-        descripcion_problema="Qué alguien desarrolle la app movil y arregle los errores que tiene",
+        descripcion_problema=(
+            "Qué alguien desarrolle la app movil y arregle los errores que tiene"
+        ),
     )
 
     assert "*Oportunidad en Cuenca*" in mensaje
@@ -45,7 +47,9 @@ def test_ui_disponibilidad_expone_template_esperado():
     ui = servicio._ui_disponibilidad(
         servicio="desarrollo y mantenimiento de aplicaciones móviles",
         ciudad="Cuenca",
-        descripcion_problema="Qué alguien desarrolle la app movil y arregle los errores que tiene",
+        descripcion_problema=(
+            "Qué alguien desarrolle la app movil y arregle los errores que tiene"
+        ),
     )
 
     assert ui["type"] == "template"

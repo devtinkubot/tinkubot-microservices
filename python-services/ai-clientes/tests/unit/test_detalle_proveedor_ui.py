@@ -1,5 +1,7 @@
-import pytest
+# flake8: noqa
+"""Tests para el detalle del proveedor."""
 
+import pytest
 from flows.manejadores_estados.manejo_detalle_proveedor import (
     procesar_estado_viendo_detalle_proveedor,
 )
@@ -7,7 +9,6 @@ from services.proveedores.detalle import preparar_proveedor_para_detalle
 from templates.proveedores.detalle import (
     DETALLE_PROVIDER_PHOTO,
     DETALLE_PROVIDER_SUBVIEW_BACK,
-    DETALLE_PROVIDER_SERVICES,
     bloque_detalle_proveedor,
     mensaje_servicios_proveedor,
     ui_detalle_proveedor,
@@ -50,7 +51,7 @@ def test_ui_detalle_proveedor_usa_lista_dinamica():
     assert ui["id"] == "provider_detail_menu_v1"
     assert ui["header_type"] == "text"
     assert ui["header_text"] == "Diego Unkuch Gonzalez"
-    assert ui["footer_text"] == "Tienes 3 min para responder."
+    assert "footer_text" not in ui
     assert ui["list_button_text"] == "Ver detalles"
     assert [opt["id"] for opt in ui["options"]] == [
         "provider_detail_photo",
@@ -152,6 +153,7 @@ async def test_viewing_provider_detail_regresar_vuelve_al_listado():
     )
 
     assert guardado["state"] == "presenting_results"
+    assert "provider_results_expires_at" in guardado
     assert "provider_detail_idx" not in guardado
     assert resultado["response"] == "*Encontré estos expertos en Cuenca*"
     assert resultado["ui"]["type"] == "list"
@@ -204,7 +206,11 @@ async def test_viewing_provider_detail_regresar_en_subvista_vuelve_al_menu():
         "state": "viewing_provider_detail",
         "city": "Cuenca",
         "providers": [
-            {"id": "prov-1", "name": "Diego Unkuch Gonzalez", "services": ["desarrollo de aplicaciones móviles"]},
+            {
+                "id": "prov-1",
+                "name": "Diego Unkuch Gonzalez",
+                "services": ["desarrollo de aplicaciones móviles"],
+            },
         ],
         "provider_detail_idx": 0,
         "provider_detail_view": "services",

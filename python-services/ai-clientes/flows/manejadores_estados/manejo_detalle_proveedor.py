@@ -17,6 +17,10 @@ from templates.proveedores.detalle import (
     mensaje_redes_sociales_proveedor,
     mensaje_servicios_proveedor,
 )
+from templates.proveedores.listado import (
+    limpiar_ventana_listado_proveedores,
+    marcar_ventana_listado_proveedores,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -35,16 +39,16 @@ async def procesar_estado_viendo_detalle_proveedor(
     programar_retroalimentacion_fn: Optional[
         Callable[[str, Dict[str, Any], str], Awaitable[None]]
     ],
-    registrar_lead_contacto_fn: Optional[
-        Callable[..., Awaitable[Dict[str, Any]]]
-    ],
+    registrar_lead_contacto_fn: Optional[Callable[..., Awaitable[Dict[str, Any]]]],
     logger: Any,
     titulo_confirmacion_por_defecto: str,
     enviar_prompt_proveedor_fn: Callable[[], Awaitable[Dict[str, Any]]],
     prompt_inicial: str,
     mensaje_despedida: str,
     ui_detalle_proveedor_fn: Callable[[Dict[str, Any]], Dict[str, Any]],
-    preparar_proveedor_detalle_fn: Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]],
+    preparar_proveedor_detalle_fn: Callable[
+        [Dict[str, Any]], Awaitable[Dict[str, Any]]
+    ],
 ) -> Dict[str, Any]:
     """Procesa el estado `viewing_provider_detail` (ficha interactiva).
 
@@ -69,9 +73,8 @@ async def procesar_estado_viendo_detalle_proveedor(
     vista_actual = str(flujo.get("provider_detail_view") or "menu").strip().lower()
 
     if (
-        (vista_actual != "menu" and eleccion_normalizada in ("regresar",))
-        or seleccionado == DETALLE_PROVIDER_SUBVIEW_BACK
-    ):
+        vista_actual != "menu" and eleccion_normalizada in ("regresar",)
+    ) or seleccionado == DETALLE_PROVIDER_SUBVIEW_BACK:
         flujo["provider_detail_view"] = "menu"
         await guardar_flujo_fn(flujo)
         return {
@@ -79,15 +82,19 @@ async def procesar_estado_viendo_detalle_proveedor(
             "ui": ui_detalle_proveedor_fn(proveedor),
         }
 
-    if (eleccion_normalizada in ("regresar",) and vista_actual == "menu") or seleccionado == DETALLE_PROVIDER_BACK:
+    if (
+        eleccion_normalizada in ("regresar",) and vista_actual == "menu"
+    ) or seleccionado == DETALLE_PROVIDER_BACK:
         flujo["state"] = "presenting_results"
         flujo.pop("provider_detail_idx", None)
         flujo.pop("provider_detail_view", None)
+        marcar_ventana_listado_proveedores(flujo)
         await guardar_flujo_fn(flujo)
         return await enviar_prompt_proveedor_fn()
 
     if (
-        eleccion_normalizada in (
+        eleccion_normalizada
+        in (
             "elegir",
             "contactar experto",
             "contactar",
@@ -160,9 +167,7 @@ async def conectar_y_confirmar_proveedor(
     programar_retroalimentacion_fn: Optional[
         Callable[[str, Dict[str, Any], str], Awaitable[None]]
     ],
-    registrar_lead_contacto_fn: Optional[
-        Callable[..., Awaitable[Dict[str, Any]]]
-    ],
+    registrar_lead_contacto_fn: Optional[Callable[..., Awaitable[Dict[str, Any]]]],
     logger: Any,
     titulo_confirmacion_por_defecto: str,
 ) -> Dict[str, Any]:
@@ -177,9 +182,12 @@ async def conectar_y_confirmar_proveedor(
 
     flujo.pop("provider_detail_idx", None)
     flujo.pop("provider_detail_view", None)
+    limpiar_ventana_listado_proveedores(flujo)
     lead_event_id = ""
     if registrar_lead_contacto_fn:
-        provider_id = str(proveedor.get("id") or proveedor.get("provider_id") or "").strip()
+        provider_id = str(
+            proveedor.get("id") or proveedor.get("provider_id") or ""
+        ).strip()
         lead_resultado = await registrar_lead_contacto_fn(
             provider_id=provider_id,
             customer_phone=telefono,

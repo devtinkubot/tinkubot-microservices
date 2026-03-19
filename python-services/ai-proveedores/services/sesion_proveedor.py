@@ -186,6 +186,18 @@ def manejar_aprobacion_reciente(
     """Notifica cuando un perfil pasa de pendiente a verificado."""
     if flujo.get("state") != "pending_verification" or not esta_verificado:
         return None
+    if flujo.get("verification_notified"):
+        flujo.update(
+            {
+                "state": "awaiting_menu_option",
+                "has_consent": True,
+                "esta_registrado": True,
+                "menu_limitado": False,
+                "approved_basic": approved_basic,
+                "profile_pending_review": False,
+            }
+        )
+        return None
     flujo.update(
         {
             "state": "awaiting_menu_option",

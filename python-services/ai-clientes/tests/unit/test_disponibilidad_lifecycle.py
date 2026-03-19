@@ -1,7 +1,6 @@
 """Tests del ciclo de vida de solicitudes de disponibilidad."""
 
 import pytest
-
 from services.proveedores.disponibilidad import ServicioDisponibilidad
 
 
@@ -42,6 +41,43 @@ class RedisFalsoConLock(RedisFalso):
     def __init__(self):
         super().__init__()
         self.redis_client = RedisRawFalso(self.data)
+
+
+class _SupabaseQueryRotacionFalso:
+    def __init__(self, table_name: str, tables: dict[str, list[dict]]):
+        self.table_name = table_name
+        self.tables = tables
+
+    def select(self, *_args, **_kwargs):
+        return self
+
+    def eq(self, *_args, **_kwargs):
+        return self
+
+    def gte(self, *_args, **_kwargs):
+        return self
+
+    def in_(self, *_args, **_kwargs):
+        return self
+
+    def order(self, *_args, **_kwargs):
+        return self
+
+    def limit(self, *_args, **_kwargs):
+        return self
+
+    def execute(self):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(data=self.tables.get(self.table_name, []))
+
+
+class _SupabaseRotacionFalso:
+    def __init__(self, tables: dict[str, list[dict]]):
+        self.tables = tables
+
+    def table(self, table_name: str):
+        return _SupabaseQueryRotacionFalso(table_name, self.tables)
 
 
 @pytest.mark.asyncio
@@ -107,7 +143,7 @@ async def test_timeout_envia_push_proactivo_de_caducidad():
         )
         return True
 
-    servicio._enviar_whatsapp = enviar_whatsapp_falso  # type: ignore[method-assign]
+    servicio._enviar_whatsapp = enviar_whatsapp_falso
     servicio.timeout_seconds = 0
     servicio.grace_seconds = 0
     servicio.poll_interval_seconds = 0
@@ -135,7 +171,10 @@ async def test_timeout_envia_push_proactivo_de_caducidad():
     ]
     assert len(mensajes_caducidad) == 1
     assert mensajes_caducidad[0]["telefono"] == "593999000001@s.whatsapp.net"
-    assert mensajes_caducidad[0]["metadata"]["task_type"] == "provider_availability_timeout"
+    assert (
+        mensajes_caducidad[0]["metadata"]["task_type"]
+        == "provider_availability_timeout"
+    )
     request_id = resultado["request_id"]
     clave_contexto = "availability:provider:593999000001@s.whatsapp.net:context"
     assert redis_falso.data[clave_contexto]["request_id"] == request_id
@@ -160,7 +199,7 @@ async def test_verificar_disponibilidad_cierra_si_todos_ocupados():
         )
         return True
 
-    servicio._enviar_whatsapp = enviar_whatsapp_falso  # type: ignore[method-assign]
+    servicio._enviar_whatsapp = enviar_whatsapp_falso
 
     resultado = await servicio.verificar_disponibilidad(
         req_id="search-ocupados",
@@ -207,7 +246,7 @@ async def test_verificar_disponibilidad_excluye_ocupados_y_consulta_libres():
         )
         return True
 
-    servicio._enviar_whatsapp = enviar_whatsapp_falso  # type: ignore[method-assign]
+    servicio._enviar_whatsapp = enviar_whatsapp_falso
     servicio.timeout_seconds = 0
     servicio.grace_seconds = 0
     servicio.poll_interval_seconds = 0
@@ -252,7 +291,7 @@ async def test_verificar_disponibilidad_prioriza_real_phone_sobre_lid():
         )
         return True
 
-    servicio._enviar_whatsapp = enviar_whatsapp_falso  # type: ignore[method-assign]
+    servicio._enviar_whatsapp = enviar_whatsapp_falso
     servicio.timeout_seconds = 0
     servicio.grace_seconds = 0
     servicio.poll_interval_seconds = 0
@@ -282,7 +321,9 @@ async def test_verificar_disponibilidad_prioriza_real_phone_sobre_lid():
         mensajes_enviados[0]["ui"]["template_name"]
         == "provider_availability_request_v1"
     )
-    assert mensajes_enviados[0]["metadata"]["task_type"] == "provider_availability_request"
+    assert (
+        mensajes_enviados[0]["metadata"]["task_type"] == "provider_availability_request"
+    )
 
 
 @pytest.mark.asyncio
@@ -299,7 +340,7 @@ async def test_verificar_disponibilidad_excluye_lid_sin_real_phone():
         )
         return True
 
-    servicio._enviar_whatsapp = enviar_whatsapp_falso  # type: ignore[method-assign]
+    servicio._enviar_whatsapp = enviar_whatsapp_falso
 
     resultado = await servicio.verificar_disponibilidad(
         req_id="search-lid-missing-real-phone",
@@ -324,6 +365,112 @@ async def test_verificar_disponibilidad_excluye_lid_sin_real_phone():
 
 
 @pytest.mark.asyncio
+async def test_verificar_disponibilidad_limita_y_rotaciona_cupo_de_diez():
+    servicio = ServicioDisponibilidad()
+    redis_falso = RedisFalsoConLock()
+    servicio.timeout_seconds = 0
+    servicio.grace_seconds = 0
+    servicio.poll_interval_seconds = 0
+    mensajes_enviados = []
+
+    async def enviar_whatsapp_falso(
+        *, telefono: str, mensaje: str, ui=None, metadata=None
+    ) -> bool:
+        mensajes_enviados.append(
+            {"telefono": telefono, "mensaje": mensaje, "ui": ui, "metadata": metadata}
+        )
+        return True
+
+    servicio._enviar_whatsapp = enviar_whatsapp_falso
+
+    lead_events = []
+    feedback_rows = []
+    counts = {
+        "prov-1": 5,
+        "prov-2": 4,
+        "prov-3": 2,
+        "prov-4": 2,
+        "prov-5": 6,
+    }
+    for provider_id, total in counts.items():
+        for idx in range(total):
+            lead_id = f"{provider_id}-lead-{idx}"
+            lead_events.append(
+                {
+                    "id": lead_id,
+                    "provider_id": provider_id,
+                    "created_at": "2026-03-19T00:00:00Z",
+                }
+            )
+            feedback_rows.append(
+                {
+                    "lead_event_id": lead_id,
+                    "hired": True,
+                    "rating": 5.0 if provider_id != "prov-5" else 4.0,
+                }
+            )
+
+    for idx in range(6, 16):
+        provider_id = f"prov-{idx}"
+        lead_id = f"{provider_id}-lead-0"
+        lead_events.append(
+            {
+                "id": lead_id,
+                "provider_id": provider_id,
+                "created_at": "2026-03-19T00:00:00Z",
+            }
+        )
+        feedback_rows.append(
+            {
+                "lead_event_id": lead_id,
+                "hired": False,
+                "rating": 5.0,
+            }
+        )
+
+    supabase_falso = _SupabaseRotacionFalso(
+        {
+            "lead_events": lead_events,
+            "lead_feedback": feedback_rows,
+        }
+    )
+
+    resultado = await servicio.verificar_disponibilidad(
+        req_id="search-rotacion",
+        servicio="electricista",
+        ciudad="Cuenca",
+        descripcion_problema="revisión de tablero",
+        candidatos=[
+            {
+                "provider_id": f"prov-{idx}",
+                "name": f"Proveedor {idx}",
+                "real_phone": f"5939990000{idx:02d}",
+            }
+            for idx in range(1, 16)
+        ],
+        cliente_redis=redis_falso,
+        supabase=supabase_falso,
+    )
+
+    assert resultado["lock_acquired_count"] == 10
+    assert resultado["tiempo_agotado"] is True
+
+    proveedores_contactados = [
+        item["telefono"]
+        for item in mensajes_enviados
+        if item["metadata"]["task_type"] == "provider_availability_request"
+    ]
+    assert len(proveedores_contactados) == 10
+    assert "593999000001@s.whatsapp.net" not in proveedores_contactados
+    assert "593999000002@s.whatsapp.net" not in proveedores_contactados
+    assert "593999000003@s.whatsapp.net" not in proveedores_contactados
+    assert "593999000004@s.whatsapp.net" not in proveedores_contactados
+    assert "593999000005@s.whatsapp.net" not in proveedores_contactados
+    assert "593999000006@s.whatsapp.net" in proveedores_contactados
+    assert "593999000015@s.whatsapp.net" in proveedores_contactados
+
+
+@pytest.mark.asyncio
 async def test_lock_atomico_descarta_proveedor_ocupado():
     servicio = ServicioDisponibilidad()
     redis_falso = RedisFalsoConLock()
@@ -339,7 +486,7 @@ async def test_lock_atomico_descarta_proveedor_ocupado():
         )
         return True
 
-    servicio._enviar_whatsapp = enviar_whatsapp_falso  # type: ignore[method-assign]
+    servicio._enviar_whatsapp = enviar_whatsapp_falso
 
     resultado = await servicio.verificar_disponibilidad(
         req_id="search-lock-ocupado",
@@ -377,7 +524,7 @@ async def test_lock_atomico_se_libera_al_finalizar():
         _ = telefono, mensaje, ui, metadata
         return True
 
-    servicio._enviar_whatsapp = enviar_whatsapp_falso  # type: ignore[method-assign]
+    servicio._enviar_whatsapp = enviar_whatsapp_falso
 
     resultado = await servicio.verificar_disponibilidad(
         req_id="search-lock-release",

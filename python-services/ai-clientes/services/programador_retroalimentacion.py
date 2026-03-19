@@ -6,7 +6,6 @@ from typing import Any, Dict, Optional
 from zoneinfo import ZoneInfo
 
 import httpx
-
 from infrastructure.database import run_supabase
 from templates.mensajes.retroalimentacion import (
     mensaje_solicitud_retroalimentacion,
@@ -75,7 +74,7 @@ class ProgramadorRetroalimentacion:
         try:
             retraso = self.retraso_retroalimentacion_segundos
             nombre = proveedor.get("name") or "Proveedor"
-            mensaje = f"¿Cómo te fue con {nombre}?"  # Header simple
+            mensaje = mensaje_solicitud_retroalimentacion(nombre)
             carga = {
                 "phone": telefono,
                 "message": mensaje,
@@ -92,7 +91,8 @@ class ProgramadorRetroalimentacion:
             programado_iso = datetime.fromtimestamp(cuando, tz=timezone.utc).isoformat()
 
             await run_supabase(
-                lambda: self.supabase.table("task_queue").insert(
+                lambda: self.supabase.table("task_queue")
+                .insert(
                     {
                         "task_type": "send_whatsapp",
                         "payload": carga,
@@ -102,10 +102,14 @@ class ProgramadorRetroalimentacion:
                         "retry_count": 0,
                         "max_retries": 3,
                     }
-                ).execute(),
+                )
+                .execute(),
                 etiqueta="task_queue.insert_feedback",
             )
-            self.logger.info(f"🕒 Retroalimentación agendada en Supabase en {retraso}s para {telefono}")
+            self.logger.info(
+                f"🕒 Retroalimentación agendada en Supabase en {retraso}s "
+                f"para {telefono}"  # noqa: E501
+            )
 
         except Exception as exc:
             self.logger.warning(f"No se pudo agendar retroalimentación: {exc}")
@@ -180,9 +184,9 @@ class ProgramadorRetroalimentacion:
         retry_at_raw = cuerpo.get("retry_at")
         if isinstance(retry_at_raw, str):
             try:
-                return datetime.fromisoformat(retry_at_raw.replace("Z", "+00:00")).astimezone(
-                    timezone.utc
-                )
+                return datetime.fromisoformat(
+                    retry_at_raw.replace("Z", "+00:00")
+                ).astimezone(timezone.utc)
             except ValueError:
                 pass
 
@@ -212,12 +216,14 @@ class ProgramadorRetroalimentacion:
         hora_ec = retry_at_ec.strftime("%H:%M")
         mensaje = (
             "⚠️ Alcanzamos temporalmente el límite de mensajes de TinkuBot.\n\n"
-            f"Podrás volver a usar el servicio el {fecha_ec} a las {hora_ec} (hora Ecuador)."
+            f"Podrás volver a usar el servicio el {fecha_ec} a las {hora_ec} "
+            f"(hora Ecuador)."  # noqa: E501
         )
 
         try:
             await run_supabase(
-                lambda: self.supabase.table("task_queue").insert(
+                lambda: self.supabase.table("task_queue")
+                .insert(
                     {
                         "task_type": "send_whatsapp",
                         "payload": {
@@ -231,7 +237,8 @@ class ProgramadorRetroalimentacion:
                         "retry_count": 0,
                         "max_retries": 3,
                     }
-                ).execute(),
+                )
+                .execute(),
                 etiqueta="task_queue.insert_rate_limit_notice",
             )
             await self._guardar_marca_rate_limit(telefono, retry_at_utc)
@@ -330,20 +337,25 @@ class ProgramadorRetroalimentacion:
                 carga = tarea.get("payload") or {}
                 telefono = carga.get("phone")
                 mensaje = carga.get("message")
+                ui = carga.get("ui")
                 exito = False
                 if telefono and mensaje:
+                    texto_envio = {"response": mensaje}
+                    if ui:
+                        texto_envio["ui"] = ui
                     exito = await self.enviar_texto_whatsapp(
                         telefono,
-                        mensaje,
+                        texto_envio,
                         metadata={
                             "source_service": "ai-clientes",
                             "flow_type": "feedback_scheduler",
-                            "task_type": carga.get("type") or "send_whatsapp",
+                            "task_type": carga.get("type")
+                            or "send_whatsapp",  # noqa: E501
                             "lead_event_id": carga.get("lead_event_id") or "",
                         },
                     )
                 if exito:
-                    # Si es encuesta de contratación, dejar el flujo listo para captar 1/2.
+                    # Si es encuesta de contratación, dejar el flujo listo para captar 1/2.  # noqa: E501
                     if (
                         self.repositorio_flujo
                         and carga.get("type") == "request_hiring_feedback"
@@ -351,12 +363,15 @@ class ProgramadorRetroalimentacion:
                         await self._preparar_estado_retroalimentacion(telefono, carga)
 
                     await run_supabase(
-                        lambda: self.supabase.table("task_queue").update(
+                        lambda: self.supabase.table("task_queue")
+                        .update(
                             {
                                 "status": "completed",
                                 "completed_at": datetime.now(timezone.utc).isoformat(),
                             }
-                        ).eq("id", tarea_id).execute(),
+                        )
+                        .eq("id", tarea_id)
+                        .execute(),
                         etiqueta="task_queue.mark_completed",
                     )
                 else:
@@ -364,23 +379,33 @@ class ProgramadorRetroalimentacion:
                     max_reintentos = tarea.get("max_retries") or 3
                     if reintento < max_reintentos:
                         await run_supabase(
-                            lambda: self.supabase.table("task_queue").update(
+                            lambda: self.supabase.table("task_queue")
+                            .update(
                                 {
                                     "retry_count": reintento,
-                                    "scheduled_at": datetime.now(timezone.utc).isoformat(),
+                                    "scheduled_at": datetime.now(
+                                        timezone.utc
+                                    ).isoformat(),
                                 }
-                            ).eq("id", tarea_id).execute(),
+                            )
+                            .eq("id", tarea_id)
+                            .execute(),
                             etiqueta="task_queue.reschedule",
                         )
                     else:
                         await run_supabase(
-                            lambda: self.supabase.table("task_queue").update(
+                            lambda: self.supabase.table("task_queue")
+                            .update(
                                 {
                                     "status": "failed",
-                                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                                    "completed_at": datetime.now(
+                                        timezone.utc
+                                    ).isoformat(),
                                     "error_message": "send failed",
                                 }
-                            ).eq("id", tarea_id).execute(),
+                            )
+                            .eq("id", tarea_id)
+                            .execute(),
                             etiqueta="task_queue.mark_failed",
                         )
                 procesadas += 1

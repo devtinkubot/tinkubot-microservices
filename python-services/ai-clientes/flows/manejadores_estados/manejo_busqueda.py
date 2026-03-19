@@ -1,12 +1,17 @@
+# flake8: noqa
 """Manejo del estado de búsqueda de proveedores."""
 
+import logging
 from datetime import datetime
 from typing import Any, Awaitable, Callable, Dict, Optional
 
-import logging
-
-from templates.proveedores.listado import mensaje_listado_sin_resultados, preguntar_servicio
 from templates.mensajes.ubicacion import preguntar_ciudad_con_servicio
+from templates.proveedores.listado import (
+    limpiar_ventana_listado_proveedores,
+    marcar_ventana_listado_proveedores,
+    mensaje_listado_sin_resultados,
+    preguntar_servicio,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -14,9 +19,7 @@ logger = logging.getLogger(__name__)
 async def procesar_estado_buscando(
     flujo: Dict[str, Any],
     telefono: str,
-    responder_fn: Callable[
-        [Dict[str, Any], Dict[str, Any]], Awaitable[Dict[str, Any]]
-    ],
+    responder_fn: Callable[[Dict[str, Any], Dict[str, Any]], Awaitable[Dict[str, Any]]],
     buscar_proveedores_fn: Callable[[str, str], Awaitable[Dict[str, Any]]],
     enviar_prompt_proveedor_fn: Callable[[str], Awaitable[Dict[str, Any]]],
     guardar_flujo_fn: Callable[[Dict[str, Any]], Awaitable[None]],
@@ -71,7 +74,7 @@ async def procesar_estado_buscando(
         flujo["confirm_attempts"] = 0
         flujo["confirm_title"] = titulo_confirmacion_por_defecto
         flujo["confirm_include_city_option"] = True
-        flujo[""] = False
+        limpiar_ventana_listado_proveedores(flujo)
         await guardar_flujo_fn(flujo)
         bloque = mensaje_listado_sin_resultados(ciudad)
         await guardar_mensaje_bot_fn(bloque)
@@ -88,8 +91,8 @@ async def procesar_estado_buscando(
     flujo["providers"] = proveedores[:5]
     flujo["state"] = "presenting_results"
     flujo["confirm_include_city_option"] = False
-    flujo[""] = len(flujo["providers"]) > 1
     flujo.pop("provider_detail_idx", None)
+    marcar_ventana_listado_proveedores(flujo)
 
     # Guardar flow ANTES de consultar disponibilidad
     await guardar_flujo_fn(flujo)
@@ -111,9 +114,7 @@ async def procesar_estado_buscando(
             logger.warning(f"No se pudo registrar service_request: {exc}")
 
     try:
-        nombres = ", ".join(
-            [p.get("name") or "Proveedor" for p in flujo["providers"]]
-        )
+        nombres = ", ".join([p.get("name") or "Proveedor" for p in flujo["providers"]])
         logger.info(
             f"📣 Devolviendo provider_results a WhatsApp: count={len(flujo['providers'])} names=[{nombres}]"
         )

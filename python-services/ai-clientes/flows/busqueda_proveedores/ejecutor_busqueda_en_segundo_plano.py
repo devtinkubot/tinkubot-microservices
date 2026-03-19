@@ -1,3 +1,4 @@
+# flake8: noqa
 """
 Ejecutor de búsqueda de proveedores en segundo plano.
 
@@ -7,21 +8,24 @@ y los resultados obtenidos.
 """
 
 import logging
-from typing import Any, Dict, List, Callable, Awaitable
+from typing import Any, Awaitable, Callable, Dict, List
+
+from flows.mensajes.mensajes_busqueda import mensaje_expertos_encontrados
 from templates.busqueda.confirmacion import (
+    mensaje_confirmando_disponibilidad,
     mensaje_sin_disponibilidad,
     mensaje_sin_proveedores_registrados,
-    mensaje_confirmando_disponibilidad,
     mensajes_confirmacion_busqueda,
     titulo_confirmacion_repetir_busqueda,
 )
 from templates.proveedores.listado import (
     bloque_listado_proveedores_compacto,
     construir_ui_lista_proveedores,
+    limpiar_ventana_listado_proveedores,
+    marcar_ventana_listado_proveedores,
     mensaje_intro_listado_proveedores,
     mensaje_listado_sin_resultados,
 )
-from flows.mensajes.mensajes_busqueda import mensaje_expertos_encontrados
 
 logger = logging.getLogger(__name__)
 
@@ -78,13 +82,11 @@ async def ejecutar_busqueda_y_notificar_en_segundo_plano(
             return
 
         descripcion_problema = (
-            flujo.get("descripcion_problema")
-            or flujo.get("service_full")
-            or servicio
+            flujo.get("descripcion_problema") or flujo.get("service_full") or servicio
         )
 
         # Ejecutar búsqueda
-        from principal import buscar_proveedores
+        from principal import buscar_proveedores, supabase
         from services.proveedores.disponibilidad import servicio_disponibilidad
 
         logger.info(
@@ -113,9 +115,7 @@ async def ejecutar_busqueda_y_notificar_en_segundo_plano(
                 if enviado_resumen:
                     logger.info("✅ Mensaje de hallazgos iniciales enviado")
                 else:
-                    logger.warning(
-                        "⚠️ No se pudo enviar mensaje de hallazgos iniciales"
-                    )
+                    logger.warning("⚠️ No se pudo enviar mensaje de hallazgos iniciales")
                 try:
                     from services.sesiones.gestor_sesiones import gestor_sesiones
 
@@ -127,9 +127,7 @@ async def ejecutar_busqueda_y_notificar_en_segundo_plano(
                         f"⚠️ No se pudo guardar hallazgos iniciales en sesión: {exc}"
                     )
             except Exception as exc:
-                logger.warning(
-                    f"⚠️ Error enviando hallazgos iniciales: {exc}"
-                )
+                logger.warning(f"⚠️ Error enviando hallazgos iniciales: {exc}")
 
         proveedores_finales: List[Dict[str, Any]] = []
 
@@ -144,8 +142,11 @@ async def ejecutar_busqueda_y_notificar_en_segundo_plano(
                 f"🔔 Consultando disponibilidad de {len(proveedores)} proveedores"
             )
             try:
+                mensaje_confirmacion_disponibilidad = (
+                    mensaje_confirmando_disponibilidad(len(proveedores))
+                )
                 enviado_confirmacion = await enviar_mensaje_callback(
-                    telefono, mensaje_confirmando_disponibilidad
+                    telefono, mensaje_confirmacion_disponibilidad
                 )
                 if enviado_confirmacion:
                     logger.info("✅ Mensaje de confirmación de disponibilidad enviado")
@@ -155,7 +156,7 @@ async def ejecutar_busqueda_y_notificar_en_segundo_plano(
                     from services.sesiones.gestor_sesiones import gestor_sesiones
 
                     await gestor_sesiones.guardar_sesion(
-                        telefono, mensaje_confirmando_disponibilidad, es_bot=True
+                        telefono, mensaje_confirmacion_disponibilidad, es_bot=True
                     )
                 except Exception as exc:
                     logger.warning(
@@ -166,7 +167,9 @@ async def ejecutar_busqueda_y_notificar_en_segundo_plano(
                     f"⚠️ Error enviando confirmación de disponibilidad: {exc}"
                 )
 
-            from infrastructure.persistencia.cliente_redis import cliente_redis as redis_client
+            from infrastructure.persistencia.cliente_redis import (
+                cliente_redis as redis_client,
+            )
 
             # Preparar candidatos para el cliente HTTP
             candidatos = [
@@ -179,22 +182,23 @@ async def ejecutar_busqueda_y_notificar_en_segundo_plano(
                 for p in proveedores
             ]
 
-            resultado_disponibilidad = await servicio_disponibilidad.verificar_disponibilidad(
-                req_id=f"search-{telefono}",
-                telefono_cliente=telefono,
-                servicio=servicio,
-                ciudad=ciudad,
-                descripcion_problema=descripcion_problema,
-                candidatos=candidatos,
-                cliente_redis=redis_client,
+            resultado_disponibilidad = (
+                await servicio_disponibilidad.verificar_disponibilidad(
+                    req_id=f"search-{telefono}",
+                    telefono_cliente=telefono,
+                    servicio=servicio,
+                    ciudad=ciudad,
+                    descripcion_problema=descripcion_problema,
+                    candidatos=candidatos,
+                    cliente_redis=redis_client,
+                    supabase=supabase,
+                )
             )
             aceptados = resultado_disponibilidad.get("aceptados") or []
             request_id = resultado_disponibilidad.get("request_id")
             if request_id:
                 flujo["availability_request_id"] = request_id
-            logger.info(
-                f"✅ Disponibilidad: {len(aceptados)} proveedores aceptados"
-            )
+            logger.info(f"✅ Disponibilidad: {len(aceptados)} proveedores aceptados")
             proveedores_finales = aceptados[:5]
 
             if proveedores_finales:
@@ -261,6 +265,7 @@ async def ejecutar_busqueda_y_notificar_en_segundo_plano(
 
     except Exception as exc:
         import traceback
+
         logger.error(
             f"❌ Error en ejecutar_busqueda_y_notificar_en_segundo_plano: {exc}\n"
             f"Traceback:\n{traceback.format_exc()}"
@@ -296,6 +301,7 @@ async def _construir_mensajes_resultados(
 
     if proveedores_finales:
         # Hay proveedores: construir lista interactiva
+        marcar_ventana_listado_proveedores(flujo)
         intro = mensaje_intro_listado_proveedores(ciudad)
         mensajes_por_enviar.append(
             {
@@ -305,6 +311,7 @@ async def _construir_mensajes_resultados(
         )
     else:
         # No hay proveedores: construir mensaje sin resultados y cambiar a confirm_new_search
+        limpiar_ventana_listado_proveedores(flujo)
         if cantidad_encontrada > 0:
             bloque = mensaje_sin_disponibilidad(servicio, ciudad)
         else:

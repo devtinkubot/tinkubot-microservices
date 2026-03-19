@@ -125,9 +125,11 @@ async def insertar_servicios_proveedor(
                 if idx < len(clasificaciones_semanticas)
                 else {}
             )
-            if metadata.get("domain_resolution_status") != "matched" or not metadata.get(
-                "resolved_domain_code"
-            ):
+            # ✅ Usar dominio sugerido si no hay match exacto
+            # El servicio se inserta aunque requiera revisión de catálogo
+            domain_code_to_use = metadata.get("resolved_domain_code") or metadata.get("domain_code")
+
+            if metadata.get("domain_resolution_status") != "matched":
                 await registrar_revision_catalogo_servicio(
                     supabase=supabase,
                     provider_id=proveedor_id,
@@ -144,17 +146,16 @@ async def insertar_servicios_proveedor(
                     ),
                     source="provider_registration",
                 )
-                failed_services.append(
-                    {"service": servicio, "error": "catalog_review_required"}
-                )
-                continue
+                # ✅ NO hacer continue: insertar el servicio con clasificación pendiente
+                # La clasificación se completará desde gobernanza posteriormente
+
             service_summary = (
                 entry.get("service_summary")
                 or metadata.get("service_summary")
                 or construir_service_summary(
                     service_name=servicio,
                     category_name=metadata.get("category_name"),
-                    domain_code=metadata.get("domain_code"),
+                    domain_code=domain_code_to_use,
                 )
             )
 
@@ -171,7 +172,7 @@ async def insertar_servicios_proveedor(
                             "service_embedding": None,  # Sin embedding
                             "is_primary": (idx == 0),
                             "display_order": _resolver_display_order(idx),
-                            "domain_code": metadata.get("resolved_domain_code"),
+                            "domain_code": domain_code_to_use,  # ✅ Usar dominio sugerido
                             "category_name": metadata.get("category_name"),
                             "classification_confidence": metadata.get(
                                 "classification_confidence", 0.0
@@ -216,9 +217,11 @@ async def insertar_servicios_proveedor(
                 if idx < len(clasificaciones_semanticas)
                 else {}
             )
-            if metadata.get("domain_resolution_status") != "matched" or not metadata.get(
-                "resolved_domain_code"
-            ):
+            # ✅ Usar dominio sugerido si no hay match exacto
+            # El servicio se inserta aunque requiera revisión de catálogo
+            domain_code_to_use = metadata.get("resolved_domain_code") or metadata.get("domain_code")
+
+            if metadata.get("domain_resolution_status") != "matched":
                 await registrar_revision_catalogo_servicio(
                     supabase=supabase,
                     provider_id=proveedor_id,
@@ -235,17 +238,16 @@ async def insertar_servicios_proveedor(
                     ),
                     source="provider_registration",
                 )
-                failed_services.append(
-                    {"service": servicio, "error": "catalog_review_required"}
-                )
-                continue
+                # ✅ NO hacer continue: insertar el servicio con clasificación pendiente
+                # La clasificación se completará desde gobernanza posteriormente
+
             service_summary = (
                 entry.get("service_summary")
                 or metadata.get("service_summary")
                 or construir_service_summary(
                     service_name=servicio,
                     category_name=metadata.get("category_name"),
-                    domain_code=metadata.get("domain_code"),
+                    domain_code=domain_code_to_use,
                 )
             )
             # Generar embedding individual para este servicio
@@ -276,7 +278,7 @@ async def insertar_servicios_proveedor(
                         "service_embedding": embedding,
                         "is_primary": (idx == 0),  # Primer servicio = principal
                         "display_order": _resolver_display_order(idx),
-                        "domain_code": metadata.get("resolved_domain_code"),
+                        "domain_code": domain_code_to_use,  # ✅ Usar dominio sugerido
                         "category_name": metadata.get("category_name"),
                         "classification_confidence": metadata.get(
                             "classification_confidence", 0.0

@@ -9,6 +9,7 @@ sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from services.sesion_proveedor import (  # noqa: E402
+    manejar_aprobacion_reciente,
     manejar_estado_inicial,
     perfil_tiene_menu_limitado,
     resolver_estado_registro,
@@ -200,6 +201,34 @@ def test_manejar_estado_inicial_aprobado_muestra_menu_interactivo():
     assert flujo["state"] == "awaiting_menu_option"
     assert respuesta["messages"][0]["ui"]["type"] == "list"
     assert respuesta["messages"][0]["ui"]["options"][0]["id"] == "provider_menu_info_personal"
+
+
+def test_manejar_aprobacion_reciente_notifica_una_sola_vez():
+    flujo = {
+        "state": "pending_verification",
+        "full_name": "Proveedor Aprobado",
+    }
+
+    primera_respuesta = manejar_aprobacion_reciente(
+        flujo=flujo,
+        esta_verificado=True,
+        approved_basic=False,
+    )
+
+    assert primera_respuesta is not None
+    assert flujo["state"] == "awaiting_menu_option"
+    assert flujo["verification_notified"] is True
+    assert "aprobado" in primera_respuesta["messages"][0]["response"].lower()
+
+    flujo["state"] = "pending_verification"
+    segunda_respuesta = manejar_aprobacion_reciente(
+        flujo=flujo,
+        esta_verificado=True,
+        approved_basic=False,
+    )
+
+    assert segunda_respuesta is None
+    assert flujo["state"] == "awaiting_menu_option"
 
 
 def test_sincronizar_flujo_con_perfil_prioriza_datos_durables_sobre_redis():

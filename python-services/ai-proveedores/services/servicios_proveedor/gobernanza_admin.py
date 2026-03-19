@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+
+logger = logging.getLogger(__name__)
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
@@ -266,4 +268,132 @@ async def rechazar_review_catalogo_servicio(
         "reviewId": review_id,
         "providerId": review.get("provider_id"),
         "reviewStatus": "rejected",
+    }
+
+
+async def aprobar_review_servicio_existente(
+    *,
+    supabase: Any,
+    review_id: str,
+    provider_service_id: str,
+    domain_code: str,
+    category_name: str,
+    reviewer: Optional[str],
+    notes: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Aprueba review de servicio ya persistido en provider_services.
+
+    Actualiza la clasificación del servicio existente con domain_code y category_name,
+    y marca la review como approved. No crea un nuevo provider_service.
+
+    Args:
+        supabase: Cliente de Supabase
+        review_id: ID de la review pendiente
+        provider_service_id: ID del provider_service ya existente
+        domain_code: Código de dominio a asignar
+        category_name: Nombre de categoría a asignar
+        reviewer: Identificador del revisor
+        notes: Notas opcionales de la revisión
+
+    Returns:
+        Dict con resultado de la operación o None si falla
+    """
+    review = await _obtener_review_por_id(supabase, review_id)
+    if not review:
+        logger.warning("❌ Review %s not found", review_id)
+        return None
+    if str(review.get("review_status") or "").strip().lower() != "pending":
+        logger.warning("❌ Review %s is not pending (status: %s)", review_id, review.get("review_status"))
+        return None
+
+    provider_id = str(review.get("provider_id") or "").strip()
+    if not provider_id:
+        logger.warning("❌ Review %s has no provider_id", review_id)
+        return None
+
+    # Verificar que el provider_service existe y pertenece al proveedor
+    existing_response = await run_supabase(
+        lambda: supabase.table("provider_services")
+        .select("id,service_name,domain_code,category_name")
+        .eq("id", provider_service_id)
+        .eq("provider_id", provider_id)
+        .limit(1)
+        .execute(),
+        label="provider_services.check_existing_for_backfill",
+    )
+    existing = (existing_response.data or [None])[0] if existing_response.data else None
+    if not existing:
+        logger.warning(
+            "❌ Provider service %s not found for provider %s",
+            provider_service_id,
+            provider_id,
+        )
+        return None
+
+    # Actualizar provider_services con domain_code y category_name
+    now_iso = datetime.now(timezone.utc).isoformat()
+    update_payload = {
+        "domain_code": domain_code,
+        "category_name": category_name,
+        "updated_at": now_iso,
+    }
+
+    if existing.get("domain_code") != domain_code or existing.get("category_name") != category_name:
+        await run_supabase(
+            lambda: supabase.table("provider_services")
+            .update(update_payload)
+            .eq("id", provider_service_id)
+            .execute(),
+            label="provider_services.update_classification_from_backfill",
+        )
+        logger.info(
+            f"✅ Updated provider_service {provider_service_id} with domain={domain_code}, category={category_name}"
+        )
+
+    # Determinar status de la review
+    review_status = "approved_existing_domain"
+
+    # Actualizar review a approved
+    review_update = {
+        "assigned_domain_code": domain_code,
+        "assigned_category_name": category_name,
+        "reviewed_by": str(reviewer or "").strip() or "admin-dashboard",
+        "reviewed_at": now_iso,
+        "review_notes": str(notes or "").strip() or None,
+        "review_status": review_status,
+        "published_provider_service_id": provider_service_id,
+        "updated_at": now_iso,
+    }
+    await run_supabase(
+        lambda: supabase.table("provider_service_catalog_reviews")
+        .update(review_update)
+        .eq("id", review_id)
+        .execute(),
+        label="provider_service_catalog_reviews.approve_existing",
+    )
+
+    logger.info(
+        f"✅ Approved review {review_id} for existing service {provider_service_id}"
+    )
+
+    # Invalidar cache del proveedor
+    try:
+        from flows.sesion import invalidar_cache_perfil_proveedor
+
+        proveedor = await _obtener_proveedor_por_id(supabase, provider_id)
+        if proveedor:
+            telefono = str(proveedor.get("phone") or "").strip()
+            if telefono:
+                await invalidar_cache_perfil_proveedor(telefono)
+    except Exception as exc:
+        logger.warning("⚠️ No se pudo invalidar cache del proveedor tras aprobación: %s", exc)
+
+    return {
+        "reviewId": review_id,
+        "providerId": provider_id,
+        "reviewStatus": review_status,
+        "publishedProviderServiceId": provider_service_id,
+        "domainCode": domain_code,
+        "createdDomain": False,
     }

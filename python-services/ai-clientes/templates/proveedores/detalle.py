@@ -13,8 +13,6 @@ DETALLE_PROVIDER_CONTACT = "provider_detail_contact"
 DETALLE_PROVIDER_BACK = "provider_detail_back"
 DETALLE_PROVIDER_SUBVIEW_BACK = "provider_detail_subview_back"
 
-FOOTER_DETALLE = "Tienes 3 min para responder."
-
 
 def _negrita(texto: str) -> str:
     texto_limpio = (texto or "").strip()
@@ -162,7 +160,6 @@ def ui_detalle_proveedor(proveedor: Dict[str, Any]) -> Dict[str, Any]:
         "id": "provider_detail_menu_v1",
         "header_type": "text",
         "header_text": _nombre_proveedor(proveedor),
-        "footer_text": FOOTER_DETALLE,
         "list_button_text": "Ver detalles",
         "list_section_title": "Información del experto",
         "options": opciones,
@@ -173,7 +170,6 @@ def ui_subvista_detalle_proveedor(*, foto_url: str = "") -> Dict[str, Any]:
     ui = {
         "type": "buttons",
         "id": "provider_detail_subview_v1",
-        "footer_text": FOOTER_DETALLE,
         "options": [
             {
                 "id": DETALLE_PROVIDER_SUBVIEW_BACK,

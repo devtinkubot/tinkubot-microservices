@@ -2,13 +2,28 @@
 
 # ==================== MENSAJES ====================
 
-mensaje_confirmando_disponibilidad = (
-    "⏳ *Confirmo disponibilidad.* Te aviso en 3 min."
-)
 
-mensaje_buscando_expertos = (
-    "⏳ *Busco expertos.* Te aviso en breve."
-)
+def mensaje_confirmando_disponibilidad(
+    cantidad_expertos: int | None = None,
+    cupo_distribucion: int = 10,
+) -> str:
+    """Mensaje de confirmación de disponibilidad con copy dinámico.
+
+    Cuando hay 10 o menos expertos, mantiene un copy simple.
+    Si hay más de 10, comunica que la oportunidad se está distribuyendo
+    sobre el cupo aplicado de expertos.
+    """
+    if isinstance(cantidad_expertos, int) and cantidad_expertos > cupo_distribucion:
+        expertos_a_notificar = max(1, min(cantidad_expertos, cupo_distribucion))
+        return (
+            f"⏳ *Distribuyendo oportunidad en {expertos_a_notificar} expertos.* "
+            "Te aviso en 3 min como máximo."
+        )
+
+    return "⏳ *Confirmo disponibilidad.* Te aviso en 3 min como máximo."
+
+
+mensaje_buscando_expertos = "⏳ *Busco expertos.* Te aviso en breve."
 
 texto_opcion_nueva_solicitud = "Nueva solicitud"
 texto_opcion_cambiar_ciudad = "Cambiar ciudad"
@@ -24,6 +39,7 @@ titulo_ayuda_otro_servicio = "¿Te ayudo con otro servicio?"
 
 
 # ==================== FUNCIONES ====================
+
 
 def mensaje_sin_proveedores_registrados(servicio: str, ciudad: str) -> str:
     """Mensaje cuando no existen proveedores registrados para el servicio."""

@@ -1,6 +1,10 @@
 """Mensajes relacionados con el listado de proveedores."""
 
+from datetime import datetime, timedelta
 from typing import Any, Dict, List
+
+LISTADO_TIMEOUT_SECONDS = 300
+LISTADO_TIMEOUT_FOOTER = "Tienes 5 minutos para elegir un experto."
 
 
 # ==================== FUNCIONES ====================
@@ -55,8 +59,31 @@ def construir_ui_lista_proveedores(proveedores: List[Dict[str, Any]]) -> Dict[st
         "id": "provider_results_v1",
         "list_button_text": "Ver expertos",
         "list_section_title": "Expertos disponibles",
+        "footer_text": LISTADO_TIMEOUT_FOOTER,
         "options": opciones,
     }
+
+
+def marcar_ventana_listado_proveedores(
+    flujo: Dict[str, Any], ahora: datetime | None = None
+) -> None:
+    """Guarda el inicio y vencimiento de la ventana exclusiva del listado."""
+    ahora_actual = ahora or datetime.utcnow()
+    flujo["provider_results_sent_at"] = ahora_actual.isoformat()
+    flujo["provider_results_expires_at"] = (
+        ahora_actual + timedelta(seconds=LISTADO_TIMEOUT_SECONDS)
+    ).isoformat()
+
+
+def limpiar_ventana_listado_proveedores(flujo: Dict[str, Any]) -> None:
+    """Elimina los timestamps del timeout exclusivo del listado."""
+    flujo.pop("provider_results_sent_at", None)
+    flujo.pop("provider_results_expires_at", None)
+
+
+def mensaje_timeout_listado_proveedores(ciudad: str = "") -> str:
+    _ = ciudad
+    return "¿Te ayudo con otro servicio?"
 
 
 def bloque_listado_proveedores_compacto(proveedores: List[Dict[str, Any]]) -> str:
@@ -100,6 +127,7 @@ def resolver_proveedor_desde_lista(
 def error_proveedor_no_encontrado() -> str:
     """Error cuando no se encuentra el proveedor seleccionado."""
     return "No encontré ese proveedor, elige otra opción."
+
 
 def preguntar_servicio() -> str:
     """Pregunta qué servicio necesita."""

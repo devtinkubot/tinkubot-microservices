@@ -3,44 +3,51 @@
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from flows.manejadores_estados import (
-    procesar_estado_buscando,
-    procesar_estado_presentando_resultados,
-    procesar_estado_viendo_detalle_proveedor,
-    procesar_estado_confirmar_nueva_busqueda,
-    procesar_estado_confirmar_servicio,
-)
-from flows.mensajes import (
-    mensaje_inicial_solicitud,
-    solicitar_ciudad,
-    mensaje_despedida_dict,
-    mensaje_solicitar_reformulacion,
-    es_opcion_reinicio,
-)
 from flows.busqueda_proveedores.coordinador_busqueda import (
     transicionar_a_busqueda_desde_servicio,
 )
-from templates.busqueda.confirmacion import mensaje_sin_disponibilidad
+from flows.manejadores_estados import (
+    procesar_estado_buscando,
+    procesar_estado_confirmar_nueva_busqueda,
+    procesar_estado_confirmar_servicio,
+    procesar_estado_presentando_resultados,
+    procesar_estado_viendo_detalle_proveedor,
+)
+from flows.mensajes import (
+    es_opcion_reinicio,
+    mensaje_despedida_dict,
+    mensaje_inicial_solicitud,
+    mensaje_solicitar_reformulacion,
+    solicitar_ciudad,
+)
+from flows.pre_enrutador import pre_enrutar_mensaje
 from templates.busqueda.confirmacion import (
+    mensaje_sin_disponibilidad,
     mensajes_confirmacion_busqueda,
-    titulo_confirmacion_repetir_busqueda,
-    titulo_ayuda_otro_servicio,
     opciones_confirmar_nueva_busqueda_textos,
+    titulo_ayuda_otro_servicio,
+    titulo_confirmacion_repetir_busqueda,
 )
 from templates.mensajes.retroalimentacion import (
     mensaje_gracias_feedback,
     mensaje_opcion_invalida_feedback,
-)
-from templates.proveedores.detalle import (
-    bloque_detalle_proveedor,
-    ui_detalle_proveedor,
+    ui_retroalimentacion_contratacion,
 )
 from templates.mensajes.sesion import informar_timeout_inactividad
 from templates.mensajes.validacion import (
     construir_prompt_lista_servicios,
     extraer_servicio_desde_opcion_lista,
 )
-from flows.pre_enrutador import pre_enrutar_mensaje
+from templates.proveedores.detalle import (
+    bloque_detalle_proveedor,
+    ui_detalle_proveedor,
+)
+from templates.proveedores.listado import (
+    limpiar_ventana_listado_proveedores,
+    marcar_ventana_listado_proveedores,
+    mensaje_timeout_listado_proveedores,
+)
+
 
 async def _prompt_inicial_servicio(orquestador) -> Dict[str, Any]:
     if hasattr(orquestador, "construir_prompt_inicial_servicio"):
@@ -48,10 +55,61 @@ async def _prompt_inicial_servicio(orquestador) -> Dict[str, Any]:
     return construir_prompt_lista_servicios()
 
 
+def _listado_proveedores_expirado(flujo: Dict[str, Any], ahora_utc: datetime) -> bool:
+    expires_raw = flujo.get("provider_results_expires_at")
+    if not expires_raw:
+        return False
+    try:
+        expires_dt = datetime.fromisoformat(str(expires_raw))
+    except Exception:
+        return False
+    return ahora_utc >= expires_dt
+
+
+async def _manejar_timeout_listado_proveedores(
+    orquestador,
+    telefono: str,
+    flujo: Dict[str, Any],
+) -> Dict[str, Any]:
+    ciudad = (flujo.get("city") or "").strip()
+    limpiar_ventana_listado_proveedores(flujo)
+    for clave in (
+        "providers",
+        "chosen_provider",
+        "provider_detail_idx",
+        "provider_detail_view",
+        "availability_request_id",
+        "searching_dispatched",
+        "searching_started_at",
+        "service",
+        "service_full",
+        "service_captured_after_consent",
+        "confirm_attempts",
+        "confirm_title",
+        "confirm_include_city_option",
+    ):
+        flujo.pop(clave, None)
+    flujo["state"] = "awaiting_service"
+
+    ahora_iso = datetime.utcnow().isoformat()
+    flujo["last_seen_at"] = ahora_iso
+    flujo["last_seen_at_prev"] = ahora_iso
+
+    if orquestador.repositorio_flujo:
+        await orquestador.repositorio_flujo.guardar(telefono, flujo)
+    else:
+        await orquestador.guardar_flujo(telefono, flujo)
+
+    return {
+        "messages": [
+            {"response": mensaje_timeout_listado_proveedores(ciudad)},
+            await _prompt_inicial_servicio(orquestador),
+        ]
+    }
+
+
 async def manejar_mensaje(orquestador, carga: Dict[str, Any]) -> Dict[str, Any]:
     """Procesa un mensaje de WhatsApp delegando en el orquestador."""
-    from services.orquestador_conversacion import interpretar_si_no
-
     pre_enrutado = await pre_enrutar_mensaje(orquestador, carga)
     if pre_enrutado.get("response"):
         return pre_enrutado["response"]
@@ -64,28 +122,38 @@ async def manejar_mensaje(orquestador, carga: Dict[str, Any]) -> Dict[str, Any]:
     tipo_mensaje = contexto["msg_type"]
     ubicacion = contexto["location"]
     cliente_id = contexto["customer_id"]
+    estado_actual = flujo.get("state")
+
+    if estado_actual in {
+        "presenting_results",
+        "viewing_provider_detail",
+    } and _listado_proveedores_expirado(flujo, datetime.utcnow()):
+        return await _manejar_timeout_listado_proveedores(orquestador, telefono, flujo)
 
     # === Verificar timeout de inactividad ANTES de procesar estados ===
     ahora_utc = datetime.utcnow()
     ahora_iso = ahora_utc.isoformat()
     ultima_vista_cruda = flujo.get("last_seen_at_prev") or flujo.get("last_seen_at")
 
-    if ultima_vista_cruda:
+    if (
+        estado_actual not in {"presenting_results", "viewing_provider_detail"}
+        or not flujo.get("provider_results_expires_at")
+    ) and ultima_vista_cruda:
         try:
             ultima_vista_dt = datetime.fromisoformat(ultima_vista_cruda)
             delta_segundos = (ahora_utc - ultima_vista_dt).total_seconds()
             if delta_segundos > 300:  # 5 minutos
                 orquestador.logger.info(
-                    "⏰ Timeout inactividad detectado phone=%s state=%s delta=%ss last_seen_ref=%s",
+                    "⏰ Timeout inactividad detectado phone=%s state=%s "
+                    "delta=%ss last_seen_ref=%s",  # noqa: E501
                     telefono,
                     flujo.get("state"),
                     round(delta_segundos, 2),
                     ultima_vista_cruda,
                 )
-                ciudad_conocida = (
-                    (flujo.get("city") or "").strip()
-                    or (contexto.get("customer_city") or "").strip()
-                )
+                ciudad_conocida = (flujo.get("city") or "").strip() or (
+                    contexto.get("customer_city") or ""
+                ).strip()
                 estado_actual = flujo.get("state")
                 # Estados exentos de timeout normal (tienen manejo especial)
                 if estado_actual == "confirm_new_search":
@@ -130,10 +198,12 @@ async def manejar_mensaje(orquestador, carga: Dict[str, Any]) -> Dict[str, Any]:
                     await orquestador.resetear_flujo(telefono)
 
                 flujo.clear()
-                flujo.update({
-                    "last_seen_at": ahora_iso,
-                    "last_seen_at_prev": ahora_iso,
-                })
+                flujo.update(
+                    {
+                        "last_seen_at": ahora_iso,
+                        "last_seen_at_prev": ahora_iso,
+                    }
+                )
 
                 # Determinar mensaje según estado real de consentimiento/ciudad
                 tiene_consent = bool(contexto.get("has_consent", False))
@@ -142,15 +212,17 @@ async def manejar_mensaje(orquestador, carga: Dict[str, Any]) -> Dict[str, Any]:
                     flujo["state"] = "awaiting_consent"
                     # Obtener prompt de consentimiento
                     if orquestador.servicio_consentimiento:
-                        prompt_consentimiento = await orquestador.servicio_consentimiento.solicitar_consentimiento(
+                        prompt_consentimiento = await orquestador.servicio_consentimiento.solicitar_consentimiento(  # noqa: E501
                             telefono
                         )
                     else:
-                        prompt_consentimiento = await orquestador.solicitar_consentimiento(
-                            telefono
+                        prompt_consentimiento = (
+                            await orquestador.solicitar_consentimiento(telefono)
                         )
                     mensajes_timeout = [{"response": informar_timeout_inactividad()}]
-                    mensajes_timeout.extend(prompt_consentimiento.get("messages", [prompt_consentimiento]))
+                    mensajes_timeout.extend(
+                        prompt_consentimiento.get("messages", [prompt_consentimiento])
+                    )
                 elif ciudad_conocida:
                     flujo["state"] = "confirm_new_search"
                     flujo["confirm_title"] = titulo_ayuda_otro_servicio
@@ -214,7 +286,7 @@ async def manejar_mensaje(orquestador, carga: Dict[str, Any]) -> Dict[str, Any]:
     )
 
 
-async def enrutar_estado(
+async def enrutar_estado(  # noqa: C901
     orquestador,
     *,
     telefono: str,
@@ -251,7 +323,11 @@ async def enrutar_estado(
                 telefono, texto_a_guardar, es_bot=True
             )
         except Exception:
-            pass
+            orquestador.logger.debug(
+                "No se pudo guardar la sesion es_bot=%s phone=%s",
+                True,
+                telefono,
+            )
 
     estado = flujo.get("state")
     if not estado or es_opcion_reinicio(seleccionado):
@@ -297,8 +373,10 @@ async def enrutar_estado(
                 flujo.pop("service_candidate_hint_label", None)
 
                 if orquestador.repositorio_clientes:
-                    perfil_cliente = await orquestador.repositorio_clientes.obtener_o_crear(
-                        telefono=telefono
+                    perfil_cliente = (
+                        await orquestador.repositorio_clientes.obtener_o_crear(
+                            telefono=telefono
+                        )
                     )
                 else:
                     perfil_cliente = await orquestador.obtener_o_crear_cliente(telefono)
@@ -310,7 +388,7 @@ async def enrutar_estado(
                         flujo=flujo,
                         perfil_cliente=perfil_cliente,
                         enviar_mensaje_callback=orquestador.enviar_texto_whatsapp,
-                        guardar_flujo_callback=lambda _telefono, data: orquestador.guardar_flujo(
+                        guardar_flujo_callback=lambda _telefono, data: orquestador.guardar_flujo(  # noqa: E501
                             _telefono, data
                         ),
                     ),
@@ -325,6 +403,7 @@ async def enrutar_estado(
         )
 
     if estado == "searching":
+
         async def do_search():
             async def enviar_con_disponibilidad(ciudad: str):
                 proveedores_para_verificar = flujo.get("providers", [])
@@ -342,9 +421,14 @@ async def enrutar_estado(
                     )
 
                     try:
+                        mensaje_confirmacion_disponibilidad = (
+                            mensaje_confirmando_disponibilidad(
+                                len(proveedores_para_verificar)
+                            )
+                        )
                         enviado_confirmacion = await orquestador.enviar_texto_whatsapp(
                             telefono,
-                            mensaje_confirmando_disponibilidad,
+                            mensaje_confirmacion_disponibilidad,
                             metadata={
                                 "source_service": "ai-clientes",
                                 "flow_type": "conversation",
@@ -360,7 +444,7 @@ async def enrutar_estado(
                             orquestador.logger.warning(
                                 "⚠️ No se pudo enviar confirmación de disponibilidad"
                             )
-                        await guardar_mensaje_bot(mensaje_confirmando_disponibilidad)
+                        await guardar_mensaje_bot(mensaje_confirmacion_disponibilidad)
                     except Exception as exc:
                         orquestador.logger.warning(
                             f"⚠️ Error enviando confirmación de disponibilidad: {exc}"
@@ -378,17 +462,20 @@ async def enrutar_estado(
                     for p in proveedores_para_verificar
                 ]
 
-                resultado_disponibilidad = await servicio_disponibilidad.verificar_disponibilidad(
-                    req_id=f"search-{telefono}",
-                    servicio=texto_servicio,
-                    ciudad=ciudad,
-                    descripcion_problema=(
-                        flujo.get("descripcion_problema")
-                        or flujo.get("service_full")
-                        or texto_servicio
-                    ),
-                    candidatos=candidatos,
-                    cliente_redis=orquestador.redis_client,
+                resultado_disponibilidad = (
+                    await servicio_disponibilidad.verificar_disponibilidad(
+                        req_id=f"search-{telefono}",
+                        servicio=texto_servicio,
+                        ciudad=ciudad,
+                        descripcion_problema=(
+                            flujo.get("descripcion_problema")
+                            or flujo.get("service_full")
+                            or texto_servicio
+                        ),
+                        candidatos=candidatos,
+                        cliente_redis=orquestador.redis_client,
+                        supabase=orquestador.supabase,
+                    )
                 )
                 aceptados = resultado_disponibilidad.get("aceptados") or []
                 request_id = resultado_disponibilidad.get("request_id")
@@ -397,6 +484,7 @@ async def enrutar_estado(
 
                 if aceptados:
                     flujo["providers"] = aceptados
+                    marcar_ventana_listado_proveedores(flujo)
                     await orquestador.guardar_flujo(telefono, flujo)
                     respuesta_prompt = await orquestador.enviar_prompt_proveedor(
                         telefono, flujo, ciudad
@@ -478,31 +566,61 @@ async def enrutar_estado(
             "not_hired": (False, None),
             "bad": (True, 1),
         }
+        opciones_neutrales = {
+            "prefer_not_to_answer",
+            "prefiero no responder",
+            "no calificar",
+            "skip",
+        }
 
         eleccion = (seleccionado or texto or "").strip().strip("*").rstrip(".)").lower()
 
         # Si es respuesta de lista, usar el mapeo
         if eleccion in respuesta_a_datos:
             hired, rating = respuesta_a_datos[eleccion]
+            neutral = False
+        elif eleccion in opciones_neutrales or eleccion == "6":
+            hired, rating = None, None
+            neutral = True
         elif eleccion in {"1", "2", "3", "4", "5"}:
             # Fallback para texto numérico
             mapeo_numerico = {
-                "1": (True, 5),      # Excelente
-                "2": (True, 4),      # Bien
-                "3": (True, 3),      # Regular
+                "1": (True, 5),  # Excelente
+                "2": (True, 4),  # Bien
+                "3": (True, 3),  # Regular
                 "4": (False, None),  # No contraté
-                "5": (True, 1),      # Mal
+                "5": (True, 1),  # Mal
             }
             hired, rating = mapeo_numerico.get(eleccion, (None, None))
+            neutral = False
         else:
             hired, rating = None, None
+            neutral = False
+
+        async def _cerrar_flujo_retroalimentacion() -> None:
+            flujo.pop("pending_feedback_lead_event_id", None)
+            flujo.pop("pending_feedback_provider_name", None)
+            flujo["state"] = "awaiting_service"
+            if orquestador.repositorio_flujo:
+                await orquestador.repositorio_flujo.guardar(telefono, flujo)
+                return None
+            await orquestador.guardar_flujo(telefono, flujo)
+            return None
+
+        if neutral:
+            await _cerrar_flujo_retroalimentacion()
+            return {"messages": [{"response": mensaje_gracias_feedback()}]}
 
         if hired is not None:
             lead_event_id = str(flujo.get("pending_feedback_lead_event_id") or "")
-            registrar_feedback = getattr(orquestador, "registrar_feedback_contratacion", None)
+            registrar_feedback = getattr(
+                orquestador, "registrar_feedback_contratacion", None
+            )
             if registrar_feedback and lead_event_id:
                 try:
-                    await registrar_feedback(lead_event_id=lead_event_id, hired=hired, rating=rating)
+                    await registrar_feedback(
+                        lead_event_id=lead_event_id, hired=hired, rating=rating
+                    )
                 except Exception as exc:
                     orquestador.logger.warning(
                         "No se pudo registrar feedback contratación lead=%s: %s",
@@ -510,23 +628,13 @@ async def enrutar_estado(
                         exc,
                     )
 
-            flujo.pop("pending_feedback_lead_event_id", None)
-            flujo.pop("pending_feedback_provider_name", None)
-            flujo["state"] = "awaiting_service"
-            if orquestador.repositorio_flujo:
-                await orquestador.repositorio_flujo.guardar(telefono, flujo)
-            else:
-                await orquestador.guardar_flujo(telefono, flujo)
-            return {
-                "messages": [
-                    {
-                        "response": mensaje_gracias_feedback()
-                    }
-                ]
-            }
+            await _cerrar_flujo_retroalimentacion()
+            return {"messages": [{"response": mensaje_gracias_feedback()}]}
 
+        nombre_proveedor = flujo.get("pending_feedback_provider_name") or "Proveedor"
         return {
-            "response": mensaje_opcion_invalida_feedback()
+            "response": mensaje_opcion_invalida_feedback(),
+            "ui": ui_retroalimentacion_contratacion(nombre_proveedor),
         }
 
     if estado == "presenting_results":
@@ -591,10 +699,12 @@ async def enrutar_estado(
             orquestador.farewell_message,
             titulo_confirmacion_repetir_busqueda,
             orquestador.max_confirm_attempts,
+            guardar_flujo_fn=lambda data: orquestador.guardar_flujo(telefono, data),
         )
 
     if estado == "confirm_service":
         from services.orquestador_conversacion import interpretar_si_no
+
         async def iniciar_busqueda_desde_confirmacion(data: Dict[str, Any]):
             if orquestador.repositorio_clientes:
                 perfil = await orquestador.repositorio_clientes.obtener_o_crear(

@@ -164,6 +164,7 @@ async def normalizar_servicio_registro_individual(
             ),
         }
     if validacion.get("domain_resolution_status") == "catalog_review_required":
+        # Registrar para revisión (tracking) pero NO bloquear el registro
         await registrar_revision_catalogo_servicio(
             supabase=_resolver_supabase_runtime(),
             provider_id=None,
@@ -176,12 +177,12 @@ async def normalizar_servicio_registro_individual(
             review_reason=str(validacion.get("reason") or "catalog_review_required"),
             source=review_source,
         )
+        # ✅ Aceptar el servicio aunque requiera revisión de catálogo
+        # La clasificación pendiente no debe bloquear el onboarding
         return {
-            "ok": False,
-            "response": (
-                "*Ese servicio sí se entiende, pero todavía no lo podemos clasificar bien dentro del sistema.* "
-                "Escríbelo con más detalle o usa una especialidad más cercana a lo que haces."
-            ),
+            "ok": True,
+            "service": str(validacion.get("normalized_service") or servicio).strip() or servicio,
+            "validation": validacion,
         }
 
     return {

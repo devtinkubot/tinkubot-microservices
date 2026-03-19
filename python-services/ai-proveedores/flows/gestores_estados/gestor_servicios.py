@@ -129,13 +129,14 @@ async def _normalizar_servicios_ingresados(
                 review_reason=str(validacion.get("reason") or "catalog_review_required"),
                 source=review_source,
             )
-            return {
-                "ok": False,
-                "response": (
-                    "Ese servicio sí se entiende, pero todavía no lo podemos clasificar bien dentro del sistema. "
-                    "Escríbelo con más detalle o usa una especialidad más cercana a lo que haces."
-                ),
-            }
+            # ✅ No bloquear: aceptar el servicio aunque requiera revisión de catálogo
+            # La clasificación pendiente se gestiona en gobernanza, no detiene la edición
+            servicio_validado = str(
+                validacion.get("normalized_service") or servicio
+            ).strip()
+            if servicio_validado:
+                servicios_validados.append(servicio_validado)
+            continue
         servicio_validado = str(
             validacion.get("normalized_service") or servicio
         ).strip()

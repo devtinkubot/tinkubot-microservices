@@ -5,10 +5,12 @@ import json
 import logging
 import os
 import re
-from datetime import datetime, timezone
+from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 import httpx
+from infrastructure.database import run_supabase
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +19,10 @@ CLAVE_CICLO_SOLICITUD = "availability:lifecycle:{}"
 CLAVE_ALIAS_DISPONIBILIDAD = "availability:alias:{}"
 AVAILABILITY_TEMPLATE_NAME = "provider_availability_request_v1"
 AVAILABILITY_TEMPLATE_LANGUAGE = "es"
+AVAILABILITY_DISPATCH_CAP = int(os.getenv("AVAILABILITY_DISPATCH_CAP", "10"))
+AVAILABILITY_ROTATION_WINDOW_DAYS = int(
+    os.getenv("AVAILABILITY_ROTATION_WINDOW_DAYS", "30")
+)
 MENSAJE_SOLICITUD_CADUCADA = (
     "⏳ El tiempo para responder a esta solicitud *caducó* y ya no será considerada."
 )
@@ -30,7 +36,7 @@ class ServicioDisponibilidad:
         self.account_id = os.getenv(
             "WHATSAPP_PROVEEDORES_ACCOUNT_ID", "bot-proveedores"
         )
-        self.timeout_seconds = int(os.getenv("AVAILABILITY_TIMEOUT_SECONDS", "90"))
+        self.timeout_seconds = int(os.getenv("AVAILABILITY_TIMEOUT_SECONDS", "180"))
         self.ttl_seconds = int(os.getenv("AVAILABILITY_TTL_SECONDS", "120"))
         self.send_timeout_seconds = float(
             os.getenv("AVAILABILITY_SEND_TIMEOUT_SECONDS", "10")
@@ -206,13 +212,182 @@ class ServicioDisponibilidad:
     ) -> None:
         self._metricas["excluded_missing_real_phone_total"] += 1
         provider_id = candidato.get("provider_id") or candidato.get("id")
-        recientes = list(self._metricas["excluded_missing_real_phone_last_provider_ids"])
+        recientes = list(
+            self._metricas["excluded_missing_real_phone_last_provider_ids"]
+        )
         if provider_id:
             recientes.append(provider_id)
-        self._metricas["excluded_missing_real_phone_last_provider_ids"] = recientes[-20:]
+        self._metricas["excluded_missing_real_phone_last_provider_ids"] = recientes[
+            -20:
+        ]
 
     @staticmethod
-    def _normalizar_necesidad(descripcion_problema: Optional[str], servicio: str) -> str:
+    def _normalizar_provider_id(valor: Any) -> str:
+        return str(valor or "").strip()
+
+    async def _cargar_metricas_rotacion(
+        self,
+        *,
+        supabase: Any,
+        provider_ids: List[str],
+    ) -> Dict[str, Dict[str, Any]]:
+        """Carga señales recientes para priorizar a quién ofrecer oportunidad."""
+        if not supabase or not provider_ids:
+            return {}
+
+        since_iso = (
+            datetime.utcnow() - timedelta(days=AVAILABILITY_ROTATION_WINDOW_DAYS)
+        ).isoformat()
+
+        try:
+            eventos_resp = await run_supabase(
+                lambda: supabase.table("lead_events")
+                .select("id,provider_id,created_at")
+                .eq("event_type", "contact_shared")
+                .gte("created_at", since_iso)
+                .in_("provider_id", provider_ids)
+                .order("created_at", desc=True)
+                .limit(5000)
+                .execute(),
+                etiqueta="lead_events.rotation_30d",
+            )
+            eventos = eventos_resp.data or []
+        except Exception as exc:
+            logger.warning("⚠️ No se pudo cargar lead_events para rotación: %s", exc)
+            return {}
+
+        lead_ids = [
+            self._normalizar_provider_id(evento.get("id"))
+            for evento in eventos
+            if self._normalizar_provider_id(evento.get("id"))
+        ]
+        feedback_por_lead: Dict[str, Dict[str, Any]] = {}
+
+        if lead_ids:
+            try:
+                feedback_resp = await run_supabase(
+                    lambda: supabase.table("lead_feedback")
+                    .select("lead_event_id,hired,rating")
+                    .in_("lead_event_id", lead_ids)
+                    .execute(),
+                    etiqueta="lead_feedback.rotation_30d",
+                )
+                feedback_rows = feedback_resp.data or []
+                for row in feedback_rows:
+                    lead_event_id = self._normalizar_provider_id(
+                        row.get("lead_event_id")
+                    )
+                    if lead_event_id:
+                        feedback_por_lead[lead_event_id] = row
+            except Exception as exc:
+                logger.warning(
+                    "⚠️ No se pudo cargar lead_feedback para rotación: %s", exc
+                )
+
+        metricas: Dict[str, Dict[str, Any]] = {
+            provider_id: {
+                "opportunities_30d": 0,
+                "contracts_30d": 0,
+                "feedback_count_30d": 0,
+                "rating": None,
+            }
+            for provider_id in provider_ids
+        }
+        ratings_por_proveedor: Dict[str, List[float]] = defaultdict(list)
+
+        for evento in eventos:
+            provider_id = self._normalizar_provider_id(evento.get("provider_id"))
+            lead_id = self._normalizar_provider_id(evento.get("id"))
+            if not provider_id or provider_id not in metricas:
+                continue
+
+            metricas[provider_id]["opportunities_30d"] += 1
+            feedback = feedback_por_lead.get(lead_id)
+            if not feedback:
+                continue
+
+            hired = feedback.get("hired")
+            if isinstance(hired, bool):
+                metricas[provider_id]["feedback_count_30d"] += 1
+                if hired:
+                    metricas[provider_id]["contracts_30d"] += 1
+
+            rating = feedback.get("rating")
+            if isinstance(rating, (int, float)):
+                ratings_por_proveedor[provider_id].append(float(rating))
+
+        for provider_id, valores in ratings_por_proveedor.items():
+            if valores:
+                metricas[provider_id]["rating"] = sum(valores) / len(valores)
+
+        return metricas
+
+    async def _seleccionar_candidatos_rotacion(
+        self,
+        *,
+        candidatos: List[Dict[str, Any]],
+        supabase: Any,
+    ) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
+        """Selecciona el cupo de candidatos aplicando rotación justa."""
+        candidatos_limpios: List[Dict[str, Any]] = []
+        for candidato in candidatos:
+            provider_id = self._normalizar_provider_id(
+                candidato.get("provider_id") or candidato.get("id")
+            )
+            if not provider_id:
+                continue
+            item = dict(candidato)
+            item["provider_id"] = provider_id
+            candidatos_limpios.append(item)
+
+        limite = min(len(candidatos_limpios), AVAILABILITY_DISPATCH_CAP)
+        contexto = {
+            "rotation_applied": False,
+            "rotation_window_days": AVAILABILITY_ROTATION_WINDOW_DAYS,
+            "dispatch_cap": AVAILABILITY_DISPATCH_CAP,
+            "selected_count": limite,
+            "candidate_count": len(candidatos_limpios),
+        }
+        if limite <= 0:
+            return [], contexto
+        if not supabase or len(candidatos_limpios) <= AVAILABILITY_DISPATCH_CAP:
+            contexto["rotation_applied"] = False
+            return candidatos_limpios[:limite], contexto
+
+        metricas = await self._cargar_metricas_rotacion(
+            supabase=supabase,
+            provider_ids=[item["provider_id"] for item in candidatos_limpios],
+        )
+        if not metricas:
+            contexto["rotation_applied"] = False
+            return candidatos_limpios[:limite], contexto
+
+        def clave_orden(candidato: Dict[str, Any]) -> tuple[Any, ...]:
+            provider_id = candidato["provider_id"]
+            metricas_provider = metricas.get(provider_id, {})
+            oportunidades = int(metricas_provider.get("opportunities_30d") or 0)
+            contratos = int(metricas_provider.get("contracts_30d") or 0)
+            feedback_count = int(metricas_provider.get("feedback_count_30d") or 0)
+            rating = metricas_provider.get("rating")
+            rating_key = (
+                -float(rating) if isinstance(rating, (int, float)) else float("inf")
+            )
+            return (
+                oportunidades,
+                contratos,
+                feedback_count,
+                rating_key,
+                provider_id,
+            )
+
+        ordenados = sorted(candidatos_limpios, key=clave_orden)
+        contexto["rotation_applied"] = True
+        return ordenados[:limite], contexto
+
+    @staticmethod
+    def _normalizar_necesidad(
+        descripcion_problema: Optional[str], servicio: str
+    ) -> str:
         texto = re.sub(r"\s+", " ", str(descripcion_problema or "").strip())
         if not texto:
             return servicio
@@ -252,7 +427,9 @@ class ServicioDisponibilidad:
         descripcion_problema: Optional[str],
     ) -> str:
         ciudad_txt = ciudad or "tu ciudad"
-        servicio_txt = re.sub(r"\s+", " ", str(servicio or "").strip()) or "el servicio solicitado"
+        servicio_txt = (
+            re.sub(r"\s+", " ", str(servicio or "").strip()) or "el servicio solicitado"
+        )
         necesidad_txt = self._normalizar_necesidad(descripcion_problema, servicio_txt)
         return (
             f"*Oportunidad en {ciudad_txt}*\n\n"
@@ -276,7 +453,9 @@ class ServicioDisponibilidad:
         descripcion_problema: Optional[str],
     ) -> Dict[str, Any]:
         ciudad_txt = re.sub(r"\s+", " ", str(ciudad or "").strip()) or "tu ciudad"
-        servicio_txt = re.sub(r"\s+", " ", str(servicio or "").strip()) or "el servicio solicitado"
+        servicio_txt = (
+            re.sub(r"\s+", " ", str(servicio or "").strip()) or "el servicio solicitado"
+        )
         necesidad_txt = self._normalizar_necesidad(descripcion_problema, servicio_txt)
         return {
             "type": "template",
@@ -333,7 +512,8 @@ class ServicioDisponibilidad:
         redis_raw = getattr(cliente_redis, "redis_client", None)
         if redis_raw is None:
             logger.warning(
-                "⚠️ Lock atómico no disponible (redis_client ausente) provider=%s req_id=%s",
+                "⚠️ Lock atómico no disponible "
+                "(redis_client ausente) provider=%s req_id=%s",
                 telefono,
                 request_id,
             )
@@ -366,7 +546,8 @@ class ServicioDisponibilidad:
         redis_raw = getattr(cliente_redis, "redis_client", None)
         if redis_raw is None:
             logger.warning(
-                "⚠️ No se pudo liberar lock atómico (redis_client ausente) provider=%s req_id=%s",
+                "⚠️ No se pudo liberar lock atómico "
+                "(redis_client ausente) provider=%s req_id=%s",
                 telefono,
                 request_id,
             )
@@ -508,7 +689,9 @@ class ServicioDisponibilidad:
             descripcion_problema=descripcion_problema,
         )
         logger.info(
-            "availability_target_selected req_id=%s customer_phone=%s provider_id=%s send_target=%s send_target_type=%s correlation_phone=%s same_phone_customer_provider=%s",
+            "availability_target_selected req_id=%s customer_phone=%s "
+            "provider_id=%s send_target=%s send_target_type=%s "
+            "correlation_phone=%s same_phone_customer_provider=%s",
             req_id_real,
             telefono_cliente,
             candidato.get("provider_id"),
@@ -519,7 +702,8 @@ class ServicioDisponibilidad:
         )
         if telefono_cliente and telefono_cliente == telefono:
             logger.warning(
-                "availability_self_match_detected req_id=%s customer_phone=%s provider_id=%s provider_phone=%s send_target=%s",
+                "availability_self_match_detected req_id=%s customer_phone=%s "
+                "provider_id=%s provider_phone=%s send_target=%s",
                 req_id_real,
                 telefono_cliente,
                 candidato.get("provider_id"),
@@ -542,7 +726,9 @@ class ServicioDisponibilidad:
             },
         )
         if not enviado_contexto:
-            mensaje_fallback = f"{mensaje_contexto}\n\n{self._mensaje_disponibilidad_fallback()}"
+            mensaje_fallback = (
+                f"{mensaje_contexto}\n\n{self._mensaje_disponibilidad_fallback()}"
+            )
             enviado_fallback = await self._enviar_whatsapp(
                 telefono=telefono_envio,
                 mensaje=mensaje_fallback,
@@ -559,7 +745,7 @@ class ServicioDisponibilidad:
             await cliente_redis.set(clave_solicitud, solicitud, expire=self.ttl_seconds)
             return
 
-    async def verificar_disponibilidad(
+    async def verificar_disponibilidad(  # noqa: C901
         self,
         *,
         req_id: str,
@@ -569,6 +755,7 @@ class ServicioDisponibilidad:
         descripcion_problema: Optional[str],
         candidatos: List[Dict[str, Any]],
         cliente_redis: Any,
+        supabase: Any = None,
     ) -> Dict[str, Any]:
         """
         Verifica disponibilidad consultando por WhatsApp a cada proveedor.
@@ -605,20 +792,25 @@ class ServicioDisponibilidad:
         excluded_missing_real_phone: List[str] = []
 
         for candidato in candidatos:
-            telefono, send_target_type, aliases = self._resolver_destino_envio(candidato)
+            telefono, send_target_type, aliases = self._resolver_destino_envio(
+                candidato
+            )
             if not telefono:
                 if send_target_type == "missing_real_phone":
                     self._registrar_exclusion_missing_real_phone(candidato)
-                    provider_id = str(candidato.get("provider_id") or candidato.get("id") or "")
+                    provider_id = str(
+                        candidato.get("provider_id") or candidato.get("id") or ""
+                    )
                     if provider_id:
                         excluded_missing_real_phone.append(provider_id)
                     logger.info(
-                        "availability_excluded_missing_real_phone provider_id=%s provider_phone=%s",
+                        "availability_excluded_missing_real_phone "
+                        "provider_id=%s provider_phone=%s",
                         candidato.get("provider_id") or candidato.get("id"),
                         candidato.get("phone"),
                     )
                     continue
-                logger.warning(f"Proveedor sin teléfono válido: {candidato.get('id')}")
+                logger.warning("Proveedor sin teléfono válido: %s", candidato.get("id"))
                 continue
             item = dict(candidato)
             item["phone_jid"] = telefono
@@ -631,7 +823,7 @@ class ServicioDisponibilidad:
 
         if not candidatos_por_telefono:
             logger.warning(
-                "⚠️ No hay candidatos con teléfono para consultar disponibilidad"
+                "⚠️ No hay candidatos con teléfono para consultar " "disponibilidad"
             )
             await self._actualizar_ciclo_solicitud(
                 cliente_redis=cliente_redis,
@@ -650,9 +842,33 @@ class ServicioDisponibilidad:
                 "excluded_missing_real_phone_count": len(excluded_missing_real_phone),
             }
 
-        candidatos_disponibles: Dict[str, Dict[str, Any]] = {}
+        candidatos_ordenados, contexto_rotacion = (
+            await self._seleccionar_candidatos_rotacion(
+                candidatos=list(candidatos_por_telefono.values()),
+                supabase=supabase,
+            )
+        )
+        candidatos_disponibles: Dict[str, Dict[str, Any]] = {
+            candidato["phone_jid"]: candidato for candidato in candidatos_ordenados
+        }
+        logger.info(
+            "availability_rotation_selection req_id=%s rotation_applied=%s "
+            "candidate_count=%s selected_count=%s dispatch_cap=%s window_days=%s",
+            req_id_real,
+            contexto_rotacion.get("rotation_applied"),
+            contexto_rotacion.get("candidate_count"),
+            contexto_rotacion.get("selected_count"),
+            contexto_rotacion.get("dispatch_cap"),
+            contexto_rotacion.get("rotation_window_days"),
+        )
+
         locks_adquiridos: set[str] = set()
-        for telefono, candidato in candidatos_por_telefono.items():
+        for candidato in candidatos_ordenados:
+            telefono = str(candidato.get("phone_jid") or "").strip()
+            if not telefono:
+                continue
+            if telefono not in candidatos_disponibles:
+                continue
             lock_adquirido = await self._adquirir_lock_proveedor(
                 cliente_redis=cliente_redis,
                 telefono=telefono,
@@ -792,7 +1008,7 @@ class ServicioDisponibilidad:
             while pendientes_telefono and loop.time() < fin_espera:
                 for telefono in list(pendientes_telefono):
                     clave_solicitud = (
-                        f"availability:request:{req_id_real}:provider:{telefono}"
+                        f"availability:request:{req_id_real}:" f"provider:{telefono}"
                     )
                     estado = await cliente_redis.get(clave_solicitud)
                     estado = self._decode_if_json_string(estado)
@@ -823,13 +1039,12 @@ class ServicioDisponibilidad:
                 if pendientes_telefono:
                     await asyncio.sleep(self.poll_interval_seconds)
 
-            # Verificación final corta para absorber respuestas justo al borde del timeout.
+            # Verificación final para absorber respuestas al borde del timeout.
             if pendientes_telefono and self.grace_seconds > 0:
                 await asyncio.sleep(self.grace_seconds)
                 for telefono in list(pendientes_telefono):
-                    clave_solicitud = (
-                        f"availability:request:{req_id_real}:provider:{telefono}"
-                    )
+                    clave_solicitud_base = f"availability:request:{req_id_real}:"
+                    clave_solicitud = f"{clave_solicitud_base}provider:{telefono}"
                     estado = await cliente_redis.get(clave_solicitud)
                     estado = self._decode_if_json_string(estado)
                     if not isinstance(estado, dict):
@@ -863,7 +1078,9 @@ class ServicioDisponibilidad:
                 if not isinstance(pendientes, list):
                     continue
                 nuevos = [rid for rid in pendientes if rid != req_id_real]
-                await cliente_redis.set(clave_pendientes, nuevos, expire=self.ttl_seconds)
+                await cliente_redis.set(
+                    clave_pendientes, nuevos, expire=self.ttl_seconds
+                )
                 if not nuevos:
                     await cliente_redis.delete(clave_contexto)
 
@@ -907,7 +1124,8 @@ class ServicioDisponibilidad:
                     )
                     if enviado_caducado:
                         logger.info(
-                            "availability_timeout_push_sent req_id=%s provider=%s service=%s city=%s timeout_seconds=%s",
+                            "availability_timeout_push_sent req_id=%s "
+                            "provider=%s service=%s city=%s timeout_seconds=%s",
                             req_id_real,
                             telefono,
                             servicio,
@@ -916,7 +1134,8 @@ class ServicioDisponibilidad:
                         )
                     else:
                         logger.warning(
-                            "availability_timeout_push_failed req_id=%s provider=%s service=%s city=%s timeout_seconds=%s",
+                            "availability_timeout_push_failed req_id=%s "
+                            "provider=%s service=%s city=%s timeout_seconds=%s",
                             req_id_real,
                             telefono,
                             servicio,
@@ -934,7 +1153,9 @@ class ServicioDisponibilidad:
                         "responded_count": len(respondidos),
                         "timed_out": tiempo_agotado,
                         "excluded_busy_providers_count": len(proveedores_ocupados),
-                        "excluded_missing_real_phone_count": len(excluded_missing_real_phone),
+                        "excluded_missing_real_phone_count": len(
+                            excluded_missing_real_phone
+                        ),
                         "lock_busy_skip_count": lock_busy_skip_count,
                         "lock_acquired_count": len(locks_adquiridos),
                     },
@@ -949,7 +1170,9 @@ class ServicioDisponibilidad:
                         "responded_count": len(respondidos),
                         "timed_out": tiempo_agotado,
                         "excluded_busy_providers_count": len(proveedores_ocupados),
-                        "excluded_missing_real_phone_count": len(excluded_missing_real_phone),
+                        "excluded_missing_real_phone_count": len(
+                            excluded_missing_real_phone
+                        ),
                         "lock_busy_skip_count": lock_busy_skip_count,
                         "lock_acquired_count": len(locks_adquiridos),
                     },
@@ -964,7 +1187,9 @@ class ServicioDisponibilidad:
                         "responded_count": 0,
                         "timed_out": True,
                         "excluded_busy_providers_count": len(proveedores_ocupados),
-                        "excluded_missing_real_phone_count": len(excluded_missing_real_phone),
+                        "excluded_missing_real_phone_count": len(
+                            excluded_missing_real_phone
+                        ),
                         "lock_busy_skip_count": lock_busy_skip_count,
                         "lock_acquired_count": len(locks_adquiridos),
                     },

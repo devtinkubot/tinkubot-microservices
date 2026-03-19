@@ -126,6 +126,8 @@ class FlujoConversacional(BaseModel):
     # Resultados de búsqueda
     providers: List[Dict[str, Any]] = Field(default_factory=list)
     provider_detail_idx: Optional[int] = Field(default=None, ge=0)
+    provider_results_sent_at: Optional[str] = None
+    provider_results_expires_at: Optional[str] = None
 
     # Proveedor seleccionado
     chosen_provider: Optional[Dict[str, Any]] = None
@@ -152,7 +154,9 @@ class FlujoConversacional(BaseModel):
     updated_at: Optional[str] = None
     last_message_at: Optional[str] = None
 
-    model_config = {"extra": "allow"}  # Permitir campos adicionales para backward compatibility
+    model_config = {
+        "extra": "allow"
+    }  # Permitir campos adicionales para backward compatibility
 
     @field_validator("telefono", mode="before")
     @classmethod
@@ -198,6 +202,7 @@ class FlujoConversacional(BaseModel):
             True si la transición es válida, False en caso contrario
         """
         from .transiciones import puede_transicionar
+
         return puede_transicionar(self.state, nuevo_estado)
 
     def transicionar_a(self, nuevo_estado: EstadoConversacion) -> "FlujoConversacional":
@@ -215,6 +220,7 @@ class FlujoConversacional(BaseModel):
         """
         if not self.puede_transicionar_a(nuevo_estado):
             from .transiciones import obtener_transiciones_validas
+
             validas = obtener_transiciones_validas(self.state)
             raise ValueError(
                 f"Transición inválida de {self.state.value} a {nuevo_estado.value}. "
@@ -280,7 +286,9 @@ class FlujoConversacional(BaseModel):
         if not self.providers:
             raise ValueError("No hay proveedores para seleccionar")
         if indice < 0 or indice >= len(self.providers):
-            raise ValueError(f"Índice {indice} fuera de rango (0-{len(self.providers)-1})")
+            raise ValueError(
+                f"Índice {indice} fuera de rango (0-{len(self.providers)-1})"
+            )
 
         datos = self.model_dump()
         datos["provider_detail_idx"] = indice
@@ -346,7 +354,11 @@ class FlujoConversacional(BaseModel):
         # Asegurar que teléfono existe
         if "telefono" not in datos_normalizados:
             # Intentar obtener de otras fuentes
-            telefono = datos_normalizados.get("phone") or datos_normalizados.get("from") or "unknown"
+            telefono = (
+                datos_normalizados.get("phone")
+                or datos_normalizados.get("from")
+                or "unknown"
+            )
             datos_normalizados["telefono"] = telefono
 
         return cls(**datos_normalizados)
