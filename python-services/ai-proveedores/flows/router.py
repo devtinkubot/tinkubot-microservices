@@ -4,40 +4,42 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 from flows.consentimiento import solicitar_consentimiento
-from flows.constructores import construir_menu_principal, construir_payload_menu_principal
-from flows.constructores import construir_respuesta_revision_perfil_profesional
+from flows.constructores import (
+    construir_payload_menu_principal,
+    construir_respuesta_revision_perfil_profesional,
+)
 from flows.gestores_estados import (
+    iniciar_flujo_completar_perfil_profesional,
+    manejar_accion_edicion_servicios_registro,
     manejar_accion_servicios,
     manejar_accion_servicios_activos,
-    manejar_accion_edicion_servicios_registro,
     manejar_actualizacion_redes_sociales,
     manejar_actualizacion_selfie,
     manejar_agregar_servicio_desde_edicion_registro,
     manejar_agregar_servicios,
-    manejar_confirmacion_perfil_profesional,
-    manejar_confirmacion_servicio_perfil,
     manejar_confirmacion,
     manejar_confirmacion_agregar_servicios,
     manejar_confirmacion_eliminacion,
+    manejar_confirmacion_perfil_profesional,
+    manejar_confirmacion_servicio_perfil,
     manejar_confirmacion_servicios,
     manejar_decision_agregar_otro_servicio,
     manejar_dni_frontal,
     manejar_dni_frontal_actualizacion,
     manejar_dni_trasera,
     manejar_dni_trasera_actualizacion,
-    manejar_eliminar_servicio,
+    manejar_edicion_perfil_profesional,
     manejar_eliminacion_servicio_registro,
-    manejar_espera_ciudad,
+    manejar_eliminar_servicio,
     manejar_espera_certificado,
+    manejar_espera_ciudad,
     manejar_espera_especialidad,
     manejar_espera_experiencia,
     manejar_espera_nombre,
     manejar_espera_real_phone,
     manejar_espera_red_social,
-    manejar_edicion_perfil_profesional,
     manejar_estado_consentimiento,
     manejar_estado_menu,
-    iniciar_flujo_completar_perfil_profesional,
     manejar_inicio_documentos,
     manejar_reemplazo_servicio_registro,
     manejar_seleccion_reemplazo_servicio_registro,
@@ -48,8 +50,8 @@ from flows.gestores_estados import (
 )
 from flows.sesion import reiniciar_flujo
 from services import (
-    agregar_certificado_proveedor,
     actualizar_perfil_profesional,
+    agregar_certificado_proveedor,
     eliminar_registro_proveedor,
     registrar_proveedor_en_base_datos,
 )
@@ -66,7 +68,6 @@ from templates.registro import (
     solicitar_foto_dni_frontal,
 )
 from templates.sesion import (
-    informar_reinicio_completo,
     informar_reinicio_con_eliminacion,
     informar_reinicio_conversacion,
     informar_timeout_inactividad,
@@ -241,8 +242,8 @@ async def manejar_mensaje(
                     "new_flow": flujo,
                     "persist_flow": True,
                 }
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("No se pudo parsear last_seen_at_prev: %s", exc)
 
     flujo["last_seen_at"] = ahora_iso
     flujo["last_seen_at_prev"] = flujo.get("last_seen_at", ahora_iso)
@@ -557,7 +558,9 @@ async def enrutar_estado(  # noqa: C901
             flujo=flujo,
             proveedor_id=flujo.get("provider_id"),
             texto_mensaje=texto_mensaje,
+            selected_option=carga.get("selected_option"),
             cliente_openai=cliente_openai,
+            servicio_embeddings=servicio_embeddings,
         )
         return {"response": respuesta, "persist_flow": True}
 
@@ -566,7 +569,9 @@ async def enrutar_estado(  # noqa: C901
             flujo=flujo,
             proveedor_id=flujo.get("provider_id"),
             texto_mensaje=texto_mensaje,
+            selected_option=carga.get("selected_option"),
             cliente_openai=cliente_openai,
+            servicio_embeddings=servicio_embeddings,
         )
         return {"response": respuesta, "persist_flow": True}
 
@@ -584,6 +589,7 @@ async def enrutar_estado(  # noqa: C901
             flujo=flujo,
             texto_mensaje=texto_mensaje,
             cliente_openai=cliente_openai,
+            servicio_embeddings=servicio_embeddings,
         )
         return {"response": respuesta, "persist_flow": True}
 

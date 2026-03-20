@@ -18,9 +18,8 @@ import os
 import re
 from typing import List, Optional
 
-from openai import AsyncOpenAI
-
 from config.configuracion import configuracion
+from openai import AsyncOpenAI
 from services.servicios_proveedor.constantes import SERVICIOS_MAXIMOS
 
 logger = logging.getLogger(__name__)
@@ -34,7 +33,7 @@ _VERBOS_SENSIBLES = {
     "desarrollar": {"instalacion", "instalar", "soporte"},
 }
 
-_CONECTORES_DIVISION = re.compile(r"\s*(?:,|;|/|\n)\s*")
+_CONECTORES_DIVISION = re.compile(r"\s*(?:;|/|\n)\s*")
 
 
 class TransformadorServicios:
@@ -73,7 +72,7 @@ class TransformadorServicios:
 
         Args:
             entrada_usuario: Texto del usuario (ej: "ingeniero de sistemas, plomería")
-            max_servicios: Máximo número de servicios a extraer (default: SERVICIOS_MAXIMOS)
+            max_servicios: Máximo de servicios a extraer.
 
         Returns:
             Lista de servicios optimizados, o None si falló
@@ -90,7 +89,10 @@ class TransformadorServicios:
             return None
 
         try:
-            logger.info(f"🔄 Transformando entrada a servicios: {entrada_usuario[:50]}...")
+            logger.info(
+                "🔄 Transformando entrada a servicios: %s...",
+                entrada_usuario[:50],
+            )
 
             response = await self.client.chat.completions.create(
                 model=self.model,
@@ -101,7 +103,10 @@ class TransformadorServicios:
                     },
                     {
                         "role": "user",
-                        "content": _crear_prompt_usuario(entrada_usuario, max_servicios),
+                        "content": _crear_prompt_usuario(
+                            entrada_usuario,
+                            max_servicios,
+                        ),
                     },
                 ],
                 response_format={
@@ -115,7 +120,9 @@ class TransformadorServicios:
                                 "servicios": {
                                     "type": "array",
                                     "items": {"type": "string"},
-                                    "description": "Lista de servicios específicos extraídos",
+                                    "description": (
+                                        "Lista de servicios específicos extraídos"
+                                    ),
                                 }
                             },
                             "required": ["servicios"],
@@ -149,7 +156,10 @@ class TransformadorServicios:
                 logger.warning("⚠️ Servicios inválidos tras normalización")
                 return None
 
-            logger.info(f"✅ Transformación exitosa: {len(servicios)} servicios extraídos")
+            logger.info(
+                "✅ Transformación exitosa: %s servicios extraídos",
+                len(servicios),
+            )
             for idx, servicio in enumerate(servicios, 1):
                 logger.debug(f"  {idx}. {servicio}")
 
@@ -173,75 +183,85 @@ def _crear_prompt_sistema() -> str:
     Returns:
         Prompt del sistema optimizado
     """
-    return """Eres un experto en convertir lo que escribe un proveedor en servicios claros, específicos y buscables en Ecuador.
-
-TU OBJETIVO:
-Transformar profesiones, especialidades o descripciones libres en SERVICIOS CONCRETOS que un cliente realmente buscaría y que además se vean naturales en interfaz.
-
-PRIORIDAD SEMÁNTICA:
-- Si el proveedor dio detalle suficiente, conserva ese detalle.
-- Prefiere subservicios concretos sobre categorías paraguas.
-- Solo usa una categoría general cuando el texto sea ambiguo y no dé más contexto.
-
-REGLAS DE TRANSFORMACIÓN:
-
-1. DEVUELVE SERVICIOS, NO OFICIOS NI TÍTULOS:
-   - "abogado" → "asesoría legal"
-   - "plomero" → "reparación de fugas", "destape de cañerías"
-   - "carpintero" → "fabricación de muebles a medida", "reparación de muebles de madera"
-   - "ingeniero de sistemas" → "desarrollo de software"
-   - "contador" → "declaración de impuestos", "contabilidad para negocios"
-   - "psicólogo" → "terapia psicológica", "acompañamiento emocional"
-
-2. SI HAY DETALLE, NO LO GENERALICES:
-   - "abogado para rebaja de pensión alimenticia" → "asesoría para rebaja de pensión alimenticia"
-   - "abogado en contratación pública" → "asesoría en contratación pública"
-   - "plomero para destapar lavamanos" → "destape de cañerías en lavamanos"
-   - "carpintero para arreglar muebles" → "restauración de muebles"
-   - "contador para declaración de renta" → "declaración de impuestos"
-
-3. USA LENGUAJE DE BÚSQUEDA DEL CLIENTE:
-   Piensa en cómo buscaría el servicio una persona común.
-   - mejor "reparación de fugas" que "plomería"
-   - mejor "asesoría para pensión alimenticia" que "abogado"
-   - mejor "gestión de redes sociales" que "community manager"
-   - mejor "declaración de impuestos" que "contador"
-   - mejor "terapia psicológica para ansiedad" que "psicólogo clínico"
-
-4. ESPAÑOL NEUTRO, SIN INGLÉS:
-   - "community manager" → "gestión de redes sociales"
-   - "seo" → "posicionamiento web"
-   - "ads" → "publicidad digital"
-
-5. NO INVENTES NI EXPANDAS ALCANCE:
-   - No agregues especialidades que el proveedor no insinuó.
-   - No conviertas un servicio puntual en una lista amplia sin base.
-   - Si el texto es genérico, propone solo servicios típicos y buscables de esa ocupación.
-   - No cambies el verbo principal si el proveedor ya fue específico.
-     Ejemplo: "configuración" no se convierte en "instalación".
-   - No conviertas "desarrollo de software" en formas telegráficas como "desarrollo software".
-   - No elimines conectores útiles como "de", "a", "para", "en" si la frase ya es natural.
-
-6. RESPETA LA CANTIDAD DECLARADA:
-   - No excedas la cantidad de servicios que el proveedor escribió.
-   - Solo separa cuando el mismo texto incluya servicios distintos de forma explícita.
-   - Si el proveedor escribió una sola ocupación, puedes devolver entre 1 y 3 servicios típicos como máximo.
-   - Si una frase describe un solo bloque de servicio, mantenla como un solo servicio.
-
-FORMATO DE SALIDA:
-Devuelve SOLO una lista JSON de strings en español, sin explicaciones adicionales.
-
-IMPORTANTE:
-- Cada servicio debe ser corto, claro y entendible por un cliente sin conocimientos técnicos.
-- La salida debe poder mostrarse tal cual en frontend.
-- Prefiere frases naturales completas sobre etiquetas comprimidas.
-- Usa español claro y cotidiano que una persona en Ecuador entienda rápido.
-- Evita categorías demasiado amplias si el texto permite algo más específico.
-- Conserva términos de dominio relevantes cuando el proveedor ya los mencionó.
-- Prefiere conservar frases ya buscables casi textuales antes que reescribirlas de forma más agresiva.
-- "configuración de redes e internet" puede mantenerse igual o separarse en "configuración de redes" y "configuración de internet".
-- "configuración de redes e internet" NO debe convertirse en "instalación de internet".
-"""
+    lineas = [
+        "Eres un experto en convertir lo que escribe un proveedor en servicios claros,",
+        "específicos y buscables en Ecuador.",
+        "",
+        "TU OBJETIVO:",
+        "Transformar profesiones, especialidades o descripciones libres en servicios",
+        "concretos que un cliente realmente buscaría y que se vean naturales en la",
+        "interfaz.",
+        "",
+        "PRIORIDAD SEMÁNTICA:",
+        "- Si el proveedor dio detalle suficiente, conserva ese detalle.",
+        "- Prefiere subservicios concretos sobre categorías paraguas.",
+        "- Solo usa una categoría general cuando el texto sea ambiguo.",
+        "",
+        "REGLAS DE TRANSFORMACIÓN:",
+        "",
+        "1. DEVUELVE SERVICIOS, NO OFICIOS NI TÍTULOS:",
+        '   - "abogado" → "asesoría legal"',
+        '   - "plomero" → "reparación de fugas", "destape de cañerías"',
+        '   - "carpintero" → "fabricación de muebles a medida",',
+        '     "reparación de muebles de madera"',
+        '   - "ingeniero de sistemas" → "desarrollo de software"',
+        '   - "contador" → "declaración de impuestos", "contabilidad para negocios"',
+        '   - "psicólogo" → "terapia psicológica", "acompañamiento emocional"',
+        "",
+        "2. SI HAY DETALLE, NO LO GENERALICES:",
+        '   - "abogado para rebaja de pensión alimenticia" → "asesoría para rebaja',
+        '     de pensión alimenticia"',
+        '   - "abogado en contratación pública" → "asesoría en contratación pública"',
+        '   - "plomero para destapar lavamanos" → "destape de cañerías en lavamanos"',
+        '   - "carpintero para arreglar muebles" → "restauración de muebles"',
+        '   - "contador para declaración de renta" → "declaración de impuestos"',
+        "",
+        "3. USA LENGUAJE DE BÚSQUEDA DEL CLIENTE:",
+        "   Piensa en cómo buscaría el servicio una persona común.",
+        '   - mejor "reparación de fugas" que "plomería"',
+        '   - mejor "asesoría para pensión alimenticia" que "abogado"',
+        '   - mejor "gestión de redes sociales" que "community manager"',
+        '   - mejor "declaración de impuestos" que "contador"',
+        '   - mejor "terapia psicológica para ansiedad" que "psicólogo clínico"',
+        "",
+        "4. ESPAÑOL NEUTRO, SIN INGLÉS:",
+        '   - "community manager" → "gestión de redes sociales"',
+        '   - "seo" → "posicionamiento web"',
+        '   - "ads" → "publicidad digital"',
+        "",
+        "5. NO INVENTES NI EXPANDAS ALCANCE:",
+        "- No agregues especialidades que el proveedor no insinuó.",
+        "- No conviertas un servicio puntual en una lista amplia sin base.",
+        "- Si el texto es genérico, propone servicios típicos y buscables.",
+        "- No cambies el verbo principal si el proveedor ya fue específico.",
+        '  Ejemplo: "configuración" no se convierte en "instalación".',
+        '  No conviertas "desarrollo de software" en "desarrollo software".',
+        '  No elimines conectores útiles como "de", "a", "para", "en".',
+        "",
+        "6. RESPETA LA CANTIDAD DECLARADA:",
+        "- No excedas la cantidad de servicios que el proveedor escribió.",
+        "- Solo separa cuando el texto incluya servicios distintos de forma clara.",
+        "- Si escribió una sola ocupación, devuelve entre 1 y 3 servicios.",
+        "- Si una frase describe un solo bloque de servicio, mantenla así.",
+        "",
+        "FORMATO DE SALIDA:",
+        "Devuelve SOLO una lista JSON de strings en español.",
+        "",
+        "IMPORTANTE:",
+        "- Cada servicio debe ser corto, claro y entendible.",
+        "- La salida debe poder mostrarse tal cual en frontend.",
+        "- Prefiere frases naturales completas sobre etiquetas comprimidas.",
+        "- Usa español claro y cotidiano que una persona en Ecuador entienda rápido.",
+        "- Evita categorías demasiado amplias si el texto permite algo más específico.",
+        "- Conserva términos de dominio relevantes.",
+        "- Prefiere conservar frases ya buscables casi textuales.",
+        '- "configuración de redes e internet" puede mantenerse igual o separarse',
+        '  en "configuración de redes" y "configuración de internet".',
+        '- "configuración de redes e internet" NO debe convertirse en',
+        '  "instalación de internet".',
+        "- No uses la coma como separador si el texto describe un solo bloque.",
+    ]
+    return "\n".join(lineas)
 
 
 def _crear_prompt_usuario(entrada: str, max_servicios: int) -> str:
@@ -255,22 +275,27 @@ def _crear_prompt_usuario(entrada: str, max_servicios: int) -> str:
     Returns:
         Prompt del usuario
     """
-    return f"""Transforma la siguiente entrada en servicios específicos y optimizados para búsqueda:
-
-ENTRADA DEL USUARIO:
-"{entrada}"
-
-EXTRAE MÁXIMO {max_servicios} servicios específicos.
-
-Recuerda:
-- No devuelvas profesiones ni oficios como salida final
-- Conserva el detalle cuando el proveedor ya lo escribió
-- Piensa en qué buscaría un cliente con un problema real
-- Usa lenguaje sencillo que cualquiera entienda
-- Solo separa servicios distintos que estén claramente mencionados
-- No cambies el verbo principal de la acción si ya es claro en la entrada
-
-Responde SOLO con el JSON de la lista de servicios."""
+    lineas = [
+        "Transforma la siguiente entrada en servicios específicos y optimizados",
+        "para búsqueda.",
+        "",
+        "ENTRADA DEL USUARIO:",
+        f'"{entrada}"',
+        "",
+        f"EXTRAE MÁXIMO {max_servicios} servicios específicos.",
+        "",
+        "Recuerda:",
+        "- No devuelvas profesiones ni oficios como salida final.",
+        "- Conserva el detalle cuando el proveedor ya lo escribió.",
+        "- Piensa en qué buscaría un cliente con un problema real.",
+        "- Usa lenguaje sencillo que cualquiera entienda.",
+        "- Solo separa servicios distintos que estén claramente mencionados.",
+        "- No cambies el verbo principal si ya es claro en la entrada.",
+        "- No uses la coma como separador cuando el texto es una sola descripción.",
+        "",
+        "Responde SOLO con el JSON de la lista de servicios.",
+    ]
+    return "\n".join(lineas)
 
 
 def _tokenizar_texto(texto: str) -> set[str]:
@@ -295,7 +320,10 @@ def _es_sobre_expansion(
     servicios: List[str],
     max_servicios: int,
 ) -> bool:
-    limite_razonable = min(max_servicios, _cantidad_servicios_declarados(entrada_usuario))
+    limite_razonable = min(
+        max_servicios,
+        _cantidad_servicios_declarados(entrada_usuario),
+    )
     return len(servicios) > limite_razonable
 
 
@@ -303,7 +331,9 @@ def _tiene_cambio_verbo_sensible(entrada_usuario: str, servicio: str) -> bool:
     entrada_tokens = _tokenizar_texto(entrada_usuario)
     servicio_tokens = _tokenizar_texto(servicio)
     for verbo_entrada, verbos_prohibidos in _VERBOS_SENSIBLES.items():
-        if verbo_entrada in entrada_tokens and servicio_tokens.intersection(verbos_prohibidos):
+        if verbo_entrada in entrada_tokens and servicio_tokens.intersection(
+            verbos_prohibidos
+        ):
             return True
     return False
 
@@ -363,7 +393,9 @@ def _normalizar_y_limitar_servicios(
     """
     resultado: List[str] = []
 
-    servicios_postprocesados = [_ajustar_frase_natural(str(servicio)) for servicio in servicios]
+    servicios_postprocesados = [
+        _ajustar_frase_natural(str(servicio)) for servicio in servicios
+    ]
     if _es_sobre_expansion(entrada_usuario, servicios_postprocesados, max_servicios):
         logger.info("↩️ Ajustando sobre-expansión de servicios hacia entrada original")
         servicios_postprocesados = _servicios_fallback_desde_entrada(
@@ -375,7 +407,10 @@ def _normalizar_y_limitar_servicios(
         texto = str(servicio).strip()
         if _tiene_cambio_verbo_sensible(entrada_usuario, texto):
             logger.info(
-                "↩️ Rechazando servicio por cambio semántico sensible: entrada='%s' servicio='%s'",
+                (
+                    "↩️ Rechazando servicio por cambio semántico sensible: "
+                    "entrada='%s' servicio='%s'"
+                ),
                 entrada_usuario[:120],
                 texto,
             )

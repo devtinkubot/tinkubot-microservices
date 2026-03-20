@@ -2,12 +2,12 @@ import sys
 import types
 from pathlib import Path
 
+import pytest
+
 imghdr_stub = types.ModuleType("imghdr")
 imghdr_stub.what = lambda *args, **kwargs: None
 sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-
-import pytest
 
 from principal import (  # noqa: E402
     _es_mensaje_interactivo_duplicado,
@@ -75,7 +75,7 @@ async def test_dedupe_interactivo_ignora_reentrega_con_mismo_message_id(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_dedupe_interactivo_ignora_reentrega_semantica_en_accion_unica(monkeypatch):
+async def test_dedupe_interactivo_accion_unica(monkeypatch):
     redis_stub = _RedisStub()
     monkeypatch.setattr("principal.cliente_redis", redis_stub)
 
@@ -99,4 +99,68 @@ async def test_dedupe_interactivo_ignora_reentrega_semantica_en_accion_unica(mon
     )
 
     assert primera is False
-    assert segunda is True
+    assert segunda is False
+
+
+@pytest.mark.asyncio
+async def test_dedupe_interactivo_confirmacion_servicio_sin_message_id(
+    monkeypatch,
+):
+    redis_stub = _RedisStub()
+    monkeypatch.setattr("principal.cliente_redis", redis_stub)
+
+    carga = {
+        "message_type": "interactive_button_reply",
+        "selected_option": "profile_service_confirm",
+    }
+
+    primera = await _es_mensaje_interactivo_duplicado(
+        "593999111222@s.whatsapp.net",
+        "awaiting_service_add_confirmation",
+        carga,
+        flujo={"services": ["uno", "dos"]},
+    )
+    segunda = await _es_mensaje_interactivo_duplicado(
+        "593999111222@s.whatsapp.net",
+        "awaiting_service_action",
+        carga,
+        flujo={"services": ["uno", "dos", "tres"]},
+    )
+
+    assert primera is False
+    assert segunda is False
+
+
+@pytest.mark.asyncio
+async def test_dedupe_interactivo_confirmacion_servicio_con_nonce_diferente(
+    monkeypatch,
+):
+    redis_stub = _RedisStub()
+    monkeypatch.setattr("principal.cliente_redis", redis_stub)
+
+    carga = {
+        "message_type": "interactive_button_reply",
+        "selected_option": "profile_service_confirm",
+    }
+
+    primera = await _es_mensaje_interactivo_duplicado(
+        "593999111222@s.whatsapp.net",
+        "awaiting_service_add_confirmation",
+        carga,
+        flujo={
+            "services": ["uno", "dos"],
+            "service_add_confirmation_nonce": "nonce-a",
+        },
+    )
+    segunda = await _es_mensaje_interactivo_duplicado(
+        "593999111222@s.whatsapp.net",
+        "awaiting_service_add_confirmation",
+        carga,
+        flujo={
+            "services": ["uno", "dos"],
+            "service_add_confirmation_nonce": "nonce-b",
+        },
+    )
+
+    assert primera is False
+    assert segunda is False

@@ -1,6 +1,6 @@
 """Mensajes relacionados con menús de proveedores."""
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from .componentes import pie_instrucciones_respuesta_numerica
 
@@ -38,8 +38,15 @@ SERVICE_DELETE_PREFIX = "provider_service_delete:"
 SERVICE_DELETE_BACK_ID = "provider_service_delete_back"
 CERTIFICATE_SELECT_PREFIX = "provider_certificate_select:"
 CERTIFICATE_ADD_ID = "provider_certificate_add"
+SERVICE_EXAMPLE_BACK_ID = "provider_service_example_back"
 CERTIFICATE_BACK_ID = "provider_certificate_back"
+SERVICE_EXAMPLE_LIST_ID = "provider_service_examples_v1"
+SERVICE_EXAMPLE_PREFIX = "provider_service_example:"
+SERVICE_EXAMPLE_MECHANICS_ID = "provider_service_example_mechanics"
+SERVICE_EXAMPLE_LEGAL_ID = "provider_service_example_legal"
+SERVICE_EXAMPLE_ADMIN_ID = "provider_service_example_admin"
 LIST_OPTION_DESCRIPTION_MAX = 72
+LIST_OPTION_TITLE_MAX = 24
 
 MENU_PRINCIPAL_PROVEEDOR = (
     "*Menú de Proveedores*\n"
@@ -228,6 +235,85 @@ def payload_submenu_informacion_profesional() -> Dict[str, Any]:
     }
 
 
+def payload_ejemplos_servicios() -> Dict[str, Any]:
+    """Genera una lista breve de ejemplos de servicios bien redactados."""
+    return payload_ejemplos_servicios_personalizados(None)
+
+
+def _formatear_header_ejemplos_servicios(
+    indice: Optional[int] = None,
+    maximo: Optional[int] = None,
+) -> str:
+    if indice is not None and maximo is not None:
+        return f"Agregar Servicio {indice} de {maximo}"
+    return "Ejemplos reales"
+
+
+def payload_ejemplos_servicios_personalizados(
+    ejemplos: Optional[List[Dict[str, str]]] = None,
+    indice: Optional[int] = None,
+    maximo: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Genera una lista de ejemplos de servicios, usando un fallback fijo si hace falta."""
+    ejemplos_base = ejemplos or [
+        {
+            "id": SERVICE_EXAMPLE_MECHANICS_ID,
+            "title": "Gasfitería",
+            "description": "Instalación y mantenimiento de tuberías para casas o edificios",
+        },
+        {
+            "id": SERVICE_EXAMPLE_LEGAL_ID,
+            "title": "Legal",
+            "description": (
+                "Asesoría legal en divorcios, pensiones y trámites de familia"
+            ),
+        },
+        {
+            "id": SERVICE_EXAMPLE_ADMIN_ID,
+            "title": "Administrativo",
+            "description": "Facturación, cobranza y gestión documental para negocios",
+        },
+    ]
+    return {
+        "response": (
+            "Toca un dominio para ver un servicio real que se agrega con frecuencia. "
+            "Después puedes escribir el tuyo directamente."
+        ),
+        "ui": {
+            "type": "list",
+            "id": SERVICE_EXAMPLE_LIST_ID,
+            "header_type": "text",
+            "header_text": _formatear_header_ejemplos_servicios(
+                indice=indice,
+                maximo=maximo,
+            ),
+            "list_button_text": "Ver ejemplos",
+            "list_section_title": "Dominios más frecuentes",
+            "options": [
+                {
+                    "id": str(item.get("id") or "").strip(),
+                    "title": _truncar_titulo_lista(
+                        str(item.get("title") or "").strip()
+                    ),
+                    "description": _truncar_descripcion_lista(
+                        str(item.get("description") or "").strip()
+                    ),
+                }
+                for item in ejemplos_base
+                if str(item.get("id") or "").strip()
+                and str(item.get("title") or "").strip()
+            ]
+            + [
+                {
+                    "id": SERVICE_EXAMPLE_BACK_ID,
+                    "title": "Regresar",
+                    "description": "Volver al menú anterior",
+                }
+            ],
+        },
+    }
+
+
 def mensaje_menu_servicios_proveedor(
     servicios: List[str],
     max_servicios: int,
@@ -282,11 +368,20 @@ def _payload_botones_detalle(
     return {"response": body, "ui": ui}
 
 
-def _truncar_descripcion_lista(valor: str, limite: int = LIST_OPTION_DESCRIPTION_MAX) -> str:
+def _truncar_descripcion_lista(
+    valor: str, limite: int = LIST_OPTION_DESCRIPTION_MAX
+) -> str:
     texto = " ".join(str(valor or "").strip().split())
     if len(texto) <= limite:
         return texto
     return texto[: max(limite - 1, 0)].rstrip() + "…"
+
+
+def _truncar_titulo_lista(valor: str, limite: int = LIST_OPTION_TITLE_MAX) -> str:
+    texto = " ".join(str(valor or "").strip().split())
+    if len(texto) <= limite:
+        return texto
+    return texto[: max(limite - 3, 0)].rstrip() + "..."
 
 
 def payload_detalle_nombre(nombre: str) -> Dict[str, Any]:
@@ -343,7 +438,9 @@ def payload_detalle_red_social(url: str) -> Dict[str, Any]:
     )
 
 
-def payload_detalle_servicios(servicios: List[str], max_servicios: int) -> Dict[str, Any]:
+def payload_detalle_servicios(
+    servicios: List[str], max_servicios: int
+) -> Dict[str, Any]:
     lineas: List[str] = []
     if servicios:
         lineas.extend([f"• {servicio}" for servicio in servicios])
@@ -420,8 +517,9 @@ def payload_lista_certificados(
             "description": "Volver a información profesional",
         }
     )
+    response = f"*Certificados registrados ({len(certificados)}/{max_certificados})*"
     return {
-        "response": f"*Certificados registrados ({len(certificados)}/{max_certificados})*",
+        "response": response,
         "ui": {
             "type": "list",
             "id": "provider_certificates_list_v1",

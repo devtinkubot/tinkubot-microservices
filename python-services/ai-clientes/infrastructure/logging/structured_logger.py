@@ -8,17 +8,20 @@ Este módulo proporciona un sistema de logging estructurado que:
 - Es compatible con el sistema de logging estándar de Python
 """
 
+import json
 import logging
 import os
 import sys
 import uuid
 from contextvars import ContextVar
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Dict, Optional
+from zoneinfo import ZoneInfo
 
 # Context variables para correlation tracking
 correlation_id: ContextVar[Optional[str]] = ContextVar("correlation_id", default=None)
 request_context: ContextVar[Dict[str, Any]] = ContextVar("request_context", default={})
+LOCAL_TIMEZONE = ZoneInfo("America/Guayaquil")
 
 
 def get_correlation_id() -> Optional[str]:
@@ -80,9 +83,8 @@ class StructuredFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         """Formatea el record como JSON."""
-        # Base structure
         log_data: Dict[str, Any] = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(LOCAL_TIMEZONE).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
@@ -110,11 +112,28 @@ class StructuredFormatter(logging.Formatter):
         extra_fields = {}
         for key, value in record.__dict__.items():
             if key not in {
-                "name", "msg", "args", "created", "filename", "funcName",
-                "levelname", "levelno", "lineno", "module", "msecs",
-                "pathname", "process", "processName", "relativeCreated",
-                "stack_info", "exc_info", "exc_text", "thread", "threadName",
-                "message", "asctime",
+                "name",
+                "msg",
+                "args",
+                "created",
+                "filename",
+                "funcName",
+                "levelname",
+                "levelno",
+                "lineno",
+                "module",
+                "msecs",
+                "pathname",
+                "process",
+                "processName",
+                "relativeCreated",
+                "stack_info",
+                "exc_info",
+                "exc_text",
+                "thread",
+                "threadName",
+                "message",
+                "asctime",
             }:
                 extra_fields[key] = value
 
@@ -128,12 +147,9 @@ class StructuredFormatter(logging.Formatter):
         if record.stack_info:
             log_data["stack_trace"] = self.formatStack(record.stack_info)
 
-        # Convert to JSON
-        import json
         try:
             return json.dumps(log_data, ensure_ascii=False, default=str)
         except Exception:
-            # Fallback a string simple si JSON falla
             return str(log_data)
 
 
@@ -143,18 +159,17 @@ class HumanReadableFormatter(logging.Formatter):
     """
 
     COLORS = {
-        "DEBUG": "\033[36m",    # Cyan
-        "INFO": "\033[32m",     # Green
+        "DEBUG": "\033[36m",  # Cyan
+        "INFO": "\033[32m",  # Green
         "WARNING": "\033[33m",  # Yellow
-        "ERROR": "\033[31m",    # Red
-        "CRITICAL": "\033[35m", # Magenta
+        "ERROR": "\033[31m",  # Red
+        "CRITICAL": "\033[35m",  # Magenta
     }
     RESET = "\033[0m"
 
     def format(self, record: logging.LogRecord) -> str:
         """Formatea el record de forma legible."""
-        # Timestamp
-        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = datetime.now(LOCAL_TIMEZONE).strftime("%Y-%m-%d %H:%M:%S")
 
         # Color del nivel
         color = self.COLORS.get(record.levelname, "")
@@ -170,7 +185,9 @@ class HumanReadableFormatter(logging.Formatter):
         # Agregar contexto si existe
         ctx = request_context.get({})
         if ctx:
-            context_str = " | ".join(f"{k}={v}" for k, v in ctx.items() if v is not None)
+            context_str = " | ".join(
+                f"{k}={v}" for k, v in ctx.items() if v is not None
+            )
             if context_str:
                 base += f" | {context_str}"
 
@@ -200,6 +217,7 @@ def configure_logging(
         json_output = os.getenv("LOG_FORMAT", "json").lower() == "json"
 
     # Crear formatter apropiado
+    formatter: logging.Formatter
     if json_output:
         formatter = StructuredFormatter(service_name=service_name)
     else:

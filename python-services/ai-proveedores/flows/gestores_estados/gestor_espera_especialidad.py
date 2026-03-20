@@ -3,29 +3,29 @@
 import logging
 from typing import Any, Dict, List, Optional
 
+from services.servicios_proveedor.asistente_clarificacion import (
+    construir_mensaje_clarificacion_servicio,
+)
 from services.servicios_proveedor.constantes import (
     SERVICIOS_MAXIMOS,
-    SERVICIOS_MINIMOS_PERFIL_PROFESIONAL,
     SERVICIOS_MAXIMOS_ONBOARDING,
-)
-from services.servicios_proveedor.validacion_semantica import (
-    validar_servicio_semanticamente,
-)
-from services.servicios_proveedor.revision_catalogo import (
-    registrar_revision_catalogo_servicio,
+    SERVICIOS_MINIMOS_PERFIL_PROFESIONAL,
 )
 from services.servicios_proveedor.utilidades import (
     limpiar_espacios,
     sanitizar_lista_servicios,
 )
+from services.servicios_proveedor.validacion_semantica import (
+    validar_servicio_semanticamente,
+)
 from templates.registro import (
     PROFILE_CONTROL_IDS,
-    payload_confirmacion_servicio_perfil,
     mensaje_maximo_servicios_registro,
     mensaje_resumen_servicios_registro,
     mensaje_servicio_duplicado_registro,
-    preguntar_siguiente_servicio_registro,
     payload_agregar_otro_servicio,
+    payload_confirmacion_servicio_perfil,
+    preguntar_siguiente_servicio_registro,
 )
 
 logger = logging.getLogger(__name__)
@@ -59,6 +59,7 @@ async def normalizar_servicio_registro_individual(
     *,
     texto_mensaje: str,
     cliente_openai: Optional[Any],
+    servicio_embeddings: Optional[Any] = None,
     review_source: str = "provider_onboarding",
 ) -> Dict[str, Any]:
     """Normaliza un solo servicio durante el onboarding."""
@@ -148,9 +149,33 @@ async def normalizar_servicio_registro_individual(
         service_name=servicio,
     )
     if not validacion.get("is_valid_service") and validacion.get("needs_clarification"):
+        contexto = await construir_mensaje_clarificacion_servicio(
+            supabase=_resolver_supabase_runtime(),
+            servicio_embeddings=servicio_embeddings,
+            cliente_openai=cliente_openai,
+            raw_service_text=especialidad_texto,
+            service_name=str(validacion.get("normalized_service") or servicio).strip()
+            or servicio,
+            clarification_question=str(
+                validacion.get("clarification_question")
+                or "Indica el servicio o especialidad exacta que ofreces."
+            ),
+            service_summary=str(
+                validacion.get("proposed_service_summary")
+                or validacion.get("service_summary")
+                or ""
+            ).strip()
+            or None,
+            domain_code=validacion.get("resolved_domain_code")
+            or validacion.get("domain_code"),
+            category_name=validacion.get("proposed_category_name")
+            or validacion.get("category_name"),
+        )
         return {
             "ok": False,
-            "response": str(
+            "needs_clarification": True,
+            "response": contexto.get("message")
+            or str(
                 validacion.get("clarification_question")
                 or "Indica el servicio o especialidad exacta que ofreces."
             ),
@@ -159,35 +184,14 @@ async def normalizar_servicio_registro_individual(
         return {
             "ok": False,
             "response": (
-                "*No identifiqué un servicio válido.* "
-                "Escribe el servicio o especialidad exacta que ofreces."
+                "No pude interpretar ese servicio. "
+                "Escribe una versión más específica."
             ),
         }
-    if validacion.get("domain_resolution_status") == "catalog_review_required":
-        # Registrar para revisión (tracking) pero NO bloquear el registro
-        await registrar_revision_catalogo_servicio(
-            supabase=_resolver_supabase_runtime(),
-            provider_id=None,
-            raw_service_text=especialidad_texto,
-            service_name=str(validacion.get("normalized_service") or servicio).strip()
-            or servicio,
-            suggested_domain_code=validacion.get("domain_code"),
-            proposed_category_name=validacion.get("proposed_category_name"),
-            proposed_service_summary=validacion.get("proposed_service_summary"),
-            review_reason=str(validacion.get("reason") or "catalog_review_required"),
-            source=review_source,
-        )
-        # ✅ Aceptar el servicio aunque requiera revisión de catálogo
-        # La clasificación pendiente no debe bloquear el onboarding
-        return {
-            "ok": True,
-            "service": str(validacion.get("normalized_service") or servicio).strip() or servicio,
-            "validation": validacion,
-        }
-
     return {
         "ok": True,
-        "service": str(validacion.get("normalized_service") or servicio).strip() or servicio,
+        "service": str(validacion.get("normalized_service") or servicio).strip()
+        or servicio,
         "validation": validacion,
     }
 
@@ -196,6 +200,7 @@ async def manejar_espera_especialidad(
     flujo: Dict[str, Any],
     texto_mensaje: Optional[str],
     cliente_openai: Optional[Any] = None,
+    servicio_embeddings: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Procesa la captura incremental de un servicio en el registro."""
     servicios_temporales: List[str] = list(flujo.get("servicios_temporales") or [])
@@ -208,9 +213,7 @@ async def manejar_espera_especialidad(
         return {
             "success": True,
             "messages": [
-                {
-                    "response": mensaje_maximo_servicios_registro(maximo_servicios)
-                },
+                {"response": mensaje_maximo_servicios_registro(maximo_servicios)},
                 {
                     "response": mensaje_resumen_servicios_registro(
                         servicios_temporales,
@@ -228,9 +231,11 @@ async def manejar_espera_especialidad(
                     "response": preguntar_siguiente_servicio_registro(
                         len(servicios_temporales) + 1,
                         maximo_visible,
-                        SERVICIOS_MINIMOS_PERFIL_PROFESIONAL
-                        if flujo.get("profile_completion_mode")
-                        else None,
+                        (
+                            SERVICIOS_MINIMOS_PERFIL_PROFESIONAL
+                            if flujo.get("profile_completion_mode")
+                            else None
+                        ),
                     )
                 }
             ],
@@ -239,6 +244,7 @@ async def manejar_espera_especialidad(
     resultado = await normalizar_servicio_registro_individual(
         texto_mensaje=texto_mensaje or "",
         cliente_openai=cliente_openai,
+        servicio_embeddings=servicio_embeddings,
         review_source=(
             "provider_profile_completion"
             if flujo.get("profile_completion_mode")
@@ -246,7 +252,11 @@ async def manejar_espera_especialidad(
         ),
     )
     if not resultado.get("ok"):
-        return {"success": True, "messages": [{"response": resultado["response"]}]}
+        flujo["state"] = "awaiting_specialty"
+        return {
+            "success": True,
+            "messages": [{"response": resultado["response"]}],
+        }
 
     servicio = resultado["service"]
     if servicio in servicios_temporales:
@@ -256,7 +266,9 @@ async def manejar_espera_especialidad(
         }
 
     if flujo.get("profile_completion_mode"):
-        indice_servicio = int(flujo.get("profile_edit_service_index", len(servicios_temporales)))
+        indice_servicio = int(
+            flujo.get("profile_edit_service_index", len(servicios_temporales))
+        )
         flujo["pending_service_candidate"] = servicio
         flujo["pending_service_index"] = indice_servicio
         flujo["state"] = "awaiting_profile_service_confirmation"
@@ -279,9 +291,7 @@ async def manejar_espera_especialidad(
         return {
             "success": True,
             "messages": [
-                {
-                    "response": mensaje_maximo_servicios_registro(maximo_servicios)
-                },
+                {"response": mensaje_maximo_servicios_registro(maximo_servicios)},
                 {
                     "response": mensaje_resumen_servicios_registro(
                         servicios_temporales,

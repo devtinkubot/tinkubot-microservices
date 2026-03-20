@@ -1,25 +1,31 @@
-import { Navigation, type NavigationModule } from './modules/navigation';
+import { Navigation, type NavigationModule } from "./modules/navigation";
 import {
   MonetizationManager,
-  type MonetizationManagerModule
-} from './modules/monetizationManager';
-import { GovernanceManager, type GovernanceManagerModule } from './modules/governanceManager';
-import { ProvidersManager, type ProvidersManagerModule } from './modules/providersManager';
-import { Utils, type UtilsModule } from './modules/utils';
+  type MonetizationManagerModule,
+} from "./modules/monetizationManager";
+import {
+  DashboardManager,
+  type DashboardManagerModule,
+} from "./modules/dashboardManager";
+import {
+  ProvidersManager,
+  type ProvidersManagerModule,
+} from "./modules/providersManager";
+import { Utils, type UtilsModule } from "./modules/utils";
 
 type TinkuBotGlobal = {
   Utils: UtilsModule;
   Navigation: NavigationModule;
+  DashboardManager: DashboardManagerModule;
   ProvidersManager: ProvidersManagerModule;
   MonetizationManager: MonetizationManagerModule;
-  GovernanceManager: GovernanceManagerModule;
 };
 
 type VentanaDashboard = typeof window & {
   TinkuBot?: TinkuBotGlobal;
+  recargarDashboard?: () => Promise<void>;
   recargarProveedoresPendientes?: () => Promise<void>;
   recargarMonetizacion?: () => Promise<void>;
-  recargarGobernanza?: () => Promise<void>;
 };
 
 const ventanaGlobal = window as VentanaDashboard;
@@ -27,27 +33,27 @@ const ventanaGlobal = window as VentanaDashboard;
 ventanaGlobal.TinkuBot = {
   Utils,
   Navigation,
+  DashboardManager,
   ProvidersManager,
   MonetizationManager,
-  GovernanceManager
 };
 
 function enlazarManejadoresGlobales() {
+  ventanaGlobal.recargarDashboard = async () => {
+    await DashboardManager.recargar();
+  };
   ventanaGlobal.recargarProveedoresPendientes = async () => {
     await ProvidersManager.recargar();
   };
   ventanaGlobal.recargarMonetizacion = async () => {
     await MonetizationManager.recargar();
   };
-  ventanaGlobal.recargarGobernanza = async () => {
-    await GovernanceManager.recargar();
-  };
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener("DOMContentLoaded", () => {
   Navigation.iniciar();
+  DashboardManager.iniciar();
   ProvidersManager.iniciar();
   MonetizationManager.iniciar();
-  GovernanceManager.iniciar();
   enlazarManejadoresGlobales();
 });

@@ -25,7 +25,8 @@ def preguntar_siguiente_servicio_registro(
         ejemplos_por_paso = {
             1: (
                 "Ejemplo para abogado o técnico:\n"
-                "*asesoría en derecho laboral*, *instalación de cámaras de seguridad*."
+                "*asesoría en derecho laboral*, "
+                "*instalación de cámaras de seguridad*."
             ),
             2: (
                 "Ejemplo para contador o desarrollador:\n"
@@ -39,8 +40,8 @@ def preguntar_siguiente_servicio_registro(
             ),
         }
         return (
-            f"*{progreso}/{total_requerido}:* Escribe un *servicio o habilidad* que ofreces, "
-            "debes especificar la *especialidad* o *área exacta*.\n"
+            f"*{progreso}/{total_requerido}:* Escribe un *servicio o habilidad* "
+            "que ofreces, debes especificar la *especialidad* o *área exacta*.\n"
             + ejemplos_por_paso.get(
                 progreso,
                 ejemplos_por_paso[1],
@@ -61,7 +62,7 @@ def confirmar_servicio_y_preguntar_otro(
     return (
         f"Servicio {cantidad_actual} de {maximo} registrado: *{servicio}*.\n\n"
         "¿Quieres agregar otro servicio?\n"
-        "*1.* Sí, agregar otro\n"
+        "*1.* Agregar otro\n"
         "*2.* No, continuar"
     )
 
@@ -138,7 +139,10 @@ def mensaje_debes_registrar_al_menos_un_servicio() -> str:
 
 
 def mensaje_debes_registrar_mas_servicios(minimo: int) -> str:
-    return f"Necesitas registrar al menos *{minimo} servicios* para completar tu perfil profesional."
+    return (
+        f"Necesitas registrar al menos *{minimo} servicios* "
+        "para completar tu perfil profesional."
+    )
 
 
 def mensaje_error_opcion_agregar_otro() -> str:

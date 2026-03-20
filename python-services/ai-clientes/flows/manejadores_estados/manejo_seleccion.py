@@ -90,7 +90,7 @@ async def procesar_estado_presentando_resultados(
     flujo["state"] = "viewing_provider_detail"
     flujo["provider_detail_idx"] = indice_proveedor
     flujo["provider_detail_view"] = "menu"
-    limpiar_ventana_listado_proveedores(flujo)
+    marcar_ventana_listado_proveedores(flujo)
     await guardar_flujo_fn(flujo)
     mensaje_detalle = bloque_detalle_proveedor_fn(proveedor_detalle)
     await guardar_mensaje_bot_fn(mensaje_detalle)

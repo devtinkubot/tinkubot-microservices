@@ -15,6 +15,8 @@ PROFILE_SINGLE_USE_CONTROL_IDS = {
     CONTINUE_PROFILE_COMPLETION_ID,
     SERVICE_ADD_YES_ID,
     SERVICE_ADD_NO_ID,
+    SERVICE_CONFIRM_ID,
+    SERVICE_CORRECT_ID,
 }
 PROFILE_CONTROL_IDS = {
     *PROFILE_SINGLE_USE_CONTROL_IDS,
@@ -44,15 +46,11 @@ def payload_continuar_perfil_profesional(nombre: str) -> Dict[str, Any]:
         else "✅ Ya formas parte de TinkuBot. "
     )
     return {
-        "response": (
-            f"{saludo}El siguiente paso es completar tu perfil profesional."
-        ),
+        "response": (f"{saludo}El siguiente paso es completar tu perfil profesional."),
         "ui": {
             "type": "buttons",
             "id": "provider_profile_continue_v1",
-            "options": [
-                {"id": CONTINUE_PROFILE_COMPLETION_ID, "title": "Continuar"}
-            ],
+            "options": [{"id": CONTINUE_PROFILE_COMPLETION_ID, "title": "Continuar"}],
         },
     }
 
@@ -130,7 +128,7 @@ def payload_agregar_otro_servicio(
             "type": "buttons",
             "id": "provider_profile_service_continue_v1",
             "options": [
-                {"id": SERVICE_ADD_YES_ID, "title": "Sí, agregar"},
+                {"id": SERVICE_ADD_YES_ID, "title": "Agregar"},
                 {"id": SERVICE_ADD_NO_ID, "title": "No, continuar"},
             ],
         },
@@ -151,9 +149,11 @@ def construir_resumen_confirmacion_perfil_profesional(
     )
     red_social = str(social_media_url).strip() if social_media_url else "No registrada"
     certificado = "Recibida" if certificate_uploaded else "No cargado"
-    servicios_completos = list(services[:3]) + ["No registrado"] * max(0, 3 - len(services))
+    servicios_completos = list(services[:3]) + ["No registrado"] * max(
+        0, 3 - len(services)
+    )
     return (
-        "✅ *Por favor confirma tus datos:*\n\n"
+        "✅ *Confirma tus datos:*\n\n"
         f"- *Experiencia general:* {experiencia}\n"
         f"- *Red social:* {red_social}\n"
         f"- *Certificado:* {certificado}\n"
@@ -177,9 +177,7 @@ def mensaje_menu_edicion_perfil_profesional() -> str:
 
 
 def mensaje_error_certificado_invalido() -> str:
-    return (
-        "Envíame el certificado como imagen o toca *Omitir* para continuar."
-    )
+    return "Envíame el certificado como imagen o toca *Omitir* para continuar."
 
 
 def mensaje_minimo_servicios_pendiente(

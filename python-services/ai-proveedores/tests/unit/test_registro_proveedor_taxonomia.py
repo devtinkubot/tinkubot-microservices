@@ -9,7 +9,9 @@ from services.registro.registro_proveedor import (
 )
 
 
-def test_registro_inicial_persiste_servicios_normalizados_sin_taxonomia_runtime(monkeypatch):
+def test_registro_inicial_persiste_servicios_normalizados_sin_taxonomia_runtime(
+    monkeypatch,
+):
     captured = {}
 
     class _Resultado:
@@ -63,7 +65,9 @@ def test_registro_inicial_persiste_servicios_normalizados_sin_taxonomia_runtime(
             "failed_services": [],
         }
 
-    monkeypatch.setattr("services.registro.registro_proveedor.run_supabase", _fake_run_supabase)
+    monkeypatch.setattr(
+        "services.registro.registro_proveedor.run_supabase", _fake_run_supabase
+    )
     monkeypatch.setattr(
         "services.registro.registro_proveedor.insertar_servicios_proveedor",
         _fake_insertar_servicios_proveedor,
@@ -114,14 +118,31 @@ def test_registro_inicial_persiste_servicios_normalizados_sin_taxonomia_runtime(
     assert captured["proveedor_id"] == "prov-1"
 
 
-def test_insertar_servicios_envia_a_revision_si_el_dominio_no_pertenece_al_catalogo(
+def test_insertar_servicios_persiste_taxonomia_sugerida_sin_revision(
     monkeypatch,
 ):
     captured = {}
 
+    class _Resultado:
+        def __init__(self, data):
+            self.data = data
+            self.error = None
+
     class _ProviderServicesQuery:
-        def insert(self, _payload):
-            raise AssertionError("No debe insertar servicios sin dominio resuelto")
+        def insert(self, payload):
+            captured["payload"] = payload
+            return self
+
+        def execute(self):
+            return _Resultado(
+                [
+                    {
+                        "id": "service-1",
+                        "provider_id": "prov-1",
+                        **captured.get("payload", {}),
+                    }
+                ]
+            )
 
     class _SupabaseStub:
         def table(self, table_name):
@@ -137,23 +158,19 @@ def test_insertar_servicios_envia_a_revision_si_el_dominio_no_pertenece_al_catal
                 "domain_resolution_status": "catalog_review_required",
                 "category_name": "instalación de paneles solares",
                 "proposed_category_name": "instalación de paneles solares",
-                "service_summary": "Instalo paneles solares para hogares y negocios.",
-                "proposed_service_summary": "Instalo paneles solares para hogares y negocios.",
+                "service_summary": (
+                    "Instalo paneles solares para hogares " "y negocios."
+                ),
+                "proposed_service_summary": (
+                    "Instalo paneles solares para hogares " "y negocios."
+                ),
                 "classification_confidence": 0.91,
             }
         ]
 
-    async def _fake_registrar_revision_catalogo_servicio(**kwargs):
-        captured.update(kwargs)
-        return {"id": "review-1"}
-
     monkeypatch.setattr(
         "services.registro.registro_proveedor.clasificar_servicios_livianos",
         _fake_clasificar_servicios_livianos,
-    )
-    monkeypatch.setattr(
-        "services.registro.registro_proveedor.registrar_revision_catalogo_servicio",
-        _fake_registrar_revision_catalogo_servicio,
     )
 
     resultado = asyncio.run(
@@ -171,12 +188,8 @@ def test_insertar_servicios_envia_a_revision_si_el_dominio_no_pertenece_al_catal
         )
     )
 
-    assert resultado["inserted_count"] == 0
-    assert resultado["failed_services"] == [
-        {
-            "service": "Instalación de paneles solares",
-            "error": "catalog_review_required",
-        }
-    ]
-    assert captured["provider_id"] == "prov-1"
-    assert captured["suggested_domain_code"] == "energia_renovable"
+    assert resultado["inserted_count"] == 1
+    assert resultado["failed_services"] == []
+    assert captured["payload"]["provider_id"] == "prov-1"
+    assert captured["payload"]["domain_code"] == "energia_renovable"
+    assert captured["payload"]["category_name"] == "instalación de paneles solares"

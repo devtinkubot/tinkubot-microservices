@@ -15,6 +15,14 @@ from templates.mensajes.retroalimentacion import (
 CLAVE_NOTIFICACION_RATE_LIMIT = "rate_limit_notification_scheduled_at"
 
 
+def _primer_nombre(nombre: str) -> str:
+    texto = str(nombre or "").strip()
+    if not texto:
+        return "Proveedor"
+    partes = [parte for parte in texto.split() if parte]
+    return partes[0] if partes else "Proveedor"
+
+
 class ProgramadorRetroalimentacion:
     """
     Programador de retroalimentación usando polling de task_queue en Supabase.
@@ -73,7 +81,7 @@ class ProgramadorRetroalimentacion:
         """
         try:
             retraso = self.retraso_retroalimentacion_segundos
-            nombre = proveedor.get("name") or "Proveedor"
+            nombre = _primer_nombre(proveedor.get("name") or "Proveedor")
             mensaje = mensaje_solicitud_retroalimentacion(nombre)
             carga = {
                 "phone": telefono,

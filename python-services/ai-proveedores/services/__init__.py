@@ -9,18 +9,36 @@ _EXPORTS = {
         "services.registro",
         "garantizar_campos_obligatorios_proveedor",
     ),
-    "insertar_servicios_proveedor": ("services.registro", "insertar_servicios_proveedor"),
+    "insertar_servicios_proveedor": (
+        "services.registro",
+        "insertar_servicios_proveedor",
+    ),
     "registrar_proveedor_en_base_datos": (
         "services.registro",
         "registrar_proveedor_en_base_datos",
     ),
-    "validar_y_construir_proveedor": ("services.registro", "validar_y_construir_proveedor"),
+    "limpiar_onboarding_proveedores": (
+        "services.registro",
+        "limpiar_onboarding_proveedores",
+    ),
+    "validar_y_construir_proveedor": (
+        "services.registro",
+        "validar_y_construir_proveedor",
+    ),
     "eliminar_registro_proveedor": ("services.registro", "eliminar_registro_proveedor"),
     "actualizar_perfil_profesional": (
         "services.servicios_proveedor",
         "actualizar_perfil_profesional",
     ),
     "actualizar_servicios": ("services.servicios_proveedor", "actualizar_servicios"),
+    "agregar_servicios_proveedor": (
+        "services.servicios_proveedor",
+        "agregar_servicios_proveedor",
+    ),
+    "eliminar_servicio_proveedor": (
+        "services.servicios_proveedor",
+        "eliminar_servicio_proveedor",
+    ),
     "actualizar_redes_sociales": (
         "services.servicios_proveedor",
         "actualizar_redes_sociales",

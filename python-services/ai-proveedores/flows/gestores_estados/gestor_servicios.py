@@ -2,27 +2,39 @@
 
 import re
 from typing import Any, Dict, List, Optional
+from uuid import uuid4
 
-from flows.constructores import construir_menu_servicios, construir_payload_menu_principal
+from flows.constructores import (
+    construir_menu_servicios,
+    construir_payload_menu_principal,
+)
 from infrastructure.openai import TransformadorServicios
-from services import actualizar_servicios
+from infrastructure.redis import cliente_redis
+from services import (
+    actualizar_servicios,
+    agregar_servicios_proveedor,
+    eliminar_servicio_proveedor,
+)
+from services.servicios_proveedor.asistente_clarificacion import (
+    construir_mensaje_clarificacion_servicio,
+)
 from services.servicios_proveedor.constantes import SERVICIOS_MAXIMOS
-from services.servicios_proveedor.validacion_semantica import (
-    validar_servicio_semanticamente,
-)
-from services.servicios_proveedor.revision_catalogo import (
-    registrar_revision_catalogo_servicio,
-)
 from services.servicios_proveedor.utilidades import (
     construir_listado_servicios,
     dividir_cadena_servicios,
     limpiar_texto_servicio,
 )
+from services.servicios_proveedor.validacion_semantica import (
+    validar_servicio_semanticamente,
+)
 from templates.interfaz import (
     SERVICE_DELETE_BACK_ID,
     SERVICE_DELETE_PREFIX,
-    confirmar_servicio_eliminado,
-    confirmar_servicios_agregados,
+    SERVICE_EXAMPLE_ADMIN_ID,
+    SERVICE_EXAMPLE_BACK_ID,
+    SERVICE_EXAMPLE_LEGAL_ID,
+    SERVICE_EXAMPLE_MECHANICS_ID,
+    SERVICE_EXAMPLE_PREFIX,
     error_eliminar_servicio,
     error_guardar_servicio,
     error_limite_servicios_alcanzado,
@@ -31,14 +43,23 @@ from templates.interfaz import (
     error_servicio_no_interpretado,
     informar_limite_servicios_alcanzado,
     informar_sin_servicios_eliminar,
-    mensaje_confirmacion_servicios_menu,
-    mensaje_correccion_servicios_menu,
+    mensaje_ejemplo_servicio_seleccionado,
+    payload_confirmacion_servicios_menu,
     payload_lista_eliminar_servicios,
-    preguntar_nuevo_servicio,
+    preguntar_nuevo_servicio_con_ejemplos_dinamicos,
     preguntar_servicio_eliminar,
 )
+from templates.registro import SERVICE_CONFIRM_ID, SERVICE_CORRECT_ID
 
 _FLUJO_KEY_SERVICIOS_TEMP = "service_add_temporales"
+_FLUJO_KEY_SERVICIOS_CONFIRMACION_NONCE = "service_add_confirmation_nonce"
+_REDIS_KEY_SERVICIOS_CONFIRMACION_CONSUMIDA = "service_add_confirmation_consumed:{}:{}"
+_TTL_CONFIRMACION_SERVICIO_SEGUNDOS = 1800
+_EJEMPLOS_SERVICIO = {
+    SERVICE_EXAMPLE_MECHANICS_ID,
+    SERVICE_EXAMPLE_LEGAL_ID,
+    SERVICE_EXAMPLE_ADMIN_ID,
+}
 
 
 def _resolver_supabase_runtime() -> Any:
@@ -68,10 +89,146 @@ def _menu_servicios_desde_flujo(
     return construir_menu_servicios(servicios_actuales, SERVICIOS_MAXIMOS)
 
 
+async def _marcar_confirmacion_servicio_consumida(
+    proveedor_id: str,
+    nonce: str,
+) -> bool:
+    if not proveedor_id or not nonce:
+        return True
+    return await cliente_redis.set_if_absent(
+        _REDIS_KEY_SERVICIOS_CONFIRMACION_CONSUMIDA.format(proveedor_id, nonce),
+        {"processed_at": uuid4().hex},
+        expire=_TTL_CONFIRMACION_SERVICIO_SEGUNDOS,
+    )
+
+
+def _es_ejemplo_servicio_seleccionado(texto: str) -> bool:
+    texto_limpio = (texto or "").strip().lower()
+    return (
+        texto_limpio.startswith(SERVICE_EXAMPLE_PREFIX)
+        or texto_limpio in _EJEMPLOS_SERVICIO
+    )
+
+
+def _es_regreso_desde_ejemplos(texto: str, selected_option: Optional[str]) -> bool:
+    texto_limpio = (texto or "").strip().lower()
+    seleccionado = (selected_option or "").strip().lower()
+    return (
+        texto_limpio == SERVICE_EXAMPLE_BACK_ID
+        or seleccionado == SERVICE_EXAMPLE_BACK_ID
+        or texto_limpio in {"regresar", "volver", "menu", "menú"}
+    )
+
+
+async def _retornar_desde_ejemplos(flujo: Dict[str, Any]) -> Dict[str, Any]:
+    flujo.pop(_FLUJO_KEY_SERVICIOS_TEMP, None)
+    if flujo.get("profile_return_state") == "viewing_professional_services":
+        flujo["state"] = "viewing_professional_services"
+        from .gestor_vistas_perfil import render_profile_view
+
+        return {
+            "success": True,
+            "messages": [
+                await render_profile_view(
+                    flujo=flujo,
+                    estado="viewing_professional_services",
+                    proveedor_id=flujo.get("provider_id"),
+                )
+            ],
+        }
+
+    flujo.pop("profile_return_state", None)
+    flujo["state"] = "awaiting_service_action"
+    return {
+        "success": True,
+        "messages": [{"response": _menu_servicios_desde_flujo(flujo)}],
+    }
+
+
+async def _construir_prompt_servicio_con_ejemplos(
+    *,
+    flujo: Dict[str, Any],
+    indice: int,
+    maximo: int,
+) -> Dict[str, Any]:
+    respuesta = await preguntar_nuevo_servicio_con_ejemplos_dinamicos(
+        indice=indice,
+        maximo=maximo,
+    )
+    flujo["service_examples_lookup"] = respuesta.get("service_examples_lookup") or {}
+    return {
+        "success": True,
+        "response": respuesta["response"],
+        "ui": respuesta["ui"],
+    }
+
+
+async def _persistir_servicios_agregados(
+    *,
+    flujo: Dict[str, Any],
+    proveedor_id: str,
+    servicios_actuales: List[str],
+    nuevos_candidatos: List[str],
+    aviso_limite: bool = False,
+) -> Dict[str, Any]:
+    servicios_actualizados = servicios_actuales + nuevos_candidatos
+    try:
+        servicios_finales = await actualizar_servicios(
+            proveedor_id, servicios_actualizados
+        )
+    except Exception:
+        flujo["state"] = "awaiting_service_action"
+        flujo.pop(_FLUJO_KEY_SERVICIOS_TEMP, None)
+        return {
+            "success": True,
+            "messages": [
+                {"response": error_guardar_servicio()},
+                {"response": _menu_servicios_desde_flujo(flujo, servicios_actuales)},
+            ],
+        }
+
+    flujo["services"] = servicios_finales
+    retorno_detalle = (
+        flujo.get("profile_return_state") == "viewing_professional_services"
+    )
+    flujo["state"] = (
+        "viewing_professional_services"
+        if retorno_detalle
+        else "awaiting_service_action"
+    )
+    flujo.pop(_FLUJO_KEY_SERVICIOS_TEMP, None)
+
+    if retorno_detalle:
+        from .gestor_vistas_perfil import render_profile_view
+
+        vista_actualizada = await render_profile_view(
+            flujo=flujo,
+            estado="viewing_professional_services",
+            proveedor_id=proveedor_id,
+        )
+    else:
+        vista_actualizada = {
+            "response": _menu_servicios_desde_flujo(flujo, servicios_finales)
+        }
+
+    mensajes_respuesta = []
+    if aviso_limite:
+        mensajes_respuesta.append(
+            {
+                "response": informar_limite_servicios_alcanzado(
+                    len(nuevos_candidatos), SERVICIOS_MAXIMOS
+                )
+            }
+        )
+    mensajes_respuesta.append(vista_actualizada)
+    return {"success": True, "messages": mensajes_respuesta}
+
+
 async def _normalizar_servicios_ingresados(
     *,
     texto_mensaje: str,
     cliente_openai: Optional[Any],
+    servicio_embeddings: Optional[Any],
     max_servicios: int,
     provider_id: Optional[str],
     review_source: str,
@@ -100,10 +257,38 @@ async def _normalizar_servicios_ingresados(
             raw_service_text=texto_mensaje or "",
             service_name=str(servicio or "").strip(),
         )
-        if not validacion.get("is_valid_service") and validacion.get("needs_clarification"):
+        if not validacion.get("is_valid_service") and validacion.get(
+            "needs_clarification"
+        ):
+            contexto = await construir_mensaje_clarificacion_servicio(
+                supabase=supabase,
+                servicio_embeddings=servicio_embeddings,
+                cliente_openai=cliente_openai,
+                raw_service_text=texto_mensaje or "",
+                service_name=str(
+                    validacion.get("normalized_service") or servicio
+                ).strip()
+                or str(servicio or "").strip(),
+                clarification_question=str(
+                    validacion.get("clarification_question")
+                    or "Indica el servicio o especialidad exacta que ofreces."
+                ),
+                service_summary=str(
+                    validacion.get("proposed_service_summary")
+                    or validacion.get("service_summary")
+                    or ""
+                ).strip()
+                or None,
+                domain_code=validacion.get("resolved_domain_code")
+                or validacion.get("domain_code"),
+                category_name=validacion.get("proposed_category_name")
+                or validacion.get("category_name"),
+            )
             return {
                 "ok": False,
-                "response": str(
+                "needs_clarification": True,
+                "response": contexto.get("message")
+                or str(
                     validacion.get("clarification_question")
                     or "Indica el servicio o especialidad exacta que ofreces."
                 ),
@@ -112,31 +297,10 @@ async def _normalizar_servicios_ingresados(
             return {
                 "ok": False,
                 "response": (
-                    "No identifiqué un servicio válido. "
-                    "Escribe el servicio o especialidad exacta que ofreces."
+                    "No pude interpretar ese servicio. "
+                    "Escribe una versión más específica."
                 ),
             }
-        if validacion.get("domain_resolution_status") == "catalog_review_required":
-            await registrar_revision_catalogo_servicio(
-                supabase=supabase,
-                provider_id=provider_id,
-                raw_service_text=texto_mensaje or "",
-                service_name=str(validacion.get("normalized_service") or servicio).strip()
-                or str(servicio or "").strip(),
-                suggested_domain_code=validacion.get("domain_code"),
-                proposed_category_name=validacion.get("proposed_category_name"),
-                proposed_service_summary=validacion.get("proposed_service_summary"),
-                review_reason=str(validacion.get("reason") or "catalog_review_required"),
-                source=review_source,
-            )
-            # ✅ No bloquear: aceptar el servicio aunque requiera revisión de catálogo
-            # La clasificación pendiente se gestiona en gobernanza, no detiene la edición
-            servicio_validado = str(
-                validacion.get("normalized_service") or servicio
-            ).strip()
-            if servicio_validado:
-                servicios_validados.append(servicio_validado)
-            continue
         servicio_validado = str(
             validacion.get("normalized_service") or servicio
         ).strip()
@@ -193,8 +357,13 @@ async def manejar_accion_servicios(
                     },
                 ],
             }
+        flujo.pop("profile_return_state", None)
         flujo["state"] = "awaiting_service_add"
-        return {"success": True, "response": preguntar_nuevo_servicio()}
+        return await _construir_prompt_servicio_con_ejemplos(
+            flujo=flujo,
+            indice=len(servicios_actuales) + 1,
+            maximo=SERVICIOS_MAXIMOS,
+        )
 
     if opcion == "2" or "eliminar" in texto_minusculas:
         if not servicios_actuales:
@@ -255,9 +424,32 @@ async def manejar_agregar_servicios(
     flujo: Dict[str, Any],
     proveedor_id: Optional[str],
     texto_mensaje: str,
+    selected_option: Optional[str] = None,
     cliente_openai: Optional[Any],
+    servicio_embeddings: Optional[Any] = None,
 ) -> Dict[str, Any]:
-    """Prepara y solicita confirmación para agregar servicios."""
+    """Prepara la captura de servicios y deja el alta en confirmación."""
+    texto_ingresado = (texto_mensaje or "").strip().lower()
+    opcion_seleccionada = (selected_option or "").strip().lower()
+
+    if _es_regreso_desde_ejemplos(texto_ingresado, selected_option):
+        return await _retornar_desde_ejemplos(flujo)
+
+    if _es_ejemplo_servicio_seleccionado(
+        texto_ingresado
+    ) or _es_ejemplo_servicio_seleccionado(opcion_seleccionada):
+        lookup_ejemplos = flujo.get("service_examples_lookup") or {}
+        clave_ejemplo = opcion_seleccionada or texto_ingresado
+        ejemplo = lookup_ejemplos.get(clave_ejemplo) or {}
+        flujo["state"] = "awaiting_service_add"
+        return {
+            "success": True,
+            "response": mensaje_ejemplo_servicio_seleccionado(
+                clave_ejemplo,
+                servicio_sugerido=str(ejemplo.get("description") or "").strip() or None,
+            ),
+        }
+
     if not proveedor_id:
         flujo["state"] = "awaiting_menu_option"
         return {
@@ -299,19 +491,31 @@ async def manejar_agregar_servicios(
     resultado_normalizacion = await _normalizar_servicios_ingresados(
         texto_mensaje=texto_mensaje or "",
         cliente_openai=cliente_openai,
+        servicio_embeddings=servicio_embeddings,
         max_servicios=SERVICIOS_MAXIMOS,
         provider_id=proveedor_id,
         review_source="provider_service_add",
     )
 
     if not resultado_normalizacion.get("ok"):
-        flujo["state"] = "awaiting_service_action"
+        if resultado_normalizacion.get("needs_clarification"):
+            flujo["state"] = "awaiting_service_add"
+        else:
+            flujo["state"] = "awaiting_service_action"
         return {
             "success": True,
-            "messages": [
-                {"response": resultado_normalizacion["response"]},
-                {"response": _menu_servicios_desde_flujo(flujo, servicios_actuales)},
-            ],
+            "messages": (
+                [{"response": resultado_normalizacion["response"]}]
+                if resultado_normalizacion.get("needs_clarification")
+                else [
+                    {"response": resultado_normalizacion["response"]},
+                    {
+                        "response": _menu_servicios_desde_flujo(
+                            flujo, servicios_actuales
+                        )
+                    },
+                ]
+            ),
         }
     servicios_transformados = resultado_normalizacion.get("services") or []
 
@@ -324,19 +528,12 @@ async def manejar_agregar_servicios(
         return {
             "success": True,
             "messages": [
-                {
-                    "response": (
-                        "Todos esos servicios ya estaban registrados "
-                        "o no los pude interpretar. "
-                        "Recuerda separarlos con comas y usar descripciones cortas."
-                    )
-                },
+                {"response": error_servicio_no_interpretado()},
                 {"response": _menu_servicios_desde_flujo(flujo, servicios_actuales)},
             ],
         }
 
     nuevos_candidatos = nuevos_sanitizados[:espacio_restante]
-    aviso_limite = len(nuevos_candidatos) < len(nuevos_sanitizados)
     if not nuevos_candidatos:
         flujo["state"] = "awaiting_service_action"
         return {
@@ -348,19 +545,18 @@ async def manejar_agregar_servicios(
         }
 
     flujo[_FLUJO_KEY_SERVICIOS_TEMP] = nuevos_candidatos
+    flujo[_FLUJO_KEY_SERVICIOS_CONFIRMACION_NONCE] = uuid4().hex
     flujo["state"] = "awaiting_service_add_confirmation"
-    mensajes_respuesta: List[Dict[str, str]] = [
-        {"response": mensaje_confirmacion_servicios_menu(nuevos_candidatos)},
-    ]
-    if aviso_limite:
-        mensajes_respuesta.append(
+    mensajes = [payload_confirmacion_servicios_menu(nuevos_candidatos)]
+    if len(nuevos_candidatos) < len(nuevos_sanitizados):
+        mensajes.append(
             {
                 "response": informar_limite_servicios_alcanzado(
                     len(nuevos_candidatos), SERVICIOS_MAXIMOS
                 )
             }
         )
-    return {"success": True, "messages": mensajes_respuesta}
+    return {"success": True, "messages": mensajes}
 
 
 async def manejar_confirmacion_agregar_servicios(
@@ -368,7 +564,9 @@ async def manejar_confirmacion_agregar_servicios(
     flujo: Dict[str, Any],
     proveedor_id: Optional[str],
     texto_mensaje: str,
+    selected_option: Optional[str] = None,
     cliente_openai: Optional[Any],
+    servicio_embeddings: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Confirma o corrige servicios antes de agregarlos definitivamente."""
     servicios_actuales = flujo.get("services") or []
@@ -381,95 +579,89 @@ async def manejar_confirmacion_agregar_servicios(
         }
 
     texto_limpio = (texto_mensaje or "").strip().lower()
+    opcion_limpia = (selected_option or "").strip().lower()
     aceptar = texto_limpio.startswith("1") or texto_limpio in {
         "si",
         "sí",
+        "agregar",
+        "sí, agregar",
+        "si, agregar",
         "aceptar",
         "acepto",
         "ok",
     }
+    if opcion_limpia in {
+        SERVICE_CONFIRM_ID,
+        "confirm_accept",
+        "accept",
+    }:
+        aceptar = True
     corregir = texto_limpio.startswith("2") or texto_limpio in {
         "no",
         "corregir",
         "editar",
         "cambiar",
     }
+    if opcion_limpia in {
+        SERVICE_CORRECT_ID,
+        "confirm_reject",
+        "reject",
+    }:
+        corregir = True
+
+    confirmacion_nonce = str(
+        flujo.get(_FLUJO_KEY_SERVICIOS_CONFIRMACION_NONCE) or ""
+    ).strip()
 
     if corregir:
-        return {
-            "success": True,
-            "messages": [{"response": mensaje_correccion_servicios_menu()}],
-        }
+        if not await _marcar_confirmacion_servicio_consumida(
+            str(proveedor_id), confirmacion_nonce
+        ):
+            flujo["state"] = "viewing_professional_services"
+            from .gestor_vistas_perfil import render_profile_view
+
+            return {
+                "success": True,
+                "messages": [
+                    await render_profile_view(
+                        flujo=flujo,
+                        estado="viewing_professional_services",
+                        proveedor_id=proveedor_id,
+                    )
+                ],
+            }
+        flujo.pop(_FLUJO_KEY_SERVICIOS_TEMP, None)
+        flujo.pop(_FLUJO_KEY_SERVICIOS_CONFIRMACION_NONCE, None)
+        flujo["state"] = "awaiting_service_add"
+        return await _construir_prompt_servicio_con_ejemplos(
+            flujo=flujo,
+            indice=len(servicios_actuales) + 1,
+            maximo=SERVICIOS_MAXIMOS,
+        )
 
     if not aceptar:
-        candidatos = dividir_cadena_servicios(texto_mensaje or "")
-        if not candidatos:
-            return {
-                "success": True,
-                "messages": [{"response": error_servicio_no_interpretado()}],
-            }
-        resultado_normalizacion = await _normalizar_servicios_ingresados(
-            texto_mensaje=texto_mensaje or "",
-            cliente_openai=cliente_openai,
-            max_servicios=SERVICIOS_MAXIMOS,
-            provider_id=proveedor_id,
-            review_source="provider_service_add",
-        )
-        if not resultado_normalizacion.get("ok"):
-            return {
-                "success": True,
-                "messages": [{"response": resultado_normalizacion["response"]}],
-            }
-        base_candidatos = resultado_normalizacion.get("services") or candidatos
-        nuevos_sanitizados = _normalizar_lista_resultante(
-            base_candidatos, servicios_actuales
-        )
-        if not nuevos_sanitizados:
+        candidatos_pendientes = list(flujo.get(_FLUJO_KEY_SERVICIOS_TEMP) or [])
+        if candidatos_pendientes:
             return {
                 "success": True,
                 "messages": [
-                    {
-                        "response": (
-                            "Todos esos servicios ya estaban registrados "
-                            "o no los pude interpretar. "
-                            "Escríbelos nuevamente separados por comas."
-                        )
-                    }
+                    payload_confirmacion_servicios_menu(candidatos_pendientes)
                 ],
             }
-        espacio_restante = max(SERVICIOS_MAXIMOS - len(servicios_actuales), 0)
-        nuevos_candidatos = nuevos_sanitizados[:espacio_restante]
-        if not nuevos_candidatos:
-            flujo["state"] = "awaiting_service_action"
-            flujo.pop(_FLUJO_KEY_SERVICIOS_TEMP, None)
-            return {
-                "success": True,
-                "messages": [
-                    {"response": error_limite_servicios_alcanzado(SERVICIOS_MAXIMOS)},
-                    {
-                        "response": _menu_servicios_desde_flujo(
-                            flujo, servicios_actuales
-                        )
-                    },
-                ],
-            }
-        flujo[_FLUJO_KEY_SERVICIOS_TEMP] = nuevos_candidatos
-        mensajes = [
-            {"response": mensaje_confirmacion_servicios_menu(nuevos_candidatos)}
-        ]
-        if len(nuevos_candidatos) < len(nuevos_sanitizados):
-            mensajes.append(
-                {
-                    "response": informar_limite_servicios_alcanzado(
-                        len(nuevos_candidatos), SERVICIOS_MAXIMOS
-                    )
-                }
-            )
-        return {"success": True, "messages": mensajes}
+        flujo["state"] = "awaiting_service_action"
+        flujo.pop(_FLUJO_KEY_SERVICIOS_CONFIRMACION_NONCE, None)
+        return {
+            "success": True,
+            "messages": [
+                {"response": error_servicio_no_interpretado()},
+                {"response": _menu_servicios_desde_flujo(flujo, servicios_actuales)},
+            ],
+        }
 
     nuevos_confirmados = list(flujo.get(_FLUJO_KEY_SERVICIOS_TEMP) or [])
     if not nuevos_confirmados:
         flujo["state"] = "awaiting_service_action"
+        flujo.pop(_FLUJO_KEY_SERVICIOS_CONFIRMACION_NONCE, None)
         return {
             "success": True,
             "messages": [
@@ -482,6 +674,7 @@ async def manejar_confirmacion_agregar_servicios(
     if espacio_restante <= 0:
         flujo["state"] = "awaiting_service_action"
         flujo.pop(_FLUJO_KEY_SERVICIOS_TEMP, None)
+        flujo.pop(_FLUJO_KEY_SERVICIOS_CONFIRMACION_NONCE, None)
         return {
             "success": True,
             "messages": [
@@ -492,14 +685,30 @@ async def manejar_confirmacion_agregar_servicios(
 
     nuevos_recortados = nuevos_confirmados[:espacio_restante]
     aviso_limite = len(nuevos_recortados) < len(nuevos_confirmados)
-    servicios_actualizados = servicios_actuales + nuevos_recortados
+    if not await _marcar_confirmacion_servicio_consumida(
+        str(proveedor_id), confirmacion_nonce
+    ):
+        flujo["state"] = "viewing_professional_services"
+        from .gestor_vistas_perfil import render_profile_view
+
+        return {
+            "success": True,
+            "messages": [
+                await render_profile_view(
+                    flujo=flujo,
+                    estado="viewing_professional_services",
+                    proveedor_id=proveedor_id,
+                )
+            ],
+        }
     try:
-        servicios_finales = await actualizar_servicios(
-            proveedor_id, servicios_actualizados
+        servicios_finales = await agregar_servicios_proveedor(
+            proveedor_id, nuevos_recortados
         )
     except Exception:
         flujo["state"] = "awaiting_service_action"
         flujo.pop(_FLUJO_KEY_SERVICIOS_TEMP, None)
+        flujo.pop(_FLUJO_KEY_SERVICIOS_CONFIRMACION_NONCE, None)
         return {
             "success": True,
             "messages": [
@@ -509,9 +718,16 @@ async def manejar_confirmacion_agregar_servicios(
         }
 
     flujo["services"] = servicios_finales
-    retorno_detalle = flujo.get("profile_return_state") == "viewing_professional_services"
-    flujo["state"] = "viewing_professional_services" if retorno_detalle else "awaiting_service_action"
+    retorno_detalle = (
+        flujo.get("profile_return_state") == "viewing_professional_services"
+    )
+    flujo["state"] = (
+        "viewing_professional_services"
+        if retorno_detalle
+        else "awaiting_service_action"
+    )
     flujo.pop(_FLUJO_KEY_SERVICIOS_TEMP, None)
+    flujo.pop(_FLUJO_KEY_SERVICIOS_CONFIRMACION_NONCE, None)
 
     if retorno_detalle:
         from .gestor_vistas_perfil import render_profile_view
@@ -522,15 +738,14 @@ async def manejar_confirmacion_agregar_servicios(
             proveedor_id=proveedor_id,
         )
     else:
-        vista_actualizada = {"response": _menu_servicios_desde_flujo(flujo, servicios_finales)}
+        vista_actualizada = {
+            "response": _menu_servicios_desde_flujo(flujo, servicios_finales)
+        }
 
-    mensajes_respuesta = [
-        {"response": confirmar_servicios_agregados(nuevos_recortados)},
-        vista_actualizada,
-    ]
+    mensajes_respuesta = [vista_actualizada]
     if aviso_limite:
         mensajes_respuesta.insert(
-            1,
+            0,
             {
                 "response": informar_limite_servicios_alcanzado(
                     len(nuevos_recortados), SERVICIOS_MAXIMOS
@@ -597,11 +812,11 @@ async def manejar_eliminar_servicio(
             ],
         }
 
-    servicio_eliminado = servicios_actuales.pop(indice_servicio)
     try:
-        servicios_finales = await actualizar_servicios(proveedor_id, servicios_actuales)
+        servicios_finales = await eliminar_servicio_proveedor(
+            proveedor_id, indice_servicio
+        )
     except Exception:
-        servicios_actuales.insert(indice_servicio, servicio_eliminado)
         flujo["state"] = "awaiting_service_action"
         return {
             "success": True,
@@ -618,7 +833,6 @@ async def manejar_eliminar_servicio(
     return {
         "success": True,
         "messages": [
-            {"response": confirmar_servicio_eliminado(servicio_eliminado)},
             await render_profile_view(
                 flujo=flujo,
                 estado="viewing_professional_services",

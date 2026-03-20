@@ -2,6 +2,12 @@ FROM node:20-slim
 
 WORKDIR /app
 
+ENV TZ=America/Guayaquil
+
+# Asegurar zona horaria local dentro del contenedor
+RUN apt-get update && apt-get install -y --no-install-recommends tzdata \
+  && rm -rf /var/lib/apt/lists/*
+
 # Actualizar npm para soporte completo de workspaces (workspace:*)
 RUN npm install -g npm@11.6.2
 

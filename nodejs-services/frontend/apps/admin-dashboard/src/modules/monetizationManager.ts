@@ -1,10 +1,11 @@
 import {
   apiProveedores,
   type MonetizationOverview,
-  type MonetizationProviderRecord
-} from '@tinkubot/api-client';
+  type MonetizationProviderRecord,
+} from "@tinkubot/api-client";
+import { formatearMarcaTemporalEcuador } from "./utils";
 
-type BillingFilter = 'all' | 'active' | 'paused_paywall' | 'suspended';
+type BillingFilter = "all" | "active" | "paused_paywall" | "suspended";
 
 interface MonetizationState {
   loading: boolean;
@@ -15,15 +16,15 @@ interface MonetizationState {
 
 const state: MonetizationState = {
   loading: false,
-  filter: 'all',
+  filter: "all",
   overview: null,
-  providers: []
+  providers: [],
 };
 
-const formatter = new Intl.DateTimeFormat('es-EC', {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-  timeZone: 'America/Guayaquil'
+const formatter = new Intl.DateTimeFormat("es-EC", {
+  dateStyle: "medium",
+  timeStyle: "short",
+  timeZone: "America/Guayaquil",
 });
 
 function getElement<T extends HTMLElement>(selector: string): T | null {
@@ -32,55 +33,65 @@ function getElement<T extends HTMLElement>(selector: string): T | null {
 
 function setLoading(loading: boolean) {
   state.loading = loading;
-  const loadingBlock = getElement<HTMLDivElement>('#monetization-loading');
-  const tableWrapper = getElement<HTMLDivElement>('#monetization-table-wrapper');
-  const emptyBlock = getElement<HTMLDivElement>('#monetization-empty');
-  const refreshButton = getElement<HTMLButtonElement>('#monetization-refresh-btn');
-  const spinner = refreshButton?.querySelector('.loading-spinner') as HTMLElement | null;
+  const loadingBlock = getElement<HTMLDivElement>("#monetization-loading");
+  const tableWrapper = getElement<HTMLDivElement>(
+    "#monetization-table-wrapper",
+  );
+  const emptyBlock = getElement<HTMLDivElement>("#monetization-empty");
+  const refreshButton = getElement<HTMLButtonElement>(
+    "#monetization-refresh-btn",
+  );
+  const spinner = refreshButton?.querySelector(
+    ".loading-spinner",
+  ) as HTMLElement | null;
 
-  if (loadingBlock) loadingBlock.style.display = loading ? 'block' : 'none';
+  if (loadingBlock) loadingBlock.style.display = loading ? "block" : "none";
   if (refreshButton) refreshButton.disabled = loading;
-  if (spinner) spinner.style.display = loading ? 'inline-block' : 'none';
+  if (spinner) spinner.style.display = loading ? "inline-block" : "none";
 
   if (loading) {
-    if (tableWrapper) tableWrapper.style.display = 'none';
-    if (emptyBlock) emptyBlock.style.display = 'none';
+    if (tableWrapper) tableWrapper.style.display = "none";
+    if (emptyBlock) emptyBlock.style.display = "none";
   }
 }
 
-function setFeedback(message: string, type: 'info' | 'error' = 'info') {
-  const alert = getElement<HTMLDivElement>('#monetization-feedback');
+function setFeedback(message: string, type: "info" | "error" = "info") {
+  const alert = getElement<HTMLDivElement>("#monetization-feedback");
   if (!alert) return;
   if (!message) {
-    alert.style.display = 'none';
-    alert.textContent = '';
-    alert.className = 'alert';
+    alert.style.display = "none";
+    alert.textContent = "";
+    alert.className = "alert";
     return;
   }
-  alert.style.display = 'block';
+  alert.style.display = "block";
   alert.textContent = message;
-  alert.className = `alert ${type === 'error' ? 'alert-danger' : 'alert-info'}`;
+  alert.className = `alert ${type === "error" ? "alert-danger" : "alert-info"}`;
 }
 
 function formatRate(value: number | null | undefined): string {
-  if (typeof value !== 'number') return 'N/A';
+  if (typeof value !== "number") return "N/A";
   return `${(value * 100).toFixed(1)}%`;
 }
 
 function formatDate(value?: string | null): string {
-  if (!value) return '—';
+  if (!value) return "—";
+  const formatted = formatearMarcaTemporalEcuador(value);
+  if (formatted !== "—") return formatted;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return formatter.format(date);
 }
 
-function statusBadge(status: MonetizationProviderRecord['billingStatus']): string {
+function statusBadge(
+  status: MonetizationProviderRecord["billingStatus"],
+): string {
   switch (status) {
-    case 'paused_paywall':
+    case "paused_paywall":
       return '<span class="badge bg-danger">Pausado</span>';
-    case 'suspended':
+    case "suspended":
       return '<span class="badge bg-secondary">Suspendido</span>';
-    case 'active':
+    case "active":
     default:
       return '<span class="badge bg-success">Activo</span>';
   }
@@ -88,18 +99,18 @@ function statusBadge(status: MonetizationProviderRecord['billingStatus']): strin
 
 function renderOverview() {
   const overview = state.overview;
-  const active = getElement<HTMLElement>('#metric-active-providers');
-  const paused = getElement<HTMLElement>('#metric-paused-providers');
-  const leads7 = getElement<HTMLElement>('#metric-leads-7d');
-  const leads30 = getElement<HTMLElement>('#metric-leads-30d');
-  const hiredRate = getElement<HTMLElement>('#metric-hired-rate-30d');
+  const active = getElement<HTMLElement>("#metric-active-providers");
+  const paused = getElement<HTMLElement>("#metric-paused-providers");
+  const leads7 = getElement<HTMLElement>("#metric-leads-7d");
+  const leads30 = getElement<HTMLElement>("#metric-leads-30d");
+  const hiredRate = getElement<HTMLElement>("#metric-hired-rate-30d");
 
   if (!overview) {
-    if (active) active.textContent = '—';
-    if (paused) paused.textContent = '—';
-    if (leads7) leads7.textContent = '—';
-    if (leads30) leads30.textContent = '—';
-    if (hiredRate) hiredRate.textContent = '—';
+    if (active) active.textContent = "—";
+    if (paused) paused.textContent = "—";
+    if (leads7) leads7.textContent = "—";
+    if (leads30) leads30.textContent = "—";
+    if (hiredRate) hiredRate.textContent = "—";
     return;
   }
 
@@ -111,29 +122,31 @@ function renderOverview() {
 }
 
 function renderTable() {
-  const body = getElement<HTMLTableSectionElement>('#monetization-table-body');
-  const tableWrapper = getElement<HTMLDivElement>('#monetization-table-wrapper');
-  const emptyBlock = getElement<HTMLDivElement>('#monetization-empty');
+  const body = getElement<HTMLTableSectionElement>("#monetization-table-body");
+  const tableWrapper = getElement<HTMLDivElement>(
+    "#monetization-table-wrapper",
+  );
+  const emptyBlock = getElement<HTMLDivElement>("#monetization-empty");
   if (!body || !tableWrapper || !emptyBlock) return;
 
   if (state.providers.length === 0) {
-    body.innerHTML = '';
-    tableWrapper.style.display = 'none';
-    emptyBlock.style.display = 'block';
+    body.innerHTML = "";
+    tableWrapper.style.display = "none";
+    emptyBlock.style.display = "block";
     return;
   }
 
-  emptyBlock.style.display = 'none';
-  tableWrapper.style.display = 'block';
+  emptyBlock.style.display = "none";
+  tableWrapper.style.display = "block";
   body.innerHTML = state.providers
     .map(
-      provider => `
+      (provider) => `
       <tr>
         <td>
           <div class="fw-semibold">${provider.name}</div>
-          <small class="text-muted">${provider.phone ?? 'Sin teléfono'}</small>
+          <small class="text-muted">${provider.phone ?? "Sin teléfono"}</small>
         </td>
-        <td>${provider.city ?? '—'}</td>
+        <td>${provider.city ?? "—"}</td>
         <td>${statusBadge(provider.billingStatus)}</td>
         <td>${provider.freeLeadsRemaining}</td>
         <td>${provider.paidLeadsRemaining}</td>
@@ -141,22 +154,22 @@ function renderTable() {
         <td>${provider.hiredYes30d} / ${provider.hiredNo30d}</td>
         <td><small class="text-muted">${formatDate(provider.lastLeadAt)}</small></td>
       </tr>
-    `
+    `,
     )
-    .join('');
+    .join("");
 }
 
 async function loadMonetization() {
   setLoading(true);
-  setFeedback('');
+  setFeedback("");
   try {
     const [overview, providersResponse] = await Promise.all([
       apiProveedores.obtenerMonetizacionResumen(),
       apiProveedores.obtenerMonetizacionProveedores({
         status: state.filter,
         limit: 100,
-        offset: 0
-      })
+        offset: 0,
+      }),
     ]);
 
     state.overview = overview;
@@ -164,8 +177,8 @@ async function loadMonetization() {
     renderOverview();
     renderTable();
   } catch (error) {
-    console.error('Error cargando monetización:', error);
-    setFeedback('No se pudo cargar la información de monetización.', 'error');
+    console.error("Error cargando monetización:", error);
+    setFeedback("No se pudo cargar la información de monetización.", "error");
     state.overview = null;
     state.providers = [];
     renderOverview();
@@ -176,16 +189,16 @@ async function loadMonetization() {
 }
 
 function bindEvents() {
-  const refresh = getElement<HTMLButtonElement>('#monetization-refresh-btn');
+  const refresh = getElement<HTMLButtonElement>("#monetization-refresh-btn");
   if (refresh) {
-    refresh.addEventListener('click', () => {
+    refresh.addEventListener("click", () => {
       void loadMonetization();
     });
   }
 
-  const filter = getElement<HTMLSelectElement>('#monetization-status-filter');
+  const filter = getElement<HTMLSelectElement>("#monetization-status-filter");
   if (filter) {
-    filter.addEventListener('change', () => {
+    filter.addEventListener("change", () => {
       const value = filter.value as BillingFilter;
       state.filter = value;
       void loadMonetization();
@@ -200,7 +213,7 @@ function init() {
 
 export const MonetizationManager = {
   iniciar: init,
-  recargar: loadMonetization
+  recargar: loadMonetization,
 };
 
 export type MonetizationManagerModule = typeof MonetizationManager;

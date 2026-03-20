@@ -1,11 +1,12 @@
 import asyncio
+import json
 import sys
 import types
 from pathlib import Path
 from types import SimpleNamespace
 
 imghdr_stub = types.ModuleType("imghdr")
-imghdr_stub.what = lambda *args, **kwargs: None
+setattr(imghdr_stub, "what", lambda *args, **kwargs: None)
 sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -29,10 +30,24 @@ from flows.gestores_estados.gestor_servicios import (  # noqa: E402
     manejar_agregar_servicios,
     manejar_confirmacion_agregar_servicios,
 )
+from flows.validadores import validar_nombre_completo  # noqa: E402
 from infrastructure.openai import (  # noqa: E402
     transformador_servicios as modulo_transformador,
 )
-from services.servicios_proveedor import clasificacion_semantica as modulo_clasificacion  # noqa: E402
+from services.servicios_proveedor import (  # noqa: E402
+    clasificacion_semantica as modulo_clasificacion,
+)
+from services.servicios_proveedor.asistente_clarificacion import (  # noqa: E402
+    construir_mensaje_clarificacion_servicio,
+)
+from services.servicios_proveedor.utilidades import (  # noqa: E402
+    dividir_cadena_servicios,
+    normalizar_texto_visible_con_ia,
+    normalizar_texto_visible_corto,
+)
+from services.servicios_proveedor.validacion_semantica import (  # noqa: E402
+    validar_servicio_semanticamente,
+)
 from templates.registro import (  # noqa: E402
     mensaje_correccion_servicios,
     preguntar_servicios_registro,
@@ -60,7 +75,8 @@ def test_prompt_transformador_prioriza_detalle_y_evita_paraguas():
     assert "rebaja de pensión alimenticia" in prompt
     assert "destape de cañerías en lavamanos" in prompt
     assert "configuración de redes e internet" in prompt
-    assert 'NO debe convertirse en "instalación de internet"' in prompt
+    assert "NO debe convertirse en" in prompt
+    assert '"instalación de internet"' in prompt
     assert 'No elimines conectores útiles como "de", "a", "para", "en"' in prompt
 
 
@@ -77,17 +93,48 @@ def test_prompt_servicios_registro_usa_ejemplos_especificos():
     assert "transporte de carga" in mensaje
 
 
-def test_espera_nombre_salta_directo_a_documentos():
+def test_espera_nombre_normaliza_y_salta_directo_a_documentos():
     flujo = {"state": "awaiting_name"}
     respuesta = asyncio.run(
         manejar_espera_nombre(
             flujo=flujo,
-            texto_mensaje="Diego Unkuch",
+            texto_mensaje="  diego unkuch  ",
         )
     )
 
     assert flujo["state"] == "awaiting_dni_front_photo"
+    assert flujo["name"] == "Diego Unkuch"
     assert respuesta["messages"][0]["response"] == solicitar_foto_dni_frontal()
+
+
+def test_validar_nombre_completo_rechaza_entrada_incompleta():
+    respuesta = validar_nombre_completo("juan")
+
+    assert respuesta["is_valid"] is False
+    assert respuesta["reason"] == "too_short"
+    assert "nombre y apellido" in respuesta["message"].lower()
+
+
+def test_validar_nombre_completo_rechaza_texto_generico():
+    respuesta = validar_nombre_completo("omitir")
+
+    assert respuesta["is_valid"] is False
+    assert respuesta["reason"] == "blocked"
+    assert "nombre y apellido" in respuesta["message"].lower()
+
+
+def test_espera_nombre_rechaza_entrada_invalida():
+    flujo = {"state": "awaiting_name"}
+
+    respuesta = asyncio.run(
+        manejar_espera_nombre(
+            flujo=flujo,
+            texto_mensaje="juan",
+        )
+    )
+
+    assert flujo["state"] == "awaiting_name"
+    assert "nombre y apellido" in respuesta["messages"][0]["response"].lower()
 
 
 def test_mensaje_correccion_servicios_refuerza_especificidad():
@@ -121,7 +168,7 @@ def test_normalizador_evitar_sobre_expansion_y_cambio_semantico():
         ],
         10,
         entrada_usuario=(
-            "Desarrollo de software, configuracion de redes e internet, "
+            "Desarrollo de software; configuracion de redes e internet; "
             "servicios de cableado estructurado"
         ),
     )
@@ -133,11 +180,169 @@ def test_normalizador_evitar_sobre_expansion_y_cambio_semantico():
     ]
 
 
+def test_dividir_cadena_servicios_no_separa_por_coma_simple():
+    servicios = dividir_cadena_servicios(
+        "diseño y configuración de equipos de red de comunicaciones, "
+        "con soporte técnico"
+    )
+
+    assert servicios == [
+        (
+            "diseño y configuración de equipos de red de comunicaciones, "
+            "con soporte técnico"
+        )
+    ]
+
+
+def test_dividir_cadena_servicios_separa_por_punto_y_coma():
+    servicios = dividir_cadena_servicios(
+        "diseño y configuración de equipos de red de comunicaciones; "
+        "con soporte técnico"
+    )
+
+    assert servicios == [
+        "diseño y configuración de equipos de red de comunicaciones",
+        "con soporte técnico",
+    ]
+
+
+def test_normalizador_texto_visible_prefiere_corte_semantico():
+    texto = normalizar_texto_visible_corto(
+        "Automatizacion de procesos con software e IA, "
+        "incluye soporte tecnico especializado y mantenimiento continuo"
+    )
+
+    assert texto == "Automatizacion de procesos con software e IA"
+    assert len(texto) <= 68
+
+
+def test_normalizador_texto_visible_con_ia_reintenta_hasta_cumplir_limite():
+    class _Respuesta:
+        def __init__(self, content):
+            self.choices = [SimpleNamespace(message=SimpleNamespace(content=content))]
+
+    class _Completions:
+        def __init__(self):
+            self.calls = 0
+
+        async def create(self, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                payload = {
+                    "normalized_service": (
+                        "Automatizacion de procesos con software e IA, "
+                        "incluye soporte tecnico especializado y mantenimiento continuo"
+                    )
+                }
+            else:
+                payload = {
+                    "normalized_service": "Automatizacion de procesos con software e IA"
+                }
+            return _Respuesta(json.dumps(payload))
+
+    completions = _Completions()
+    cliente_openai = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+
+    texto = asyncio.run(
+        normalizar_texto_visible_con_ia(
+            cliente_openai,
+            "Automatizacion de procesos con software e IA, "
+            "incluye soporte tecnico especializado y mantenimiento continuo",
+        )
+    )
+
+    assert texto == "Automatizacion de procesos con software e IA"
+    assert completions.calls == 2
+
+
+def test_validar_servicio_semanticamente_recorta_normalized_service_visible():
+    class _Respuesta:
+        def __init__(self, content):
+            self.choices = [SimpleNamespace(message=SimpleNamespace(content=content))]
+
+    class _Completions:
+        def __init__(self):
+            self.calls = 0
+
+        async def create(self, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                payload = {
+                    "status": "catalog_review_required",
+                    "normalized_service": (
+                        "instalación y mantenimiento de sistemas de climatización "
+                        "industrial para grandes superficies y complejos empresariales"
+                    ),
+                    "domain_code": "mantenimiento",
+                    "category_name": "climatización",
+                    "service_summary": (
+                        "Instalo y mantengo sistemas de climatización industrial "
+                        "para grandes superficies."
+                    ),
+                    "confidence": 0.91,
+                    "reason": "ai_validation",
+                    "clarification_question": None,
+                }
+            else:
+                payload = {
+                    "normalized_service": (
+                        "instalación y mantenimiento de sistemas de climatización "
+                        "industrial"
+                    )
+                }
+            return _Respuesta(json.dumps(payload))
+
+    class _Chat:
+        completions = _Completions()
+
+    class _ClienteOpenAI:
+        chat = _Chat()
+
+    cliente_openai = _ClienteOpenAI()
+
+    resultado = asyncio.run(
+        validar_servicio_semanticamente(
+            cliente_openai=cliente_openai,
+            supabase=None,
+            raw_service_text=(
+                "instalación y mantenimiento de sistemas de climatización industrial"
+            ),
+            service_name=(
+                "instalación y mantenimiento de sistemas de climatización industrial"
+            ),
+        )
+    )
+
+    assert len(resultado["normalized_service"]) <= 68
+    assert "…" not in resultado["normalized_service"]
+    assert cliente_openai.chat.completions.calls == 2
+
+
 def test_espera_especialidad_agrega_servicio_y_pregunta_si_quiere_otro(monkeypatch):
     monkeypatch.setattr(
         modulo_transformador,
         "TransformadorServicios",
         _TransformadorOK,
+    )
+
+    async def _fake_validar_servicio_semanticamente(**_kwargs):
+        return {
+            "is_valid_service": True,
+            "needs_clarification": False,
+            "normalized_service": "desarrollo web",
+            "domain_resolution_status": "matched",
+            "domain_code": "tecnologia",
+            "resolved_domain_code": "tecnologia",
+            "proposed_category_name": "desarrollo web",
+            "proposed_service_summary": "Desarrollo de sitios y aplicaciones web.",
+            "reason": "heuristic_accept",
+            "clarification_question": None,
+        }
+
+    monkeypatch.setattr(
+        "flows.gestores_estados."
+        "gestor_espera_especialidad.validar_servicio_semanticamente",
+        _fake_validar_servicio_semanticamente,
     )
     flujo = {"state": "awaiting_specialty"}
 
@@ -154,7 +359,7 @@ def test_espera_especialidad_agrega_servicio_y_pregunta_si_quiere_otro(monkeypat
     assert "¿Quieres agregar otro servicio?" in respuesta["messages"][0]["response"]
 
 
-def test_normalizacion_servicio_bloquea_catalog_review_required(monkeypatch):
+def test_normalizacion_servicio_pide_aclaracion_en_lugar_de_revision(monkeypatch):
     class _TransformadorPaneles:
         def __init__(self, cliente_openai, modelo=None):
             self.cliente_openai = cliente_openai
@@ -163,24 +368,34 @@ def test_normalizacion_servicio_bloquea_catalog_review_required(monkeypatch):
         async def transformar_a_servicios(self, entrada_usuario, max_servicios=7):
             return ["instalación de paneles solares"]
 
-    captured = {}
-
     async def _fake_validar_servicio_semanticamente(**_kwargs):
+        proposed_summary = "Instalo paneles solares para hogares " "y negocios."
         return {
             "is_valid_service": True,
-            "needs_clarification": False,
+            "needs_clarification": True,
             "normalized_service": "instalación de paneles solares",
-            "domain_resolution_status": "catalog_review_required",
+            "domain_resolution_status": "clarification_required",
             "domain_code": "energia_renovable",
             "resolved_domain_code": None,
             "proposed_category_name": "instalación de paneles solares",
-            "proposed_service_summary": "Instalo paneles solares para hogares y negocios.",
+            "proposed_service_summary": proposed_summary,
             "reason": "catalog_gap_detected",
+            "clarification_question": (
+                "Indica el tipo de instalación exacta que realizas."
+            ),
         }
 
-    async def _fake_registrar_revision_catalogo_servicio(**kwargs):
-        captured.update(kwargs)
-        return {"id": "review-1"}
+    async def _fake_construir_mensaje_clarificacion_servicio(**_kwargs):
+        return {
+            "message": (
+                "Indica el tipo de instalación exacta que realizas.\n\n"
+                "Para ayudarte a aterrizarlo, estos servicios reales se parecen:\n"
+                "1. Instalación de paneles solares - Energía solar y fotovoltaica.\n"
+                "2. Mantenimiento de paneles solares - Limpieza y soporte técnico.\n"
+                "3. Instalación eléctrica residencial - Electricidad para hogares.\n\n"
+                "Respóndeme con una versión más específica."
+            )
+        }
 
     monkeypatch.setattr(
         modulo_transformador,
@@ -188,25 +403,91 @@ def test_normalizacion_servicio_bloquea_catalog_review_required(monkeypatch):
         _TransformadorPaneles,
     )
     monkeypatch.setattr(
-        "flows.gestores_estados.gestor_espera_especialidad.validar_servicio_semanticamente",
+        "flows.gestores_estados."
+        "gestor_espera_especialidad.validar_servicio_semanticamente",
         _fake_validar_servicio_semanticamente,
     )
     monkeypatch.setattr(
-        "flows.gestores_estados.gestor_espera_especialidad.registrar_revision_catalogo_servicio",
-        _fake_registrar_revision_catalogo_servicio,
+        "flows.gestores_estados."
+        "gestor_espera_especialidad."
+        "construir_mensaje_clarificacion_servicio",
+        _fake_construir_mensaje_clarificacion_servicio,
     )
 
     respuesta = asyncio.run(
         normalizar_servicio_registro_individual(
             texto_mensaje="instalacion de paneles solares",
             cliente_openai=object(),
+            servicio_embeddings=object(),
         )
     )
 
     assert respuesta["ok"] is False
-    assert "todavía no lo podemos clasificar bien" in respuesta["response"]
-    assert captured["service_name"] == "instalación de paneles solares"
-    assert captured["source"] == "provider_onboarding"
+    assert respuesta["needs_clarification"] is True
+    assert "Instalación de paneles solares" in respuesta["response"]
+    assert "Respóndeme con una versión más específica" in respuesta["response"]
+
+
+def test_asistente_clarificacion_usa_ejemplos_reales(monkeypatch):
+    class _EmbeddingServicio:
+        async def generar_embedding(self, texto):
+            assert "asesoria legal" in texto.lower()
+            return [0.2, 0.4, 0.6]
+
+    class _RpcQuery:
+        def execute(self):
+            return SimpleNamespace(
+                data=[
+                    {
+                        "matched_service_name": "Asesoría en derecho laboral",
+                        "matched_service_summary": (
+                            "Brindo asesoría en despidos, contratos " "y liquidaciones."
+                        ),
+                        "domain_code": "legal",
+                        "category_name": "derecho laboral",
+                        "distance": 0.12,
+                    },
+                    {
+                        "matched_service_name": "Asesoría en derecho de familia",
+                        "matched_service_summary": (
+                            "Acompaño trámites de familia y pensiones."
+                        ),
+                        "domain_code": "legal",
+                        "category_name": "derecho de familia",
+                        "distance": 0.18,
+                    },
+                ]
+            )
+
+    class _SupabaseStub:
+        def rpc(self, fn_name, params):
+            assert fn_name == "match_provider_services"
+            assert params["match_count"] >= 8
+            return _RpcQuery()
+
+    async def _fake_run_supabase(operation, **_kwargs):
+        return operation()
+
+    monkeypatch.setattr(
+        "services.servicios_proveedor.asistente_clarificacion.run_supabase",
+        _fake_run_supabase,
+    )
+
+    respuesta = asyncio.run(
+        construir_mensaje_clarificacion_servicio(
+            supabase=_SupabaseStub(),
+            servicio_embeddings=_EmbeddingServicio(),
+            raw_service_text="asesoria legal de familia",
+            service_name="asesoria legal de familia",
+            clarification_question=(
+                "Indica el trámite o área legal exacta " "que trabajas."
+            ),
+        )
+    )
+
+    assert "Asesoría en derecho laboral" in respuesta["message"]
+    assert "Asesoría en derecho de familia" in respuesta["message"]
+    assert "Indica el trámite o área legal exacta" in respuesta["message"]
 
 
 def test_decision_agregar_otro_no_pasa_a_resumen_final():
@@ -230,6 +511,27 @@ def test_confirmacion_agregar_servicios_re_normaliza_correccion_manual(monkeypat
     monkeypatch.setattr(
         modulo_gestor_servicios, "TransformadorServicios", _TransformadorOK
     )
+
+    async def _fake_validar_servicio_semanticamente(**kwargs):
+        servicio = kwargs["service_name"]
+        return {
+            "is_valid_service": True,
+            "needs_clarification": False,
+            "normalized_service": servicio,
+            "domain_resolution_status": "matched",
+            "domain_code": "construccion_hogar",
+            "resolved_domain_code": "construccion_hogar",
+            "proposed_category_name": servicio,
+            "proposed_service_summary": f"Servicio de {servicio}.",
+            "service_summary": f"Servicio de {servicio}.",
+            "reason": "heuristic_accept",
+            "clarification_question": None,
+        }
+
+    monkeypatch.setattr(
+        "flows.gestores_estados.gestor_servicios.validar_servicio_semanticamente",
+        _fake_validar_servicio_semanticamente,
+    )
     flujo = {
         "state": "awaiting_service_add_confirmation",
         "services": ["Pintura interior"],
@@ -246,8 +548,8 @@ def test_confirmacion_agregar_servicios_re_normaliza_correccion_manual(monkeypat
     )
 
     assert flujo["state"] == "awaiting_service_add_confirmation"
-    assert flujo["service_add_temporales"] == ["destape de cañerías en lavamanos"]
-    assert "destape de cañerías en lavamanos" in respuesta["messages"][0]["response"]
+    assert flujo["service_add_temporales"] == ["plomería"]
+    assert "plomería" in respuesta["messages"][0]["response"]
 
 
 def test_espera_especialidad_bloquea_servicio_generico_critico(monkeypatch):
@@ -297,7 +599,7 @@ def test_normalizar_servicio_rechaza_texto_basura(monkeypatch):
     )
 
     assert resultado["ok"] is False
-    assert "No identifiqué un servicio válido" in resultado["response"]
+    assert "No pude interpretar ese servicio" in resultado["response"]
 
 
 def test_normalizar_servicio_pide_aclaracion_en_servicio_generico(monkeypatch):
@@ -313,6 +615,31 @@ def test_normalizar_servicio_pide_aclaracion_en_servicio_generico(monkeypatch):
         modulo_transformador,
         "TransformadorServicios",
         _TransformadorGenerico,
+    )
+
+    async def _fake_validar_servicio_semanticamente(**kwargs):
+        servicio = kwargs["service_name"]
+        proposed_summary = "Brindo asesoría en temas legales."
+        return {
+            "is_valid_service": True,
+            "needs_clarification": True,
+            "normalized_service": servicio,
+            "domain_resolution_status": "clarification_required",
+            "domain_code": "legal",
+            "resolved_domain_code": None,
+            "proposed_category_name": servicio,
+            "proposed_service_summary": proposed_summary,
+            "service_summary": proposed_summary,
+            "reason": "generic_service",
+            "clarification_question": (
+                "Indica el trámite o área legal exacta " "con la que trabajas."
+            ),
+        }
+
+    monkeypatch.setattr(
+        "flows.gestores_estados."
+        "gestor_espera_especialidad.validar_servicio_semanticamente",
+        _fake_validar_servicio_semanticamente,
     )
 
     resultado = asyncio.run(
@@ -341,6 +668,30 @@ def test_normalizar_servicio_acepta_transporte_y_barco(monkeypatch):
         modulo_transformador,
         "TransformadorServicios",
         _TransformadorTransporte,
+    )
+
+    async def _fake_validar_servicio_semanticamente(**kwargs):
+        servicio = kwargs["service_name"]
+        dominio = "transporte" if "barco" not in servicio else "transporte"
+        proposed_summary = f"Servicio de {servicio}."
+        return {
+            "is_valid_service": True,
+            "needs_clarification": False,
+            "normalized_service": servicio,
+            "domain_resolution_status": "matched",
+            "domain_code": dominio,
+            "resolved_domain_code": dominio,
+            "proposed_category_name": servicio,
+            "proposed_service_summary": proposed_summary,
+            "service_summary": proposed_summary,
+            "reason": "heuristic_accept",
+            "clarification_question": None,
+        }
+
+    monkeypatch.setattr(
+        "flows.gestores_estados."
+        "gestor_espera_especialidad.validar_servicio_semanticamente",
+        _fake_validar_servicio_semanticamente,
     )
 
     terrestre = asyncio.run(
@@ -407,6 +758,29 @@ def test_reemplazo_servicio_en_edicion(monkeypatch):
         "TransformadorServicios",
         _TransformadorOK,
     )
+
+    async def _fake_validar_servicio_semanticamente(**kwargs):
+        servicio = kwargs["service_name"]
+        proposed_summary = f"Servicio de {servicio}."
+        return {
+            "is_valid_service": True,
+            "needs_clarification": False,
+            "normalized_service": servicio,
+            "domain_resolution_status": "matched",
+            "domain_code": "legal",
+            "resolved_domain_code": "legal",
+            "proposed_category_name": servicio,
+            "proposed_service_summary": proposed_summary,
+            "service_summary": proposed_summary,
+            "reason": "heuristic_accept",
+            "clarification_question": None,
+        }
+
+    monkeypatch.setattr(
+        "flows.gestores_estados."
+        "gestor_espera_especialidad.validar_servicio_semanticamente",
+        _fake_validar_servicio_semanticamente,
+    )
     flujo = {
         "state": "awaiting_services_edit_action",
         "servicios_temporales": ["desarrollo web", "cableado estructurado"],
@@ -470,6 +844,28 @@ def test_agregar_servicios_acepta_servicio_sin_bloqueo_taxonomico(monkeypatch):
         modulo_gestor_servicios, "TransformadorServicios", _TransformadorGenerico
     )
 
+    async def _fake_validar_servicio_semanticamente(**kwargs):
+        servicio = kwargs["service_name"]
+        proposed_summary = f"Servicio de {servicio}."
+        return {
+            "is_valid_service": True,
+            "needs_clarification": False,
+            "normalized_service": servicio,
+            "domain_resolution_status": "matched",
+            "domain_code": "transporte",
+            "resolved_domain_code": "transporte",
+            "proposed_category_name": servicio,
+            "proposed_service_summary": proposed_summary,
+            "service_summary": proposed_summary,
+            "reason": "heuristic_accept",
+            "clarification_question": None,
+        }
+
+    monkeypatch.setattr(
+        "flows.gestores_estados.gestor_servicios.validar_servicio_semanticamente",
+        _fake_validar_servicio_semanticamente,
+    )
+
     respuesta = asyncio.run(
         manejar_agregar_servicios(
             flujo={"state": "awaiting_service_add", "services": []},
@@ -491,7 +887,7 @@ def test_sanitizador_preserva_texto_natural_para_ui_y_embeddings():
         ],
         5,
         entrada_usuario=(
-            "desarrollo de software a medida, automatizacion de procesos de negocio, "
+            "desarrollo de software a medida; automatizacion de procesos de negocio; "
             "desarrollo de aplicaciones moviles"
         ),
     )
@@ -513,8 +909,31 @@ def test_normalizacion_dominios_operativos_consolida_aliases():
         == "academico"
     )
     assert (
-        modulo_clasificacion.normalizar_domain_code_operativo("servicios administrativos")
+        modulo_clasificacion.normalizar_domain_code_operativo(
+            "servicios administrativos"
+        )
         == "servicios_administrativos"
+    )
+
+
+def test_normalizacion_display_name_dominio_reduce_dominios_largos():
+    assert (
+        modulo_clasificacion.normalizar_display_name_dominio(
+            "servicios_administrativos"
+        )
+        == "Administración"
+    )
+    assert (
+        modulo_clasificacion.normalizar_display_name_dominio("gastronomia_alimentos")
+        == "Gastronomía"
+    )
+    assert (
+        modulo_clasificacion.normalizar_display_name_dominio("cuidados_asistencia")
+        == "Cuidados"
+    )
+    assert (
+        modulo_clasificacion.normalizar_display_name_dominio("construccion_hogar")
+        == "Construcción"
     )
 
 
@@ -530,7 +949,9 @@ def test_service_summary_se_construye_con_categoria_y_dominio():
     assert "servicio especializado" not in summary.lower()
 
 
-def test_actualizar_servicios_persiste_servicio_sin_canonizacion_taxonomica(monkeypatch):
+def test_actualizar_servicios_persiste_servicio_sin_canonizacion_taxonomica(
+    monkeypatch,
+):
     import importlib
 
     modulo_actualizar_servicios = importlib.import_module(
@@ -574,7 +995,9 @@ def test_actualizar_servicios_persiste_servicio_sin_canonizacion_taxonomica(monk
     supabase = _SupabaseStub(
         {
             "service_taxonomy_publications": [{"version": 1, "status": "published"}],
-            "service_domains": [{"id": "dom-1", "code": "legal", "status": "published"}],
+            "service_domains": [
+                {"id": "dom-1", "code": "legal", "status": "published"}
+            ],
             "service_domain_aliases": [
                 {
                     "id": "alias-1",

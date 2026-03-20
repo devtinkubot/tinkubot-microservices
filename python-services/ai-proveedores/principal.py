@@ -3,6 +3,8 @@ AI Service Proveedores - Versión mejorada con Supabase
 Servicio de gestión de proveedores con búsqueda y capacidad de recibir mensajes WhatsApp
 """
 
+import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -10,7 +12,7 @@ import re
 import unicodedata
 from datetime import datetime, timezone
 from time import perf_counter
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 import uvicorn
 from config import configuracion
@@ -35,9 +37,14 @@ from infrastructure.redis import cliente_redis
 from infrastructure.storage import subir_medios_identidad
 from models import RecepcionMensajeWhatsApp, RespuestaSalud
 from openai import AsyncOpenAI
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from services.registro import limpiar_onboarding_proveedores
 from supabase import Client, create_client
-from templates.registro import PROFILE_SINGLE_USE_CONTROL_IDS
+from templates.registro import (
+    PROFILE_SINGLE_USE_CONTROL_IDS,
+    SERVICE_CONFIRM_ID,
+    SERVICE_CORRECT_ID,
+)
 
 # Configuración desde variables de entorno
 URL_SUPABASE = configuracion.supabase_url or os.getenv("SUPABASE_URL", "")
@@ -58,7 +65,7 @@ ESTADO_ESPERANDO_DISPONIBILIDAD = "awaiting_availability_response"
 CLAVE_DEDUPE_MEDIA = "prov_media_dedupe:{}:{}"
 TTL_DEDUPE_MEDIA_SEGUNDOS = int(os.getenv("PROVIDER_MEDIA_DEDUPE_TTL_SECONDS", "900"))
 CLAVE_DEDUPE_INTERACTIVE = "prov_interactive_dedupe:{}:{}"
-CLAVE_DEDUPE_INTERACTIVE_ACTION = "prov_interactive_action_dedupe:{}:{}"
+CLAVE_DEDUPE_INTERACTIVE_ACTION = "prov_interactive_action_dedupe:{}:{}:{}:{}"
 TTL_DEDUPE_INTERACTIVE_SEGUNDOS = int(
     os.getenv("PROVIDER_INTERACTIVE_DEDUPE_TTL_SECONDS", "900")
 )
@@ -189,12 +196,49 @@ class SolicitudRechazoGovernanceReview(BaseModel):
     notes: Optional[str] = None
 
 
+class SolicitudPlanMantenimientoTaxonomia(BaseModel):
+    suggestion_ids: list[str] = Field(default_factory=list)
+    cluster_keys: list[str] = Field(default_factory=list)
+    review_notes: Optional[str] = None
+    reviewer: Optional[str] = None
+    create_domain_if_missing: bool = False
+
+
+class SolicitudAutoAsignacionGovernanceReviews(BaseModel):
+    limit: int = Field(default=50, ge=1, le=200)
+    min_confidence: float = Field(default=0.82, ge=0.0, le=1.0)
+    reviewer: Optional[str] = None
+    notes: Optional[str] = None
+    create_domain_if_missing: bool = False
+
+
 # === FASTAPI LIFECYCLE EVENTS ===
 
 
 @app.on_event("startup")
 async def startup_event():
     logger.info("✅ Session Timeout simple habilitado (5 minutos de inactividad)")
+    if supabase:
+        app.state.onboarding_cleanup_task = asyncio.create_task(
+            _bucle_limpieza_onboarding()
+        )
+        logger.info(
+            "🧹 Limpieza onboarding habilitada (warning=%sh expiry=%sh intervalo=%ss)",
+            configuracion.provider_onboarding_warning_hours,
+            configuracion.provider_onboarding_expiry_hours,
+            configuracion.provider_onboarding_cleanup_interval_seconds,
+        )
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    tarea = getattr(app.state, "onboarding_cleanup_task", None)
+    if tarea:
+        tarea.cancel()
+        try:
+            await tarea
+        except asyncio.CancelledError:
+            pass
 
 
 # Configurar CORS
@@ -208,6 +252,54 @@ app.add_middleware(
 
 # --- Flujo interactivo de registro de proveedores ---
 CLAVE_FLUJO = "prov_flow:{}"  # telefono
+
+
+async def _ejecutar_limpieza_onboarding() -> Dict[str, Any]:
+    if not supabase:
+        return {"success": False, "message": "Supabase no disponible"}
+
+    if not configuracion.whatsapp_proveedores_url:
+        return {"success": False, "message": "WhatsApp Proveedores URL no configurada"}
+
+    resultado = await limpiar_onboarding_proveedores(
+        supabase,
+        configuracion.whatsapp_proveedores_url,
+        configuracion.whatsapp_proveedores_account_id,
+        warning_hours=configuracion.provider_onboarding_warning_hours,
+        expiry_hours=configuracion.provider_onboarding_expiry_hours,
+    )
+    return {"success": True, "result": resultado}
+
+
+async def _bucle_limpieza_onboarding():
+    intervalo = max(configuracion.provider_onboarding_cleanup_interval_seconds, 60)
+    while True:
+        try:
+            resultado = await _ejecutar_limpieza_onboarding()
+            if resultado.get("success"):
+                resumen = resultado.get("result") or {}
+                logger.info(
+                    (
+                        "🧹 Limpieza onboarding ejecutada "
+                        "candidates=%s warnings=%s expirations=%s deleted=%s failed=%s"
+                    ),
+                    resumen.get("candidates", 0),
+                    resumen.get("warnings_sent", 0),
+                    resumen.get("expirations_sent", 0),
+                    resumen.get("deleted", 0),
+                    resumen.get("failed", 0),
+                )
+            else:
+                logger.info(
+                    "🧹 Limpieza onboarding omitida: %s",
+                    resultado.get("message", "sin detalle"),
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.exception("❌ Error en limpieza automática de onboarding: %s", exc)
+
+        await asyncio.sleep(intervalo)
 
 
 def _normalizar_texto_simple(texto: str) -> str:
@@ -344,7 +436,9 @@ def _resumen_contexto_disponibilidad(
     contexto_disponibilidad: Any,
     pendientes: Any,
 ) -> Dict[str, Any]:
-    contexto = contexto_disponibilidad if isinstance(contexto_disponibilidad, dict) else {}
+    contexto = (
+        contexto_disponibilidad if isinstance(contexto_disponibilidad, dict) else {}
+    )
     request_ids = _extraer_request_ids_disponibilidad(
         pendientes=pendientes,
         contexto_disponibilidad=contexto or None,
@@ -408,19 +502,32 @@ async def _es_mensaje_interactivo_duplicado(
     telefono: str,
     estado: Optional[str],
     carga: Dict[str, Any],
+    flujo: Optional[Dict[str, Any]] = None,
 ) -> bool:
-    if estado not in ONBOARDING_STATES and estado not in MENU_STATES and estado not in PROFILE_COMPLETION_STATES:
+    if (
+        estado not in ONBOARDING_STATES
+        and estado not in MENU_STATES
+        and estado not in PROFILE_COMPLETION_STATES
+    ):
         return False
     if not _es_evento_interactivo(carga):
         return False
 
     seleccionado = str(carga.get("selected_option") or "").strip().lower()
+    if seleccionado in {SERVICE_CONFIRM_ID, SERVICE_CORRECT_ID}:
+        return False
     message_id = _resolver_message_id(carga)
     if not message_id:
         if seleccionado not in PROFILE_SINGLE_USE_CONTROL_IDS:
             return False
+        contexto = _resumen_contexto_interactivo_semantico(estado, flujo)
         creado_semantico = await cliente_redis.set_if_absent(
-            CLAVE_DEDUPE_INTERACTIVE_ACTION.format(telefono, seleccionado),
+            CLAVE_DEDUPE_INTERACTIVE_ACTION.format(
+                telefono,
+                estado or "unknown",
+                seleccionado,
+                contexto,
+            ),
             {"state": estado, "processed_at": datetime.now(timezone.utc).isoformat()},
             expire=TTL_DEDUPE_INTERACTIVE_SEGUNDOS,
         )
@@ -437,12 +544,52 @@ async def _es_mensaje_interactivo_duplicado(
     if seleccionado not in PROFILE_SINGLE_USE_CONTROL_IDS:
         return False
 
+    contexto = _resumen_contexto_interactivo_semantico(estado, flujo)
     creado_semantico = await cliente_redis.set_if_absent(
-        CLAVE_DEDUPE_INTERACTIVE_ACTION.format(telefono, seleccionado),
+        CLAVE_DEDUPE_INTERACTIVE_ACTION.format(
+            telefono,
+            estado or "unknown",
+            seleccionado,
+            contexto,
+        ),
         {"state": estado, "processed_at": datetime.now(timezone.utc).isoformat()},
         expire=TTL_DEDUPE_INTERACTIVE_SEGUNDOS,
     )
     return not creado_semantico
+
+
+def _resumen_contexto_interactivo_semantico(
+    estado: Optional[str],
+    flujo: Optional[Dict[str, Any]],
+) -> str:
+    """Genera una firma corta del contexto para acciones interactivas."""
+    if not isinstance(flujo, dict):
+        contexto = {"state": str(estado or ""), "services": []}
+    else:
+        servicios = flujo.get("servicios_temporales")
+        if not isinstance(servicios, list) or not servicios:
+            servicios = flujo.get("services") or []
+        servicios_normalizados: list[str] = []
+        for servicio in servicios:
+            texto = str(servicio or "").strip().lower()
+            if texto and texto not in servicios_normalizados:
+                servicios_normalizados.append(texto)
+        contexto = {
+            "state": str(estado or ""),
+            "services": servicios_normalizados,
+            "pending_candidate": str(flujo.get("pending_service_candidate") or "")
+            .strip()
+            .lower(),
+            "pending_index": flujo.get("pending_service_index"),
+            "confirmation_nonce": str(
+                flujo.get("service_add_confirmation_nonce") or ""
+            ).strip(),
+        }
+
+    digest = hashlib.sha256(
+        json.dumps(contexto, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+    return digest[:16]
 
 
 async def _actualizar_ciclo_solicitud(
@@ -474,7 +621,9 @@ async def _registrar_respuesta_disponibilidad_si_aplica(  # noqa: C901
     clave_pendientes = f"availability:provider:{telefono}:pending"
     clave_contexto = f"availability:provider:{telefono}:context"
     pendientes_crudo = await cliente_redis.get(clave_pendientes)
-    contexto_disponibilidad = _decodificar_payload_redis(await cliente_redis.get(clave_contexto))
+    contexto_disponibilidad = _decodificar_payload_redis(
+        await cliente_redis.get(clave_contexto)
+    )
     pendientes = _decodificar_payload_redis(pendientes_crudo)
     flujo_activo = estado_actual is not None and estado_actual in (
         ONBOARDING_STATES | MENU_STATES | PROFILE_COMPLETION_STATES
@@ -487,7 +636,9 @@ async def _registrar_respuesta_disponibilidad_si_aplica(  # noqa: C901
     request_ids = _extraer_request_ids_disponibilidad(
         pendientes=pendientes,
         contexto_disponibilidad=(
-            contexto_disponibilidad if isinstance(contexto_disponibilidad, dict) else None
+            contexto_disponibilidad
+            if isinstance(contexto_disponibilidad, dict)
+            else None
         ),
     )
     resumen_contexto = _resumen_contexto_disponibilidad(
@@ -528,11 +679,16 @@ async def _registrar_respuesta_disponibilidad_si_aplica(  # noqa: C901
         "ya no contará para este requerimiento*"
     )
 
-    if pendientes_crudo is not None and pendientes != pendientes_crudo and not isinstance(
-        pendientes, list
+    if (
+        pendientes_crudo is not None
+        and pendientes != pendientes_crudo
+        and not isinstance(pendientes, list)
     ):
         logger.warning(
-            "availability_pending_payload_invalid provider=%s payload_type=%s reason=invalid_pending_payload",
+            (
+                "availability_pending_payload_invalid provider=%s "
+                "payload_type=%s reason=invalid_pending_payload"
+            ),
             telefono,
             type(pendientes).__name__,
         )
@@ -552,13 +708,19 @@ async def _registrar_respuesta_disponibilidad_si_aplica(  # noqa: C901
                 )
             await cliente_redis.delete(clave_contexto)
             logger.info(
-                "availability_response_expired_context provider=%s state=%s reason=no_context",
+                (
+                    "availability_response_expired_context provider=%s "
+                    "state=%s reason=no_context"
+                ),
                 telefono,
                 estado_actual,
             )
             return {"success": True, "messages": [{"response": mensaje_expirado}]}
         logger.info(
-            "availability_response_expired_no_pending provider=%s state=%s reason=no_context",
+            (
+                "availability_response_expired_no_pending provider=%s "
+                "state=%s reason=no_context"
+            ),
             telefono,
             estado_actual,
         )
@@ -592,13 +754,17 @@ async def _registrar_respuesta_disponibilidad_si_aplica(  # noqa: C901
 
     if not req_resuelto:
         if req_expirado:
-            clave_req_expirada = f"availability:request:{req_expirado}:provider:{telefono}"
+            clave_req_expirada = (
+                f"availability:request:{req_expirado}:provider:{telefono}"
+            )
             estado_expirado = _decodificar_payload_redis(
                 await cliente_redis.get(clave_req_expirada)
             )
             if isinstance(estado_expirado, dict):
                 estado_expirado["late_response_status"] = decision
-                estado_expirado["late_response_at"] = datetime.now(timezone.utc).isoformat()
+                estado_expirado["late_response_at"] = datetime.now(
+                    timezone.utc
+                ).isoformat()
                 estado_expirado["late_response_text"] = (texto_mensaje or "")[:160]
                 await cliente_redis.set(
                     clave_req_expirada,
@@ -616,7 +782,10 @@ async def _registrar_respuesta_disponibilidad_si_aplica(  # noqa: C901
                 },
             )
             logger.info(
-                "availability_response_recorded_late provider=%s req_id=%s state=%s reason=late_response",
+                (
+                    "availability_response_recorded_late provider=%s "
+                    "req_id=%s state=%s reason=late_response"
+                ),
                 telefono,
                 req_expirado,
                 estado_actual,
@@ -647,7 +816,10 @@ async def _registrar_respuesta_disponibilidad_si_aplica(  # noqa: C901
                 )
             await cliente_redis.delete(clave_contexto)
         logger.info(
-            "availability_response_expired provider=%s reason=request_found_but_not_pending",
+            (
+                "availability_response_expired provider=%s "
+                "reason=request_found_but_not_pending"
+            ),
             telefono,
         )
         return {"success": True, "messages": [{"response": mensaje_expirado}]}
@@ -680,8 +852,8 @@ async def _registrar_respuesta_disponibilidad_si_aplica(  # noqa: C901
 
     logger.info(
         (
-            "📝 Respuesta de disponibilidad registrada: telefono=%s req_id=%s decision=%s "
-            "reason=registered_pending_response"
+            "📝 Respuesta de disponibilidad registrada: telefono=%s "
+            "req_id=%s decision=%s reason=registered_pending_response"
         ),
         telefono,
         req_resuelto,
@@ -740,6 +912,18 @@ async def invalidate_provider_cache(
 
     ok = await invalidar_cache_perfil_proveedor(telefono)
     return {"success": ok, "phone": telefono}
+
+
+@app.post("/admin/provider-onboarding/cleanup")
+async def cleanup_provider_onboarding(
+    token: Optional[str] = Header(default=None, alias="x-internal-token"),
+) -> Dict[str, Any]:
+    """Ejecuta manualmente la limpieza de onboarding estancado."""
+    token_esperado = configuracion.internal_token
+    if token_esperado and token != token_esperado:
+        return {"success": False, "message": "Unauthorized"}
+
+    return await _ejecutar_limpieza_onboarding()
 
 
 @app.get("/admin/availability-lifecycle/{request_id}")
@@ -875,6 +1059,70 @@ async def rechazar_review_gobernanza(
         return {"success": False, "message": str(exc)}
 
 
+@app.post("/admin/service-governance/reviews/auto-assign")
+async def auto_asignar_reviews_gobernanza_endpoint(
+    solicitud: SolicitudAutoAsignacionGovernanceReviews,
+    token: Optional[str] = Header(default=None, alias="x-internal-token"),
+) -> Dict[str, Any]:
+    token_esperado = configuracion.internal_token
+    if token_esperado and token != token_esperado:
+        return {"success": False, "message": "Unauthorized"}
+
+    if not supabase:
+        return {"success": False, "message": "Supabase no configurado"}
+
+    try:
+        from services.servicios_proveedor.gobernanza_autoasignacion import (
+            auto_asignar_reviews_gobernanza_pendientes,
+        )
+
+        resultado = await auto_asignar_reviews_gobernanza_pendientes(
+            supabase=supabase,
+            servicio_embeddings=servicio_embeddings,
+            cliente_openai=cliente_openai,
+            limit=solicitud.limit,
+            min_confidence=solicitud.min_confidence,
+            reviewer=solicitud.reviewer,
+            notes=solicitud.notes,
+            create_domain_if_missing=solicitud.create_domain_if_missing,
+        )
+        return {"success": True, **resultado}
+    except Exception as exc:
+        logger.error("❌ Error auto-asignando reviews de gobernanza: %s", exc)
+        return {"success": False, "message": str(exc)}
+
+
+@app.post("/admin/service-taxonomy/maintenance/plan")
+async def planificar_mantenimiento_taxonomia_endpoint(
+    solicitud: SolicitudPlanMantenimientoTaxonomia,
+    token: Optional[str] = Header(default=None, alias="x-internal-token"),
+) -> Dict[str, Any]:
+    token_esperado = configuracion.internal_token
+    if token_esperado and token != token_esperado:
+        return {"success": False, "message": "Unauthorized"}
+
+    if not supabase:
+        return {"success": False, "message": "Supabase no configurado"}
+
+    try:
+        from services.servicios_proveedor.mantenimiento_taxonomia import (
+            planificar_mantenimiento_taxonomia,
+        )
+
+        resultado = await planificar_mantenimiento_taxonomia(
+            supabase=supabase,
+            suggestion_ids=solicitud.suggestion_ids,
+            cluster_keys=solicitud.cluster_keys,
+            review_notes=solicitud.review_notes,
+            reviewer=solicitud.reviewer,
+            create_domain_if_missing=solicitud.create_domain_if_missing,
+        )
+        return {"success": True, **resultado}
+    except Exception as exc:
+        logger.error("❌ Error planificando mantenimiento de taxonomía: %s", exc)
+        return {"success": False, "message": str(exc)}
+
+
 @app.post("/handle-whatsapp-message")
 async def manejar_mensaje_whatsapp(  # noqa: C901
     solicitud: RecepcionMensajeWhatsApp,
@@ -894,7 +1142,7 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
             solicitud.message or solicitud.content or solicitud.selected_option or ""
         )
         carga = solicitud.model_dump()
-        opcion_menu = interpretar_respuesta(texto_mensaje, "menu")
+        opcion_menu = cast(Optional[str], interpretar_respuesta(texto_mensaje, "menu"))
         resumen_mensaje = (texto_mensaje or "")[:80]
 
         logger.info(
@@ -928,9 +1176,17 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                 _resolver_message_id(carga),
             )
             return {"success": True, "messages": []}
-        if await _es_mensaje_interactivo_duplicado(telefono, flujo.get("state"), carga):
+        if await _es_mensaje_interactivo_duplicado(
+            telefono,
+            flujo.get("state"),
+            carga,
+            flujo=flujo,
+        ):
             logger.info(
-                "interactive_message_duplicate_ignored provider=%s state=%s message_id=%s",
+                (
+                    "interactive_message_duplicate_ignored provider=%s "
+                    "state=%s message_id=%s"
+                ),
                 telefono,
                 flujo.get("state"),
                 _resolver_message_id(carga),
@@ -951,7 +1207,10 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
         )
         if respuesta_disponibilidad:
             logger.info(
-                "availability_response_intercepted provider=%s state=%s selected_option=%s",
+                (
+                    "availability_response_intercepted provider=%s "
+                    "state=%s selected_option=%s"
+                ),
                 telefono_disponibilidad,
                 flujo.get("state"),
                 solicitud.selected_option,

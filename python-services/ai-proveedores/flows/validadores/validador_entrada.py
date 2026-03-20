@@ -15,7 +15,7 @@ def parsear_cadena_servicios(valor: Optional[str]) -> List[str]:
     Mantenida por compatibilidad con código existente.
 
     Args:
-        valor: Cadena con servicios separados por |, ;, ,, / o saltos de línea.
+        valor: Cadena con servicios separados por |, ;, / o saltos de línea.
 
     Returns:
         Lista de servicios únicos (máximo 5), sin espacios extra.

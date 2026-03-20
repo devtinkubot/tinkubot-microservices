@@ -11,8 +11,11 @@ from services.servicios_proveedor.clasificacion_semantica import (
     normalizar_domain_code_operativo,
     obtener_catalogo_dominios_liviano,
 )
-from services.servicios_proveedor.utilidades import limpiar_texto_servicio
-from services.servicios_proveedor.utilidades import normalizar_texto_para_busqueda
+from services.servicios_proveedor.utilidades import (
+    limpiar_texto_servicio,
+    normalizar_texto_para_busqueda,
+    normalizar_texto_visible_con_ia,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,12 +56,18 @@ _GENERICOS_DIRECTOS = {
 _ACLARACIONES_POR_CLAVE = {
     "asesoria legal": "Indica el trámite o área legal exacta con la que trabajas.",
     "asesoria juridica": "Indica el trámite o área legal exacta con la que trabajas.",
-    "transporte": "Indica el tipo de transporte, alcance y carga con la que trabajas.",
-    "consultoria": "Indica el tipo de consultoría o área exacta en la que trabajas.",
-    "consultoria empresarial": "Indica el tipo de consultoría o área exacta en la que trabajas.",
+    "transporte": (
+        "Indica el tipo de transporte, alcance y carga con la que trabajas."
+    ),
+    "consultoria": ("Indica el tipo de consultoría o área exacta en la que trabajas."),
+    "consultoria empresarial": (
+        "Indica el tipo de consultoría o área exacta en la que trabajas."
+    ),
     "marketing": "Indica el servicio de marketing exacto que realizas.",
-    "servicios informaticos": "Indica el servicio tecnológico exacto que realizas.",
-    "desarrollo de software": "Indica el tipo de software o solución exacta que desarrollas.",
+    "servicios informaticos": ("Indica el servicio tecnológico exacto que realizas."),
+    "desarrollo de software": (
+        "Indica el tipo de software o solución exacta que desarrollas."
+    ),
 }
 
 
@@ -78,16 +87,17 @@ def _resultado(
 ) -> Dict[str, Any]:
     normalized_domain = normalizar_domain_code_operativo(domain_code)
     resolved_domain = normalizar_domain_code_operativo(resolved_domain_code)
+    normalized_service_visible = " ".join(str(normalized_service or "").strip().split())
     proposed_category = category_name
     proposed_summary = str(service_summary or "").strip() or construir_service_summary(
-        service_name=normalized_service,
+        service_name=normalized_service_visible or normalized_service,
         category_name=category_name,
         domain_code=domain_code,
     )
     return {
         "is_valid_service": is_valid_service,
         "needs_clarification": needs_clarification,
-        "normalized_service": normalized_service,
+        "normalized_service": normalized_service_visible,
         "domain_resolution_status": domain_resolution_status,
         "domain_code": normalized_domain,
         "resolved_domain_code": resolved_domain,
@@ -107,7 +117,11 @@ def _pregunta_aclaracion(normalizado: str) -> Optional[str]:
             return pregunta
     if "legal" in normalizado or "abogado" in normalizado:
         return "Indica el trámite o área legal exacta con la que trabajas."
-    if "transporte" in normalizado or "conductor" in normalizado or "chofer" in normalizado:
+    if (
+        "transporte" in normalizado
+        or "conductor" in normalizado
+        or "chofer" in normalizado
+    ):
         return "Indica el tipo de transporte, alcance y carga con la que trabajas."
     if "software" in normalizado:
         return "Indica el tipo de software o solución exacta que desarrollas."
@@ -143,7 +157,10 @@ def _validacion_heuristica(
             domain_resolution_status="rejected",
         )
 
-    if raw_normalizado in _RECHAZOS_DIRECTOS or service_normalizado in _RECHAZOS_DIRECTOS:
+    if (
+        raw_normalizado in _RECHAZOS_DIRECTOS
+        or service_normalizado in _RECHAZOS_DIRECTOS
+    ):
         return _resultado(
             is_valid_service=False,
             needs_clarification=False,
@@ -152,7 +169,10 @@ def _validacion_heuristica(
             domain_resolution_status="rejected",
         )
 
-    if raw_normalizado in _GENERICOS_DIRECTOS or service_normalizado in _GENERICOS_DIRECTOS:
+    if (
+        raw_normalizado in _GENERICOS_DIRECTOS
+        or service_normalizado in _GENERICOS_DIRECTOS
+    ):
         return _resultado(
             is_valid_service=False,
             needs_clarification=True,
@@ -170,7 +190,9 @@ def _validacion_heuristica(
             normalized_service=service_name,
             reason="placeholder_service",
             domain_resolution_status="clarification_required",
-            clarification_question="Escribe el servicio o especialidad exacta que realmente ofreces.",
+            clarification_question=(
+                "Escribe el servicio o especialidad exacta que realmente ofreces."
+            ),
             confidence=0.2,
         )
 
@@ -240,9 +262,13 @@ async def validar_servicio_semanticamente(
                 {
                     "role": "system",
                     "content": (
-                        "Valida si un texto corresponde a un servicio real ofrecido por un proveedor. "
-                        "Debes distinguir entre servicio válido, servicio demasiado genérico y texto basura. "
-                        "No inventes especialidades."
+                        "Valida si un texto corresponde a un servicio real "
+                        "ofrecido por un proveedor. "
+                        "Debes distinguir entre servicio válido, servicio "
+                        "demasiado genérico y texto basura. "
+                        "No inventes especialidades. "
+                        "El campo normalized_service debe quedar natural, "
+                        "visible y con máximo 68 caracteres."
                     ),
                 },
                 {
@@ -250,10 +276,13 @@ async def validar_servicio_semanticamente(
                     "content": (
                         f"Texto original: {raw_service_text}\n"
                         f"Servicio normalizado visible: {service_name}\n\n"
+                        "Regla de salida: normalized_service <= 68 caracteres, "
+                        "sin puntos suspensivos y sin coma final.\n\n"
                         f"Dominios disponibles:\n{dominios_prompt}\n\n"
                         "Responde JSON con:\n"
                         "{"
-                        '"status":"accepted|clarification_required|catalog_review_required|rejected",'
+                        '"status":"accepted|clarification_required|'
+                        'catalog_review_required|rejected",'
                         '"normalized_service":"...",'
                         '"domain_code":"... o null",'
                         '"category_name":"... o null",'
@@ -314,7 +343,10 @@ async def validar_servicio_semanticamente(
         return heuristico
 
     status = str(data.get("status") or "").strip().lower()
-    normalized_service = str(data.get("normalized_service") or service_name).strip() or service_name
+    normalized_service = await normalizar_texto_visible_con_ia(
+        cliente_openai,
+        str(data.get("normalized_service") or service_name).strip() or service_name,
+    )
     clarification_question = data.get("clarification_question")
     domain_code = data.get("domain_code")
     category_name = data.get("category_name")
@@ -338,7 +370,12 @@ async def validar_servicio_semanticamente(
             normalized_service=normalized_service,
             reason=reason,
             domain_resolution_status="clarification_required",
-            clarification_question=str(clarification_question or _pregunta_aclaracion(normalizar_texto_para_busqueda(normalized_service))),
+            clarification_question=str(
+                clarification_question
+                or _pregunta_aclaracion(
+                    normalizar_texto_para_busqueda(normalized_service)
+                )
+            ),
             domain_code=normalizar_domain_code_operativo(domain_code),
             category_name=str(category_name).strip() if category_name else None,
             service_summary=str(service_summary or "").strip() or None,
@@ -355,7 +392,11 @@ async def validar_servicio_semanticamente(
             is_valid_service=True,
             needs_clarification=False,
             normalized_service=normalized_service,
-            reason=reason if suggested_domain_code or status == "catalog_review_required" else "domain_not_resolved",
+            reason=(
+                reason
+                if suggested_domain_code or status == "catalog_review_required"
+                else "domain_not_resolved"
+            ),
             domain_resolution_status="catalog_review_required",
             domain_code=suggested_domain_code,
             resolved_domain_code=None,

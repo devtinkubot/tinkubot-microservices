@@ -10,11 +10,11 @@ def dividir_cadena_servicios(texto: str) -> List[str]:
     """
     Separa un texto en posibles servicios usando separadores conocidos.
 
-    Esta función SOLO divide la cadena por separadores comunes (|, ,, ;, /, \\n).
+    Esta función SOLO divide la cadena por separadores comunes (|, ;, /, \\n).
     NO aplica normalización, NO elimina duplicados, NO limita cantidad.
     Es la base para otras funciones de procesamiento.
 
-    Separadores soportados: | , ; / y saltos de línea
+    Separadores soportados: | ; / y saltos de línea
 
     Args:
         texto: Cadena con uno o múltiples servicios separados.
@@ -31,8 +31,8 @@ def dividir_cadena_servicios(texto: str) -> List[str]:
     if not cleaned:
         return []
 
-    if re.search(r"[|;,/\n]", cleaned):
-        candidatos = re.split(r"[|;,/\n]+", cleaned)
+    if re.search(r"[|;/\n]", cleaned):
+        candidatos = re.split(r"[|;/\n]+", cleaned)
     else:
         candidatos = [cleaned]
 

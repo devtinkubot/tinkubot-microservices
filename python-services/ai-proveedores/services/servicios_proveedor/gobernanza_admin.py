@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import logging
-
-logger = logging.getLogger(__name__)
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from infrastructure.database import run_supabase
 from services.servicios_proveedor.clasificacion_semantica import (
     construir_service_summary,
+    normalizar_display_name_dominio,
     normalizar_domain_code_operativo,
 )
 from services.servicios_proveedor.utilidades import normalizar_texto_para_busqueda
@@ -18,7 +17,9 @@ from services.servicios_proveedor.utilidades import normalizar_texto_para_busque
 logger = logging.getLogger(__name__)
 
 
-async def _obtener_review_por_id(supabase: Any, review_id: str) -> Optional[Dict[str, Any]]:
+async def _obtener_review_por_id(
+    supabase: Any, review_id: str
+) -> Optional[Dict[str, Any]]:
     respuesta = await run_supabase(
         lambda: supabase.table("provider_service_catalog_reviews")
         .select("*")
@@ -31,7 +32,9 @@ async def _obtener_review_por_id(supabase: Any, review_id: str) -> Optional[Dict
     return filas[0] if filas else None
 
 
-async def _obtener_proveedor_por_id(supabase: Any, provider_id: str) -> Optional[Dict[str, Any]]:
+async def _obtener_proveedor_por_id(
+    supabase: Any, provider_id: str
+) -> Optional[Dict[str, Any]]:
     respuesta = await run_supabase(
         lambda: supabase.table("providers")
         .select("id,phone")
@@ -57,13 +60,6 @@ async def _dominio_existe(supabase: Any, domain_code: str) -> bool:
     return bool(filas)
 
 
-def _display_name_desde_domain_code(domain_code: str) -> str:
-    partes = [segmento for segmento in str(domain_code or "").split("_") if segmento]
-    if not partes:
-        return str(domain_code or "").strip()
-    return " ".join(parte.capitalize() for parte in partes)
-
-
 async def _asegurar_dominio(
     *,
     supabase: Any,
@@ -87,8 +83,11 @@ async def _asegurar_dominio(
         .insert(
             {
                 "code": codigo,
-                "display_name": _display_name_desde_domain_code(codigo),
-                "description": f"Dominio operativo creado desde gobernanza por {reviewer or 'admin-dashboard'}.",
+                "display_name": normalizar_display_name_dominio(codigo),
+                "description": (
+                    "Dominio operativo creado desde gobernanza por "
+                    f"{reviewer or 'admin-dashboard'}."
+                ),
                 "status": "active",
                 "created_at": now_iso,
                 "updated_at": now_iso,
@@ -178,7 +177,9 @@ async def aprobar_review_catalogo_servicio(
                 "service_name": nombre_servicio,
                 "raw_service_text": review.get("raw_service_text") or nombre_servicio,
                 "service_summary": resumen,
-                "service_name_normalized": normalizar_texto_para_busqueda(nombre_servicio),
+                "service_name_normalized": normalizar_texto_para_busqueda(
+                    nombre_servicio
+                ),
                 "service_embedding": embedding,
                 "is_primary": False,
                 "display_order": display_order,
@@ -223,7 +224,9 @@ async def aprobar_review_catalogo_servicio(
         if telefono:
             await invalidar_cache_perfil_proveedor(telefono)
     except Exception as exc:
-        logger.warning("⚠️ No se pudo invalidar cache del proveedor tras aprobación: %s", exc)
+        logger.warning(
+            "⚠️ No se pudo invalidar cache del proveedor tras aprobación: %s", exc
+        )
 
     return {
         "reviewId": review_id,
@@ -304,7 +307,11 @@ async def aprobar_review_servicio_existente(
         logger.warning("❌ Review %s not found", review_id)
         return None
     if str(review.get("review_status") or "").strip().lower() != "pending":
-        logger.warning("❌ Review %s is not pending (status: %s)", review_id, review.get("review_status"))
+        logger.warning(
+            "❌ Review %s is not pending (status: %s)",
+            review_id,
+            review.get("review_status"),
+        )
         return None
 
     provider_id = str(review.get("provider_id") or "").strip()
@@ -339,7 +346,10 @@ async def aprobar_review_servicio_existente(
         "updated_at": now_iso,
     }
 
-    if existing.get("domain_code") != domain_code or existing.get("category_name") != category_name:
+    if (
+        existing.get("domain_code") != domain_code
+        or existing.get("category_name") != category_name
+    ):
         await run_supabase(
             lambda: supabase.table("provider_services")
             .update(update_payload)
@@ -348,7 +358,10 @@ async def aprobar_review_servicio_existente(
             label="provider_services.update_classification_from_backfill",
         )
         logger.info(
-            f"✅ Updated provider_service {provider_service_id} with domain={domain_code}, category={category_name}"
+            "✅ Updated provider_service %s with domain=%s, category=%s",
+            provider_service_id,
+            domain_code,
+            category_name,
         )
 
     # Determinar status de la review
@@ -387,7 +400,9 @@ async def aprobar_review_servicio_existente(
             if telefono:
                 await invalidar_cache_perfil_proveedor(telefono)
     except Exception as exc:
-        logger.warning("⚠️ No se pudo invalidar cache del proveedor tras aprobación: %s", exc)
+        logger.warning(
+            "⚠️ No se pudo invalidar cache del proveedor tras aprobación: %s", exc
+        )
 
     return {
         "reviewId": review_id,

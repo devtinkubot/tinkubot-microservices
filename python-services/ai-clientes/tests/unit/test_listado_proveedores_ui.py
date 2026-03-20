@@ -149,7 +149,7 @@ async def test_presenting_results_acepta_interactive_list_reply():
     assert guardado["state"] == "viewing_provider_detail"
     assert guardado["provider_detail_idx"] == 0
     assert guardado["provider_detail_view"] == "menu"
-    assert "provider_results_expires_at" not in guardado
+    assert "provider_results_expires_at" in guardado
     assert (
         guardado["providers"][0]["face_photo_url"]
         == "https://example.com/foto-resuelta.jpg"

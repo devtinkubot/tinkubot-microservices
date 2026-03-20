@@ -15,15 +15,14 @@ def mensaje_confirmacion_servicios(servicios: List[str]) -> str:
     """
     servicios_formateados = "\n".join([f"• {servicio}" for servicio in servicios])
 
-    return f"""✨ *He identificado estos servicios:*
-
-{servicios_formateados}
-
-🔍 *Estos servicios ayudarán a que los clientes te encuentren mejor cuando busquen soluciones.*
-
-¿Estás de acuerdo con esta lista?
-*1.* Sí, continuar
-*2.* No, corregir""".strip()
+    return (
+        "✨ *He identificado estos servicios:*\n\n"
+        f"{servicios_formateados}\n\n"
+        "🔍 *Ayudan a que los clientes te encuentren mejor al buscar soluciones.*\n\n"
+        "¿Estás de acuerdo con esta lista?\n"
+        "*1.* Sí, continuar\n"
+        "*2.* No, corregir"
+    )
 
 
 def mensaje_correccion_servicios() -> str:
@@ -33,9 +32,16 @@ def mensaje_correccion_servicios() -> str:
     Returns:
         Mensaje solicitando corrección manual
     """
-    return """*Entendido. Escribe tus servicios nuevamente* usando tus propias palabras e indicando el servicio y la especialidad o área exacta.
-
-Sepáralos con comas (ej: asesoría en derecho laboral, declaración de impuestos para personas naturales, desarrollo de software a medida, instalación de cámaras de seguridad, terapia psicológica).""".strip()
+    return (
+        "*Entendido. Escribe tus servicios nuevamente* usando tus propias "
+        "palabras e indicando el servicio y la especialidad o área exacta.\n\n"
+        "Si vas a escribir más de uno, sepáralos en líneas distintas (ej:\n"
+        "asesoría en derecho laboral\n"
+        "declaración de impuestos para personas naturales\n"
+        "desarrollo de software a medida\n"
+        "instalación de cámaras de seguridad\n"
+        "terapia psicológica)."
+    )
 
 
 def mensaje_servicios_aceptados() -> str:

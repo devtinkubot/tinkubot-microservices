@@ -1,15 +1,7 @@
-"""
-Configuración del Servicio AI Proveedores
+"""Configuración del Servicio AI Proveedores.
 
-Este módulo centraliza la configuración del servicio AI Proveedores utilizando pydantic-settings.
-Maneja las variables de entorno necesarias para el funcionamiento del servicio, incluyendo:
-
-- Conexión a Supabase (URL y clave de servicio)
-- Configuración de caché y tiempos de vida
-- Gestión de timeouts de flujos conversacionales
-- Configuración de puertos de comunicación
-
-Las variables se cargan desde el archivo .env o desde variables de entorno del sistema.
+Centraliza variables de entorno, Supabase, caché, Redis, embeddings y
+parámetros de limpieza automática del onboarding.
 """
 
 from typing import Optional
@@ -19,16 +11,7 @@ from pydantic_settings import BaseSettings
 
 
 class ConfiguracionServicio(BaseSettings):
-    """
-    Configuración centralizada del servicio AI Proveedores.
-
-    Atributos:
-        supabase_url: URL de conexión a Supabase (opcional, usa defaults si no se proporciona)
-        supabase_service_key: Clave de servicio JWT para Supabase con permisos elevados (opcional)
-        ttl_cache_segundos: Tiempo de vida del caché en segundos (default: 300)
-        ttl_flujo_segundos: Tiempo de vida del estado de flujo conversacional en Redis (default: 3600)
-        proveedores_service_port: Puerto donde escucha el servicio de proveedores (default: 8002)
-    """
+    """Configuración centralizada del servicio AI Proveedores."""
 
     # Configuración de Supabase
     supabase_url: Optional[str] = None
@@ -66,8 +49,31 @@ class ConfiguracionServicio(BaseSettings):
         validation_alias="AI_PROVEEDORES_INTERNAL_TOKEN",
     )
 
+    # Limpieza automática de onboarding
+    whatsapp_proveedores_url: str = Field(
+        default="http://wa-gateway:7000",
+        validation_alias="WHATSAPP_PROVEEDORES_URL",
+    )
+    whatsapp_proveedores_account_id: str = Field(
+        default="bot-proveedores",
+        validation_alias="WHATSAPP_PROVEEDORES_ACCOUNT_ID",
+    )
+    provider_onboarding_cleanup_interval_seconds: int = Field(
+        default=900,
+        validation_alias="PROVIDER_ONBOARDING_CLEANUP_INTERVAL_SECONDS",
+    )
+    provider_onboarding_warning_hours: int = Field(
+        default=48,
+        validation_alias="PROVIDER_ONBOARDING_WARNING_HOURS",
+    )
+    provider_onboarding_expiry_hours: int = Field(
+        default=72,
+        validation_alias="PROVIDER_ONBOARDING_EXPIRY_HOURS",
+    )
+
     class Config:
         """Configuración de pydantic-settings para cargar variables de entorno."""
+
         env_file = ".env"
         env_file_encoding = "utf-8"
         extra = "ignore"  # Ignorar variables extra no definidas

@@ -14,7 +14,10 @@ RUN apt-get update && apt-get install -y \
     gcc \
     postgresql-client \
     curl \
+    tzdata \
     && rm -rf /var/lib/apt/lists/*
+
+ENV TZ=America/Guayaquil
 
 # Copiar y instalar dependencias de Python
 COPY ai-search/requirements.txt .

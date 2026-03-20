@@ -30,7 +30,9 @@ RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build \
 FROM alpine:latest
 
 # Install runtime dependencies
-RUN apk --no-cache add ca-certificates sqlite-libs
+RUN apk --no-cache add ca-certificates sqlite-libs tzdata
+
+ENV TZ=America/Guayaquil
 
 WORKDIR /app
 

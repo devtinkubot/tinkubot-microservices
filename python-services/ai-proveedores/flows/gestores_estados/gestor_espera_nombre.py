@@ -3,8 +3,8 @@
 from typing import Any, Dict, Optional
 
 from flows.constructores import construir_payload_menu_principal
+from flows.validadores import validar_nombre_completo
 from services import actualizar_nombre_proveedor
-from services.servicios_proveedor.utilidades import limpiar_espacios
 from templates.registro import solicitar_foto_dni_frontal
 
 
@@ -23,16 +23,19 @@ async def manejar_espera_nombre(
     Returns:
         Respuesta con éxito y siguiente pregunta, o error de validación.
     """
-    nombre = limpiar_espacios(texto_mensaje)
-    if len(nombre) < 2:
+    resultado_validacion = validar_nombre_completo(texto_mensaje)
+    if not resultado_validacion.get("is_valid"):
         return {
             "success": True,
-            "messages": [{"response": "*Por favor, enviame tu nombre completo.*"}],
+            "messages": [
+                {"response": resultado_validacion.get("message")},
+            ],
         }
+    nombre = str(resultado_validacion.get("normalized_name") or "").strip()
 
     if flujo.get("profile_edit_mode") == "personal_name":
         resultado = await actualizar_nombre_proveedor(supabase, proveedor_id, nombre)
-        flujo["full_name"] = resultado.get("full_name") or nombre.title()
+        flujo["full_name"] = resultado.get("full_name") or nombre
         flujo.pop("profile_edit_mode", None)
         retorno_estado = str(flujo.pop("profile_return_state", "") or "").strip()
         flujo["state"] = retorno_estado or "awaiting_menu_option"

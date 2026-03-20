@@ -4,9 +4,12 @@ FROM python:3.11-slim
 # Directorio de trabajo
 WORKDIR /app
 
+ENV TZ=America/Guayaquil
+
 # Instalar dependencias del sistema
 RUN apt-get update && apt-get install -y \
     curl \
+    tzdata \
   && rm -rf /var/lib/apt/lists/*
 
 # Copiar requirements primero para mejor caché de Docker

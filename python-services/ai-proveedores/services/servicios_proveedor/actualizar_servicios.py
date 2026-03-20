@@ -84,46 +84,11 @@ async def actualizar_servicios(proveedor_id: str, servicios: List[str]) -> List[
                     f"esperados={servicios_limpios} persistidos={servicios_persistidos}"
                 )
 
-        await run_supabase(
-            lambda: supabase.table("providers")
-            .update(
-                {
-                    "service_review_required": False,
-                    "generic_services_removed": [],
-                }
-            )
-            .eq("id", proveedor_id)
-            .execute(),
-            label="providers.clear_legacy_generic_services",
+        await _limpiar_flags_y_cache_proveedor(
+            supabase=supabase,
+            proveedor_id=proveedor_id,
+            contexto="after_update",
         )
-
-        telefono = await _obtener_telefono_proveedor(supabase, proveedor_id)
-        if telefono:
-            try:
-                from flows.sesion import invalidar_cache_perfil_proveedor
-            except ImportError:
-                invalidar_cache_perfil_proveedor = None
-            try:
-                from flows.sesion import refrescar_cache_perfil_proveedor
-            except ImportError:
-                refrescar_cache_perfil_proveedor = None
-
-            if invalidar_cache_perfil_proveedor:
-                await invalidar_cache_perfil_proveedor(telefono)
-            try:
-                if refrescar_cache_perfil_proveedor:
-                    await refrescar_cache_perfil_proveedor(telefono)
-            except Exception as exc:
-                logger.warning(
-                    "⚠️ No se pudo refrescar cache de perfil %s: %s",
-                    telefono,
-                    exc,
-                )
-        else:
-            logger.warning(
-                "⚠️ No se pudo obtener teléfono para refrescar cache (provider_id=%s)",
-                proveedor_id,
-            )
 
         logger.info(
             "✅ Servicios sincronizados para proveedor %s (count=%s)",
@@ -139,6 +104,167 @@ async def actualizar_servicios(proveedor_id: str, servicios: List[str]) -> List[
         raise
 
     return servicios_limpios
+
+
+async def agregar_servicios_proveedor(
+    proveedor_id: str,
+    nuevos_servicios: List[str],
+) -> List[str]:
+    """
+    Agrega uno o más servicios sin reinsertar todo el catálogo del proveedor.
+
+    Este camino evita recalcular embeddings y reescribir filas ya persistidas,
+    que en WhatsApp introduce latencia suficiente para disparar reintentos
+    del gateway.
+    """
+    from principal import (  # Import dinámico para evitar circular import
+        servicio_embeddings,
+        supabase,
+    )
+
+    servicios_limpios = sanitizar_servicios(nuevos_servicios)
+    if not servicios_limpios:
+        if not supabase:
+            return []
+        return await _obtener_servicios_persistidos(
+            supabase=supabase,
+            proveedor_id=proveedor_id,
+        )
+
+    if not supabase:
+        return servicios_limpios
+
+    filas_actuales = await _cargar_filas_servicios_proveedor(
+        supabase=supabase,
+        proveedor_id=proveedor_id,
+    )
+    servicios_existentes = sanitizar_servicios(
+        [str(fila.get("service_name") or "").strip() for fila in filas_actuales]
+    )
+    servicios_a_insertar = [
+        servicio
+        for servicio in servicios_limpios
+        if servicio not in servicios_existentes
+    ]
+    if not servicios_a_insertar:
+        return servicios_existentes
+
+    from services.registro import insertar_servicios_proveedor
+
+    resultado_insercion = await insertar_servicios_proveedor(
+        supabase=supabase,
+        proveedor_id=proveedor_id,
+        servicios=servicios_a_insertar,
+        servicio_embeddings=servicio_embeddings,
+        display_order_start=len(filas_actuales),
+        mark_first_as_primary=not filas_actuales,
+    )
+    inserted_count = int(resultado_insercion.get("inserted_count", 0))
+    failed_services = resultado_insercion.get("failed_services", [])
+    if inserted_count != len(servicios_a_insertar) or failed_services:
+        raise RuntimeError(
+            "Inserción parcial de servicios incrementales: "
+            f"esperados={len(servicios_a_insertar)} insertados={inserted_count} "
+            f"fallidos={len(failed_services)}"
+        )
+
+    await _limpiar_flags_y_cache_proveedor(
+        supabase=supabase,
+        proveedor_id=proveedor_id,
+        contexto="after_incremental_add",
+    )
+
+    servicios_persistidos = await _obtener_servicios_persistidos(
+        supabase=supabase,
+        proveedor_id=proveedor_id,
+    )
+    logger.info(
+        "✅ Servicios agregados incrementalmente para proveedor %s (count=%s)",
+        proveedor_id,
+        len(servicios_persistidos),
+    )
+    return servicios_persistidos
+
+
+async def eliminar_servicio_proveedor(
+    proveedor_id: str,
+    indice_servicio: int,
+) -> List[str]:
+    """
+    Elimina un servicio puntual del proveedor y reindexa el catálogo restante.
+
+    Este camino evita reescribir todos los servicios con embeddings, que es más
+    costoso y más frágil que borrar una sola fila y reordenar lo que queda.
+    """
+    from principal import supabase
+
+    if not supabase:
+        return []
+
+    try:
+        filas = await _cargar_filas_servicios_proveedor(
+            supabase=supabase,
+            proveedor_id=proveedor_id,
+        )
+    except Exception as exc:
+        logger.error(
+            "❌ No se pudieron cargar los servicios para eliminar proveedor %s: %s",
+            proveedor_id,
+            exc,
+        )
+        raise
+
+    if indice_servicio < 0 or indice_servicio >= len(filas):
+        raise IndexError(
+            f"Índice de servicio fuera de rango para eliminar: {indice_servicio}"
+        )
+
+    fila_eliminada = filas[indice_servicio]
+    row_id = fila_eliminada.get("id")
+    if not row_id:
+        raise RuntimeError(f"provider_services sin id para proveedor {proveedor_id}")
+
+    try:
+        await _eliminar_fila_servicio(
+            supabase=supabase,
+            proveedor_id=proveedor_id,
+            row_id=row_id,
+        )
+    except Exception as exc:
+        logger.error(
+            "❌ No se pudo eliminar provider_services.id=%s para proveedor %s: %s",
+            row_id,
+            proveedor_id,
+            exc,
+        )
+        raise
+
+    filas_restantes = [fila for idx, fila in enumerate(filas) if idx != indice_servicio]
+    try:
+        await _reindexar_filas_restantes(
+            supabase=supabase,
+            proveedor_id=proveedor_id,
+            filas_restantes=filas_restantes,
+        )
+        await _limpiar_flags_y_cache_proveedor(
+            supabase=supabase,
+            proveedor_id=proveedor_id,
+            contexto="after_delete",
+        )
+    except Exception:
+        raise
+
+    servicios_persistidos = await _obtener_servicios_persistidos(
+        supabase=supabase,
+        proveedor_id=proveedor_id,
+    )
+
+    logger.info(
+        "✅ Servicio eliminado y servicios reindexados para proveedor %s (count=%s)",
+        proveedor_id,
+        len(servicios_persistidos),
+    )
+    return servicios_persistidos
 
 
 async def _obtener_telefono_proveedor(
@@ -191,3 +317,129 @@ async def _obtener_servicios_persistidos(
             if limpio:
                 servicios.append(limpio)
     return sanitizar_servicios(servicios)
+
+
+async def _cargar_filas_servicios_proveedor(
+    *,
+    supabase: Any,
+    proveedor_id: str,
+) -> List[dict[str, Any]]:
+    respuesta = await run_supabase(
+        lambda: supabase.table("provider_services")
+        .select("id,service_name,display_order")
+        .eq("provider_id", proveedor_id)
+        .order("display_order", desc=False)
+        .order("created_at", desc=False)
+        .execute(),
+        label="provider_services.list_for_delete",
+    )
+    return list(respuesta.data or [])
+
+
+async def _eliminar_fila_servicio(
+    *,
+    supabase: Any,
+    proveedor_id: str,
+    row_id: Any,
+) -> None:
+    await run_supabase(
+        lambda: supabase.table("provider_services").delete().eq("id", row_id).execute(),
+        label="provider_services.delete_single",
+    )
+    logger.info(
+        "🧹 Servicio eliminado de provider_services (provider_id=%s, row_id=%s)",
+        proveedor_id,
+        row_id,
+    )
+
+
+async def _reindexar_filas_restantes(
+    *,
+    supabase: Any,
+    proveedor_id: str,
+    filas_restantes: List[dict[str, Any]],
+) -> None:
+    for nuevo_indice, fila in enumerate(filas_restantes):
+        row_id_restante = fila.get("id")
+        if not row_id_restante:
+            continue
+        await _actualizar_fila_reindexada(
+            supabase=supabase,
+            row_id=row_id_restante,
+            nuevo_indice=nuevo_indice,
+        )
+    logger.info(
+        "🧭 Servicios reindexados para proveedor %s (count=%s)",
+        proveedor_id,
+        len(filas_restantes),
+    )
+
+
+async def _limpiar_flags_y_cache_proveedor(
+    *,
+    supabase: Any,
+    proveedor_id: str,
+    contexto: str,
+) -> None:
+    await run_supabase(
+        lambda: supabase.table("providers")
+        .update(
+            {
+                "service_review_required": False,
+                "generic_services_removed": [],
+            }
+        )
+        .eq("id", proveedor_id)
+        .execute(),
+        label=f"providers.clear_legacy_generic_services_{contexto}",
+    )
+
+    telefono = await _obtener_telefono_proveedor(supabase, proveedor_id)
+    if not telefono:
+        logger.warning(
+            "⚠️ No se pudo obtener teléfono para refrescar cache (provider_id=%s)",
+            proveedor_id,
+        )
+        return
+
+    try:
+        from flows.sesion import invalidar_cache_perfil_proveedor
+    except ImportError:
+        invalidar_cache_perfil_proveedor = None
+    try:
+        from flows.sesion import refrescar_cache_perfil_proveedor
+    except ImportError:
+        refrescar_cache_perfil_proveedor = None
+
+    if invalidar_cache_proveedor := invalidar_cache_perfil_proveedor:
+        await invalidar_cache_proveedor(telefono)
+    try:
+        if refrescar_cache_perfil_proveedor:
+            await refrescar_cache_perfil_proveedor(telefono)
+    except Exception as exc:
+        logger.warning(
+            "⚠️ No se pudo refrescar cache de perfil %s (%s): %s",
+            telefono,
+            contexto,
+            exc,
+        )
+
+
+async def _actualizar_fila_reindexada(
+    *,
+    supabase: Any,
+    row_id: Any,
+    nuevo_indice: int,
+) -> None:
+    await run_supabase(
+        lambda: supabase.table("provider_services")
+        .update(
+            {
+                "display_order": nuevo_indice,
+                "is_primary": nuevo_indice == 0,
+            }
+        )
+        .eq("id", row_id)
+        .execute(),
+        label="provider_services.reindex_after_delete",
+    )

@@ -196,6 +196,7 @@ async def test_viewing_provider_detail_foto_perfil_muestra_subvista():
     )
 
     assert guardado["provider_detail_view"] == "photo"
+    assert guardado["provider_results_expires_at"] is not None
     assert resultado["ui"]["type"] == "buttons"
     assert resultado["ui"]["options"][0]["id"] == DETALLE_PROVIDER_SUBVIEW_BACK
 

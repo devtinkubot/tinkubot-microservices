@@ -76,6 +76,7 @@ async def procesar_estado_viendo_detalle_proveedor(
         vista_actual != "menu" and eleccion_normalizada in ("regresar",)
     ) or seleccionado == DETALLE_PROVIDER_SUBVIEW_BACK:
         flujo["provider_detail_view"] = "menu"
+        marcar_ventana_listado_proveedores(flujo)
         await guardar_flujo_fn(flujo)
         return {
             "response": bloque_detalle_proveedor(proveedor),
@@ -120,21 +121,25 @@ async def procesar_estado_viendo_detalle_proveedor(
 
     if seleccionado == DETALLE_PROVIDER_PHOTO:
         flujo["provider_detail_view"] = "photo"
+        marcar_ventana_listado_proveedores(flujo)
         await guardar_flujo_fn(flujo)
         return mensaje_foto_perfil_proveedor(proveedor)
 
     if seleccionado == DETALLE_PROVIDER_SERVICES:
         flujo["provider_detail_view"] = "services"
+        marcar_ventana_listado_proveedores(flujo)
         await guardar_flujo_fn(flujo)
         return mensaje_servicios_proveedor(proveedor)
 
     if seleccionado == DETALLE_PROVIDER_SOCIAL:
         flujo["provider_detail_view"] = "social"
+        marcar_ventana_listado_proveedores(flujo)
         await guardar_flujo_fn(flujo)
         return mensaje_redes_sociales_proveedor(proveedor)
 
     if seleccionado == DETALLE_PROVIDER_CERTS:
         flujo["provider_detail_view"] = "certifications"
+        marcar_ventana_listado_proveedores(flujo)
         await guardar_flujo_fn(flujo)
         return mensaje_certificaciones_proveedor(proveedor)
 
@@ -142,6 +147,7 @@ async def procesar_estado_viendo_detalle_proveedor(
         return {"response": "No se encontró el proveedor seleccionado."}
 
     flujo["provider_detail_view"] = "menu"
+    marcar_ventana_listado_proveedores(flujo)
     await guardar_flujo_fn(flujo)
     return {
         "response": (

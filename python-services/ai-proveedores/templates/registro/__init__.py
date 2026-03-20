@@ -48,6 +48,14 @@ from .perfil_profesional import (
     payload_red_social_opcional,
     preguntar_experiencia_general,
 )
+from .caducidad_onboarding import (
+    TEMPLATE_EXPIRY_72H_ID,
+    TEMPLATE_EXPIRY_72H_LANGUAGE,
+    TEMPLATE_WARNING_48H_ID,
+    TEMPLATE_WARNING_48H_LANGUAGE,
+    payload_baja_onboarding_72h,
+    payload_recordatorio_onboarding_48h,
+)
 from .servicios import (
     confirmar_servicio_y_preguntar_otro,
     mensaje_debes_registrar_al_menos_un_servicio,
@@ -132,6 +140,12 @@ __all__ = [
     "mensaje_minimo_servicios_pendiente",
     "construir_resumen_confirmacion_perfil_profesional",
     "mensaje_menu_edicion_perfil_profesional",
+    "payload_recordatorio_onboarding_48h",
+    "payload_baja_onboarding_72h",
+    "TEMPLATE_WARNING_48H_ID",
+    "TEMPLATE_WARNING_48H_LANGUAGE",
+    "TEMPLATE_EXPIRY_72H_ID",
+    "TEMPLATE_EXPIRY_72H_LANGUAGE",
     "CONTINUE_PROFILE_COMPLETION_ID",
     "PROFILE_CONTROL_IDS",
     "PROFILE_SINGLE_USE_CONTROL_IDS",

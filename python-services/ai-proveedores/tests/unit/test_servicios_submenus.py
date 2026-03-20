@@ -5,31 +5,13 @@ from pathlib import Path
 from types import SimpleNamespace
 
 imghdr_stub = types.ModuleType("imghdr")
-imghdr_stub.what = lambda *args, **kwargs: None
+setattr(imghdr_stub, "what", lambda *args, **kwargs: None)
 sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import flows.gestores_estados.gestor_servicios as modulo_gestor_servicios  # noqa: E402
-import flows.gestores_estados.gestor_vistas_perfil as modulo_gestor_vistas_perfil  # noqa: E402
-from flows.gestores_estados.gestor_menu import manejar_estado_menu  # noqa: E402
-from flows.gestores_estados.gestor_menu import (  # noqa: E402
-    manejar_submenu_informacion_personal,
-    manejar_submenu_informacion_profesional,
-)
-from flows.gestores_estados.gestor_espera_nombre import (  # noqa: E402
-    manejar_espera_nombre,
-)
-from flows.gestores_estados.gestor_espera_certificado import (  # noqa: E402
-    manejar_espera_certificado,
-)
-from flows.interpretacion.interpreta_respuesta import interpretar_respuesta  # noqa: E402
-from flows.router import enrutar_estado  # noqa: E402
-from flows.gestores_estados.gestor_servicios import (  # noqa: E402
-    manejar_accion_servicios,
-    manejar_confirmacion_agregar_servicios,
-)
-from flows.gestores_estados.gestor_confirmacion_servicios import (  # noqa: E402
-    manejar_decision_agregar_otro_servicio,
+from flows.gestores_estados import (  # noqa: E402
+    gestor_vistas_perfil as modulo_gestor_vistas_perfil,
 )
 from flows.gestores_estados.gestor_confirmacion_servicios import (  # noqa: E402
     manejar_confirmacion_perfil_profesional,
@@ -42,6 +24,36 @@ from flows.gestores_estados.gestor_espera_certificado import (  # noqa: E402
 )
 from flows.gestores_estados.gestor_espera_especialidad import (  # noqa: E402
     manejar_espera_especialidad,
+)
+from flows.gestores_estados.gestor_espera_nombre import (  # noqa: E402
+    manejar_espera_nombre,
+)
+from flows.gestores_estados.gestor_menu import manejar_estado_menu  # noqa: E402
+from flows.gestores_estados.gestor_menu import (  # noqa: E402
+    manejar_submenu_informacion_personal,
+    manejar_submenu_informacion_profesional,
+)
+from flows.gestores_estados.gestor_servicios import (  # noqa: E402
+    manejar_accion_servicios,
+    manejar_agregar_servicios,
+    manejar_confirmacion_agregar_servicios,
+)
+from flows.interpretacion.interpreta_respuesta import (  # noqa: E402
+    interpretar_respuesta,
+)
+from flows.router import enrutar_estado  # noqa: E402
+from services.servicios_proveedor.ejemplos_servicios_top import (  # noqa: E402
+    obtener_ejemplos_servicios_top,
+)
+from templates.interfaz import DETAIL_ACTION_SERVICES_ADD  # noqa: E402
+from templates.interfaz import (  # noqa: E402
+    SERVICE_EXAMPLE_ADMIN_ID,
+    SERVICE_EXAMPLE_BACK_ID,
+    SERVICE_EXAMPLE_LEGAL_ID,
+    SERVICE_EXAMPLE_MECHANICS_ID,
+)
+from templates.interfaz.menus import (  # noqa: E402
+    payload_ejemplos_servicios_personalizados,
 )
 
 
@@ -120,18 +132,217 @@ def test_render_profile_view_limpia_query_string_en_foto_perfil(monkeypatch):
 
 
 def test_selector_servicios_abre_agregado_directo():
+    async def _fake_prompt(**_kwargs):
+        return {
+            "response": (
+                "Escribe el servicio que quieres agregar.\n"
+                "¿Necesitas ideas? Toca Ver ejemplos."
+            ),
+            "ui": {
+                "type": "list",
+                "list_button_text": "Ver ejemplos",
+                "options": [],
+            },
+            "service_examples_lookup": {},
+        }
+
+    monkeypatch = __import__("pytest").MonkeyPatch()
+    monkeypatch.setattr(
+        modulo_gestor_servicios,
+        "preguntar_nuevo_servicio_con_ejemplos_dinamicos",
+        _fake_prompt,
+    )
     flujo = {"services": ["plomeria"]}
 
-    respuesta = asyncio.run(
-        manejar_accion_servicios(
-            flujo=flujo,
-            texto_mensaje="1",
-            opcion_menu="1",
+    try:
+        respuesta = asyncio.run(
+            manejar_accion_servicios(
+                flujo=flujo,
+                texto_mensaje="1",
+                opcion_menu="1",
+            )
         )
-    )
+    finally:
+        monkeypatch.undo()
 
     assert flujo["state"] == "awaiting_service_add"
-    assert "nuevo servicio" in respuesta["response"].lower()
+    assert respuesta["response"] == (
+        "Escribe el servicio que quieres agregar.\n"
+        "¿Necesitas ideas? Toca Ver ejemplos."
+    )
+    assert respuesta["ui"]["type"] == "list"
+    assert respuesta["ui"]["list_button_text"] == "Ver ejemplos"
+
+
+def test_payload_ejemplos_servicios_tiene_tres_opciones():
+    payload = payload_ejemplos_servicios_personalizados(
+        [
+            {
+                "id": SERVICE_EXAMPLE_MECHANICS_ID,
+                "title": "Gasfitería",
+                "description": (
+                    "Instalación y mantenimiento de tuberías para casas " "o edificios"
+                ),
+            },
+            {
+                "id": SERVICE_EXAMPLE_LEGAL_ID,
+                "title": "Legal",
+                "description": (
+                    "Asesoría legal en divorcios, pensiones y trámites " "de familia"
+                ),
+            },
+            {
+                "id": SERVICE_EXAMPLE_ADMIN_ID,
+                "title": "Administrativo",
+                "description": (
+                    "Facturación, cobranza y gestión documental para " "negocios"
+                ),
+            },
+        ],
+        indice=4,
+        maximo=7,
+    )
+
+    assert payload["ui"]["type"] == "list"
+    assert payload["ui"]["list_button_text"] == "Ver ejemplos"
+    assert payload["ui"]["header_text"] == "Agregar Servicio 4 de 7"
+    assert len(payload["ui"]["options"]) == 4
+    assert payload["ui"]["options"][0]["id"] == SERVICE_EXAMPLE_MECHANICS_ID
+    assert payload["ui"]["options"][1]["id"] == SERVICE_EXAMPLE_LEGAL_ID
+    assert payload["ui"]["options"][2]["id"] == SERVICE_EXAMPLE_ADMIN_ID
+    assert payload["ui"]["options"][3]["id"] == SERVICE_EXAMPLE_BACK_ID
+    assert "Ej.:" not in payload["ui"]["options"][0]["description"]
+    assert payload["ui"]["options"][0]["title"] == "Gasfitería"
+
+
+def test_payload_ejemplos_servicios_trunca_titulos_largos():
+    payload = payload_ejemplos_servicios_personalizados(
+        [
+            {
+                "id": "provider_service_example:instalaciones_electricas",
+                "title": "Instalaciones eléctricas industriales y residenciales",
+                "description": (
+                    "Instalación, mantenimiento y certificación de tableros eléctricos"
+                ),
+            }
+        ]
+    )
+
+    titulo = payload["ui"]["options"][0]["title"]
+    assert len(titulo) <= 24
+    assert titulo.endswith("...")
+
+
+def test_obtener_ejemplos_servicios_top_prioriza_el_dominio_mas_usado(monkeypatch):
+    class _Respuesta:
+        def __init__(self, data):
+            self.data = data
+
+    async def _fake_run_supabase(callable_, label):
+        if label == "provider_services.top_examples":
+            servicio_gasfiteria_corto = "Cambio de llave"
+            servicio_gasfiteria_largo = (
+                "Instalación y mantenimiento de tuberías para casas, edificios, "
+                "locales comerciales y proyectos industriales"
+            )
+            servicio_legal = (
+                "Asesoría legal en divorcios, pensiones y trámites de familia"
+            )
+            return _Respuesta(
+                [
+                    {
+                        "domain_code": "gasfiteria",
+                        "service_name": servicio_gasfiteria_corto,
+                        "service_summary": servicio_gasfiteria_corto,
+                        "created_at": "2026-03-19T10:00:00Z",
+                    },
+                    {
+                        "domain_code": "gasfiteria",
+                        "service_name": servicio_gasfiteria_largo,
+                        "service_summary": servicio_gasfiteria_largo,
+                        "created_at": "2026-03-19T11:00:00Z",
+                    },
+                    {
+                        "domain_code": "legal",
+                        "service_name": servicio_legal,
+                        "service_summary": servicio_legal,
+                        "created_at": "2026-03-19T12:00:00Z",
+                    },
+                ]
+            )
+        if label == "service_domains.examples_catalog":
+            return _Respuesta(
+                [
+                    {
+                        "code": "gasfiteria",
+                        "display_name": "Gasfitería",
+                        "status": "active",
+                    },
+                    {
+                        "code": "legal",
+                        "display_name": "Legal",
+                        "status": "active",
+                    },
+                ]
+            )
+        return _Respuesta([])
+
+    monkeypatch.setattr(
+        "services.servicios_proveedor.ejemplos_servicios_top.run_supabase",
+        _fake_run_supabase,
+    )
+
+    ejemplos = asyncio.run(obtener_ejemplos_servicios_top(supabase=object()))
+
+    assert len(ejemplos) == 2
+    assert ejemplos[0]["id"] == "provider_service_example:gasfiteria"
+    assert ejemplos[0]["title"] == "Gasfitería"
+    assert len(ejemplos[0]["description"]) <= 68
+    assert ejemplos[0]["description"].startswith(
+        "Instalación y mantenimiento de tuberías"
+    )
+    assert ejemplos[1]["title"] == "Legal"
+
+
+def test_selector_servicios_abre_agregado_con_numeracion_contextual():
+    async def _fake_prompt(**_kwargs):
+        return {
+            "response": (
+                "Escribe el servicio que quieres agregar.\n"
+                "¿Necesitas ideas? Toca Ver ejemplos."
+            ),
+            "ui": {
+                "type": "list",
+                "list_button_text": "Ver ejemplos",
+                "options": [],
+            },
+            "service_examples_lookup": {},
+        }
+
+    monkeypatch = __import__("pytest").MonkeyPatch()
+    monkeypatch.setattr(
+        modulo_gestor_servicios,
+        "preguntar_nuevo_servicio_con_ejemplos_dinamicos",
+        _fake_prompt,
+    )
+    flujo = {"services": ["servicio 1", "servicio 2", "servicio 3"]}
+
+    try:
+        respuesta = asyncio.run(
+            manejar_accion_servicios(
+                flujo=flujo,
+                texto_mensaje="1",
+                opcion_menu="1",
+            )
+        )
+    finally:
+        monkeypatch.undo()
+
+    assert flujo["state"] == "awaiting_service_add"
+    assert respuesta["response"] == (
+        "Escribe el servicio que quieres agregar.\n"
+        "¿Necesitas ideas? Toca Ver ejemplos."
+    )
 
 
 def test_selector_servicios_muestra_menu_unificado():
@@ -150,14 +361,107 @@ def test_selector_servicios_muestra_menu_unificado():
     assert "Eliminar servicio" in respuesta["messages"][1]["response"]
 
 
+def test_submenu_profesional_servicios_agregar_muestra_secuencia_contextual():
+    async def _fake_prompt(**_kwargs):
+        return {
+            "response": (
+                "Escribe el servicio que quieres agregar.\n"
+                "¿Necesitas ideas? Toca Ver ejemplos."
+            ),
+            "ui": {
+                "type": "list",
+                "list_button_text": "Ver ejemplos",
+                "options": [],
+            },
+            "service_examples_lookup": {},
+        }
+
+    monkeypatch = __import__("pytest").MonkeyPatch()
+    monkeypatch.setattr(
+        modulo_gestor_vistas_perfil,
+        "preguntar_nuevo_servicio_con_ejemplos_dinamicos",
+        _fake_prompt,
+    )
+    flujo = {
+        "services": ["servicio 1", "servicio 2", "servicio 3"],
+        "provider_id": "prov-1",
+    }
+
+    try:
+        respuesta = asyncio.run(
+            modulo_gestor_vistas_perfil.manejar_vista_perfil(
+                flujo=flujo,
+                estado="viewing_professional_services",
+                texto_mensaje=DETAIL_ACTION_SERVICES_ADD,
+                proveedor_id="prov-1",
+            )
+        )
+    finally:
+        monkeypatch.undo()
+
+    assert flujo["state"] == "awaiting_service_add"
+    assert respuesta["response"] == (
+        "Escribe el servicio que quieres agregar.\n"
+        "¿Necesitas ideas? Toca Ver ejemplos."
+    )
+    assert respuesta["ui"]["type"] == "list"
+    assert respuesta["ui"]["list_button_text"] == "Ver ejemplos"
+
+
+def test_selector_servicios_reconoce_ejemplo_de_mecanica():
+    flujo = {
+        "services": ["plomeria"],
+        "service_examples_lookup": {
+            "provider_service_example:gasfiteria": {
+                "description": (
+                    "Instalación y mantenimiento de tuberías para casas o edificios"
+                )
+            }
+        },
+    }
+
+    respuesta = asyncio.run(
+        manejar_agregar_servicios(
+            flujo=flujo,
+            proveedor_id="prov-1",
+            texto_mensaje="provider_service_example:gasfiteria",
+            cliente_openai=None,
+        )
+    )
+
+    assert flujo["state"] == "awaiting_service_add"
+    assert "sugerencia" in respuesta["response"].lower()
+    assert "instalación y mantenimiento de tuberías" in respuesta["response"].lower()
+
+
+def test_selector_servicios_regresa_al_menu_desde_lista():
+    flujo = {
+        "services": ["plomeria"],
+        "state": "awaiting_service_add",
+    }
+
+    respuesta = asyncio.run(
+        manejar_agregar_servicios(
+            flujo=flujo,
+            proveedor_id="prov-1",
+            texto_mensaje="",
+            selected_option=SERVICE_EXAMPLE_BACK_ID,
+            cliente_openai=None,
+        )
+    )
+
+    assert flujo["state"] == "awaiting_service_action"
+    assert "Gestión de Servicios" in respuesta["messages"][0]["response"]
+
+
 def test_confirmacion_agregar_servicios_persiste_y_regresa_a_menu(monkeypatch):
-    async def _actualizar_servicios(proveedor_id, servicios):
-        return servicios
+    async def _agregar_servicios(proveedor_id, servicios):
+        return ["desarrollo de software", *servicios]
 
     monkeypatch.setattr(
         modulo_gestor_servicios,
-        "actualizar_servicios",
-        _actualizar_servicios,
+        "agregar_servicios_proveedor",
+        _agregar_servicios,
     )
 
     flujo = {
@@ -182,6 +486,208 @@ def test_confirmacion_agregar_servicios_persiste_y_regresa_a_menu(monkeypatch):
     assert (
         "transporte terrestre nacional de carga" in respuesta["messages"][0]["response"]
     )
+
+
+def test_agregar_servicios_entra_en_confirmacion_antes_de_guardar(monkeypatch):
+    async def _fake_normalizar(**_kwargs):
+        return {
+            "ok": True,
+            "services": ["transporte terrestre nacional de carga"],
+        }
+
+    monkeypatch.setattr(
+        modulo_gestor_servicios,
+        "_normalizar_servicios_ingresados",
+        _fake_normalizar,
+    )
+
+    flujo = {"services": ["desarrollo de software"]}
+
+    respuesta = asyncio.run(
+        manejar_agregar_servicios(
+            flujo=flujo,
+            proveedor_id="prov-1",
+            texto_mensaje="transporte terrestre nacional de carga",
+            cliente_openai=object(),
+        )
+    )
+
+    assert flujo["state"] == "awaiting_service_add_confirmation"
+    assert flujo["service_add_temporales"] == ["transporte terrestre nacional de carga"]
+    assert "¿Los agrego a tu perfil?" in respuesta["messages"][0]["response"]
+    assert respuesta["messages"][0]["ui"]["type"] == "buttons"
+    assert respuesta["messages"][0]["ui"]["options"][0]["title"] == "Agregar"
+    assert respuesta["messages"][0]["ui"]["options"][1]["title"] == "Corregir"
+
+
+def test_agregar_servicios_valido_sin_aclaracion_por_domino(monkeypatch):
+    class _TransformadorOK:
+        def __init__(self, cliente_openai, modelo=None):
+            self.cliente_openai = cliente_openai
+            self.modelo = modelo
+
+        async def transformar_a_servicios(self, *args, **kwargs):
+            return ["diseño y gestión de proyectos tecnológicos para empresas públicas"]
+
+    async def _validar_servicio_semanticamente(**kwargs):
+        servicio = kwargs["service_name"]
+        return {
+            "is_valid_service": True,
+            "needs_clarification": False,
+            "normalized_service": servicio,
+            "domain_resolution_status": "catalog_review_required",
+            "domain_code": "tecnologia",
+            "resolved_domain_code": None,
+            "proposed_category_name": "proyectos tecnológicos",
+            "proposed_service_summary": f"Servicio de {servicio}.",
+            "service_summary": f"Servicio de {servicio}.",
+            "reason": "ai_validation",
+            "clarification_question": None,
+        }
+
+    monkeypatch.setattr(
+        modulo_gestor_servicios,
+        "TransformadorServicios",
+        _TransformadorOK,
+    )
+    monkeypatch.setattr(
+        "flows.gestores_estados.gestor_servicios.validar_servicio_semanticamente",
+        _validar_servicio_semanticamente,
+    )
+
+    flujo = {"services": ["desarrollo de software"]}
+
+    respuesta = asyncio.run(
+        manejar_agregar_servicios(
+            flujo=flujo,
+            proveedor_id="prov-1",
+            texto_mensaje=(
+                "diseño y gestión de proyectos tecnológicos para empresas públicas"
+            ),
+            cliente_openai=object(),
+        )
+    )
+
+    assert flujo["state"] == "awaiting_service_add_confirmation"
+    assert flujo["service_add_temporales"] == [
+        "diseño y gestión de proyectos tecnológicos para empresas públicas"
+    ]
+    assert "¿Los agrego a tu perfil?" in respuesta["messages"][0]["response"]
+
+
+def test_confirmacion_agregar_servicios_acepta_selected_option_button(monkeypatch):
+    async def _agregar_servicios(proveedor_id, servicios):
+        return ["Pintura interior", *servicios]
+
+    monkeypatch.setattr(
+        "flows.gestores_estados.gestor_servicios.agregar_servicios_proveedor",
+        _agregar_servicios,
+    )
+
+    flujo = {
+        "state": "awaiting_service_add_confirmation",
+        "services": ["Pintura interior"],
+        "service_add_temporales": ["plomería"],
+    }
+
+    respuesta = asyncio.run(
+        manejar_confirmacion_agregar_servicios(
+            flujo=flujo,
+            proveedor_id="prov-123",
+            texto_mensaje="",
+            selected_option="profile_service_confirm",
+            cliente_openai=object(),
+        )
+    )
+
+    assert flujo["state"] == "awaiting_service_action"
+    assert flujo["services"] == ["Pintura interior", "plomería"]
+    assert "Gestión de Servicios" in respuesta["messages"][0]["response"]
+    assert "plomería" in respuesta["messages"][0]["response"]
+
+
+def test_confirmacion_agregar_servicios_acepta_texto_agregar(monkeypatch):
+    async def _agregar_servicios(proveedor_id, servicios):
+        return ["Pintura interior", *servicios]
+
+    monkeypatch.setattr(
+        "flows.gestores_estados.gestor_servicios.agregar_servicios_proveedor",
+        _agregar_servicios,
+    )
+
+    flujo = {
+        "state": "awaiting_service_add_confirmation",
+        "services": ["Pintura interior"],
+        "service_add_temporales": ["plomería"],
+    }
+
+    respuesta = asyncio.run(
+        manejar_confirmacion_agregar_servicios(
+            flujo=flujo,
+            proveedor_id="prov-123",
+            texto_mensaje="Agregar",
+            selected_option=None,
+            cliente_openai=object(),
+        )
+    )
+
+    assert flujo["state"] == "awaiting_service_action"
+    assert flujo["services"] == ["Pintura interior", "plomería"]
+    assert "Gestión de Servicios" in respuesta["messages"][0]["response"]
+    assert "plomería" in respuesta["messages"][0]["response"]
+
+
+def test_confirmacion_agregar_servicios_reintento_consumido_por_nonce(
+    monkeypatch,
+):
+    class _RedisStub:
+        def __init__(self):
+            self.keys = {"service_add_confirmation_consumed:prov-123:nonce-x"}
+
+        async def set_if_absent(self, key, value, expire=None):
+            if key in self.keys:
+                return False
+            self.keys.add(key)
+            return True
+
+    async def _render_profile_view(*args, **kwargs):
+        return {"response": "Vista actualizada"}
+
+    async def _agregar_servicios(proveedor_id, servicios):
+        raise AssertionError("No debe volver a persistir un reintento duplicado")
+
+    monkeypatch.setattr(
+        "flows.gestores_estados.gestor_servicios.cliente_redis",
+        _RedisStub(),
+    )
+    monkeypatch.setattr(
+        "flows.gestores_estados.gestor_servicios.agregar_servicios_proveedor",
+        _agregar_servicios,
+    )
+    monkeypatch.setattr(
+        "flows.gestores_estados.gestor_vistas_perfil.render_profile_view",
+        _render_profile_view,
+    )
+
+    flujo = {
+        "state": "awaiting_service_add_confirmation",
+        "services": ["Pintura interior"],
+        "service_add_temporales": ["plomería"],
+        "service_add_confirmation_nonce": "nonce-x",
+    }
+
+    respuesta = asyncio.run(
+        manejar_confirmacion_agregar_servicios(
+            flujo=flujo,
+            proveedor_id="prov-123",
+            texto_mensaje="Agregar",
+            selected_option=None,
+            cliente_openai=object(),
+        )
+    )
+
+    assert respuesta["messages"][0]["response"] == "Vista actualizada"
+    assert flujo["services"] == ["Pintura interior"]
 
 
 def test_confirmacion_agregar_servicios_con_siete_registrados_informa_limite():
@@ -276,7 +782,10 @@ def test_menu_aprobado_abre_submenu_informacion_personal():
 
     assert flujo["state"] == "awaiting_personal_info_action"
     assert respuesta["messages"][0]["ui"]["type"] == "list"
-    assert respuesta["messages"][0]["ui"]["options"][0]["id"] == "provider_submenu_personal_nombre"
+    assert (
+        respuesta["messages"][0]["ui"]["options"][0]["id"]
+        == "provider_submenu_personal_nombre"
+    )
 
 
 def test_submenu_personal_nombre_inicia_actualizacion():
@@ -292,7 +801,10 @@ def test_submenu_personal_nombre_inicia_actualizacion():
 
     assert flujo["state"] == "viewing_personal_name"
     assert respuesta["messages"][0]["ui"]["type"] == "buttons"
-    assert respuesta["messages"][0]["ui"]["options"][0]["id"] == "provider_detail_name_change"
+    assert (
+        respuesta["messages"][0]["ui"]["options"][0]["id"]
+        == "provider_detail_name_change"
+    )
 
 
 def test_submenu_personal_foto_no_se_interpreta_como_opcion_dos():
@@ -324,7 +836,10 @@ def test_submenu_personal_foto_no_se_interpreta_como_opcion_dos():
 
     assert flujo["state"] == "viewing_personal_photo"
     assert respuesta["response"]["messages"][0]["ui"]["type"] == "buttons"
-    assert respuesta["response"]["messages"][0]["ui"]["options"][0]["id"] == "provider_detail_photo_change"
+    assert (
+        respuesta["response"]["messages"][0]["ui"]["options"][0]["id"]
+        == "provider_detail_photo_change"
+    )
 
 
 def test_vista_dni_reverso_cambia_solo_reverso():
@@ -346,12 +861,12 @@ def test_vista_dni_reverso_cambia_solo_reverso():
 
 def test_headers_menus_interactivos_son_consistentes():
     from templates.interfaz import (
+        SERVICE_DELETE_BACK_ID,
+        payload_detalle_servicios,
         payload_lista_eliminar_servicios,
         payload_menu_post_registro_proveedor,
-        payload_detalle_servicios,
         payload_submenu_informacion_personal,
         payload_submenu_informacion_profesional,
-        SERVICE_DELETE_BACK_ID,
     )
 
     principal = payload_menu_post_registro_proveedor()
@@ -367,7 +882,10 @@ def test_headers_menus_interactivos_son_consistentes():
 
     eliminacion = payload_lista_eliminar_servicios(
         [
-            "Servicio extremadamente largo que supera el maximo permitido por Meta para la descripcion de una fila",
+            (
+                "Servicio extremadamente largo que supera el maximo permitido "
+                "por Meta para la descripcion de una fila"
+            ),
         ]
     )
     assert eliminacion["ui"]["header_text"] == "Menu - Eliminar Servicios"
@@ -376,12 +894,12 @@ def test_headers_menus_interactivos_son_consistentes():
 
 
 def test_eliminar_servicio_acepta_selected_option_interactivo(monkeypatch):
-    async def _actualizar_servicios(_proveedor_id, servicios):
-        return servicios
+    async def _eliminar_servicio_proveedor(_proveedor_id, _indice):
+        return ["Plomeria"]
 
     monkeypatch.setattr(
-        "flows.gestores_estados.gestor_servicios.actualizar_servicios",
-        _actualizar_servicios,
+        "flows.gestores_estados.gestor_servicios.eliminar_servicio_proveedor",
+        _eliminar_servicio_proveedor,
     )
 
     flujo = {
@@ -411,7 +929,10 @@ def test_eliminar_servicio_acepta_selected_option_interactivo(monkeypatch):
 
     assert flujo["state"] == "viewing_professional_services"
     assert flujo["services"] == ["Plomeria"]
-    assert "electricidad" in respuesta["response"]["messages"][0]["response"].lower()
+    assert (
+        respuesta["response"]["messages"][0]["ui"]["header_text"]
+        == "Servicios registrados (1/7)"
+    )
 
 
 def test_eliminar_servicio_regresar_vuelve_a_detalle():
@@ -476,7 +997,10 @@ def test_submenu_profesional_certificado_inicia_reemplazo():
 
     assert flujo["state"] == "viewing_professional_certificates"
     assert respuesta["messages"][0]["ui"]["type"] == "list"
-    assert respuesta["messages"][0]["ui"]["options"][0]["id"] == "provider_certificate_select:cert-1"
+    assert (
+        respuesta["messages"][0]["ui"]["options"][0]["id"]
+        == "provider_certificate_select:cert-1"
+    )
 
 
 def test_submenu_profesional_certificados_sin_items_abre_carga(monkeypatch):
@@ -521,7 +1045,10 @@ def test_submenu_profesional_redes_abre_vista_directa():
 
     assert flujo["state"] == "viewing_professional_social"
     assert respuesta["messages"][0]["ui"]["type"] == "buttons"
-    assert respuesta["messages"][0]["ui"]["options"][0]["id"] == "provider_detail_social_change"
+    assert (
+        respuesta["messages"][0]["ui"]["options"][0]["id"]
+        == "provider_detail_social_change"
+    )
     assert "instagram.com/test" in respuesta["messages"][0]["response"].lower()
 
 
@@ -568,7 +1095,10 @@ def test_actualizacion_nombre_regresa_menu_interactivo(monkeypatch):
 
     assert flujo["state"] == "viewing_personal_name"
     assert respuesta["messages"][1]["ui"]["type"] == "buttons"
-    assert respuesta["messages"][1]["ui"]["options"][0]["id"] == "provider_detail_name_change"
+    assert (
+        respuesta["messages"][1]["ui"]["options"][0]["id"]
+        == "provider_detail_name_change"
+    )
 
 
 def test_completar_perfil_envia_a_revision_humana(monkeypatch):
@@ -578,8 +1108,12 @@ def test_completar_perfil_envia_a_revision_humana(monkeypatch):
     async def _agregar_certificado_proveedor(**kwargs):
         return {"success": True}
 
-    monkeypatch.setattr("flows.router.actualizar_perfil_profesional", _actualizar_perfil_profesional)
-    monkeypatch.setattr("flows.router.agregar_certificado_proveedor", _agregar_certificado_proveedor)
+    monkeypatch.setattr(
+        "flows.router.actualizar_perfil_profesional", _actualizar_perfil_profesional
+    )
+    monkeypatch.setattr(
+        "flows.router.agregar_certificado_proveedor", _agregar_certificado_proveedor
+    )
 
     flujo = {
         "state": "awaiting_profile_completion_confirmation",
@@ -684,7 +1218,10 @@ def test_certificado_omitido_avanza_a_servicios():
 
     assert flujo["state"] == "awaiting_specialty"
     assert "2/3" in respuesta["messages"][0]["response"].lower()
-    assert "ahora sí, vamos con tus servicios" not in respuesta["messages"][0]["response"].lower()
+    assert (
+        "ahora sí, vamos con tus servicios"
+        not in respuesta["messages"][0]["response"].lower()
+    )
 
 
 def test_control_viejo_no_se_interpreta_como_servicio():
@@ -719,14 +1256,26 @@ def test_servicio_perfil_pide_confirmacion_individual(monkeypatch):
         "infrastructure.openai.transformador_servicios.TransformadorServicios",
         _TransformadorOK,
     )
+
     async def _validar_servicio_semanticamente(**kwargs):
+        servicio = kwargs["service_name"]
         return {
             "is_valid_service": True,
-            "normalized_service": "desarrollo aplicaciones moviles inteligencia artificial",
+            "needs_clarification": False,
+            "normalized_service": servicio,
+            "domain_resolution_status": "matched",
+            "domain_code": "tecnologia",
+            "resolved_domain_code": "tecnologia",
+            "proposed_category_name": servicio,
+            "proposed_service_summary": f"Servicio de {servicio}.",
+            "service_summary": f"Servicio de {servicio}.",
+            "reason": "heuristic_accept",
+            "clarification_question": None,
         }
 
     monkeypatch.setattr(
-        "flows.gestores_estados.gestor_espera_especialidad.validar_servicio_semanticamente",
+        "flows.gestores_estados."
+        "gestor_espera_especialidad.validar_servicio_semanticamente",
         _validar_servicio_semanticamente,
     )
 
@@ -745,15 +1294,84 @@ def test_servicio_perfil_pide_confirmacion_individual(monkeypatch):
     )
 
     assert flujo["state"] == "awaiting_profile_service_confirmation"
-    assert flujo["pending_service_candidate"] == "desarrollo aplicaciones moviles inteligencia artificial"
-    assert "servicio 1 de 3 identificado" in respuesta["messages"][0]["response"].lower()
+    assert flujo["pending_service_candidate"] == (
+        "desarrollo aplicaciones moviles " "inteligencia artificial"
+    )
+    assert (
+        "servicio 1 de 3 identificado" in respuesta["messages"][0]["response"].lower()
+    )
+
+
+def test_espera_especialidad_no_interrumpe_si_el_servicio_es_valido_y_domino_no_matchea(
+    monkeypatch,
+):
+    class _TransformadorOK:
+        def __init__(self, cliente_openai, modelo=None):
+            self.cliente_openai = cliente_openai
+            self.modelo = modelo
+
+        async def transformar_a_servicios(self, *args, **kwargs):
+            return ["diseño y gestión de proyectos tecnológicos para empresas públicas"]
+
+    monkeypatch.setattr(
+        "infrastructure.openai.transformador_servicios.TransformadorServicios",
+        _TransformadorOK,
+    )
+
+    async def _validar_servicio_semanticamente(**kwargs):
+        servicio = kwargs["service_name"]
+        return {
+            "is_valid_service": True,
+            "needs_clarification": False,
+            "normalized_service": servicio,
+            "domain_resolution_status": "catalog_review_required",
+            "domain_code": "tecnologia",
+            "resolved_domain_code": None,
+            "proposed_category_name": "proyectos tecnológicos",
+            "proposed_service_summary": f"Servicio de {servicio}.",
+            "service_summary": f"Servicio de {servicio}.",
+            "reason": "ai_validation",
+            "clarification_question": None,
+        }
+
+    monkeypatch.setattr(
+        "flows.gestores_estados."
+        "gestor_espera_especialidad.validar_servicio_semanticamente",
+        _validar_servicio_semanticamente,
+    )
+
+    flujo = {
+        "profile_completion_mode": True,
+        "servicios_temporales": [],
+        "state": "awaiting_specialty",
+    }
+
+    respuesta = asyncio.run(
+        manejar_espera_especialidad(
+            flujo=flujo,
+            texto_mensaje=(
+                "diseño y gestión de proyectos tecnológicos para empresas públicas"
+            ),
+            cliente_openai=object(),
+        )
+    )
+
+    assert flujo["state"] == "awaiting_profile_service_confirmation"
+    assert flujo["pending_service_candidate"] == (
+        "diseño y gestión de proyectos tecnológicos para empresas públicas"
+    )
+    assert (
+        "servicio 1 de 3 identificado" in respuesta["messages"][0]["response"].lower()
+    )
 
 
 def test_confirmar_servicio_perfil_avanza_al_siguiente_paso():
     flujo = {
         "profile_completion_mode": True,
         "servicios_temporales": [],
-        "pending_service_candidate": "desarrollo aplicaciones moviles inteligencia artificial",
+        "pending_service_candidate": (
+            "desarrollo aplicaciones moviles inteligencia artificial"
+        ),
         "pending_service_index": 0,
         "state": "awaiting_profile_service_confirmation",
     }
@@ -797,7 +1415,7 @@ def test_tercer_servicio_confirmado_muestra_resumen_final_de_perfil():
     )
 
     assert flujo["state"] == "awaiting_profile_completion_confirmation"
-    assert "por favor confirma tus datos" in respuesta["messages"][0]["response"].lower()
+    assert "confirma tus datos" in respuesta["messages"][0]["response"].lower()
     assert "servicio 1" in respuesta["messages"][0]["response"].lower()
     assert "servicio 3" in respuesta["messages"][0]["response"].lower()
 

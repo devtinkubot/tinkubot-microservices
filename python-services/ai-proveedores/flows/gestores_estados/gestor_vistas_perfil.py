@@ -17,7 +17,6 @@ from templates.interfaz import (
     CERTIFICATE_SELECT_PREFIX,
     DETAIL_ACTION_BACK,
     DETAIL_ACTION_CERTIFICATES_ADD,
-    DETAIL_ACTION_CERTIFICATES_DELETE,
     DETAIL_ACTION_CITY_CHANGE,
     DETAIL_ACTION_DNI_BACK_CHANGE,
     DETAIL_ACTION_DNI_FRONT_CHANGE,
@@ -36,19 +35,28 @@ from templates.interfaz import (
     payload_lista_eliminar_servicios,
     payload_submenu_informacion_personal,
     payload_submenu_informacion_profesional,
-)
-from templates.registro import payload_certificado_opcional, preguntar_nombre
-from templates.interfaz import (
+    preguntar_nuevo_servicio_con_ejemplos_dinamicos,
     solicitar_dni_frontal_actualizacion,
     solicitar_dni_reverso_actualizacion,
     solicitar_red_social_actualizacion,
+    solicitar_selfie_actualizacion,
 )
-from templates.registro import solicitar_ciudad_actualizacion
-from templates.interfaz import solicitar_dni_actualizacion, solicitar_selfie_actualizacion
-
+from templates.registro import (
+    payload_certificado_opcional,
+    preguntar_nombre,
+    solicitar_ciudad_actualizacion,
+)
 
 PERSONAL_PARENT_STATE = "awaiting_personal_info_action"
 PROFESSIONAL_PARENT_STATE = "awaiting_professional_info_action"
+
+
+def _cantidad_servicios_para_nuevo_ingreso(flujo: Dict[str, Any]) -> int:
+    if flujo.get("profile_completion_mode"):
+        temporales = list(flujo.get("servicios_temporales") or [])
+        if temporales:
+            return len(temporales)
+    return len(list(flujo.get("services") or []))
 
 
 def _valor_visible(valor: Any, predeterminado: str = "No registrado") -> str:
@@ -79,7 +87,9 @@ async def render_profile_view(
         return payload_detalle_nombre(_valor_visible(flujo.get("full_name")))
 
     if estado == "viewing_personal_city":
-        return payload_detalle_ubicacion(_valor_visible(flujo.get("city"), "No registrada"))
+        return payload_detalle_ubicacion(
+            _valor_visible(flujo.get("city"), "No registrada")
+        )
 
     if estado == "viewing_personal_photo":
         return payload_detalle_foto(
@@ -106,22 +116,32 @@ async def render_profile_view(
         )
 
     if estado == "viewing_professional_services":
-        return payload_detalle_servicios(list(flujo.get("services") or []), SERVICIOS_MAXIMOS)
+        return payload_detalle_servicios(
+            list(flujo.get("services") or []), SERVICIOS_MAXIMOS
+        )
 
     if estado == "viewing_professional_social":
-        return payload_detalle_red_social(_valor_visible(flujo.get("social_media_url"), "No registrada"))
+        return payload_detalle_red_social(
+            _valor_visible(flujo.get("social_media_url"), "No registrada")
+        )
 
     if estado == "viewing_professional_certificates":
         certificados = await listar_certificados_proveedor(str(proveedor_id or ""))
         flujo["active_certificates"] = certificados
-        return payload_lista_certificados(certificados, max_certificados=CERTIFICADOS_MAXIMOS)
+        return payload_lista_certificados(
+            certificados, max_certificados=CERTIFICADOS_MAXIMOS
+        )
 
     if estado == "viewing_professional_certificate":
         certificados = await listar_certificados_proveedor(str(proveedor_id or ""))
         flujo["active_certificates"] = certificados
         seleccionado = str(flujo.get("selected_certificate_id") or "").strip()
-        certificado = next(
-            (item for item in certificados if str(item.get("id") or "").strip() == seleccionado),
+        certificado: Dict[str, Any] = next(
+            (
+                item
+                for item in certificados
+                if str(item.get("id") or "").strip() == seleccionado
+            ),
             {},
         )
         if not certificado:
@@ -141,7 +161,7 @@ async def render_profile_view(
     return payload_submenu_informacion_personal()
 
 
-async def manejar_vista_perfil(
+async def manejar_vista_perfil(  # noqa: C901
     *,
     flujo: Dict[str, Any],
     estado: str,
@@ -158,7 +178,10 @@ async def manejar_vista_perfil(
             return {"success": True, "messages": [{"response": preguntar_nombre()}]}
         if texto == DETAIL_ACTION_BACK:
             flujo["state"] = PERSONAL_PARENT_STATE
-            return {"success": True, "messages": [payload_submenu_informacion_personal()]}
+            return {
+                "success": True,
+                "messages": [payload_submenu_informacion_personal()],
+            }
 
     if estado == "viewing_personal_city":
         if texto == DETAIL_ACTION_CITY_CHANGE:
@@ -168,16 +191,25 @@ async def manejar_vista_perfil(
             return {"success": True, "messages": [solicitar_ciudad_actualizacion()]}
         if texto == DETAIL_ACTION_BACK:
             flujo["state"] = PERSONAL_PARENT_STATE
-            return {"success": True, "messages": [payload_submenu_informacion_personal()]}
+            return {
+                "success": True,
+                "messages": [payload_submenu_informacion_personal()],
+            }
 
     if estado == "viewing_personal_photo":
         if texto == DETAIL_ACTION_PHOTO_CHANGE:
             flujo["profile_return_state"] = "viewing_personal_photo"
             flujo["state"] = "awaiting_face_photo_update"
-            return {"success": True, "messages": [{"response": solicitar_selfie_actualizacion()}]}
+            return {
+                "success": True,
+                "messages": [{"response": solicitar_selfie_actualizacion()}],
+            }
         if texto == DETAIL_ACTION_BACK:
             flujo["state"] = PERSONAL_PARENT_STATE
-            return {"success": True, "messages": [payload_submenu_informacion_personal()]}
+            return {
+                "success": True,
+                "messages": [payload_submenu_informacion_personal()],
+            }
 
     if estado in {"viewing_personal_dni_front", "viewing_personal_dni_back"}:
         if texto == DETAIL_ACTION_DNI_FRONT_CHANGE:
@@ -198,13 +230,28 @@ async def manejar_vista_perfil(
             }
         if texto == DETAIL_ACTION_BACK:
             flujo["state"] = PERSONAL_PARENT_STATE
-            return {"success": True, "messages": [payload_submenu_informacion_personal()]}
+            return {
+                "success": True,
+                "messages": [payload_submenu_informacion_personal()],
+            }
 
     if estado == "viewing_professional_services":
         if texto == DETAIL_ACTION_SERVICES_ADD:
+            cantidad_actual = _cantidad_servicios_para_nuevo_ingreso(flujo)
             flujo["profile_return_state"] = "viewing_professional_services"
             flujo["state"] = "awaiting_service_add"
-            return {"success": True, "response": "Escribe el nuevo servicio que deseas agregar. Si son varios, sepáralos con comas."}
+            respuesta = await preguntar_nuevo_servicio_con_ejemplos_dinamicos(
+                indice=cantidad_actual + 1,
+                maximo=SERVICIOS_MAXIMOS,
+            )
+            flujo["service_examples_lookup"] = (
+                respuesta.get("service_examples_lookup") or {}
+            )
+            return {
+                "success": True,
+                "response": respuesta["response"],
+                "ui": respuesta["ui"],
+            }
         if texto == DETAIL_ACTION_SERVICES_REMOVE:
             flujo["state"] = "awaiting_service_remove"
             return {
@@ -215,16 +262,25 @@ async def manejar_vista_perfil(
             }
         if texto == DETAIL_ACTION_BACK:
             flujo["state"] = PROFESSIONAL_PARENT_STATE
-            return {"success": True, "messages": [payload_submenu_informacion_profesional()]}
+            return {
+                "success": True,
+                "messages": [payload_submenu_informacion_profesional()],
+            }
 
     if estado == "viewing_professional_social":
         if texto == DETAIL_ACTION_SOCIAL_CHANGE:
             flujo["profile_return_state"] = "viewing_professional_social"
             flujo["state"] = "awaiting_social_media_update"
-            return {"success": True, "messages": [{"response": solicitar_red_social_actualizacion()}]}
+            return {
+                "success": True,
+                "messages": [{"response": solicitar_red_social_actualizacion()}],
+            }
         if texto == DETAIL_ACTION_BACK:
             flujo["state"] = PROFESSIONAL_PARENT_STATE
-            return {"success": True, "messages": [payload_submenu_informacion_profesional()]}
+            return {
+                "success": True,
+                "messages": [payload_submenu_informacion_profesional()],
+            }
 
     if estado == "viewing_professional_certificates":
         certificados = await listar_certificados_proveedor(str(proveedor_id or ""))
@@ -242,9 +298,14 @@ async def manejar_vista_perfil(
             return {"success": True, "messages": [payload_certificado_opcional()]}
         if texto == CERTIFICATE_BACK_ID:
             flujo["state"] = PROFESSIONAL_PARENT_STATE
-            return {"success": True, "messages": [payload_submenu_informacion_profesional()]}
+            return {
+                "success": True,
+                "messages": [payload_submenu_informacion_profesional()],
+            }
         if texto.startswith(CERTIFICATE_SELECT_PREFIX):
-            flujo["selected_certificate_id"] = texto.removeprefix(CERTIFICATE_SELECT_PREFIX)
+            flujo["selected_certificate_id"] = texto.removeprefix(
+                CERTIFICATE_SELECT_PREFIX
+            )
             flujo["state"] = "viewing_professional_certificate"
             return {
                 "success": True,
