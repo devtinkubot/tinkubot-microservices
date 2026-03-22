@@ -29,6 +29,7 @@ def test_payload_confirmacion_resumen_retorna_botones_interactivos():
     assert payload["response"] == resumen_test
     assert payload["ui"]["type"] == "buttons"
     assert payload["ui"]["id"] == "provider_registration_confirm_v1"
+    assert payload["ui"]["footer_text"] == "¿Confirmas que los datos son correctos?"
     assert len(payload["ui"]["options"]) == 2
 
     # Verificar botón de aceptar

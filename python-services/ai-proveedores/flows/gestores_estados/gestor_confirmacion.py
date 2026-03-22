@@ -3,8 +3,12 @@
 from typing import Any, Awaitable, Callable, Dict, Optional
 
 from models.proveedores import SolicitudCreacionProveedor
-from templates import mensaje_proveedor_en_revision
-from templates.registro import CONFIRM_ACCEPT_ID, CONFIRM_REJECT_ID
+from templates.verificacion.estados import mensaje_proveedor_en_revision
+from templates.registro import (
+    CONFIRM_ACCEPT_ID,
+    CONFIRM_REJECT_ID,
+    payload_resumen_consentimiento_registro,
+)
 from flows.validadores.validador_entrada import parsear_cadena_servicios
 from services.registro import validar_y_construir_proveedor
 
@@ -94,6 +98,7 @@ async def manejar_confirmacion(
         }
 
     if opcion == "accept":
+        flujo["has_consent"] = True
         # Validar y construir proveedor usando el servicio de negocio
         es_valido, mensaje_error, datos_proveedor = validar_y_construir_proveedor(
             flujo, telefono
@@ -167,11 +172,7 @@ async def manejar_confirmacion(
         }
 
     # Opción no reconocida - reenviar solicitud con botones
-    from flows.constructores import construir_resumen_confirmacion
-    from templates.registro import payload_confirmacion_resumen
-
-    resumen = construir_resumen_confirmacion(flujo)
     return {
         "success": True,
-        "messages": [payload_confirmacion_resumen(resumen)],
+        "messages": [payload_resumen_consentimiento_registro(flujo)],
     }

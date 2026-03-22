@@ -24,6 +24,7 @@ def payload_confirmacion_resumen(resumen: str) -> Dict[str, Any]:
     ui: Dict[str, Any] = {
         "type": "buttons",
         "id": "provider_registration_confirm_v1",
+        "footer_text": "¿Confirmas que los datos son correctos?",
         "options": [
             {"id": CONFIRM_ACCEPT_ID, "title": "Acepto"},
             {"id": CONFIRM_REJECT_ID, "title": "No acepto"},

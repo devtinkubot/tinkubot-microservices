@@ -125,26 +125,6 @@ const invalidarCacheProveedor = async (phone, requestId = null) => {
   }
 };
 
-const crearClienteAiProveedores = (requestId = null) => {
-  if (!aiProveedoresUrl) {
-    const error = new Error("AI Proveedores no configurado.");
-    error.status = 500;
-    throw error;
-  }
-
-  const headers = {};
-  if (requestId) headers["x-request-id"] = requestId;
-  if (aiProveedoresInternalToken) {
-    headers["x-internal-token"] = aiProveedoresInternalToken;
-  }
-
-  return axios.create({
-    baseURL: aiProveedoresUrl.replace(/\/$/, ""),
-    timeout: requestTimeoutMs,
-    headers,
-  });
-};
-
 console.warn(
   `📦 Provider data source: Supabase REST (${supabaseProvidersTable})`,
 );
@@ -179,17 +159,28 @@ const obtenerFechaNormalizada = (valor) => {
   return Number.isNaN(fecha.getTime()) ? null : fecha;
 };
 
-const HORAS_48_MS = 48 * 60 * 60 * 1000;
-const esProveedorPerfilProfesionalPendiente = (proveedor) => {
-  if (!proveedor || proveedor.status !== "approved_basic") {
-    return false;
-  }
-  const fechaReferencia =
-    obtenerFechaNormalizada(proveedor.approvedBasicAt) ||
-    obtenerFechaNormalizada(proveedor.registeredAt);
-  if (!fechaReferencia) return false;
-  return Date.now() - fechaReferencia.getTime() >= HORAS_48_MS;
+const MINIMO_SERVICIOS_OPERATIVOS = 3;
+const tienePerfilProfesionalCompleto = (proveedor) => {
+  if (!proveedor) return false;
+  const serviciosValidos = Array.isArray(proveedor.servicesList)
+    ? proveedor.servicesList.filter(
+        (item) => typeof item === "string" && item.trim().length > 0,
+      )
+    : [];
+  const experiencia =
+    typeof proveedor.experienceYears === "number" &&
+    Number.isFinite(proveedor.experienceYears)
+      ? proveedor.experienceYears
+      : 0;
+  return experiencia > 0 && serviciosValidos.length >= MINIMO_SERVICIOS_OPERATIVOS;
 };
+
+const esProveedorPerfilProfesionalPendiente = (proveedor) =>
+  Boolean(
+    proveedor &&
+      proveedor.status === "approved_basic" &&
+      !tienePerfilProfesionalCompleto(proveedor),
+  );
 
 const extraerUrlDocumento = (valor) => {
   if (!valor) return undefined;
@@ -231,16 +222,31 @@ const extraerUrlDocumento = (valor) => {
 
 const construirMensajeAprobacion = (nombre) => {
   const safeName = limpiarTexto(nombre);
-  const saludo = safeName
-    ? `✅ Hola *_${safeName}_*. Ya formas parte de TinkuBot. El siguiente paso es completar tu perfil profesional.`
-    : "✅ Ya formas parte de TinkuBot. El siguiente paso es completar tu perfil profesional.";
+  const primerNombre = safeName.split(/\s+/)[0] || "";
 
   return {
-    message: saludo,
+    message: [
+      `¡Hola ${primerNombre || "proveedor"}, ya puedes trabajar!`,
+      "",
+      "Tu información fue aprobada. Para empezar a recibir clientes, completa tu perfil profesional:",
+      "",
+      "📋 Años de experiencia",
+      "🛠️ 3 servicios que ofreces",
+      "",
+      "Tómate 2 minutos y listo.",
+    ].join("\n"),
     ui: {
       type: "buttons",
-      id: "provider_basic_approval_v1",
-      options: [{ id: "continue_profile_completion", title: "Continuar" }],
+      id: "provider_basic_approval_v2",
+      header_type: "text",
+      header_text: "✅ Aprobado",
+      footer_text: "Empezar a recibir solicitudes →",
+      options: [
+        {
+          id: "provider_menu_info_profesional",
+          title: "Completar perfil",
+        },
+      ],
     },
   };
 };
@@ -269,7 +275,7 @@ const construirMenuProveedorAprobado = () => ({
       {
         id: "provider_menu_info_profesional",
         title: "Información profesional",
-        description: "Servicios, certificados y redes sociales",
+        description: "Experiencia, servicios, certificaciones y redes sociales",
       },
       {
         id: "provider_menu_eliminar_registro",
@@ -461,9 +467,6 @@ const normalizarProveedorSupabase = (registro) => {
         .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
         .map((item) => ({
           serviceName: item.service_name.trim(),
-          normalizedName:
-            limpiarTexto(item.service_name_normalized) ||
-            normalizarAliasTaxonomia(item.service_name),
         }))
         .filter((item) => item.serviceName.length > 0)
     : [];
@@ -599,6 +602,10 @@ const normalizarProveedorSupabase = (registro) => {
     verificationReviewer,
     verificationReviewedAt,
     approvedBasicAt,
+    professionalProfileComplete: tienePerfilProfesionalCompleto({
+      servicesList,
+      experienceYears,
+    }),
   };
 };
 
@@ -747,7 +754,7 @@ const construirRutaSupabaseResumenEstadosProveedores = () => {
   const parametrosBase = [
     "limit=5000",
     "order=created_at.asc",
-    "select=id,full_name,phone,real_phone,created_at,approved_notified_at,verification_reviewed_at,status,provider_services(service_name,service_name_normalized,display_order)",
+    "select=id,full_name,phone,real_phone,created_at,approved_notified_at,verification_reviewed_at,status,experience_years,provider_services(service_name,service_name_normalized,display_order)",
     "status=in.(pending,approved_basic,profile_pending_review,interview_required,approved)",
   ];
 
@@ -797,7 +804,11 @@ const obtenerResumenEstadosProveedoresSupabase = async () => {
 
     if (provider.status === "approved_basic") {
       summary.personalApproved += 1;
-      summary.professionalToComplete += 1;
+      if (provider.professionalProfileComplete) {
+        summary.profileComplete += 1;
+      } else {
+        summary.professionalToComplete += 1;
+      }
       continue;
     }
 

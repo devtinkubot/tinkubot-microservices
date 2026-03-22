@@ -2,12 +2,13 @@
 
 from typing import Any, Dict
 
-from templates import (
-    mensaje_guia_proveedor,
+from templates.interfaz.menus import (
     mensaje_menu_post_registro_proveedor,
     mensaje_menu_principal_proveedor,
     payload_menu_post_registro_proveedor,
 )
+from templates.interfaz.registro_inicio import payload_menu_registro_proveedor
+from templates.registro.pasos_registro import mensaje_guia_proveedor
 
 
 def construir_menu_principal(
@@ -36,10 +37,13 @@ def construir_payload_menu_principal(
     esta_registrado: bool = False,
     menu_limitado: bool = False,
     approved_basic: bool = False,
+    provider_name: str = "",
 ) -> Dict[str, Any]:
     """Construye un payload de menú listo para enviar por WhatsApp."""
-    if esta_registrado and not menu_limitado and not approved_basic:
+    if esta_registrado and not menu_limitado:
         return payload_menu_post_registro_proveedor()
+    if not esta_registrado:
+        return payload_menu_registro_proveedor()
     return {
         "response": construir_menu_principal(
             esta_registrado=esta_registrado,
@@ -64,6 +68,7 @@ def construir_payload_menu_desde_flujo(flujo: Dict[str, Any]) -> Dict[str, Any]:
         esta_registrado=bool(flujo.get("esta_registrado")),
         menu_limitado=bool(flujo.get("menu_limitado")),
         approved_basic=bool(flujo.get("approved_basic")),
+        provider_name=str(flujo.get("full_name") or flujo.get("name") or ""),
     )
 
 

@@ -30,13 +30,11 @@ async def manejar_estado_consentimiento(
             )
             return {
                 "success": True,
-                "messages": [
-                    (
-                        {"response": preguntar_real_phone()}
-                        if requiere_real_phone
-                        else solicitar_ciudad_registro()
-                    )
-                ],
+                "messages": (
+                    [{"response": preguntar_real_phone()}]
+                    if requiere_real_phone
+                    else [solicitar_ciudad_registro()]
+                ),
             }
 
         flujo["state"] = "awaiting_menu_option"

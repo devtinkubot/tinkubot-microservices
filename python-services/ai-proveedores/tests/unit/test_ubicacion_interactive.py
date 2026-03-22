@@ -9,15 +9,28 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import pytest
 
-from flows.gestores_estados.gestor_espera_ciudad import manejar_espera_ciudad  # noqa: E402
-from services.registro.normalizacion import normalizar_datos_proveedor  # noqa: E402
-from services.registro.validacion_registro import validar_y_construir_proveedor  # noqa: E402
+from flows.gestores_estados.gestor_espera_ciudad import (  # noqa: E402
+    manejar_espera_ciudad,
+)
+from services.registro.normalizacion import (  # noqa: E402
+    normalizar_datos_proveedor,
+)
+from services.registro.validacion_registro import (  # noqa: E402
+    validar_y_construir_proveedor,
+)
 from templates.registro import solicitar_ciudad_registro  # noqa: E402
 
 
 def test_solicitar_ciudad_registro_incluye_location_request():
     payload = solicitar_ciudad_registro()
 
+    assert (
+        payload["response"]
+        == (
+            "Ahora comparte tu *ubicación* para ubicar tu *ciudad*. "
+            "Si prefieres, puedes escribir tu ciudad o una referencia cercana."
+        )
+    )
     assert payload["ui"]["type"] == "location_request"
     assert payload["ui"]["id"] == "provider_location_request_city_initial"
 
@@ -28,7 +41,8 @@ async def test_manejar_espera_ciudad_acepta_ubicacion_y_resuelve_ciudad(monkeypa
         return "Cuenca"
 
     monkeypatch.setattr(
-        "flows.gestores_estados.gestor_espera_ciudad._resolver_ciudad_desde_coordenadas",
+        "flows.gestores_estados.gestor_espera_ciudad."
+        "_resolver_ciudad_desde_coordenadas",
         _resolver,
     )
 
@@ -45,7 +59,10 @@ async def test_manejar_espera_ciudad_acepta_ubicacion_y_resuelve_ciudad(monkeypa
     assert flujo["city"] == "cuenca"
     assert flujo["location_lat"] == -2.9039
     assert flujo["location_lng"] == -78.9838
-    assert flujo["state"] == "awaiting_name"
+    assert flujo["state"] == "awaiting_dni_front_photo"
+    assert "cédula" in respuesta["messages"][0]["response"].lower()
+    assert respuesta["messages"][0]["media_type"] == "image"
+    assert "tinkubot_dni_photo.png" in respuesta["messages"][0]["media_url"]
 
 
 @pytest.mark.asyncio
@@ -54,7 +71,8 @@ async def test_manejar_espera_ciudad_si_no_resuelve_repregunta_manual(monkeypatc
         return None
 
     monkeypatch.setattr(
-        "flows.gestores_estados.gestor_espera_ciudad._resolver_ciudad_desde_coordenadas",
+        "flows.gestores_estados.gestor_espera_ciudad."
+        "_resolver_ciudad_desde_coordenadas",
         _resolver,
     )
 
@@ -69,7 +87,35 @@ async def test_manejar_espera_ciudad_si_no_resuelve_repregunta_manual(monkeypatc
 
     assert flujo["state"] == "awaiting_city"
     assert respuesta["messages"][1]["ui"]["type"] == "location_request"
-    assert "No pude identificar la ciudad exacta" in respuesta["messages"][0]["response"]
+    assert (
+        "No pude identificar la ciudad exacta"
+        in respuesta["messages"][0]["response"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_manejar_espera_ciudad_acepta_referencia_cercana_en_texto(monkeypatch):
+    async def _resolver_texto(_texto):
+        return "Cuenca"
+
+    monkeypatch.setattr(
+        "flows.gestores_estados.gestor_espera_ciudad."
+        "_resolver_ciudad_desde_texto",
+        _resolver_texto,
+    )
+
+    flujo = {"state": "awaiting_city"}
+    respuesta = await manejar_espera_ciudad(
+        flujo,
+        "Polideportivo de la ciudad",
+        carga=None,
+        supabase=None,
+        proveedor_id=None,
+    )
+
+    assert respuesta["success"] is True
+    assert flujo["city"] == "cuenca"
+    assert flujo["state"] == "awaiting_dni_front_photo"
 
 
 def test_validacion_registro_proveedor_preserva_coordenadas():

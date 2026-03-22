@@ -11,7 +11,7 @@ from flows.constructores import (
     construir_respuesta_verificado,
 )
 from flows.registro import determinar_estado_registro
-from templates.registro.perfil_profesional import payload_continuar_perfil_profesional
+from services.servicios_proveedor.redes_sociales_slots import resolver_redes_sociales
 
 ESTADOS_APROBADOS_OPERATIVOS = {"approved", "approved_basic"}
 ESTADOS_MENU_LIMITADO = {"interview_required"}
@@ -108,6 +108,11 @@ def sincronizar_flujo_con_perfil(
         flujo["services"] = _fusionar_servicios_perfil(perfil_proveedor)
         if perfil_proveedor.get("social_media_url") is not None:
             flujo["social_media_url"] = perfil_proveedor.get("social_media_url")
+        if perfil_proveedor.get("social_media_type") is not None:
+            flujo["social_media_type"] = perfil_proveedor.get("social_media_type")
+        redes = resolver_redes_sociales(perfil_proveedor)
+        flujo["facebook_username"] = redes["facebook_username"]
+        flujo["instagram_username"] = redes["instagram_username"]
         if perfil_proveedor.get("face_photo_url") is not None:
             flujo["face_photo_url"] = perfil_proveedor.get("face_photo_url")
         if perfil_proveedor.get("dni_front_photo_url") is not None:
@@ -228,21 +233,40 @@ async def manejar_estado_inicial(
         return None
 
     if not tiene_consentimiento:
+        if not esta_registrado:
+            flujo.clear()
+            flujo.update(
+                {
+                    "state": "awaiting_menu_option",
+                    "mode": "registration",
+                    "has_consent": False,
+                }
+            )
+            return {
+                "success": True,
+                "messages": [
+                    construir_payload_menu_principal(esta_registrado=False)
+                ],
+            }
+
         nuevo_flujo = {"state": "awaiting_consent", "has_consent": False}
-        if not esta_registrado and flujo.get("requires_real_phone"):
-            nuevo_flujo["post_consent_state"] = "awaiting_real_phone"
-        elif not esta_registrado:
-            nuevo_flujo["post_consent_state"] = "awaiting_city"
         flujo.clear()
         flujo.update(nuevo_flujo)
         return await solicitar_consentimiento(telefono)
 
     if not esta_registrado:
-        # NO está registrado: resetear consentimiento y mostrarlo de nuevo
-        # (el menú solo se muestra cuando el registro está completo)
         flujo.clear()
-        flujo.update({"state": "awaiting_consent", "has_consent": False})
-        return await solicitar_consentimiento(telefono)
+        flujo.update(
+            {
+                "state": "awaiting_menu_option",
+                "mode": "registration",
+                "has_consent": False,
+            }
+        )
+        return {
+            "success": True,
+            "messages": [construir_payload_menu_principal(esta_registrado=False)],
+        }
 
     if not esta_verificado:
         if menu_limitado:
@@ -271,25 +295,6 @@ async def manejar_estado_inicial(
         return construir_respuesta_revision(nombre_proveedor)
 
     # SÍ está registrado: establecer estado para menú de registrados
-    if approved_basic:
-        flujo.update(
-            {
-                "state": "awaiting_menu_option",
-                "has_consent": True,
-                "esta_registrado": True,
-                "verification_notified": True,
-                "menu_limitado": False,
-                "approved_basic": True,
-                "profile_pending_review": False,
-            }
-        )
-        return {
-            "success": True,
-            "messages": [
-                payload_continuar_perfil_profesional(str(flujo.get("full_name") or ""))
-            ],
-        }
-
     flujo.update(
         {
             "state": "awaiting_menu_option",

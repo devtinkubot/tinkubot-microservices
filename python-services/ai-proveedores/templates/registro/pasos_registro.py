@@ -3,7 +3,8 @@
 # ==================== CONSTANTES ====================
 
 PROMPT_INICIO_REGISTRO = (
-    "*Perfecto. Empecemos. ¿En qué ciudad trabajas principalmente?*"
+    "Ahora comparte tu ubicación para ubicar tu ciudad. "
+    "Si prefieres, puedes escribirla manualmente."
 )
 PROMPT_NOMBRE = "*¿Cuál es tu nombre completo?*"
 PROMPT_REAL_PHONE = (

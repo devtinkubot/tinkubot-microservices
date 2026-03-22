@@ -20,19 +20,11 @@ from .registro import determinar_estado_registro
 # Consentimiento
 from .consentimiento import (
     procesar_respuesta_consentimiento,
-    registrar_consentimiento,
     solicitar_consentimiento,
 )
 
 # Interpretación
 from .interpretacion import interpretar_respuesta
-
-# Constructores (existentes)
-from .constructores import *
-# Gestores de estados (existentes)
-from .gestores_estados import *
-# Validadores (existentes)
-from .validadores import *
 
 __all__ = [
     # Sesión
@@ -44,7 +36,6 @@ __all__ = [
     "determinar_estado_registro",
     # Consentimiento
     "solicitar_consentimiento",
-    "registrar_consentimiento",
     "procesar_respuesta_consentimiento",
     # Interpretación
     "interpretar_respuesta",

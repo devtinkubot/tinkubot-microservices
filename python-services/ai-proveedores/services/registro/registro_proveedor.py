@@ -435,6 +435,12 @@ async def registrar_proveedor_en_base_datos(
                 "social_media_type": registro_insertado.get(
                     "social_media_type", datos_normalizados["social_media_type"]
                 ),
+                "facebook_username": registro_insertado.get(
+                    "facebook_username", datos_normalizados.get("facebook_username")
+                ),
+                "instagram_username": registro_insertado.get(
+                    "instagram_username", datos_normalizados.get("instagram_username")
+                ),
                 "created_at": registro_insertado.get(
                     "created_at", datetime.now().isoformat()
                 ),

@@ -226,9 +226,7 @@ async def procesar_respuesta_consentimiento(  # noqa: C901
         if flujo.get("state") == "awaiting_city":
             return {
                 "success": True,
-                "messages": [
-                    solicitar_ciudad_registro(),
-                ],
+                "messages": [solicitar_ciudad_registro()],
             }
 
         if flujo.get("state") == "pending_verification" and perfil_proveedor:

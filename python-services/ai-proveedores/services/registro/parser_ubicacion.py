@@ -82,7 +82,7 @@ def _resolver_canonica(texto: str) -> Optional[str]:
         if not _es_termino_geoadmin(candidata):
             return candidata.title()
 
-    return " ".join(p.title() for p in palabras)
+    return None
 
 
 def validar_y_normalizar_ubicacion(texto: Optional[str]) -> Tuple[Optional[str], str]:
@@ -96,8 +96,6 @@ def validar_y_normalizar_ubicacion(texto: Optional[str]) -> Tuple[Optional[str],
         return None, VALIDATION_ERROR_TOO_SHORT
     if len(valor) > 120:
         return None, VALIDATION_ERROR_TOO_LONG
-    if not _PATRON_CARACTERES.fullmatch(valor):
-        return None, VALIDATION_ERROR_INVALID_CHARS
 
     valor_normalizado = normalizar_texto_geografico(valor)
     if any(marker in valor_normalizado for marker in _MARCADORES_MULTIPLE):
@@ -105,13 +103,15 @@ def validar_y_normalizar_ubicacion(texto: Optional[str]) -> Tuple[Optional[str],
 
     segmentos = [_limpiar_segmento(s) for s in _SEPARADORES.split(valor) if s.strip()]
     candidatos = []
-    if segmentos:
-        candidatos.append(segmentos[0])
+    candidatos.extend(segmentos)
     candidatos.append(_limpiar_segmento(valor))
 
     for candidato in candidatos:
         canonica = _resolver_canonica(candidato)
         if canonica:
             return canonica, VALIDATION_OK
+
+    if not _PATRON_CARACTERES.fullmatch(valor):
+        return None, VALIDATION_ERROR_INVALID_CHARS
 
     return None, VALIDATION_ERROR_UNKNOWN

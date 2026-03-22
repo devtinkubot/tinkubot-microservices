@@ -4,12 +4,8 @@ Servicio de gestión de proveedores con búsqueda y capacidad de recibir mensaje
 """
 
 import asyncio
-import hashlib
-import json
 import logging
 import os
-import re
-import unicodedata
 from datetime import datetime, timezone
 from time import perf_counter
 from typing import Any, Dict, Optional, cast
@@ -38,6 +34,13 @@ from infrastructure.storage import subir_medios_identidad
 from models import RecepcionMensajeWhatsApp, RespuestaSalud
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
+from services.disponibilidad_interceptacion import (
+    ESTADO_ESPERANDO_DISPONIBILIDAD,
+    _hay_contexto_disponibilidad_activo as _hay_contexto_disponibilidad_activo_impl,
+    _registrar_respuesta_disponibilidad_si_aplica as _registrar_respuesta_disponibilidad_si_aplica_impl,
+    _resolver_alias_disponibilidad as _resolver_alias_disponibilidad_impl,
+)
+from services.disponibilidad_admin import router as router_disponibilidad_admin
 from services.registro import limpiar_onboarding_proveedores
 from supabase import Client, create_client
 from templates.registro import (
@@ -54,14 +57,6 @@ CLAVE_API_OPENAI = os.getenv("OPENAI_API_KEY", "")
 NIVEL_LOG = os.getenv("LOG_LEVEL", "INFO")
 TIEMPO_ESPERA_SUPABASE_SEGUNDOS = float(os.getenv("SUPABASE_TIMEOUT_SECONDS", "5"))
 UMBRAL_LENTO_MS = int(os.getenv("SLOW_QUERY_THRESHOLD_MS", "800"))
-AVAILABILITY_RESULT_TTL_SECONDS = int(
-    os.getenv("AVAILABILITY_RESULT_TTL_SECONDS", "300")
-)
-CLAVE_CONTEXTO_DISPONIBILIDAD = "availability:provider:{}:context"
-CLAVE_PENDIENTES_DISPONIBILIDAD = "availability:provider:{}:pending"
-CLAVE_CICLO_SOLICITUD = "availability:lifecycle:{}"
-CLAVE_ALIAS_DISPONIBILIDAD = "availability:alias:{}"
-ESTADO_ESPERANDO_DISPONIBILIDAD = "awaiting_availability_response"
 CLAVE_DEDUPE_MEDIA = "prov_media_dedupe:{}:{}"
 TTL_DEDUPE_MEDIA_SEGUNDOS = int(os.getenv("PROVIDER_MEDIA_DEDUPE_TTL_SECONDS", "900"))
 CLAVE_DEDUPE_INTERACTIVE = "prov_interactive_dedupe:{}:{}"
@@ -75,10 +70,12 @@ ONBOARDING_STATES = {
     "awaiting_consent",
     "awaiting_real_phone",
     "awaiting_city",
-    "awaiting_name",
     "awaiting_dni_front_photo",
     "awaiting_dni_back_photo",
     "awaiting_face_photo",
+    "awaiting_specialty",
+    "awaiting_add_another_service",
+    "awaiting_services_confirmation",
     "confirm",
 }
 
@@ -89,6 +86,8 @@ MENU_STATES = {
     "awaiting_professional_info_action",
     "awaiting_deletion_confirmation",
     "awaiting_social_media_update",
+    "awaiting_social_facebook_username",
+    "awaiting_social_instagram_username",
     "awaiting_service_action",
     "awaiting_active_service_action",
     "awaiting_service_add",
@@ -102,14 +101,20 @@ MENU_STATES = {
     "viewing_personal_photo",
     "viewing_personal_dni_front",
     "viewing_personal_dni_back",
+    "viewing_professional_experience",
     "viewing_professional_services",
+    "viewing_professional_service",
     "viewing_professional_social",
+    "viewing_professional_social_facebook",
+    "viewing_professional_social_instagram",
     "viewing_professional_certificates",
     "viewing_professional_certificate",
 }
 PROFILE_COMPLETION_STATES = {
     "awaiting_experience",
     "awaiting_social_media",
+    "awaiting_onboarding_social_facebook_username",
+    "awaiting_onboarding_social_instagram_username",
     "awaiting_certificate",
     "awaiting_specialty",
     "awaiting_profile_service_confirmation",
@@ -175,6 +180,7 @@ app = FastAPI(
     description="Servicio de gestión de proveedores con Supabase y WhatsApp",
     version="2.0.0",
 )
+app.include_router(router_disponibilidad_admin)
 
 
 class SolicitudInvalidacionCache(BaseModel):
@@ -302,13 +308,6 @@ async def _bucle_limpieza_onboarding():
         await asyncio.sleep(intervalo)
 
 
-def _normalizar_texto_simple(texto: str) -> str:
-    base = (texto or "").strip().lower()
-    normalizado = unicodedata.normalize("NFD", base)
-    sin_acentos = "".join(ch for ch in normalizado if unicodedata.category(ch) != "Mn")
-    return re.sub(r"\s+", " ", sin_acentos).strip()
-
-
 def _normalizar_jid(valor: str) -> Optional[str]:
     texto = (valor or "").strip()
     if "@" not in texto:
@@ -342,118 +341,6 @@ def _resolver_telefono_canonico(raw_from: str, raw_phone: str) -> str:
     return f"{user}@s.whatsapp.net"
 
 
-def _parsear_respuesta_disponibilidad(texto: str) -> Optional[str]:
-    normalizado = _normalizar_texto_simple(texto)
-    if not normalizado:
-        return None
-
-    normalizado = normalizado.strip("*").rstrip(".)")
-
-    if normalizado in {"availability_accept", "availability_reject"}:
-        return "accepted" if normalizado == "availability_accept" else "rejected"
-    if normalizado in {"1", "si", "s", "ok", "dale", "disponible", "acepto"}:
-        return "accepted"
-    if normalizado in {"2", "no", "n", "ocupado", "no disponible"}:
-        return "rejected"
-
-    tokens = set(normalizado.split())
-    if "si" in tokens and "no" not in tokens:
-        return "accepted"
-    if "no" in tokens:
-        return "rejected"
-    if "disponible" in tokens:
-        return "accepted"
-    if "ocupado" in tokens:
-        return "rejected"
-    return None
-
-
-def _es_continue_profile_completion(carga: Dict[str, Any]) -> bool:
-    seleccionado = str(carga.get("selected_option") or "").strip().lower()
-    contenido = str(carga.get("content") or carga.get("message") or "").strip().lower()
-    return (
-        seleccionado == "continue_profile_completion"
-        or contenido == "continue_profile_completion"
-    )
-
-
-async def _hay_contexto_disponibilidad_activo(telefono: str) -> bool:
-    contexto = await cliente_redis.get(CLAVE_CONTEXTO_DISPONIBILIDAD.format(telefono))
-    contexto = _decodificar_payload_redis(contexto)
-    return bool(isinstance(contexto, dict) and contexto.get("expecting_response"))
-
-
-async def _resolver_alias_disponibilidad(telefono: str) -> str:
-    if not telefono:
-        return telefono
-    alias = await cliente_redis.get(CLAVE_ALIAS_DISPONIBILIDAD.format(telefono))
-    alias = _decodificar_payload_redis(alias)
-    if isinstance(alias, dict):
-        provider_phone = str(alias.get("provider_phone") or "").strip()
-        if provider_phone:
-            return provider_phone
-    return telefono
-
-
-def _decodificar_payload_redis(valor: Any) -> Any:
-    if isinstance(valor, bytes):
-        try:
-            valor = valor.decode("utf-8")
-        except UnicodeDecodeError:
-            return valor
-    if isinstance(valor, str):
-        texto = valor.strip()
-        if not texto:
-            return valor
-        try:
-            return json.loads(texto)
-        except (json.JSONDecodeError, TypeError):
-            return valor
-    return valor
-
-
-def _extraer_request_ids_disponibilidad(
-    *,
-    pendientes: Any,
-    contexto_disponibilidad: Optional[Dict[str, Any]],
-) -> list[str]:
-    request_ids: list[str] = []
-    if isinstance(pendientes, list):
-        for req_id in pendientes:
-            normalizado = str(req_id or "").strip()
-            if normalizado and normalizado not in request_ids:
-                request_ids.append(normalizado)
-
-    if isinstance(contexto_disponibilidad, dict):
-        req_id_contexto = str(contexto_disponibilidad.get("request_id") or "").strip()
-        if req_id_contexto and req_id_contexto not in request_ids:
-            request_ids.append(req_id_contexto)
-
-    return request_ids
-
-
-def _resumen_contexto_disponibilidad(
-    contexto_disponibilidad: Any,
-    pendientes: Any,
-) -> Dict[str, Any]:
-    contexto = (
-        contexto_disponibilidad if isinstance(contexto_disponibilidad, dict) else {}
-    )
-    request_ids = _extraer_request_ids_disponibilidad(
-        pendientes=pendientes,
-        contexto_disponibilidad=contexto or None,
-    )
-    return {
-        "has_context": isinstance(contexto_disponibilidad, dict),
-        "context_expecting_response": bool(contexto.get("expecting_response")),
-        "context_status": str(contexto.get("status") or ""),
-        "context_request_id": str(contexto.get("request_id") or ""),
-        "pending_type": type(pendientes).__name__,
-        "pending_count": len(pendientes) if isinstance(pendientes, list) else 0,
-        "request_ids": request_ids,
-    }
-
-
 def _resolver_message_id(carga: Dict[str, Any]) -> str:
     return str(carga.get("id") or carga.get("message_id") or "").strip()
 
@@ -474,6 +361,14 @@ def _es_evento_interactivo(carga: Dict[str, Any]) -> bool:
         return True
     message_type = str(carga.get("message_type") or "").strip().lower()
     return message_type.startswith("interactive_")
+
+
+def _resumen_contexto_interactivo_semantico(
+    estado: Optional[str], flujo: Optional[Dict[str, Any]]
+) -> str:
+    flujo = flujo or {}
+    nonce = str(flujo.get("service_add_confirmation_nonce") or "").strip()
+    return f"{estado or 'unknown'}:{nonce or 'no_nonce'}"
 
 
 async def _es_mensaje_multimedia_duplicado(
@@ -558,308 +453,23 @@ async def _es_mensaje_interactivo_duplicado(
     return not creado_semantico
 
 
-def _resumen_contexto_interactivo_semantico(
-    estado: Optional[str],
-    flujo: Optional[Dict[str, Any]],
-) -> str:
-    """Genera una firma corta del contexto para acciones interactivas."""
-    if not isinstance(flujo, dict):
-        contexto = {"state": str(estado or ""), "services": []}
-    else:
-        servicios = flujo.get("servicios_temporales")
-        if not isinstance(servicios, list) or not servicios:
-            servicios = flujo.get("services") or []
-        servicios_normalizados: list[str] = []
-        for servicio in servicios:
-            texto = str(servicio or "").strip().lower()
-            if texto and texto not in servicios_normalizados:
-                servicios_normalizados.append(texto)
-        contexto = {
-            "state": str(estado or ""),
-            "services": servicios_normalizados,
-            "pending_candidate": str(flujo.get("pending_service_candidate") or "")
-            .strip()
-            .lower(),
-            "pending_index": flujo.get("pending_service_index"),
-            "confirmation_nonce": str(
-                flujo.get("service_add_confirmation_nonce") or ""
-            ).strip(),
-        }
-
-    digest = hashlib.sha256(
-        json.dumps(contexto, sort_keys=True, ensure_ascii=False).encode("utf-8")
-    ).hexdigest()
-    return digest[:16]
+async def _hay_contexto_disponibilidad_activo(telefono: str) -> bool:
+    return await _hay_contexto_disponibilidad_activo_impl(cliente_redis, telefono)
 
 
-async def _actualizar_ciclo_solicitud(
-    request_id: str,
-    nuevo_estado: str,
-    datos: Optional[Dict[str, Any]] = None,
-) -> None:
-    if not request_id:
-        return
-
-    clave = CLAVE_CICLO_SOLICITUD.format(request_id)
-    actual = await cliente_redis.get(clave) or {}
-    if not isinstance(actual, dict):
-        actual = {}
-
-    actual.update(datos or {})
-    actual["state"] = nuevo_estado
-    actual["updated_at"] = datetime.now(timezone.utc).isoformat()
-    await cliente_redis.set(clave, actual, expire=AVAILABILITY_RESULT_TTL_SECONDS)
+async def _resolver_alias_disponibilidad(telefono: str) -> str:
+    return await _resolver_alias_disponibilidad_impl(cliente_redis, telefono)
 
 
 async def _registrar_respuesta_disponibilidad_si_aplica(  # noqa: C901
     telefono: str, texto_mensaje: str, estado_actual: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
-    decision = _parsear_respuesta_disponibilidad(texto_mensaje)
-    if not decision:
-        return None
-
-    clave_pendientes = f"availability:provider:{telefono}:pending"
-    clave_contexto = f"availability:provider:{telefono}:context"
-    pendientes_crudo = await cliente_redis.get(clave_pendientes)
-    contexto_disponibilidad = _decodificar_payload_redis(
-        await cliente_redis.get(clave_contexto)
-    )
-    pendientes = _decodificar_payload_redis(pendientes_crudo)
-    flujo_activo = estado_actual is not None and estado_actual in (
-        ONBOARDING_STATES | MENU_STATES | PROFILE_COMPLETION_STATES
-    )
-
-    esperando_disponibilidad = bool(
-        isinstance(contexto_disponibilidad, dict)
-        and contexto_disponibilidad.get("expecting_response")
-    )
-    request_ids = _extraer_request_ids_disponibilidad(
-        pendientes=pendientes,
-        contexto_disponibilidad=(
-            contexto_disponibilidad
-            if isinstance(contexto_disponibilidad, dict)
-            else None
-        ),
-    )
-    resumen_contexto = _resumen_contexto_disponibilidad(
-        contexto_disponibilidad=contexto_disponibilidad,
-        pendientes=pendientes,
-    )
-    logger.info(
-        (
-            "availability_response_candidate provider=%s state=%s decision=%s "
-            "request_ids=%s has_context=%s expecting_response=%s context_status=%s "
-            "pending_type=%s pending_count=%s"
-        ),
+    return await _registrar_respuesta_disponibilidad_si_aplica_impl(
+        cliente_redis,
         telefono,
-        estado_actual,
-        decision,
-        resumen_contexto["request_ids"],
-        resumen_contexto["has_context"],
-        resumen_contexto["context_expecting_response"],
-        resumen_contexto["context_status"],
-        resumen_contexto["pending_type"],
-        resumen_contexto["pending_count"],
+        texto_mensaje,
+        estado_actual=estado_actual,
     )
-    if flujo_activo and not request_ids:
-        logger.info(
-            (
-                "availability_response_ignored_in_active_flow "
-                "provider=%s state=%s has_context=%s has_pending=%s reason=no_context"
-            ),
-            telefono,
-            estado_actual,
-            isinstance(contexto_disponibilidad, dict),
-            pendientes_crudo is not None,
-        )
-        return None
-
-    mensaje_expirado = (
-        "*El tiempo de respuesta ha caducado y tu respuesta "
-        "ya no contará para este requerimiento*"
-    )
-
-    if (
-        pendientes_crudo is not None
-        and pendientes != pendientes_crudo
-        and not isinstance(pendientes, list)
-    ):
-        logger.warning(
-            (
-                "availability_pending_payload_invalid provider=%s "
-                "payload_type=%s reason=invalid_pending_payload"
-            ),
-            telefono,
-            type(pendientes).__name__,
-        )
-
-    if not request_ids:
-        logger.info(f"📭 No hay solicitudes pendientes para {telefono}")
-        if esperando_disponibilidad:
-            request_id_contexto = str(contexto_disponibilidad.get("request_id") or "")
-            if request_id_contexto:
-                await _actualizar_ciclo_solicitud(
-                    request_id_contexto,
-                    "expired",
-                    datos={
-                        "expired_by_provider_phone": telefono,
-                        "expired_at": datetime.now(timezone.utc).isoformat(),
-                    },
-                )
-            await cliente_redis.delete(clave_contexto)
-            logger.info(
-                (
-                    "availability_response_expired_context provider=%s "
-                    "state=%s reason=no_context"
-                ),
-                telefono,
-                estado_actual,
-            )
-            return {"success": True, "messages": [{"response": mensaje_expirado}]}
-        logger.info(
-            (
-                "availability_response_expired_no_pending provider=%s "
-                "state=%s reason=no_context"
-            ),
-            telefono,
-            estado_actual,
-        )
-        return {"success": True, "messages": [{"response": mensaje_expirado}]}
-
-    req_resuelto = None
-    req_expirado = None
-    encontro_estado_solicitud = False
-    for req_id in request_ids:
-        clave_req = f"availability:request:{req_id}:provider:{telefono}"
-        estado = _decodificar_payload_redis(await cliente_redis.get(clave_req))
-
-        if not isinstance(estado, dict):
-            continue
-        encontro_estado_solicitud = True
-        status = str(estado.get("status") or "").lower()
-        if status == "expired":
-            req_expirado = req_id
-            continue
-        if status != "pending":
-            continue
-
-        estado["status"] = decision
-        estado["responded_at"] = datetime.now(timezone.utc).isoformat()
-        estado["response_text"] = (texto_mensaje or "")[:160]
-        await cliente_redis.set(
-            clave_req, estado, expire=AVAILABILITY_RESULT_TTL_SECONDS
-        )
-        req_resuelto = req_id
-        break
-
-    if not req_resuelto:
-        if req_expirado:
-            clave_req_expirada = (
-                f"availability:request:{req_expirado}:provider:{telefono}"
-            )
-            estado_expirado = _decodificar_payload_redis(
-                await cliente_redis.get(clave_req_expirada)
-            )
-            if isinstance(estado_expirado, dict):
-                estado_expirado["late_response_status"] = decision
-                estado_expirado["late_response_at"] = datetime.now(
-                    timezone.utc
-                ).isoformat()
-                estado_expirado["late_response_text"] = (texto_mensaje or "")[:160]
-                await cliente_redis.set(
-                    clave_req_expirada,
-                    estado_expirado,
-                    expire=AVAILABILITY_RESULT_TTL_SECONDS,
-                )
-            await _actualizar_ciclo_solicitud(
-                req_expirado,
-                "expired",
-                datos={
-                    "late_response_received": True,
-                    "late_response_phone": telefono,
-                    "late_response_status": decision,
-                    "late_response_at": datetime.now(timezone.utc).isoformat(),
-                },
-            )
-            logger.info(
-                (
-                    "availability_response_recorded_late provider=%s "
-                    "req_id=%s state=%s reason=late_response"
-                ),
-                telefono,
-                req_expirado,
-                estado_actual,
-            )
-            return {"success": True, "messages": [{"response": mensaje_expirado}]}
-
-        logger.info(f"📭 No se encontró solicitud pendiente válida para {telefono}")
-        if flujo_activo and not encontro_estado_solicitud:
-            logger.info(
-                (
-                    "availability_response_ignored_active_flow_without_request "
-                    "provider=%s state=%s reason=context_without_request"
-                ),
-                telefono,
-                estado_actual,
-            )
-            return None
-        if esperando_disponibilidad:
-            request_id_contexto = str(contexto_disponibilidad.get("request_id") or "")
-            if request_id_contexto:
-                await _actualizar_ciclo_solicitud(
-                    request_id_contexto,
-                    "expired",
-                    datos={
-                        "expired_by_provider_phone": telefono,
-                        "expired_at": datetime.now(timezone.utc).isoformat(),
-                    },
-                )
-            await cliente_redis.delete(clave_contexto)
-        logger.info(
-            (
-                "availability_response_expired provider=%s "
-                "reason=request_found_but_not_pending"
-            ),
-            telefono,
-        )
-        return {"success": True, "messages": [{"response": mensaje_expirado}]}
-
-    pendientes_lista = pendientes if isinstance(pendientes, list) else []
-    nuevos_pendientes = [rid for rid in pendientes_lista if rid != req_resuelto]
-    await cliente_redis.set(
-        clave_pendientes, nuevos_pendientes, expire=AVAILABILITY_RESULT_TTL_SECONDS
-    )
-    if not nuevos_pendientes:
-        await cliente_redis.delete(clave_contexto)
-
-    estado_ciclo = (
-        "provider_accepted" if decision == "accepted" else "provider_rejected"
-    )
-    await _actualizar_ciclo_solicitud(
-        req_resuelto,
-        estado_ciclo,
-        datos={
-            "last_provider_response_phone": telefono,
-            "last_provider_response_status": decision,
-            "last_provider_response_at": datetime.now(timezone.utc).isoformat(),
-        },
-    )
-
-    if decision == "accepted":
-        respuesta = "✅ Disponibilidad confirmada. Gracias por responder."
-    else:
-        respuesta = "✅ Gracias. Registré que no estás disponible ahora."
-
-    logger.info(
-        (
-            "📝 Respuesta de disponibilidad registrada: telefono=%s "
-            "req_id=%s decision=%s reason=registered_pending_response"
-        ),
-        telefono,
-        req_resuelto,
-        decision,
-    )
-    return {"success": True, "messages": [{"response": respuesta}]}
 
 
 @app.get("/health", response_model=RespuestaSalud)
@@ -924,73 +534,6 @@ async def cleanup_provider_onboarding(
         return {"success": False, "message": "Unauthorized"}
 
     return await _ejecutar_limpieza_onboarding()
-
-
-@app.get("/admin/availability-lifecycle/{request_id}")
-async def obtener_ciclo_disponibilidad(
-    request_id: str,
-    token: Optional[str] = Header(default=None, alias="x-internal-token"),
-) -> Dict[str, Any]:
-    """Consulta el estado del ciclo de una solicitud por `request_id`."""
-    token_esperado = configuracion.internal_token
-    if token_esperado and token != token_esperado:
-        return {"success": False, "message": "Unauthorized"}
-
-    request_id_limpio = (request_id or "").strip()
-    if not request_id_limpio:
-        return {"success": False, "message": "request_id is required"}
-
-    ciclo = await cliente_redis.get(CLAVE_CICLO_SOLICITUD.format(request_id_limpio))
-    return {
-        "success": True,
-        "request_id": request_id_limpio,
-        "exists": bool(ciclo),
-        "lifecycle": ciclo or {},
-    }
-
-
-@app.get("/admin/availability-provider-state")
-async def obtener_estado_disponibilidad_proveedor(
-    phone: str,
-    token: Optional[str] = Header(default=None, alias="x-internal-token"),
-) -> Dict[str, Any]:
-    """Consulta pendientes, contexto y ciclos de disponibilidad por proveedor."""
-    token_esperado = configuracion.internal_token
-    if token_esperado and token != token_esperado:
-        return {"success": False, "message": "Unauthorized"}
-
-    telefono_crudo = (phone or "").strip()
-    if not telefono_crudo:
-        return {"success": False, "message": "phone is required"}
-
-    telefono = _resolver_telefono_canonico(telefono_crudo, telefono_crudo)
-    if not telefono:
-        return {"success": False, "message": "invalid phone format"}
-
-    contexto = await cliente_redis.get(CLAVE_CONTEXTO_DISPONIBILIDAD.format(telefono))
-    pendientes = await cliente_redis.get(
-        CLAVE_PENDIENTES_DISPONIBILIDAD.format(telefono)
-    )
-    if not isinstance(pendientes, list):
-        pendientes = []
-
-    request_ids = []
-    if isinstance(contexto, dict) and contexto.get("request_id"):
-        request_ids.append(str(contexto["request_id"]))
-    request_ids.extend([str(rid) for rid in pendientes if rid])
-    request_ids_unicos = list(dict.fromkeys(request_ids))
-
-    ciclos = {}
-    for rid in request_ids_unicos:
-        ciclos[rid] = await cliente_redis.get(CLAVE_CICLO_SOLICITUD.format(rid)) or {}
-
-    return {
-        "success": True,
-        "provider_phone": telefono,
-        "context": contexto or {},
-        "pending_request_ids": request_ids_unicos,
-        "lifecycles": ciclos,
-    }
 
 
 @app.post("/admin/service-governance/reviews/{review_id}/approve")
@@ -1221,10 +764,6 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
             return normalizar_respuesta_whatsapp(respuesta_disponibilidad)
 
         perfil_proveedor = await obtener_perfil_proveedor_cacheado(telefono)
-        if _es_continue_profile_completion(carga):
-            perfil_fresco = await obtener_perfil_proveedor(telefono)
-            if perfil_fresco:
-                perfil_proveedor = perfil_fresco
         tiene_real_phone = bool(
             flujo.get("real_phone") or (perfil_proveedor or {}).get("real_phone")
         )
@@ -1277,6 +816,36 @@ def normalizar_respuesta_whatsapp(respuesta: Any) -> Dict[str, Any]:
     """
     Normaliza la respuesta para que siempre use el esquema esperado por wa-gateway.
     """
+    def _normalizar_mensaje(item: Any) -> list[Dict[str, Any]]:
+        if item is None:
+            return [{"response": ""}]
+
+        if not isinstance(item, dict):
+            return [{"response": str(item)}]
+
+        if "messages" in item:
+            mensajes_anidados: list[Dict[str, Any]] = []
+            for nested in item.get("messages") or []:
+                mensajes_anidados.extend(_normalizar_mensaje(nested))
+            return mensajes_anidados
+
+        if "response" in item and isinstance(item.get("response"), list):
+            mensajes_anidados: list[Dict[str, Any]] = []
+            payload_base = {k: v for k, v in item.items() if k != "response"}
+            for nested in item.get("response") or []:
+                for mensaje in _normalizar_mensaje(nested):
+                    combinado = dict(payload_base)
+                    combinado.update(mensaje)
+                    mensajes_anidados.append(combinado)
+            return mensajes_anidados
+
+        mensaje = dict(item)
+        if "response" not in mensaje or mensaje["response"] is None:
+            mensaje["response"] = ""
+        elif not isinstance(mensaje["response"], str):
+            mensaje["response"] = str(mensaje["response"])
+        return [mensaje]
+
     if respuesta is None:
         return {"success": True, "messages": []}
 
@@ -1284,19 +853,21 @@ def normalizar_respuesta_whatsapp(respuesta: Any) -> Dict[str, Any]:
         return {"success": True, "messages": [{"response": str(respuesta)}]}
 
     if "messages" in respuesta:
-        if "success" not in respuesta:
-            respuesta["success"] = True
-        return respuesta
+        mensajes: list[Dict[str, Any]] = []
+        for item in respuesta.get("messages") or []:
+            mensajes.extend(_normalizar_mensaje(item))
+        normalizada = {k: v for k, v in respuesta.items() if k != "messages"}
+        normalizada["messages"] = mensajes
+        if "success" not in normalizada:
+            normalizada["success"] = True
+        return normalizada
 
     if "response" in respuesta:
         texto = respuesta.get("response")
-        mensajes = []
+        mensajes: list[Dict[str, Any]] = []
         if isinstance(texto, list):
             for item in texto:
-                if isinstance(item, dict) and "response" in item:
-                    mensajes.append(item)
-                else:
-                    mensajes.append({"response": str(item)})
+                mensajes.extend(_normalizar_mensaje(item))
         else:
             mensajes.append({"response": str(texto) if texto is not None else ""})
 

@@ -10,22 +10,22 @@ def ui_solicitud_ubicacion(request_id: str = "provider_location_request_city") -
 
 def preguntar_ciudad_con_ubicacion() -> str:
     return (
-        "*¿En qué ciudad trabajas principalmente?* "
-        "Puedes escribirla manualmente o compartir tu ubicación."
+        "Ahora comparte tu *ubicación* para ubicar tu *ciudad*. "
+        "Si prefieres, puedes escribir tu ciudad o una referencia cercana."
     )
 
 
 def preguntar_actualizar_ciudad_con_ubicacion() -> str:
     return (
-        "*Actualicemos tu ciudad principal de trabajo.* "
-        "Puedes escribirla manualmente o compartir tu ubicación."
+        "Actualicemos tu *ciudad* principal de trabajo. "
+        "Puedes escribir tu ciudad o una referencia cercana, o compartir tu ubicación."
     )
 
 
 def mensaje_error_resolviendo_ubicacion() -> str:
     return (
         "No pude identificar la ciudad exacta desde tu ubicación. "
-        "Escríbela manualmente usando una ciudad o cantón de Ecuador."
+        "Escríbela usando una ciudad, cantón o referencia cercana de Ecuador."
     )
 
 

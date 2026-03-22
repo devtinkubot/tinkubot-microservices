@@ -2,17 +2,24 @@
 
 from typing import Any, Dict
 
+from services.servicios_proveedor.redes_sociales_slots import resolver_redes_sociales
+
 SOCIAL_SKIP_ID = "skip_profile_social_media"
+SOCIAL_FACEBOOK_ID = "profile_social_facebook"
+SOCIAL_INSTAGRAM_ID = "profile_social_instagram"
 CERTIFICATE_SKIP_ID = "skip_profile_certificate"
 SERVICE_ADD_YES_ID = "profile_add_another_service_yes"
 SERVICE_ADD_NO_ID = "profile_add_another_service_no"
 SERVICE_CONFIRM_ID = "profile_service_confirm"
 SERVICE_CORRECT_ID = "profile_service_correct"
-CONTINUE_PROFILE_COMPLETION_ID = "continue_profile_completion"
+EXPERIENCE_UNDER_1_ID = "provider_experience_under_1"
+EXPERIENCE_1_3_ID = "provider_experience_1_3"
+EXPERIENCE_3_5_ID = "provider_experience_3_5"
+EXPERIENCE_5_10_ID = "provider_experience_5_10"
+EXPERIENCE_10_PLUS_ID = "provider_experience_10_plus"
 PROFILE_SINGLE_USE_CONTROL_IDS = {
     SOCIAL_SKIP_ID,
     CERTIFICATE_SKIP_ID,
-    CONTINUE_PROFILE_COMPLETION_ID,
     SERVICE_ADD_YES_ID,
     SERVICE_ADD_NO_ID,
     SERVICE_CONFIRM_ID,
@@ -28,43 +35,95 @@ PROFILE_CONTROL_IDS = {
 
 
 def preguntar_experiencia_general() -> str:
-    return (
-        "*¿Cuántos años de experiencia general tienes?* "
-        "Escribe un número, por ejemplo: *2*."
-    )
+    return "Selecciona tus *años de experiencia*."
+
+
+def payload_experiencia_registro() -> Dict[str, Any]:
+    return {
+        "response": "Selecciona tus *años de experiencia*.",
+        "ui": {
+            "type": "list",
+            "id": "provider_registration_experience_v1",
+            "header_type": "text",
+            "header_text": "Años de experiencia",
+            "list_button_text": "Seleccionar",
+            "list_section_title": "Elige un rango",
+            "footer_text": "Podrás actualizarlo más adelante si lo necesitas.",
+            "options": [
+                {
+                    "id": EXPERIENCE_UNDER_1_ID,
+                    "title": "Menos de 1 año",
+                    "description": "Si estás empezando",
+                },
+                {
+                    "id": EXPERIENCE_1_3_ID,
+                    "title": "1 a 3 años",
+                    "description": "Experiencia inicial",
+                },
+                {
+                    "id": EXPERIENCE_3_5_ID,
+                    "title": "3 a 5 años",
+                    "description": "Ya trabajas con frecuencia",
+                },
+                {
+                    "id": EXPERIENCE_5_10_ID,
+                    "title": "5 a 10 años",
+                    "description": "Experiencia sólida",
+                },
+                {
+                    "id": EXPERIENCE_10_PLUS_ID,
+                    "title": "Más de 10 años",
+                    "description": "Amplia trayectoria",
+                },
+            ],
+        },
+    }
 
 
 def mensaje_inicio_perfil_profesional() -> str:
     return preguntar_experiencia_general()
 
 
-def payload_continuar_perfil_profesional(nombre: str) -> Dict[str, Any]:
-    nombre_limpio = str(nombre or "").strip()
-    saludo = (
-        f"✅ Hola *{nombre_limpio}*. Ya formas parte de TinkuBot. "
-        if nombre_limpio
-        else "✅ Ya formas parte de TinkuBot. "
-    )
-    return {
-        "response": (f"{saludo}El siguiente paso es completar tu perfil profesional."),
-        "ui": {
-            "type": "buttons",
-            "id": "provider_profile_continue_v1",
-            "options": [{"id": CONTINUE_PROFILE_COMPLETION_ID, "title": "Continuar"}],
-        },
-    }
-
-
 def payload_red_social_opcional() -> Dict[str, Any]:
+    return payload_red_social_opcional_estado(
+        facebook_username=None,
+        instagram_username=None,
+    )
+
+
+def payload_red_social_opcional_estado(
+    *,
+    facebook_username: Any,
+    instagram_username: Any,
+) -> Dict[str, Any]:
     return {
         "response": (
-            "*Comparte una red social para mostrar tu trabajo* "
-            "o toca *Omitir* si todavía no deseas agregarla."
+            "Dentro de la lista elige y agrega tu red social para mostrar tu trabajo.\n"
+            "*Una imagen vale mas que mil palabras.*"
         ),
         "ui": {
-            "type": "buttons",
-            "id": "provider_profile_social_media_v1",
-            "options": [{"id": SOCIAL_SKIP_ID, "title": "Omitir"}],
+            "type": "list",
+            "id": "provider_profile_social_media_v2",
+            "header_type": "text",
+            "header_text": "Agregar Red Social",
+            "footer_text": "¿Lo agregas luego?. Elige *Continuar* en la lista.",
+            "options": [
+                {
+                    "id": SOCIAL_FACEBOOK_ID,
+                    "title": "Facebook",
+                    "description": "Registrada" if facebook_username else "No registrada",
+                },
+                {
+                    "id": SOCIAL_INSTAGRAM_ID,
+                    "title": "Instagram",
+                    "description": "Registrada" if instagram_username else "No registrada",
+                },
+                {
+                    "id": SOCIAL_SKIP_ID,
+                    "title": "Continuar",
+                    "description": "Seguir al siguiente paso",
+                },
+            ],
         },
     }
 
@@ -72,12 +131,15 @@ def payload_red_social_opcional() -> Dict[str, Any]:
 def payload_certificado_opcional() -> Dict[str, Any]:
     return {
         "response": (
-            "*Si tienes un certificado profesional, envía una foto clara.* "
-            "Si todavía no deseas cargarlo, toca *Omitir*."
+            "Envía una foto clara de un certificado profesional.\n"
+            "*Las certificaciones generan seguridad y confianza en los clientes que ven tu perfil.*"
         ),
         "ui": {
             "type": "buttons",
             "id": "provider_profile_certificate_v1",
+            "header_type": "text",
+            "header_text": "Agregar Certificado",
+            "footer_text": "¿Lo agregas luego?. Toca Omitir.",
             "options": [{"id": CERTIFICATE_SKIP_ID, "title": "Omitir"}],
         },
     }
@@ -90,13 +152,13 @@ def payload_confirmacion_servicio_perfil(
     total_requerido: int,
 ) -> Dict[str, Any]:
     return {
-        "response": (
-            f"*Servicio {indice} de {total_requerido} identificado:* *{servicio}*.\n\n"
-            "¿Confirmas que este es el servicio correcto?"
-        ),
+        "response": f"*{servicio}*.",
         "ui": {
             "type": "buttons",
             "id": f"provider_profile_service_confirm_v{indice}",
+            "header_type": "text",
+            "header_text": f"Servicio {indice} de {total_requerido} identificado:",
+            "footer_text": "¿Confirmas que es el servicio correcto?",
             "options": [
                 {"id": SERVICE_CONFIRM_ID, "title": "Confirmar"},
                 {"id": SERVICE_CORRECT_ID, "title": "Corregir"},
@@ -139,6 +201,9 @@ def construir_resumen_confirmacion_perfil_profesional(
     *,
     experience_years: Any,
     social_media_url: Any,
+    social_media_type: Any = None,
+    facebook_username: Any = None,
+    instagram_username: Any = None,
     certificate_uploaded: bool,
     services: list[str],
 ) -> str:
@@ -147,7 +212,16 @@ def construir_resumen_confirmacion_perfil_profesional(
         if isinstance(experience_years, int) and experience_years >= 0
         else "No registrada"
     )
-    red_social = str(social_media_url).strip() if social_media_url else "No registrada"
+    redes = resolver_redes_sociales(
+        {
+            "social_media_url": social_media_url,
+            "social_media_type": social_media_type,
+            "facebook_username": facebook_username,
+            "instagram_username": instagram_username,
+        }
+    )
+    red_facebook = redes["facebook_url"] or "No registrada"
+    red_instagram = redes["instagram_url"] or "No registrada"
     certificado = "Recibida" if certificate_uploaded else "No cargado"
     servicios_completos = list(services[:3]) + ["No registrado"] * max(
         0, 3 - len(services)
@@ -155,7 +229,8 @@ def construir_resumen_confirmacion_perfil_profesional(
     return (
         "✅ *Confirma tus datos:*\n\n"
         f"- *Experiencia general:* {experiencia}\n"
-        f"- *Red social:* {red_social}\n"
+        f"- *Facebook:* {red_facebook}\n"
+        f"- *Instagram:* {red_instagram}\n"
         f"- *Certificado:* {certificado}\n"
         f"- *Servicio 1:* {servicios_completos[0]}\n"
         f"- *Servicio 2:* {servicios_completos[1]}\n"

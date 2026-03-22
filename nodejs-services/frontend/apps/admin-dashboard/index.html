@@ -27,6 +27,10 @@
         font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
       }
 
+      .dashboard-shell {
+        min-height: 100vh;
+      }
+
       .sidebar {
         background: linear-gradient(135deg, var(--dark-color) 0%, #374151 100%);
         min-height: 100vh;
@@ -51,6 +55,93 @@
 
       .main-content {
         padding: 2rem;
+      }
+
+      .mobile-topbar {
+        display: none;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 1rem 1.25rem;
+        background: linear-gradient(135deg, var(--dark-color) 0%, #374151 100%);
+        color: white;
+        box-shadow: 0 6px 24px rgba(15, 23, 42, 0.16);
+      }
+
+      .mobile-topbar-brand {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+
+      .mobile-topbar-kicker {
+        font-size: 0.72rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: rgba(255, 255, 255, 0.72);
+      }
+
+      .mobile-topbar-title {
+        font-size: 1rem;
+        font-weight: 700;
+        line-height: 1.2;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .mobile-menu-button {
+        width: 2.75rem;
+        height: 2.75rem;
+        border-radius: 0.85rem;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(255, 255, 255, 0.08);
+        color: white;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
+      }
+
+      .mobile-menu-button:hover,
+      .mobile-menu-button:focus {
+        background: rgba(255, 255, 255, 0.16);
+        color: white;
+      }
+
+      .mobile-nav-offcanvas {
+        background: linear-gradient(180deg, #111827 0%, #1f2937 100%);
+        color: white;
+      }
+
+      .mobile-nav-offcanvas .offcanvas-header {
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      .mobile-nav-offcanvas .offcanvas-title {
+        font-weight: 700;
+      }
+
+      .mobile-nav-offcanvas .btn-close {
+        filter: invert(1) grayscale(1) brightness(200%);
+      }
+
+      .mobile-nav-offcanvas .nav-link {
+        color: rgba(255, 255, 255, 0.84);
+        padding: 0.9rem 1rem;
+        border-radius: 0.9rem;
+        margin-bottom: 0.35rem;
+        transition:
+          background-color 0.2s ease,
+          transform 0.2s ease,
+          color 0.2s ease;
+      }
+
+      .mobile-nav-offcanvas .nav-link:hover,
+      .mobile-nav-offcanvas .nav-link.active {
+        background-color: rgba(99, 102, 241, 0.92);
+        color: white;
+        transform: translateX(4px);
       }
 
       .status-card {
@@ -220,6 +311,15 @@
       }
 
       @media (max-width: 768px) {
+        .main-content {
+          padding: 1rem;
+        }
+
+        .header-section {
+          padding: 1.25rem;
+          margin-bottom: 1rem;
+        }
+
         .dashboard-metrics-grid {
           grid-template-columns: 1fr;
         }
@@ -383,32 +483,151 @@
           width: 100%;
         }
       }
+
+      @media (max-width: 991.98px) {
+        .mobile-topbar {
+          display: flex;
+          position: sticky;
+          top: 0;
+          z-index: 1030;
+        }
+
+        .main-content {
+          padding: 1.25rem;
+        }
+
+        .header-section {
+          padding: 1.5rem;
+          margin-bottom: 1.25rem;
+        }
+      }
     </style>
   </head>
   <body>
+    <div class="mobile-topbar d-lg-none">
+      <div class="mobile-topbar-brand">
+        <span class="mobile-topbar-kicker">TinkuBot Admin</span>
+        <span class="mobile-topbar-title" id="mobile-current-section-title">
+          Dashboard
+        </span>
+      </div>
+      <button
+        class="btn mobile-menu-button"
+        type="button"
+        data-bs-toggle="offcanvas"
+        data-bs-target="#mobile-navigation"
+        aria-controls="mobile-navigation"
+        aria-label="Abrir menú de navegación"
+      >
+        <i class="fas fa-bars"></i>
+      </button>
+    </div>
+
+    <div
+      class="offcanvas offcanvas-start mobile-nav-offcanvas d-lg-none"
+      tabindex="-1"
+      id="mobile-navigation"
+      aria-labelledby="mobile-navigation-label"
+    >
+      <div class="offcanvas-header">
+        <div>
+          <h5 class="offcanvas-title mb-1" id="mobile-navigation-label">
+            TinkuBot Admin
+          </h5>
+          <p class="mb-0 small text-white-50">Navegación del panel</p>
+        </div>
+        <button
+          type="button"
+          class="btn-close"
+          data-bs-dismiss="offcanvas"
+          aria-label="Cerrar"
+        ></button>
+      </div>
+      <div class="offcanvas-body">
+        <nav class="nav flex-column">
+          <a
+            class="nav-link active"
+            href="#"
+            data-section="dashboard"
+            data-section-label="Dashboard"
+          >
+            <i class="fas fa-tachometer-alt me-2"></i>
+            Dashboard
+          </a>
+          <a
+            class="nav-link"
+            href="#"
+            data-section="providers"
+            data-section-label="Proveedores"
+          >
+            <i class="fas fa-user-check me-2"></i>
+            Proveedores
+          </a>
+          <a
+            class="nav-link"
+            href="#"
+            data-section="monetization"
+            data-section-label="Monetización"
+          >
+            <i class="fas fa-coins me-2"></i>
+            Monetización
+          </a>
+          <a
+            class="nav-link"
+            href="#"
+            data-section="settings"
+            data-section-label="Configuración"
+          >
+            <i class="fas fa-cog me-2"></i>
+            Configuración
+          </a>
+        </nav>
+      </div>
+    </div>
+
     <div class="container-fluid">
-      <div class="row">
+      <div class="row dashboard-shell">
         <!-- Sidebar -->
-        <div class="col-md-3 col-lg-2 sidebar">
+        <div class="d-none d-lg-block col-lg-2 sidebar">
           <div class="p-3">
             <h4 class="mb-4">
               <i class="fas fa-robot me-2"></i>
               TinkuBot Admin
             </h4>
             <nav class="nav flex-column">
-              <a class="nav-link active" href="#" data-section="dashboard">
+              <a
+                class="nav-link active"
+                href="#"
+                data-section="dashboard"
+                data-section-label="Dashboard"
+              >
                 <i class="fas fa-tachometer-alt me-2"></i>
                 Dashboard
               </a>
-              <a class="nav-link" href="#" data-section="providers">
+              <a
+                class="nav-link"
+                href="#"
+                data-section="providers"
+                data-section-label="Proveedores"
+              >
                 <i class="fas fa-user-check me-2"></i>
                 Proveedores
               </a>
-              <a class="nav-link" href="#" data-section="monetization">
+              <a
+                class="nav-link"
+                href="#"
+                data-section="monetization"
+                data-section-label="Monetización"
+              >
                 <i class="fas fa-coins me-2"></i>
                 Monetización
               </a>
-              <a class="nav-link" href="#" data-section="settings">
+              <a
+                class="nav-link"
+                href="#"
+                data-section="settings"
+                data-section-label="Configuración"
+              >
                 <i class="fas fa-cog me-2"></i>
                 Configuración
               </a>
@@ -417,7 +636,7 @@
         </div>
 
         <!-- Main Content -->
-        <div class="col-md-9 col-lg-10 main-content">
+        <div class="col-12 col-lg-10 main-content">
           <!-- Header -->
           <div class="header-section">
             <div class="d-flex justify-content-between align-items-center">
@@ -491,8 +710,8 @@
                       Pendientes de agregar info profesional
                     </div>
                     <div class="dashboard-metric-note">
-                      Volumen total de aprobados básicos. El seguimiento 48h+
-                      se gestiona en Proveedores.
+                      Proveedores aprobados que aún no completan experiencia y
+                      3 servicios principales.
                     </div>
                   </div>
                   <div class="dashboard-metric-icon">
@@ -513,10 +732,11 @@
                 <div class="dashboard-metric-topline">
                   <div>
                     <div class="dashboard-metric-label">
-                      Pendientes de aprobar info profesional
+                      Casos con observaciones
                     </div>
                     <div class="dashboard-metric-note">
-                      Perfil profesional o revisión especial en cola.
+                      Rechazos, entrevistas o estados legacy que requieren
+                      seguimiento administrativo.
                     </div>
                   </div>
                   <div class="dashboard-metric-icon">
@@ -538,7 +758,7 @@
                   <div>
                     <div class="dashboard-metric-label">Perfil completo</div>
                     <div class="dashboard-metric-note">
-                      Ya están listos para operar sin pasos pendientes.
+                      Ya tienen experiencia y 3 servicios para operar.
                     </div>
                   </div>
                   <div class="dashboard-metric-icon">
@@ -562,8 +782,9 @@
               <p class="text-muted mb-0">
                 Estos cuadros muestran el volumen actual de expertos en cada
                 etapa operativa para que podamos ver el embudo de registro sin
-                abrir los detalles. Los casos de perfil profesional incompleto
-                siguen en seguimiento humano.
+                abrir los detalles. La información profesional ya no pasa por
+                aprobación obligatoria: se gestiona desde el menú del
+                proveedor.
               </p>
             </div>
           </div>
@@ -580,8 +801,7 @@
                     Gestión de Proveedores
                   </h5>
                   <p class="text-muted small mb-0" id="providers-subtitle">
-                    Revisa altas nuevas, perfiles incompletos 48h+ y
-                    aprobaciones finales.
+                    Revisa altas nuevas y perfiles profesionales incompletos.
                   </p>
                 </div>
                 <button
@@ -616,18 +836,10 @@
                   <button
                     type="button"
                     class="btn btn-outline-primary"
-                    data-provider-bucket="profile_incomplete_48h"
+                    data-provider-bucket="profile_incomplete"
                     id="providers-tab-profile-incomplete"
                   >
-                    Perfil Profesional incompleto (48h+)
-                  </button>
-                  <button
-                    type="button"
-                    class="btn btn-outline-primary"
-                    data-provider-bucket="post_review"
-                    id="providers-tab-post-review"
-                  >
-                    Pendientes post-revisión
+                    Perfil profesional incompleto
                   </button>
                 </div>
               </div>

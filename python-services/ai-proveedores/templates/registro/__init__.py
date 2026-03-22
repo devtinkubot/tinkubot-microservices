@@ -5,6 +5,10 @@ from .confirmacion import (
     CONFIRM_REJECT_ID,
     payload_confirmacion_resumen,
 )
+from .resumen_consentimiento import (
+    construir_resumen_consentimiento_registro,
+    payload_resumen_consentimiento_registro,
+)
 from .confirmacion_servicios import (
     mensaje_confirmacion_servicios,
     mensaje_correccion_servicios,
@@ -12,6 +16,8 @@ from .confirmacion_servicios import (
     mensaje_servicios_aceptados,
 )
 from .documentacion import (
+    payload_foto_dni_frontal,
+    payload_selfie_registro,
     solicitar_foto_dni_frontal,
     solicitar_foto_dni_trasera,
     solicitar_foto_dni_trasera_requerida,
@@ -29,7 +35,11 @@ from .pasos_registro import (
 )
 from .perfil_profesional import (
     CERTIFICATE_SKIP_ID,
-    CONTINUE_PROFILE_COMPLETION_ID,
+    EXPERIENCE_10_PLUS_ID,
+    EXPERIENCE_1_3_ID,
+    EXPERIENCE_3_5_ID,
+    EXPERIENCE_5_10_ID,
+    EXPERIENCE_UNDER_1_ID,
     construir_resumen_confirmacion_perfil_profesional,
     mensaje_menu_edicion_perfil_profesional,
     PROFILE_CONTROL_IDS,
@@ -38,14 +48,18 @@ from .perfil_profesional import (
     SERVICE_ADD_YES_ID,
     SERVICE_CONFIRM_ID,
     SERVICE_CORRECT_ID,
+    SOCIAL_FACEBOOK_ID,
+    SOCIAL_INSTAGRAM_ID,
     SOCIAL_SKIP_ID,
     mensaje_error_certificado_invalido,
     mensaje_inicio_perfil_profesional,
     mensaje_minimo_servicios_pendiente,
+    payload_experiencia_registro,
     payload_agregar_otro_servicio,
     payload_confirmacion_servicio_perfil,
     payload_certificado_opcional,
     payload_red_social_opcional,
+    payload_red_social_opcional_estado,
     preguntar_experiencia_general,
 )
 from .caducidad_onboarding import (
@@ -68,6 +82,7 @@ from .servicios import (
     mensaje_servicio_actualizado,
     mensaje_servicio_duplicado_registro,
     mensaje_servicio_eliminado_registro,
+    preguntar_servicio_onboarding_registro,
     preguntar_nuevo_servicio_reemplazo,
     preguntar_numero_servicio_eliminar,
     preguntar_numero_servicio_reemplazar,
@@ -100,8 +115,16 @@ __all__ = [
     "preguntar_real_phone",
     "error_real_phone_invalido",
     "mensaje_inicio_perfil_profesional",
+    "payload_experiencia_registro",
+    "EXPERIENCE_UNDER_1_ID",
+    "EXPERIENCE_1_3_ID",
+    "EXPERIENCE_3_5_ID",
+    "EXPERIENCE_5_10_ID",
+    "EXPERIENCE_10_PLUS_ID",
     "preguntar_experiencia_general",
     # Documentación
+    "payload_foto_dni_frontal",
+    "payload_selfie_registro",
     "solicitar_foto_dni_frontal",
     "solicitar_foto_dni_trasera",
     "solicitar_foto_dni_trasera_requerida",
@@ -109,6 +132,8 @@ __all__ = [
     "solicitar_selfie_requerida_registro",
     # Confirmación
     "payload_confirmacion_resumen",
+    "construir_resumen_consentimiento_registro",
+    "payload_resumen_consentimiento_registro",
     "CONFIRM_ACCEPT_ID",
     "CONFIRM_REJECT_ID",
     # Confirmación de servicios
@@ -117,6 +142,7 @@ __all__ = [
     "mensaje_servicios_aceptados",
     "mensaje_lista_servicios_corregida",
     "preguntar_servicios_registro",
+    "preguntar_servicio_onboarding_registro",
     "preguntar_siguiente_servicio_registro",
     "confirmar_servicio_y_preguntar_otro",
     "payload_agregar_otro_servicio",
@@ -135,6 +161,7 @@ __all__ = [
     "mensaje_error_opcion_agregar_otro",
     "mensaje_error_opcion_edicion_servicios",
     "payload_red_social_opcional",
+    "payload_red_social_opcional_estado",
     "payload_certificado_opcional",
     "mensaje_error_certificado_invalido",
     "mensaje_minimo_servicios_pendiente",
@@ -146,10 +173,11 @@ __all__ = [
     "TEMPLATE_WARNING_48H_LANGUAGE",
     "TEMPLATE_EXPIRY_72H_ID",
     "TEMPLATE_EXPIRY_72H_LANGUAGE",
-    "CONTINUE_PROFILE_COMPLETION_ID",
     "PROFILE_CONTROL_IDS",
     "PROFILE_SINGLE_USE_CONTROL_IDS",
     "SOCIAL_SKIP_ID",
+    "SOCIAL_FACEBOOK_ID",
+    "SOCIAL_INSTAGRAM_ID",
     "CERTIFICATE_SKIP_ID",
     "SERVICE_ADD_YES_ID",
     "SERVICE_ADD_NO_ID",

@@ -23,12 +23,27 @@ from templates.registro import (
     mensaje_maximo_servicios_registro,
     mensaje_resumen_servicios_registro,
     mensaje_servicio_duplicado_registro,
-    payload_agregar_otro_servicio,
     payload_confirmacion_servicio_perfil,
+    payload_resumen_consentimiento_registro,
+    preguntar_servicio_onboarding_registro,
     preguntar_siguiente_servicio_registro,
+)
+from templates.interfaz import (
+    SERVICE_EXAMPLE_ADMIN_ID,
+    SERVICE_EXAMPLE_BACK_ID,
+    SERVICE_EXAMPLE_LEGAL_ID,
+    SERVICE_EXAMPLE_MECHANICS_ID,
+    mensaje_ejemplo_servicio_seleccionado,
+    preguntar_nuevo_servicio_con_ejemplos_dinamicos,
 )
 
 logger = logging.getLogger(__name__)
+
+_EJEMPLOS_SERVICIO = {
+    SERVICE_EXAMPLE_MECHANICS_ID,
+    SERVICE_EXAMPLE_LEGAL_ID,
+    SERVICE_EXAMPLE_ADMIN_ID,
+}
 
 
 def _resolver_supabase_runtime() -> Any:
@@ -53,6 +68,40 @@ def _limite_visible_para_contexto(flujo: Dict[str, Any]) -> int:
     if flujo.get("profile_completion_mode"):
         return SERVICIOS_MINIMOS_PERFIL_PROFESIONAL
     return SERVICIOS_MAXIMOS_ONBOARDING
+
+
+async def _prompt_servicio_onboarding(
+    *,
+    flujo: Dict[str, Any],
+    indice: int,
+    maximo_visible: int,
+) -> Dict[str, Any]:
+    respuesta = await preguntar_nuevo_servicio_con_ejemplos_dinamicos(
+        indice=indice,
+        maximo=maximo_visible,
+        supabase=_resolver_supabase_runtime(),
+        include_back_option=False,
+    )
+    flujo["service_examples_lookup"] = respuesta.get("service_examples_lookup") or {}
+    return respuesta
+
+
+async def _mensajes_prompt_servicio_onboarding(
+    *,
+    flujo: Dict[str, Any],
+    indice: int,
+    maximo_visible: int,
+) -> List[Dict[str, Any]]:
+    respuesta = await _prompt_servicio_onboarding(
+        flujo=flujo,
+        indice=indice,
+        maximo_visible=maximo_visible,
+    )
+    respuesta["response"] = preguntar_servicio_onboarding_registro(
+        indice=indice,
+        maximo=maximo_visible,
+    )
+    return [{"response": respuesta["response"], "ui": respuesta["ui"]}]
 
 
 async def normalizar_servicio_registro_individual(
@@ -148,7 +197,7 @@ async def normalizar_servicio_registro_individual(
         raw_service_text=especialidad_texto,
         service_name=servicio,
     )
-    if not validacion.get("is_valid_service") and validacion.get("needs_clarification"):
+    if validacion.get("needs_clarification"):
         contexto = await construir_mensaje_clarificacion_servicio(
             supabase=_resolver_supabase_runtime(),
             servicio_embeddings=servicio_embeddings,
@@ -201,29 +250,85 @@ async def manejar_espera_especialidad(
     texto_mensaje: Optional[str],
     cliente_openai: Optional[Any] = None,
     servicio_embeddings: Optional[Any] = None,
+    selected_option: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Procesa la captura incremental de un servicio en el registro."""
     servicios_temporales: List[str] = list(flujo.get("servicios_temporales") or [])
     maximo_servicios = _maximo_servicios(flujo)
     maximo_visible = _limite_visible_para_contexto(flujo)
     texto_limpio = limpiar_espacios(texto_mensaje or "").lower()
+    selected = str(selected_option or "").strip().lower()
 
-    if len(servicios_temporales) >= maximo_servicios:
-        flujo["state"] = "awaiting_services_confirmation"
+    if flujo.get("profile_completion_mode") and (
+        selected in _EJEMPLOS_SERVICIO or texto_limpio in _EJEMPLOS_SERVICIO
+    ):
+        lookup = flujo.get("service_examples_lookup") or {}
+        ejemplo = lookup.get(selected or texto_limpio) or {}
+        sugerencia = ejemplo.get("title") or ejemplo.get("description")
+        mensajes = [
+            {
+                "response": mensaje_ejemplo_servicio_seleccionado(
+                    selected or texto_limpio,
+                    sugerencia,
+                )
+            }
+        ]
+        mensajes.extend(
+            await _mensajes_prompt_servicio_onboarding(
+                flujo=flujo,
+                indice=len(servicios_temporales) + 1,
+                maximo_visible=maximo_visible,
+            )
+        )
+        flujo["state"] = "awaiting_specialty"
+        return {"success": True, "messages": mensajes}
+
+    if flujo.get("profile_completion_mode") and (
+        selected == SERVICE_EXAMPLE_BACK_ID or texto_limpio == SERVICE_EXAMPLE_BACK_ID
+    ):
+        flujo["state"] = "awaiting_specialty"
         return {
             "success": True,
-            "messages": [
-                {"response": mensaje_maximo_servicios_registro(maximo_servicios)},
-                {
-                    "response": mensaje_resumen_servicios_registro(
-                        servicios_temporales,
-                        maximo_visible,
-                    )
-                },
-            ],
+            "messages": await _mensajes_prompt_servicio_onboarding(
+                flujo=flujo,
+                indice=len(servicios_temporales) + 1,
+                maximo_visible=maximo_visible,
+            ),
+        }
+
+    if len(servicios_temporales) >= maximo_servicios:
+        if flujo.get("profile_completion_mode"):
+            flujo["state"] = "awaiting_services_confirmation"
+            return {
+                "success": True,
+                "messages": [
+                    {"response": mensaje_maximo_servicios_registro(maximo_servicios)},
+                    {
+                        "response": mensaje_resumen_servicios_registro(
+                            servicios_temporales,
+                            maximo_visible,
+                        )
+                    },
+                ],
+            }
+
+        flujo["specialty"] = ", ".join(servicios_temporales)
+        flujo["state"] = "awaiting_consent"
+        return {
+            "success": True,
+            "messages": [payload_resumen_consentimiento_registro(flujo)],
         }
 
     if texto_limpio in PROFILE_CONTROL_IDS:
+        if flujo.get("profile_completion_mode"):
+            return {
+                "success": True,
+                "messages": await _mensajes_prompt_servicio_onboarding(
+                    flujo=flujo,
+                    indice=len(servicios_temporales) + 1,
+                    maximo_visible=maximo_visible,
+                ),
+            }
         return {
             "success": True,
             "messages": [
@@ -283,33 +388,16 @@ async def manejar_espera_especialidad(
             ],
         }
 
-    servicios_temporales.append(servicio)
-    flujo["servicios_temporales"] = servicios_temporales
-
-    if len(servicios_temporales) >= maximo_servicios:
-        flujo["state"] = "awaiting_services_confirmation"
-        return {
-            "success": True,
-            "messages": [
-                {"response": mensaje_maximo_servicios_registro(maximo_servicios)},
-                {
-                    "response": mensaje_resumen_servicios_registro(
-                        servicios_temporales,
-                        maximo_visible,
-                    )
-                },
-            ],
-        }
-
-    flujo["state"] = "awaiting_add_another_service"
+    flujo["pending_service_candidate"] = servicio
+    flujo["pending_service_index"] = len(servicios_temporales)
+    flujo["state"] = "awaiting_profile_service_confirmation"
     return {
         "success": True,
         "messages": [
-            payload_agregar_otro_servicio(
+            payload_confirmacion_servicio_perfil(
                 servicio=servicio,
-                cantidad_actual=len(servicios_temporales),
-                maximo=maximo_visible,
-                minimo_requerido=SERVICIOS_MINIMOS_PERFIL_PROFESIONAL,
+                indice=len(servicios_temporales) + 1,
+                total_requerido=SERVICIOS_MINIMOS_PERFIL_PROFESIONAL,
             )
         ],
     }

@@ -33,7 +33,7 @@ def test_manejar_estado_inicial_habilita_menu_limitado_en_interview_required():
     assert flujo["state"] == "awaiting_menu_option"
     assert flujo["menu_limitado"] is True
     assert len(resultado["messages"]) == 2
-    assert "sigue en revisión" in resultado["messages"][1]["response"].lower()
+    assert "en revisión" in resultado["messages"][1]["response"].lower()
 
 
 def test_enrutar_estado_pending_verification_con_menu_limitado_abre_menu():
@@ -102,6 +102,7 @@ def test_menu_approved_basic_opcion_invalida_muestra_error_bien_formado():
         "esta_registrado": True,
         "provider_id": "prov-abc",
         "services": [],
+        "full_name": "Diego Unkuch Gonzalez",
     }
 
     resultado = asyncio.run(
@@ -114,4 +115,7 @@ def test_menu_approved_basic_opcion_invalida_muestra_error_bien_formado():
         )
     )
 
-    assert "elige 1" in resultado["messages"][0]["response"].lower()
+    assert len(resultado["messages"]) == 2
+    assert "no reconoc" in resultado["messages"][0]["response"].lower()
+    assert resultado["messages"][1]["ui"]["type"] == "list"
+    assert resultado["messages"][1]["ui"]["id"] == "provider_main_menu_v1"

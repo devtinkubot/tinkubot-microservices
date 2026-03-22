@@ -27,7 +27,7 @@ function extraerMensajeError(error: unknown): string {
 
 type TipoAviso = "success" | "error" | "info";
 
-type ProviderBucket = "new" | "profile_incomplete_48h" | "post_review";
+type ProviderBucket = "new" | "profile_incomplete";
 
 interface EstadoProveedores {
   proveedores: ProviderRecord[];
@@ -57,9 +57,6 @@ const estado: EstadoProveedores = {
   proveedorSeleccionado: null,
   bucketActivo: "new",
 };
-
-const HORAS_48_MS = 48 * 60 * 60 * 1000;
-const HORAS_72_MS = 72 * 60 * 60 * 1000;
 
 const formateadorFecha = new Intl.DateTimeFormat("es-EC", {
   dateStyle: "medium",
@@ -102,12 +99,7 @@ function construirUrlWhatsApp(telefono: string | null | undefined): string | nul
 
 function formatearAntiguedadAprobacion(
   timestamp: string | null | undefined,
-): {
-  label: string;
-  isOverdue: boolean;
-  priorityLabel: string | null;
-  priorityClass: string | null;
-} | null {
+): string | null {
   if (!timestamp) return null;
   const fecha = parsearMarcaTemporalSupabase(timestamp);
   if (!fecha) return null;
@@ -115,43 +107,16 @@ function formatearAntiguedadAprobacion(
   if (!Number.isFinite(diffMs) || diffMs < 0) return null;
 
   const diffHoras = Math.floor(diffMs / (60 * 60 * 1000));
-  const isOverdue = diffMs >= HORAS_48_MS;
-  const priorityLabel = isOverdue
-    ? diffMs >= HORAS_72_MS
-      ? "Alta prioridad"
-      : "Prioridad"
-    : null;
-  const priorityClass = isOverdue
-    ? diffMs >= HORAS_72_MS
-      ? "bg-danger"
-      : "bg-warning text-dark"
-    : null;
-
   if (diffHoras < 1) {
-    return {
-      label: "Aprobado hace menos de 1 hora",
-      isOverdue,
-      priorityLabel,
-      priorityClass,
-    };
+    return "Aprobado hace menos de 1 hora";
   }
 
   if (diffHoras < 24) {
-    return {
-      label: `Aprobado hace ${diffHoras} ${diffHoras === 1 ? "hora" : "horas"}`,
-      isOverdue,
-      priorityLabel,
-      priorityClass,
-    };
+    return `Aprobado hace ${diffHoras} ${diffHoras === 1 ? "hora" : "horas"}`;
   }
 
   const diffDias = Math.floor(diffHoras / 24);
-  return {
-    label: `Aprobado hace ${diffDias} ${diffDias === 1 ? "día" : "días"}`,
-    isOverdue,
-    priorityLabel,
-    priorityClass,
-  };
+  return `Aprobado hace ${diffDias} ${diffDias === 1 ? "día" : "días"}`;
 }
 
 function obtenerModalRevision(): ModalInstance | null {
@@ -220,13 +185,13 @@ function obtenerEtiquetaEstadoListado(
     case "approved_basic":
       return "Información personal aprobada";
     case "profile_pending_review":
-      return "Perfil profesional en revisión";
+      return "Revisión legacy";
     case "interview_required":
       return "Entrevista";
     case "rejected":
       return "Rechazado";
     case "approved":
-      return "Perfil profesional aprobado";
+      return "Proveedor operativo";
     case "pending":
     default:
       return "Nuevo";
@@ -260,31 +225,16 @@ function actualizarEncabezadoBucket() {
   const textoCarga =
     obtenerElemento<HTMLElement>("#providers-loading")?.querySelector("p");
 
-  if (estado.bucketActivo === "profile_incomplete_48h") {
-    if (titulo) titulo.textContent = "Perfil Profesional incompleto (48h+)";
+  if (estado.bucketActivo === "profile_incomplete") {
+    if (titulo) titulo.textContent = "Perfil profesional incompleto";
     if (subtitulo) {
       subtitulo.textContent =
-        "Aprobados básicos que superaron 48 horas sin completar su perfil profesional. Usa WhatsApp para retomar el caso.";
+        "Proveedores con información personal aprobada que todavía no completan experiencia y 3 servicios principales.";
     }
     if (vacio)
-      vacio.textContent =
-        "No hay perfiles profesionales incompletos con 48 horas o más.";
+      vacio.textContent = "No hay perfiles profesionales incompletos.";
     if (textoCarga)
-      textoCarga.textContent =
-        "Obteniendo perfiles profesionales incompletos 48h+...";
-    return;
-  }
-
-  if (estado.bucketActivo === "post_review") {
-    if (titulo) titulo.textContent = "Pendientes post-revisión";
-    if (subtitulo) {
-      subtitulo.textContent =
-        "Revisa el perfil profesional, valida los 3 servicios principales y define la aprobación final.";
-    }
-    if (vacio)
-      vacio.textContent = "No hay proveedores pendientes post-revisión.";
-    if (textoCarga)
-      textoCarga.textContent = "Obteniendo proveedores post-revisión...";
+      textoCarga.textContent = "Obteniendo perfiles profesionales incompletos...";
     return;
   }
 
@@ -547,7 +497,6 @@ function actualizarPerfilProfesional(proveedor: ProviderRecord) {
     lista.length - serviciosPrincipales.length,
     0,
   );
-  const esRevisionProfesional = proveedor.status === "profile_pending_review";
   const experienciaValor =
     typeof proveedor.experienceYears === "number" &&
     Number.isFinite(proveedor.experienceYears)
@@ -561,9 +510,7 @@ function actualizarPerfilProfesional(proveedor: ProviderRecord) {
       : urlRedSocial
     : null;
   if (tituloPerfil) {
-    tituloPerfil.textContent = esRevisionProfesional
-      ? "Servicios principales para revisión"
-      : "Servicios del perfil";
+    tituloPerfil.textContent = "Servicios del perfil";
   }
 
   if (servicios) {
@@ -610,18 +557,11 @@ function actualizarOpcionesResultadoRevision(proveedor: ProviderRecord) {
   );
   if (!estadoSelect) return;
 
-  const opciones =
-    proveedor.status === "profile_pending_review"
-      ? [
-          { value: "approved", label: "Perfil profesional aprobado" },
-          { value: "interview_required", label: "Entrevista requerida" },
-          { value: "rejected", label: "Rechazado" },
-        ]
-      : [
-          { value: "approved_basic", label: "Información personal aprobada" },
-          { value: "interview_required", label: "Entrevista requerida" },
-          { value: "rejected", label: "Rechazado" },
-        ];
+  const opciones = [
+    { value: "approved_basic", label: "Información personal aprobada" },
+    { value: "interview_required", label: "Entrevista requerida" },
+    { value: "rejected", label: "Rechazado" },
+  ];
 
   estadoSelect.innerHTML = [
     '<option value="" selected disabled>Selecciona un resultado</option>',
@@ -655,40 +595,30 @@ function actualizarCopyRevision(proveedor: ProviderRecord) {
     "#provider-review-message",
   );
 
-  const esRevisionProfesional = proveedor.status === "profile_pending_review";
-
   if (tituloBasico) {
     tituloBasico.textContent = "Información personal";
   }
   if (tituloPerfil) {
-    tituloPerfil.textContent = esRevisionProfesional
-      ? "Servicios principales para revisión"
-      : "Servicios del perfil";
+    tituloPerfil.textContent = "Servicios del perfil";
   }
   if (tituloRevision) {
-    tituloRevision.textContent = esRevisionProfesional
-      ? "Revisión administrativa del perfil profesional"
-      : "Revisión administrativa de la información personal";
+    tituloRevision.textContent = "Revisión administrativa de la información personal";
   }
   if (checklist) {
-    checklist.textContent = esRevisionProfesional
-      ? "Confirmo que revisé los 3 servicios principales, experiencia, red social y coherencia general del perfil profesional."
-      : "Confirmo que revisé nombre, ciudad, consentimiento y documentación del proveedor.";
+    checklist.textContent =
+      "Confirmo que revisé nombre, ciudad, consentimiento y documentación del proveedor.";
   }
   if (ayudaMensaje) {
-    ayudaMensaje.textContent = esRevisionProfesional
-      ? "Se enviará este mensaje al proveedor junto con el resultado de la revisión profesional."
-      : "Se enviará este mensaje al proveedor junto con el resultado del onboarding básico.";
+    ayudaMensaje.textContent =
+      "Se enviará este mensaje al proveedor junto con el resultado del onboarding básico.";
   }
   if (mensajeTextarea) {
-    mensajeTextarea.placeholder = esRevisionProfesional
-      ? "Ej. Tu perfil profesional fue aprobado. Ya puedes operar como proveedor en TinkuBot."
-      : "Ej. Tu registro básico fue aprobado. El siguiente paso será completar tu perfil profesional.";
+    mensajeTextarea.placeholder =
+      "Ej. Tu registro básico fue aprobado. Ya puedes ingresar al menú de proveedor.";
   }
   if (ayudaFooter) {
-    ayudaFooter.textContent = esRevisionProfesional
-      ? "Se notificará al proveedor vía WhatsApp con el resultado de la revisión profesional."
-      : "Se notificará al proveedor vía WhatsApp con el resultado y el siguiente paso.";
+    ayudaFooter.textContent =
+      "Se notificará al proveedor vía WhatsApp con el resultado y acceso al menú.";
   }
 
   actualizarVisibilidadMensajeRevision("");
@@ -763,11 +693,11 @@ function actualizarBadgeEstado(status: ProviderRecord["status"]) {
       break;
     case "profile_pending_review":
       badge.classList.add("bg-primary");
-      badge.textContent = "Perfil profesional en revisión";
+      badge.textContent = "Revisión legacy";
       break;
     case "approved":
       badge.classList.add("bg-success");
-      badge.textContent = "Perfil profesional aprobado";
+      badge.textContent = "Proveedor operativo";
       break;
     case "rejected":
       badge.classList.add("bg-danger");
@@ -798,11 +728,11 @@ function actualizarDetalleProveedor(proveedor: ProviderRecord) {
   establecerTexto(
     "#provider-detail-stage",
     proveedor.status === "profile_pending_review"
-      ? "Revisión profesional"
+      ? "Revisión legacy"
       : proveedor.status === "approved_basic"
         ? "Información personal aprobada"
         : proveedor.status === "approved"
-          ? "Perfil profesional aprobado"
+          ? "Proveedor operativo"
           : "Onboarding básico",
   );
 
@@ -891,11 +821,9 @@ async function cargarProveedoresBucket() {
 
   try {
     const proveedores =
-      estado.bucketActivo === "post_review"
-        ? await apiProveedores.obtenerProveedoresPostRevision()
-        : estado.bucketActivo === "profile_incomplete_48h"
+      estado.bucketActivo === "profile_incomplete"
           ? await apiProveedores.obtenerProveedoresPerfilProfesionalIncompleto()
-        : await apiProveedores.obtenerProveedoresNuevos();
+          : await apiProveedores.obtenerProveedoresNuevos();
     estado.proveedores = proveedores;
     renderizarProveedores();
   } catch (error) {
@@ -1009,8 +937,8 @@ function construirMensajeSugerido(
       return "";
     case "profile_pending_review":
       return nombreLimpio
-        ? `✅ Hola *${nombreLimpio}*, tu perfil profesional fue enviado a revisión. Te notificaremos cuando quede aprobado.`
-        : "✅ Tu perfil profesional fue enviado a revisión. Te notificaremos cuando quede aprobado.";
+        ? `✅ Hola *${nombreLimpio}*, estamos revisando tu caso administrativo.`
+        : "✅ Estamos revisando tu caso administrativo.";
     case "approved":
       return nombreLimpio
         ? `✅ Hola *${nombreLimpio}*, tu perfil profesional fue aprobado. Ya puedes operar como proveedor en TinkuBot.`
@@ -1052,10 +980,8 @@ function actualizarVisibilidadMensajeRevision(
 
   if (ayudaFooter) {
     ayudaFooter.textContent = usaMensajeEstandar
-      ? "Se notificará al proveedor vía WhatsApp con un mensaje estándar y un botón para continuar."
-      : status === "profile_pending_review"
-        ? "Se notificará al proveedor vía WhatsApp con el resultado de la revisión profesional."
-        : "Se notificará al proveedor vía WhatsApp con el resultado y el siguiente paso.";
+      ? "Se notificará al proveedor vía WhatsApp con un mensaje estándar y acceso al menú."
+      : "Se notificará al proveedor vía WhatsApp con el resultado y el siguiente paso.";
   }
 }
 
@@ -1099,8 +1025,6 @@ function manejarAccionModal() {
 
   if (
     estadoSeleccionado !== "approved_basic" &&
-    estadoSeleccionado !== "profile_pending_review" &&
-    estadoSeleccionado !== "approved" &&
     mensaje.length === 0
   ) {
     mostrarErrorModal("Ingresa el mensaje que recibirá el proveedor.");
@@ -1115,8 +1039,7 @@ function manejarAccionModal() {
   }
 
   if (
-    (estadoSeleccionado === "approved_basic" ||
-      estadoSeleccionado === "approved") &&
+    estadoSeleccionado === "approved_basic" &&
     checklistDocs &&
     !checklistDocs.checked
   ) {
@@ -1175,7 +1098,7 @@ function renderizarEncabezadoTabla() {
   );
   if (!encabezado) return;
 
-  if (estado.bucketActivo === "profile_incomplete_48h") {
+  if (estado.bucketActivo === "profile_incomplete") {
     encabezado.innerHTML = `
       <tr>
         <th>Proveedor</th>
@@ -1272,17 +1195,7 @@ function renderizarFilaPerfilProfesionalIncompleto(
     proveedor.approvedBasicAt ?? proveedor.registeredAt ?? null,
   );
   const ageMarkup = antiguedad
-    ? `
-      <div class="d-flex flex-column gap-1">
-        <span class="fw-semibold">${escaparHtml(antiguedad.label)}</span>
-        ${
-          antiguedad.priorityLabel
-            ? `<span class="badge ${escaparHtml(antiguedad.priorityClass || "bg-secondary")} align-self-start">${escaparHtml(antiguedad.priorityLabel)}</span>`
-            : ""
-        }
-        ${antiguedad.isOverdue ? '<span class="badge bg-danger align-self-start">48h+</span>' : ""}
-      </div>
-    `
+    ? `<span class="fw-semibold">${escaparHtml(antiguedad)}</span>`
     : '<span class="text-muted">Sin fecha de aprobación</span>';
   const whatsappUrl = construirUrlWhatsApp(
     proveedor.contactPhone || proveedor.realPhone || proveedor.phone,
@@ -1342,7 +1255,7 @@ function renderizarProveedores() {
 
   const filas = estado.proveedores
     .map((proveedor) =>
-      estado.bucketActivo === "profile_incomplete_48h"
+      estado.bucketActivo === "profile_incomplete"
         ? renderizarFilaPerfilProfesionalIncompleto(proveedor)
         : renderizarFilaProveedorGeneral(proveedor),
     )

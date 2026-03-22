@@ -63,6 +63,8 @@ class SolicitudCreacionProveedor(BaseModel):
     experience_years: Optional[int] = Field(default=0, ge=0)
     social_media_url: Optional[str] = None
     social_media_type: Optional[str] = None
+    facebook_username: Optional[str] = None
+    instagram_username: Optional[str] = None
     dni_front_photo_url: Optional[str] = None
     dni_back_photo_url: Optional[str] = None
     face_photo_url: Optional[str] = None
@@ -154,6 +156,8 @@ class RespuestaProveedor(BaseModel):
     experience_years: int
     social_media_url: Optional[str] = None
     social_media_type: Optional[str] = None
+    facebook_username: Optional[str] = None
+    instagram_username: Optional[str] = None
     dni_front_photo_url: Optional[str] = None
     dni_back_photo_url: Optional[str] = None
     face_photo_url: Optional[str] = None

@@ -41,9 +41,9 @@ async def registrar_consentimiento(
         return
 
     try:
+        consent_date = carga.get("timestamp") or datetime.utcnow().isoformat()
         datos_consentimiento = {
-            "consent_timestamp": carga.get("timestamp")
-            or datetime.utcnow().isoformat(),
+            "consent_timestamp": consent_date,
             "phone": telefono,
             "message_id": carga.get("id") or carga.get("message_id"),
             "exact_response": carga.get("message") or carga.get("content"),
@@ -55,6 +55,7 @@ async def registrar_consentimiento(
             "user_id": proveedor_id,
             "user_type": "provider",
             "response": respuesta,
+            "consent_date": consent_date,
             "message_log": json.dumps(datos_consentimiento, ensure_ascii=False),
         }
         await run_supabase(

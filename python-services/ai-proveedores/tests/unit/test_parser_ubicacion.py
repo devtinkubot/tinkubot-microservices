@@ -11,6 +11,14 @@ def test_autocorrige_entrada_compuesta_y_conserva_ciudad():
     assert ubicacion == "Cuenca"
 
 
+def test_extrae_ciudad_desde_direccion_completa_con_numeros():
+    ubicacion, estado = validar_y_normalizar_ubicacion(
+        "Polideportivo, Ave Los Andes 246, Cuenca, 010209, A, EC"
+    )
+    assert estado == VALIDATION_OK
+    assert ubicacion == "Cuenca"
+
+
 def test_acepta_canton_nabon():
     ubicacion, estado = validar_y_normalizar_ubicacion("Nabon")
     assert estado == VALIDATION_OK

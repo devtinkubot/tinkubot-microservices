@@ -18,25 +18,35 @@ SUBMENU_ID_PERSONAL_DNI_REVERSO = "provider_submenu_personal_dni_reverso"
 SUBMENU_ID_PERSONAL_REGRESAR = "provider_submenu_personal_regresar"
 
 SUBMENU_ID_PROF_SERVICIOS = "provider_submenu_profesional_servicios"
+SUBMENU_ID_PROF_EXPERIENCIA = "provider_submenu_profesional_experiencia"
 SUBMENU_ID_PROF_CERTIFICADOS = "provider_submenu_profesional_certificados"
 SUBMENU_ID_PROF_REDES = "provider_submenu_profesional_redes"
 SUBMENU_ID_PROF_REGRESAR = "provider_submenu_profesional_regresar"
+SOCIAL_NETWORK_FACEBOOK_ID = "provider_social_facebook"
+SOCIAL_NETWORK_INSTAGRAM_ID = "provider_social_instagram"
+SOCIAL_NETWORK_BACK_ID = "provider_social_back"
 
 DETAIL_ACTION_NAME_CHANGE = "provider_detail_name_change"
 DETAIL_ACTION_CITY_CHANGE = "provider_detail_city_change"
 DETAIL_ACTION_PHOTO_CHANGE = "provider_detail_photo_change"
 DETAIL_ACTION_DNI_FRONT_CHANGE = "provider_detail_dni_front_change"
 DETAIL_ACTION_DNI_BACK_CHANGE = "provider_detail_dni_back_change"
+DETAIL_ACTION_EXPERIENCE_CHANGE = "provider_detail_experience_change"
 DETAIL_ACTION_SOCIAL_CHANGE = "provider_detail_social_change"
 DETAIL_ACTION_SERVICES_ADD = "provider_detail_services_add"
 DETAIL_ACTION_SERVICES_REMOVE = "provider_detail_services_remove"
+DETAIL_ACTION_SERVICE_CHANGE = "provider_detail_service_change"
+DETAIL_ACTION_SERVICE_DELETE = "provider_detail_service_delete"
 DETAIL_ACTION_CERTIFICATES_ADD = "provider_detail_certificates_add"
 DETAIL_ACTION_CERTIFICATES_DELETE = "provider_detail_certificates_delete"
 DETAIL_ACTION_BACK = "provider_detail_back"
 
+SERVICE_SLOT_PREFIX = "provider_service_slot:"
+SERVICE_BACK_ID = "provider_service_back"
 SERVICE_DELETE_PREFIX = "provider_service_delete:"
 SERVICE_DELETE_BACK_ID = "provider_service_delete_back"
 CERTIFICATE_SELECT_PREFIX = "provider_certificate_select:"
+CERTIFICATE_SLOT_PREFIX = "provider_certificate_slot:"
 CERTIFICATE_ADD_ID = "provider_certificate_add"
 SERVICE_EXAMPLE_BACK_ID = "provider_service_example_back"
 CERTIFICATE_BACK_ID = "provider_certificate_back"
@@ -83,17 +93,6 @@ MENU_POST_REGISTRO_PROVEEDOR_LIMITADO = (
     "*Responde con el número de opción para ver detalles.*\n"
 )
 
-MENU_POST_REGISTRO_PROVEEDOR_BASICO = (
-    "*Menú de Proveedores*\n"
-    "\n"
-    "Tu registro básico ya fue aprobado. El siguiente paso es completar tu perfil "
-    "profesional.\n"
-    "\n"
-    "*1.* Completar perfil profesional\n"
-    "\n"
-    "*Responde con el número de opción para continuar.*\n"
-)
-
 # ==================== FUNCIONES ====================
 
 
@@ -107,8 +106,6 @@ def mensaje_menu_post_registro_proveedor(
     approved_basic: bool = False,
 ) -> str:
     """Genera el menú posterior al registro de proveedor."""
-    if approved_basic:
-        return f"{MENU_POST_REGISTRO_PROVEEDOR_BASICO}"
     if menu_limitado:
         return f"{MENU_POST_REGISTRO_PROVEEDOR_LIMITADO}"
     return f"{MENU_POST_REGISTRO_PROVEEDOR}"
@@ -134,7 +131,9 @@ def payload_menu_post_registro_proveedor() -> Dict[str, Any]:
                 {
                     "id": MENU_ID_INFO_PROFESIONAL,
                     "title": "Información profesional",
-                    "description": "Servicios, certificados y redes sociales",
+                    "description": (
+                        "Experiencia, servicios, certificaciones y redes sociales"
+                    ),
                 },
                 {
                     "id": MENU_ID_ELIMINAR_REGISTRO,
@@ -197,7 +196,6 @@ def payload_submenu_informacion_personal() -> Dict[str, Any]:
         },
     }
 
-
 def payload_submenu_informacion_profesional() -> Dict[str, Any]:
     """Genera el submenú de información profesional."""
     return {
@@ -210,6 +208,11 @@ def payload_submenu_informacion_profesional() -> Dict[str, Any]:
             "list_button_text": "Ver opciones",
             "list_section_title": "Información profesional",
             "options": [
+                {
+                    "id": SUBMENU_ID_PROF_EXPERIENCIA,
+                    "title": "Experiencia general",
+                    "description": "Ver o actualizar tus años de experiencia",
+                },
                 {
                     "id": SUBMENU_ID_PROF_SERVICIOS,
                     "title": "Servicios",
@@ -253,14 +256,17 @@ def payload_ejemplos_servicios_personalizados(
     ejemplos: Optional[List[Dict[str, str]]] = None,
     indice: Optional[int] = None,
     maximo: Optional[int] = None,
+    include_back_option: bool = True,
 ) -> Dict[str, Any]:
-    """Genera una lista de ejemplos de servicios, usando un fallback fijo si hace falta."""
+    """Genera una lista de ejemplos de servicios con fallback fijo."""
     ejemplos_base = ejemplos or [
-        {
-            "id": SERVICE_EXAMPLE_MECHANICS_ID,
-            "title": "Gasfitería",
-            "description": "Instalación y mantenimiento de tuberías para casas o edificios",
-        },
+                {
+                    "id": SERVICE_EXAMPLE_MECHANICS_ID,
+                    "title": "Gasfitería",
+                    "description": (
+                        "Instalación y mantenimiento de tuberías para casas o edificios"
+                    ),
+                },
         {
             "id": SERVICE_EXAMPLE_LEGAL_ID,
             "title": "Legal",
@@ -287,6 +293,7 @@ def payload_ejemplos_servicios_personalizados(
                 indice=indice,
                 maximo=maximo,
             ),
+            "footer_text": "¿Necesitas ideas?. Toca Ver ejemplos.",
             "list_button_text": "Ver ejemplos",
             "list_section_title": "Dominios más frecuentes",
             "options": [
@@ -303,13 +310,17 @@ def payload_ejemplos_servicios_personalizados(
                 if str(item.get("id") or "").strip()
                 and str(item.get("title") or "").strip()
             ]
-            + [
-                {
-                    "id": SERVICE_EXAMPLE_BACK_ID,
-                    "title": "Regresar",
-                    "description": "Volver al menú anterior",
-                }
-            ],
+            + (
+                [
+                    {
+                        "id": SERVICE_EXAMPLE_BACK_ID,
+                        "title": "Regresar",
+                        "description": "Volver al menú anterior",
+                    }
+                ]
+                if include_back_option
+                else []
+            ),
         },
     }
 
@@ -362,8 +373,9 @@ def _payload_botones_detalle(
     if media:
         ui["header_type"] = "image"
         ui["header_media_url"] = media
-    elif header_text:
-        ui["header_type"] = "text"
+    if header_text:
+        if not media:
+            ui["header_type"] = "text"
         ui["header_text"] = header_text
     return {"response": body, "ui": ui}
 
@@ -408,6 +420,23 @@ def payload_detalle_ubicacion(ciudad: str) -> Dict[str, Any]:
     )
 
 
+def payload_detalle_experiencia(experiencia: Any) -> Dict[str, Any]:
+    if isinstance(experiencia, int) and experiencia >= 0:
+        experiencia_visible = (
+            f"{experiencia} año{'s' if experiencia != 1 else ''}"
+        )
+    else:
+        experiencia_visible = "No registrada"
+    return _payload_botones_detalle(
+        header_text="Experiencia general",
+        body=f"*Años registrados*\n{experiencia_visible}",
+        options=[
+            {"id": DETAIL_ACTION_EXPERIENCE_CHANGE, "title": "Cambiar"},
+            {"id": DETAIL_ACTION_BACK, "title": "Regresar"},
+        ],
+    )
+
+
 def payload_detalle_foto(
     *,
     titulo: str,
@@ -438,20 +467,110 @@ def payload_detalle_red_social(url: str) -> Dict[str, Any]:
     )
 
 
+def payload_lista_redes_sociales(
+    *,
+    facebook_username: Optional[str],
+    instagram_username: Optional[str],
+) -> Dict[str, Any]:
+    return {
+        "response": "Redes sociales. Elige lo que deseas gestionar.",
+        "ui": {
+            "type": "list",
+            "id": "provider_social_networks_v1",
+            "header_type": "text",
+            "header_text": "Menu - Redes Sociales",
+            "list_button_text": "Ver redes",
+            "list_section_title": "Redes sociales",
+            "options": [
+                {
+                    "id": SOCIAL_NETWORK_FACEBOOK_ID,
+                    "title": "Facebook",
+                    "description": (
+                        "Registrada" if facebook_username else "No registrada"
+                    ),
+                },
+                {
+                    "id": SOCIAL_NETWORK_INSTAGRAM_ID,
+                    "title": "Instagram",
+                    "description": (
+                        "Registrada" if instagram_username else "No registrada"
+                    ),
+                },
+                {
+                    "id": SOCIAL_NETWORK_BACK_ID,
+                    "title": "Regresar",
+                    "description": "Volver a información profesional",
+                },
+            ],
+        },
+    }
+
+
+def payload_detalle_red_social_canal(
+    *,
+    titulo: str,
+    username: Optional[str],
+    url: Optional[str],
+) -> Dict[str, Any]:
+    username_visible = str(username or "").strip() or "No registrado"
+    url_visible = str(url or "").strip() or "No registrada"
+    return _payload_botones_detalle(
+        header_text=titulo,
+        body=f"*Usuario actual*\n{username_visible}\n\n*URL actual*\n{url_visible}",
+        options=[
+            {"id": DETAIL_ACTION_SOCIAL_CHANGE, "title": "Cambiar"},
+            {"id": DETAIL_ACTION_BACK, "title": "Regresar"},
+        ],
+    )
+
+
 def payload_detalle_servicios(
     servicios: List[str], max_servicios: int
 ) -> Dict[str, Any]:
-    lineas: List[str] = []
-    if servicios:
-        lineas.extend([f"• {servicio}" for servicio in servicios])
-    else:
-        lineas.append("Todavía no registras servicios.")
+    options = [
+        {
+            "id": f"{SERVICE_SLOT_PREFIX}{idx}",
+            "title": f"Servicio {idx + 1}",
+            "description": (
+                _truncar_descripcion_lista(servicios[idx])
+                if idx < len(servicios)
+                else "No registrado"
+            ),
+        }
+        for idx in range(max_servicios)
+    ]
+    options.append(
+        {
+            "id": SERVICE_BACK_ID,
+            "title": "Regresar",
+            "description": "Volver a información profesional",
+        }
+    )
+    return {
+        "response": "Servicios. Elige lo que deseas gestionar.",
+        "ui": {
+            "type": "list",
+            "id": "provider_services_v2",
+            "header_type": "text",
+            "header_text": "Menu - Servicios",
+            "list_button_text": "Ver servicios",
+            "list_section_title": "Servicios",
+            "options": options,
+        },
+    }
+
+
+def payload_detalle_servicio_individual(
+    *,
+    indice: int,
+    servicio: str,
+) -> Dict[str, Any]:
     return _payload_botones_detalle(
-        header_text=f"Servicios registrados ({len(servicios)}/{max_servicios})",
-        body="\n".join(lineas),
+        header_text=f"Servicio {indice + 1}",
+        body=f"*Servicio actual*\n{str(servicio or '').strip() or 'No registrado'}",
         options=[
-            {"id": DETAIL_ACTION_SERVICES_ADD, "title": "Agregar"},
-            {"id": DETAIL_ACTION_SERVICES_REMOVE, "title": "Eliminar"},
+            {"id": DETAIL_ACTION_SERVICE_CHANGE, "title": "Cambiar"},
+            {"id": DETAIL_ACTION_SERVICE_DELETE, "title": "Eliminar"},
             {"id": DETAIL_ACTION_BACK, "title": "Regresar"},
         ],
     )
@@ -494,22 +613,12 @@ def payload_lista_certificados(
 ) -> Dict[str, Any]:
     options = [
         {
-            "id": f"{CERTIFICATE_SELECT_PREFIX}{certificado.get('id')}",
+            "id": f"{CERTIFICATE_SLOT_PREFIX}{idx}",
             "title": f"Certificado {idx + 1}",
-            "description": _truncar_descripcion_lista(
-                str(certificado.get("file_url") or "Archivo registrado")
-            ),
+            "description": "Registrado" if idx < len(certificados) else "No registrado",
         }
-        for idx, certificado in enumerate(certificados)
+        for idx in range(max_certificados)
     ]
-    if len(certificados) < max_certificados:
-        options.append(
-            {
-                "id": CERTIFICATE_ADD_ID,
-                "title": "Agregar certificado",
-                "description": "Subir un nuevo certificado",
-            }
-        )
     options.append(
         {
             "id": CERTIFICATE_BACK_ID,
@@ -537,11 +646,18 @@ def payload_detalle_certificado(
     certificado: Dict[str, Any],
     total: int,
     max_certificados: int,
+    media_url: Optional[str] = None,
+    body: str = "Certificado seleccionado.",
 ) -> Dict[str, Any]:
+    media_resuelta = (
+        str(certificado.get("file_url") or "").strip()
+        if media_url is None
+        else str(media_url or "").strip()
+    )
     return _payload_botones_detalle(
         header_text=f"Certificado ({total}/{max_certificados})",
-        header_media_url=str(certificado.get("file_url") or "").strip(),
-        body="Certificado seleccionado.",
+        header_media_url=media_resuelta,
+        body=body,
         options=[
             {"id": DETAIL_ACTION_CERTIFICATES_ADD, "title": "Cambiar"},
             {"id": DETAIL_ACTION_BACK, "title": "Regresar"},

@@ -1,18 +1,22 @@
+import pytest
+
 from flows.gestores_estados.gestor_espera_ciudad import manejar_espera_ciudad
 
 
-def test_manejar_espera_ciudad_autocorrige_y_avanza_estado():
+@pytest.mark.asyncio
+async def test_manejar_espera_ciudad_autocorrige_y_avanza_estado():
     flujo = {"state": "awaiting_city"}
-    respuesta = manejar_espera_ciudad(flujo, "Cuenca, Azuay, Ecuador")
+    respuesta = await manejar_espera_ciudad(flujo, "Cuenca, Azuay, Ecuador")
 
     assert respuesta["success"] is True
     assert flujo["city"] == "cuenca"
-    assert flujo["state"] == "awaiting_name"
+    assert flujo["state"] == "awaiting_dni_front_photo"
 
 
-def test_manejar_espera_ciudad_rechaza_provincia():
+@pytest.mark.asyncio
+async def test_manejar_espera_ciudad_rechaza_provincia():
     flujo = {"state": "awaiting_city"}
-    respuesta = manejar_espera_ciudad(flujo, "Azuay")
+    respuesta = await manejar_espera_ciudad(flujo, "Azuay")
 
     assert respuesta["success"] is True
     assert flujo["state"] == "awaiting_city"

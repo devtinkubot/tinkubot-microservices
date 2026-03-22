@@ -25,8 +25,10 @@ from templates.registro import (
     mensaje_servicio_actualizado,
     mensaje_servicio_eliminado_registro,
     payload_confirmacion_resumen,
+    payload_resumen_consentimiento_registro,
     payload_certificado_opcional,
     payload_red_social_opcional,
+    preguntar_experiencia_general,
     preguntar_nuevo_servicio_reemplazo,
     preguntar_numero_servicio_eliminar,
     preguntar_numero_servicio_reemplazar,
@@ -60,6 +62,9 @@ def _payload_resumen_perfil(flujo: Dict[str, Any]) -> Dict[str, Any]:
         construir_resumen_confirmacion_perfil_profesional(
             experience_years=flujo.get("experience_years"),
             social_media_url=flujo.get("social_media_url"),
+            social_media_type=flujo.get("social_media_type"),
+            facebook_username=flujo.get("facebook_username"),
+            instagram_username=flujo.get("instagram_username"),
             certificate_uploaded=bool(flujo.get("certificate_uploaded")),
             services=list(flujo.get("servicios_temporales") or []),
         )
@@ -102,34 +107,95 @@ async def manejar_confirmacion_servicio_perfil(
     maximo_servicios = _maximo_servicios(flujo)
     maximo_visible = _maximo_visible(flujo)
 
-    if not candidato:
-        flujo["state"] = "awaiting_specialty"
+    if not flujo.get("profile_completion_mode") and not flujo.get("profile_edit_mode"):
+        from .gestor_espera_especialidad import _mensajes_prompt_servicio_onboarding
+
+        if not candidato:
+            flujo["state"] = "awaiting_specialty"
+            return {
+                "success": True,
+                "messages": await _mensajes_prompt_servicio_onboarding(
+                    flujo=flujo,
+                    indice=min(indice + 1, SERVICIOS_MINIMOS_PERFIL_PROFESIONAL),
+                    maximo_visible=maximo_visible,
+                ),
+            }
+
+        if opcion == "reject":
+            flujo["state"] = "awaiting_specialty"
+            return {
+                "success": True,
+                "messages": await _mensajes_prompt_servicio_onboarding(
+                    flujo=flujo,
+                    indice=min(indice + 1, SERVICIOS_MINIMOS_PERFIL_PROFESIONAL),
+                    maximo_visible=maximo_visible,
+                ),
+            }
+
+        if opcion == "accept":
+            while len(servicios) < indice:
+                servicios.append("")
+            if indice < len(servicios):
+                servicios[indice] = candidato
+            else:
+                servicios.append(candidato)
+            flujo["servicios_temporales"] = [servicio for servicio in servicios if servicio]
+            flujo.pop("pending_service_candidate", None)
+            flujo.pop("pending_service_index", None)
+
+            cantidad = len(flujo.get("servicios_temporales") or [])
+            if cantidad >= SERVICIOS_MINIMOS_PERFIL_PROFESIONAL:
+                flujo["state"] = "awaiting_consent"
+                return {
+                    "success": True,
+                    "messages": [payload_resumen_consentimiento_registro(flujo)],
+                }
+
+            flujo["state"] = "awaiting_specialty"
+            return {
+                "success": True,
+                "messages": await _mensajes_prompt_servicio_onboarding(
+                    flujo=flujo,
+                    indice=cantidad + 1,
+                    maximo_visible=maximo_visible,
+                ),
+            }
+
         return {
             "success": True,
             "messages": [
                 {
-                    "response": preguntar_siguiente_servicio_registro(
-                        min(indice + 1, SERVICIOS_MINIMOS_PERFIL_PROFESIONAL),
-                        maximo_visible,
-                        SERVICIOS_MINIMOS_PERFIL_PROFESIONAL,
+                    "response": (
+                        "Usa *Confirmar* si el servicio está bien o *Corregir* si deseas cambiarlo."
                     )
                 }
             ],
         }
 
-    if opcion == "reject":
+    if not candidato:
         flujo["state"] = "awaiting_specialty"
+        from .gestor_espera_especialidad import _mensajes_prompt_servicio_onboarding
+
         return {
             "success": True,
-            "messages": [
-                {
-                    "response": preguntar_siguiente_servicio_registro(
-                        min(indice + 1, SERVICIOS_MINIMOS_PERFIL_PROFESIONAL),
-                        maximo_visible,
-                        SERVICIOS_MINIMOS_PERFIL_PROFESIONAL,
-                    )
-                }
-            ],
+            "messages": await _mensajes_prompt_servicio_onboarding(
+                flujo=flujo,
+                indice=min(indice + 1, SERVICIOS_MINIMOS_PERFIL_PROFESIONAL),
+                maximo_visible=maximo_visible,
+            ),
+        }
+
+    if opcion == "reject":
+        flujo["state"] = "awaiting_specialty"
+        from .gestor_espera_especialidad import _mensajes_prompt_servicio_onboarding
+
+        return {
+            "success": True,
+            "messages": await _mensajes_prompt_servicio_onboarding(
+                flujo=flujo,
+                indice=min(indice + 1, SERVICIOS_MINIMOS_PERFIL_PROFESIONAL),
+                maximo_visible=maximo_visible,
+            ),
         }
 
     if opcion == "accept":
@@ -151,21 +217,22 @@ async def manejar_confirmacion_servicio_perfil(
 
         cantidad = len(flujo.get("servicios_temporales") or [])
         if cantidad >= SERVICIOS_MINIMOS_PERFIL_PROFESIONAL:
-            flujo["state"] = "awaiting_profile_completion_confirmation"
-            return {"success": True, "messages": [_payload_resumen_perfil(flujo)]}
+            flujo["state"] = "awaiting_consent"
+            return {
+                "success": True,
+                "messages": [payload_resumen_consentimiento_registro(flujo)],
+            }
 
         flujo["state"] = "awaiting_specialty"
+        from .gestor_espera_especialidad import _mensajes_prompt_servicio_onboarding
+
         return {
             "success": True,
-            "messages": [
-                {
-                    "response": preguntar_siguiente_servicio_registro(
-                        cantidad + 1,
-                        maximo_visible,
-                        SERVICIOS_MINIMOS_PERFIL_PROFESIONAL,
-                    )
-                }
-            ],
+            "messages": await _mensajes_prompt_servicio_onboarding(
+                flujo=flujo,
+                indice=cantidad + 1,
+                maximo_visible=maximo_visible,
+            ),
         }
 
     return {
@@ -215,16 +282,18 @@ async def manejar_edicion_perfil_profesional(
         flujo["state"] = "awaiting_experience"
         return {
             "success": True,
-            "messages": [
-                {
-                    "response": "*¿Cuántos años de experiencia general tienes?* Escribe un número, por ejemplo: *2*."
-                }
-            ],
+            "messages": [{"response": preguntar_experiencia_general()}],
         }
     if texto == "2":
         flujo["profile_edit_mode"] = "social_media"
         flujo["state"] = "awaiting_social_media"
-        return {"success": True, "messages": [payload_red_social_opcional()]}
+        return {
+            "success": True,
+            "messages": [
+                payload_red_social_opcional(
+                )
+            ],
+        }
     if texto == "3":
         flujo["profile_edit_mode"] = "certificate"
         flujo["state"] = "awaiting_certificate"
@@ -407,17 +476,10 @@ async def manejar_confirmacion_servicios(
                 ],
             }
 
-        flujo["state"] = "awaiting_experience"
+        flujo["state"] = "confirm"
         return {
             "success": True,
-            "messages": [
-                {
-                    "response": (
-                        "*¿Cuántos años de experiencia tienes?* "
-                        "(escribe un número, ej: 5)"
-                    )
-                }
-            ],
+            "messages": [payload_resumen_consentimiento_registro(flujo)],
         }
 
     if texto_limpio in {"2", "no", "corregir", "editar", "cambiar"}:

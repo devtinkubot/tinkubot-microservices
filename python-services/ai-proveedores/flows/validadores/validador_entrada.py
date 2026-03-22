@@ -2,6 +2,12 @@
 
 from typing import Dict, List, Optional
 
+from services.servicios_proveedor.redes_sociales_slots import (
+    SOCIAL_NETWORK_FACEBOOK,
+    SOCIAL_NETWORK_INSTAGRAM,
+    SOCIAL_SKIP_VALUES,
+    parsear_username_red_social,
+)
 from services.servicios_proveedor.utilidades import (
     limpiar_espacios,
     parsear_servicios_con_limite,
@@ -36,10 +42,22 @@ def parsear_entrada_red_social(
         Si no se detecta una URL completa, asume Instagram y construye la URL.
     """
     red_social = limpiar_espacios(texto_mensaje)
-    if red_social.lower() in {"omitir", "na", "n/a", "ninguno"}:
+    if red_social.lower() in SOCIAL_SKIP_VALUES:
         return {"url": None, "type": None}
     if "facebook.com" in red_social or "fb.com" in red_social:
-        return {"url": red_social, "type": "facebook"}
+        parseada = parsear_username_red_social(
+            red_social,
+            SOCIAL_NETWORK_FACEBOOK,
+        )
+        return {"url": parseada["url"], "type": parseada["type"]}
     if "instagram.com" in red_social or "instagr.am" in red_social:
-        return {"url": red_social, "type": "instagram"}
-    return {"url": f"https://instagram.com/{red_social}", "type": "instagram"}
+        parseada = parsear_username_red_social(
+            red_social,
+            SOCIAL_NETWORK_INSTAGRAM,
+        )
+        return {"url": parseada["url"], "type": parseada["type"]}
+    parseada = parsear_username_red_social(
+        red_social,
+        SOCIAL_NETWORK_INSTAGRAM,
+    )
+    return {"url": parseada["url"], "type": parseada["type"]}

@@ -2,13 +2,16 @@ import asyncio
 import sys
 import types
 from pathlib import Path
+from types import SimpleNamespace
 
 imghdr_stub = types.ModuleType("imghdr")
 imghdr_stub.what = lambda *args, **kwargs: None
 sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from flows.router import enrutar_estado
+import flows.router as modulo_router  # noqa: E402
+from flows.router import enrutar_estado, manejar_mensaje
+from templates.interfaz.registro_inicio import MENU_ID_REGISTRARSE
 
 
 def _ejecutar_enrutado(flujo, texto_mensaje, opcion_menu=None):
@@ -54,3 +57,30 @@ def test_estado_esperando_disponibilidad_permite_volver_menu():
     assert resultado["persist_flow"] is True
     assert flujo["state"] == "awaiting_menu_option"
     assert resultado["response"]["messages"]
+
+
+def test_reset_devuelve_menu_de_registro():
+    flujo = {"state": "awaiting_city"}
+    logger = SimpleNamespace(info=lambda *args, **kwargs: None)
+    modulo_router.reiniciar_flujo = lambda _telefono: asyncio.sleep(0)
+    resultado = asyncio.run(
+        manejar_mensaje(
+            flujo=flujo,
+            telefono="593999111299@s.whatsapp.net",
+            texto_mensaje="reiniciar",
+            carga={},
+            opcion_menu=None,
+            perfil_proveedor=None,
+            supabase=None,
+            servicio_embeddings=None,
+            cliente_openai=None,
+            subir_medios_identidad=None,
+            logger=logger,
+        )
+    )
+
+    assert resultado is not None
+    assert flujo["state"] == "awaiting_menu_option"
+    assert resultado["response"]["messages"][1]["ui"]["options"][0]["id"] == (
+        MENU_ID_REGISTRARSE
+    )

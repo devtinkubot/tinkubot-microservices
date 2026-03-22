@@ -18,8 +18,42 @@ from infrastructure.database import run_supabase  # noqa: E402
 from services.servicios_proveedor.utilidades import (  # noqa: E402
     sanitizar_lista_servicios as sanitizar_servicios,
 )
+from services.servicios_proveedor.estado_operativo import (  # noqa: E402
+    perfil_profesional_completo,
+)
 
 logger = logging.getLogger(__name__)
+
+
+async def _sincronizar_estado_operativo_proveedor(
+    *,
+    supabase: Any,
+    proveedor_id: str,
+    servicios: List[str],
+) -> None:
+    perfil = await run_supabase(
+        lambda: supabase.table("providers")
+        .select("experience_years")
+        .eq("id", proveedor_id)
+        .single()
+        .execute(),
+        label="providers.select_experience_for_service_sync",
+    )
+    data = getattr(perfil, "data", None) or {}
+    await run_supabase(
+        lambda: supabase.table("providers")
+        .update(
+            {
+                "verified": perfil_profesional_completo(
+                    experience_years=data.get("experience_years"),
+                    servicios=servicios,
+                )
+            }
+        )
+        .eq("id", proveedor_id)
+        .execute(),
+        label="providers.update_verified_after_service_sync",
+    )
 
 
 async def actualizar_servicios(proveedor_id: str, servicios: List[str]) -> List[str]:
@@ -88,6 +122,11 @@ async def actualizar_servicios(proveedor_id: str, servicios: List[str]) -> List[
             supabase=supabase,
             proveedor_id=proveedor_id,
             contexto="after_update",
+        )
+        await _sincronizar_estado_operativo_proveedor(
+            supabase=supabase,
+            proveedor_id=proveedor_id,
+            servicios=servicios_limpios,
         )
 
         logger.info(
@@ -173,6 +212,11 @@ async def agregar_servicios_proveedor(
         proveedor_id=proveedor_id,
         contexto="after_incremental_add",
     )
+    await _sincronizar_estado_operativo_proveedor(
+        supabase=supabase,
+        proveedor_id=proveedor_id,
+        servicios=servicios_existentes + servicios_a_insertar,
+    )
 
     servicios_persistidos = await _obtener_servicios_persistidos(
         supabase=supabase,
@@ -250,6 +294,15 @@ async def eliminar_servicio_proveedor(
             supabase=supabase,
             proveedor_id=proveedor_id,
             contexto="after_delete",
+        )
+        await _sincronizar_estado_operativo_proveedor(
+            supabase=supabase,
+            proveedor_id=proveedor_id,
+            servicios=[
+                str(fila.get("service_name") or "").strip()
+                for fila in filas_restantes
+                if str(fila.get("service_name") or "").strip()
+            ],
         )
     except Exception:
         raise

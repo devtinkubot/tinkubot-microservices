@@ -2,7 +2,7 @@
 
 from typing import List
 
-from templates import mensaje_menu_servicios_proveedor
+from templates.interfaz.menus import mensaje_menu_servicios_proveedor
 
 
 def construir_menu_servicios(

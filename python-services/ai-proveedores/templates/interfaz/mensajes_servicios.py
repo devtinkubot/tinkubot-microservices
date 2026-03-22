@@ -50,7 +50,8 @@ def preguntar_nuevo_servicio(
 ) -> str:
     """Solicita al usuario que ingrese un nuevo servicio."""
     return (
-        "Escribe el servicio que quieres agregar.\n¿Necesitas ideas? Toca Ver ejemplos."
+        "Escribe una habilidad o servicio que ofreces a tus clientes.\n"
+        "*En el detalle están las oportunidades.*"
     )
 
 
@@ -58,6 +59,7 @@ def preguntar_nuevo_servicio_con_ejemplos(
     indice: int | None = None,
     maximo: int | None = None,
     ejemplos: Optional[List[Dict[str, str]]] = None,
+    include_back_option: bool = True,
 ) -> dict[str, object]:
     """Solicita un nuevo servicio y agrega una lista de ejemplos."""
     return {
@@ -66,6 +68,7 @@ def preguntar_nuevo_servicio_con_ejemplos(
             ejemplos,
             indice=indice,
             maximo=maximo,
+            include_back_option=include_back_option,
         )["ui"],
     }
 
@@ -74,6 +77,7 @@ async def preguntar_nuevo_servicio_con_ejemplos_dinamicos(
     indice: int | None = None,
     maximo: int | None = None,
     supabase: Any = None,
+    include_back_option: bool = True,
 ) -> dict[str, object]:
     """Solicita un nuevo servicio y agrega ejemplos reales desde Supabase."""
     ejemplos = await obtener_ejemplos_servicios_top(supabase=supabase, limite=3)
@@ -81,6 +85,7 @@ async def preguntar_nuevo_servicio_con_ejemplos_dinamicos(
         indice=indice,
         maximo=maximo,
         ejemplos=ejemplos or None,
+        include_back_option=include_back_option,
     )
     lookup = {
         str(item.get("id") or "").strip(): item
@@ -114,11 +119,17 @@ async def preguntar_nuevo_servicio_con_ejemplos_dinamicos(
                         "Facturación, cobranza y gestión documental para " "negocios"
                     ),
                 },
-                {
-                    "id": SERVICE_EXAMPLE_BACK_ID,
-                    "title": "Regresar",
-                    "description": "Volver al menú anterior",
-                },
+                *(
+                    [
+                        {
+                            "id": SERVICE_EXAMPLE_BACK_ID,
+                            "title": "Regresar",
+                            "description": "Volver al menú anterior",
+                        },
+                    ]
+                    if include_back_option
+                    else []
+                ),
             ]
         }
     return {

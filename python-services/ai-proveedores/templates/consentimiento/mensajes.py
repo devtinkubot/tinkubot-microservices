@@ -4,18 +4,16 @@ import os
 from typing import Any, Dict
 
 PROMPT_CONSENTIMIENTO = (
-    "Para crear tu perfil profesional usaré tus datos de contacto, ciudad, "
-    "servicios, experiencia y documentos de validación.\n\n"
-    "Política de privacidad:\n"
-    "https://tinku.bot/privacy.html"
+    "Para poder conectarte con clientes vamos a utilizar la siguiente información:\n\n"
+    "- Nombres\n"
+    "- Telefono\n"
+    "- Ubicación\n"
+    "- Foto de perfil\n\n"
+    "*Política de privacidad:* https://www.tinku.bot/privacy"
 )
 
-OPCION_CONTINUAR = "Continuar"
+OPCION_ACEPTAR = "Aceptar"
 PROVIDER_ONBOARDING_IMAGE_URL_ENV = "WA_PROVIDER_ONBOARDING_IMAGE_URL"
-PROVIDER_ONBOARDING_CONTINUE_LABEL_ENV = "WA_PROVIDER_ONBOARDING_CONTINUE_LABEL"
-PROVIDER_ONBOARDING_CONTINUE_ID_ENV = "WA_PROVIDER_ONBOARDING_CONTINUE_ID"
-PROVIDER_ONBOARDING_FOOTER_TEXT_ENV = "WA_PROVIDER_ONBOARDING_FOOTER_TEXT"
-PROVIDER_ONBOARDING_FOOTER_TEXT_MAX_LEN = 60
 PROVIDER_ONBOARDING_DEFAULT_IMAGE_URL = (
     "https://euescxureboitxqjduym.supabase.co/storage/v1/object/sign/"
     "tinkubot-assets/images/tinkubot_providers_onboarding.png"
@@ -24,13 +22,6 @@ PROVIDER_ONBOARDING_DEFAULT_IMAGE_URL = (
     "dHMvaW1hZ2VzL3Rpbmt1Ym90X3Byb3ZpZGVyc19vbmJvYXJkaW5nLnBuZyIsImlhdCI6MTc3Mj"
     "k1MDYyMiwiZXhwIjoxODM2MDIyNjIyfQ.J3a8O9wRoUo8PDwpcdv3KD5kPpfvKIONoIqXjsWORdI"
 )
-
-
-def _normalizar_footer_text(texto: str) -> str:
-    limpio = (texto or "").strip()
-    if not limpio:
-        return ""
-    return limpio[:PROVIDER_ONBOARDING_FOOTER_TEXT_MAX_LEN]
 
 
 def payload_consentimiento_proveedor() -> Dict[str, Any]:
@@ -42,33 +33,15 @@ def payload_consentimiento_proveedor() -> Dict[str, Any]:
         ).strip()
         or PROVIDER_ONBOARDING_DEFAULT_IMAGE_URL
     )
-    continue_label = (
-        os.getenv(PROVIDER_ONBOARDING_CONTINUE_LABEL_ENV, OPCION_CONTINUAR).strip()
-        or OPCION_CONTINUAR
-    )
-    continue_id = (
-        os.getenv(
-            PROVIDER_ONBOARDING_CONTINUE_ID_ENV,
-            "continue_provider_onboarding",
-        ).strip()
-        or "continue_provider_onboarding"
-    )
-    footer_text = _normalizar_footer_text(
-        os.getenv(
-            PROVIDER_ONBOARDING_FOOTER_TEXT_ENV,
-            "Al continuar aceptas nuestras condiciones.",
-        )
-    )
 
     ui: Dict[str, Any] = {
         "type": "buttons",
         "id": "provider_onboarding_continue_v1",
-        "options": [{"id": continue_id, "title": continue_label}],
+        "options": [{"id": "continue_provider_onboarding", "title": OPCION_ACEPTAR}],
         "header_type": "image",
         "header_media_url": image_url,
+        "footer_text": "Al *Aceptar* autorizas el uso de tu información.",
     }
-    if footer_text:
-        ui["footer_text"] = footer_text
 
     return {
         "messages": [
@@ -78,11 +51,6 @@ def payload_consentimiento_proveedor() -> Dict[str, Any]:
             }
         ]
     }
-
-
-def mensajes_prompt_consentimiento() -> list[Dict[str, Any]]:
-    """Compatibilidad temporal: retorna la lista de mensajes del payload interactivo."""
-    return list(payload_consentimiento_proveedor()["messages"])
 
 
 def mensaje_consentimiento_rechazado() -> str:

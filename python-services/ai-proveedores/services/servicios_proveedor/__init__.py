@@ -16,6 +16,12 @@ from .certificados import (
     eliminar_certificado_proveedor,
     listar_certificados_proveedor,
 )
+from .estado_operativo import (
+    MINIMO_SERVICIOS_OPERATIVOS,
+    contar_servicios_validos,
+    normalizar_experiencia,
+    perfil_profesional_completo,
+)
 
 __all__ = [
     "actualizar_perfil_profesional",
@@ -30,4 +36,8 @@ __all__ = [
     "actualizar_certificado_proveedor",
     "eliminar_certificado_proveedor",
     "listar_certificados_proveedor",
+    "MINIMO_SERVICIOS_OPERATIVOS",
+    "contar_servicios_validos",
+    "normalizar_experiencia",
+    "perfil_profesional_completo",
 ]

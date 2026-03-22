@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from models.proveedores import SolicitudCreacionProveedor
 from services.servicios_proveedor.constantes import SERVICIOS_MAXIMOS
+from services.servicios_proveedor.redes_sociales_slots import resolver_redes_sociales
 from services.servicios_proveedor.utilidades import (
     normalizar_texto_para_busqueda,
 )
@@ -153,6 +154,12 @@ def normalizar_datos_proveedor(
     tiene_coordenadas = (
         datos_crudos.location_lat is not None and datos_crudos.location_lng is not None
     )
+    redes_sociales = resolver_redes_sociales(
+        {
+            "social_media_url": datos_crudos.social_media_url,
+            "social_media_type": datos_crudos.social_media_type,
+        }
+    )
 
     return {
         "phone": telefono,
@@ -173,6 +180,8 @@ def normalizar_datos_proveedor(
         "rating": 5.0,
         "social_media_url": datos_crudos.social_media_url,
         "social_media_type": datos_crudos.social_media_type,
+        "facebook_username": redes_sociales["facebook_username"],
+        "instagram_username": redes_sociales["instagram_username"],
     }
 
 
@@ -207,6 +216,8 @@ def garantizar_campos_obligatorios_proveedor(
     datos.setdefault("location_lng", None)
     datos.setdefault("location_updated_at", None)
     datos.setdefault("city_confirmed_at", None)
+    datos.setdefault("facebook_username", None)
+    datos.setdefault("instagram_username", None)
     # Fase 5: Eliminada referencia a 'profession'
     datos["has_consent"] = bool(datos.get("has_consent"))
     if not datos.get("status"):

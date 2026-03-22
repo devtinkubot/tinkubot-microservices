@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional
 from flows.constructores import construir_payload_menu_principal
 from flows.validadores import validar_nombre_completo
 from services import actualizar_nombre_proveedor
-from templates.registro import solicitar_foto_dni_frontal
+from templates.registro import solicitar_selfie_registro
 
 
 async def manejar_espera_nombre(
@@ -66,8 +66,8 @@ async def manejar_espera_nombre(
         }
 
     flujo["name"] = nombre
-    flujo["state"] = "awaiting_dni_front_photo"
+    flujo["state"] = "awaiting_face_photo"
     return {
         "success": True,
-        "messages": [{"response": solicitar_foto_dni_frontal()}],
+        "messages": [{"response": solicitar_selfie_registro()}],
     }

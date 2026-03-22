@@ -333,6 +333,16 @@ def _normalizar_lista_resultante(
     return nuevos_sanitizados
 
 
+def _resolver_indice_servicio_reemplazo(flujo: Dict[str, Any]) -> Optional[int]:
+    try:
+        indice = int(flujo.get("selected_service_index"))
+    except (TypeError, ValueError):
+        return None
+    if indice < 0:
+        return None
+    return indice
+
+
 async def manejar_accion_servicios(
     *,
     flujo: Dict[str, Any],
@@ -457,8 +467,21 @@ async def manejar_agregar_servicios(
             "messages": [_menu_principal_desde_flujo(flujo)],
         }
 
-    servicios_actuales = flujo.get("services") or []
-    espacio_restante = SERVICIOS_MAXIMOS - len(servicios_actuales)
+    servicios_actuales = list(flujo.get("services") or [])
+    reemplazo_activo = flujo.get("profile_edit_mode") == "provider_service_replace"
+    indice_reemplazo = _resolver_indice_servicio_reemplazo(flujo)
+    servicios_base = servicios_actuales
+    if (
+        reemplazo_activo
+        and indice_reemplazo is not None
+        and indice_reemplazo < len(servicios_actuales)
+    ):
+        servicios_base = [
+            servicio
+            for idx, servicio in enumerate(servicios_actuales)
+            if idx != indice_reemplazo
+        ]
+    espacio_restante = 1 if reemplazo_activo else (SERVICIOS_MAXIMOS - len(servicios_actuales))
     if espacio_restante <= 0:
         return {
             "success": True,
@@ -519,10 +542,7 @@ async def manejar_agregar_servicios(
         }
     servicios_transformados = resultado_normalizacion.get("services") or []
 
-    nuevos_sanitizados = _normalizar_lista_resultante(
-        servicios_transformados,
-        servicios_actuales,
-    )
+    nuevos_sanitizados = _normalizar_lista_resultante(servicios_transformados, servicios_base)
     if not nuevos_sanitizados:
         flujo["state"] = "awaiting_service_action"
         return {
@@ -569,7 +589,9 @@ async def manejar_confirmacion_agregar_servicios(
     servicio_embeddings: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Confirma o corrige servicios antes de agregarlos definitivamente."""
-    servicios_actuales = flujo.get("services") or []
+    servicios_actuales = list(flujo.get("services") or [])
+    reemplazo_activo = flujo.get("profile_edit_mode") == "provider_service_replace"
+    indice_reemplazo = _resolver_indice_servicio_reemplazo(flujo)
     if not proveedor_id:
         flujo["state"] = "awaiting_menu_option"
         flujo.pop(_FLUJO_KEY_SERVICIOS_TEMP, None)
@@ -635,7 +657,11 @@ async def manejar_confirmacion_agregar_servicios(
         flujo["state"] = "awaiting_service_add"
         return await _construir_prompt_servicio_con_ejemplos(
             flujo=flujo,
-            indice=len(servicios_actuales) + 1,
+            indice=(
+                indice_reemplazo + 1
+                if reemplazo_activo and indice_reemplazo is not None
+                else len(servicios_actuales) + 1
+            ),
             maximo=SERVICIOS_MAXIMOS,
         )
 
@@ -670,7 +696,9 @@ async def manejar_confirmacion_agregar_servicios(
             ],
         }
 
-    espacio_restante = SERVICIOS_MAXIMOS - len(servicios_actuales)
+    espacio_restante = (
+        1 if reemplazo_activo else (SERVICIOS_MAXIMOS - len(servicios_actuales))
+    )
     if espacio_restante <= 0:
         flujo["state"] = "awaiting_service_action"
         flujo.pop(_FLUJO_KEY_SERVICIOS_TEMP, None)
@@ -702,9 +730,20 @@ async def manejar_confirmacion_agregar_servicios(
             ],
         }
     try:
-        servicios_finales = await agregar_servicios_proveedor(
-            proveedor_id, nuevos_recortados
-        )
+        if (
+            reemplazo_activo
+            and indice_reemplazo is not None
+            and 0 <= indice_reemplazo < len(servicios_actuales)
+        ):
+            servicios_para_actualizar = list(servicios_actuales)
+            servicios_para_actualizar[indice_reemplazo] = nuevos_recortados[0]
+            servicios_finales = await actualizar_servicios(
+                proveedor_id, servicios_para_actualizar
+            )
+        else:
+            servicios_finales = await agregar_servicios_proveedor(
+                proveedor_id, nuevos_recortados
+            )
     except Exception:
         flujo["state"] = "awaiting_service_action"
         flujo.pop(_FLUJO_KEY_SERVICIOS_TEMP, None)
@@ -728,6 +767,9 @@ async def manejar_confirmacion_agregar_servicios(
     )
     flujo.pop(_FLUJO_KEY_SERVICIOS_TEMP, None)
     flujo.pop(_FLUJO_KEY_SERVICIOS_CONFIRMACION_NONCE, None)
+    if reemplazo_activo:
+        flujo.pop("profile_edit_mode", None)
+        flujo.pop("selected_service_index", None)
 
     if retorno_detalle:
         from .gestor_vistas_perfil import render_profile_view

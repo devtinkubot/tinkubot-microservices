@@ -24,6 +24,7 @@ CLAVE_FLUJO = "prov_flow:{}"  # telefono
 PALABRAS_DISPARO = [
     "registro",
     "registrarme",
+    "registrarse",
     "registrar",
     "soy proveedor",
     "quiero ofrecer",

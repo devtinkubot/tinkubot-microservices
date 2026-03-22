@@ -1,5 +1,6 @@
 import asyncio
 import json
+import pytest
 import sys
 import types
 from pathlib import Path
@@ -16,6 +17,7 @@ from flows.gestores_estados.gestor_confirmacion_servicios import (  # noqa: E402
     manejar_confirmacion_servicios,
     manejar_decision_agregar_otro_servicio,
     manejar_eliminacion_servicio_registro,
+    manejar_confirmacion_servicio_perfil,
     manejar_reemplazo_servicio_registro,
     manejar_seleccion_reemplazo_servicio_registro,
 )
@@ -23,8 +25,8 @@ from flows.gestores_estados.gestor_espera_especialidad import (  # noqa: E402
     manejar_espera_especialidad,
     normalizar_servicio_registro_individual,
 )
-from flows.gestores_estados.gestor_espera_nombre import (  # noqa: E402
-    manejar_espera_nombre,
+from flows.gestores_estados.gestor_espera_experiencia import (  # noqa: E402
+    manejar_espera_experiencia,
 )
 from flows.gestores_estados.gestor_servicios import (  # noqa: E402
     manejar_agregar_servicios,
@@ -51,7 +53,7 @@ from services.servicios_proveedor.validacion_semantica import (  # noqa: E402
 from templates.registro import (  # noqa: E402
     mensaje_correccion_servicios,
     preguntar_servicios_registro,
-    solicitar_foto_dni_frontal,
+    preguntar_servicio_onboarding_registro,
 )
 
 
@@ -83,28 +85,30 @@ def test_prompt_transformador_prioriza_detalle_y_evita_paraguas():
 def test_prompt_servicios_registro_usa_ejemplos_especificos():
     mensaje = preguntar_servicios_registro()
 
-    assert "primer servicio" in mensaje
-    assert "servicio y la especialidad o área exacta" in mensaje
-    assert "asesoría en derecho laboral" in mensaje
-    assert "declaración de impuestos para personas naturales" in mensaje
-    assert "desarrollo de software a medida" in mensaje
-    assert "instalación de cámaras de seguridad" in mensaje
-    assert "terapia psicológica" in mensaje
-    assert "transporte de carga" in mensaje
+    assert "servicio principal" in mensaje
+    assert "revisa los ejemplos" in mensaje
 
 
-def test_espera_nombre_normaliza_y_salta_directo_a_documentos():
-    flujo = {"state": "awaiting_name"}
-    respuesta = asyncio.run(
-        manejar_espera_nombre(
-            flujo=flujo,
-            texto_mensaje="  diego unkuch  ",
-        )
+def test_prompt_servicio_onboarding_varia_por_slot():
+    assert "servicio principal" in preguntar_servicio_onboarding_registro(1, 3)
+    assert "segundo servicio" in preguntar_servicio_onboarding_registro(2, 3)
+    assert "tercer servicio" in preguntar_servicio_onboarding_registro(3, 3)
+
+
+@pytest.mark.asyncio
+async def test_espera_experiencia_onboarding_muestra_lista_de_ejemplos():
+    flujo = {"state": "awaiting_experience"}
+
+    respuesta = await manejar_espera_experiencia(
+        flujo=flujo,
+        texto_mensaje="3",
+        selected_option="provider_experience_3_5",
     )
 
-    assert flujo["state"] == "awaiting_dni_front_photo"
-    assert flujo["name"] == "Diego Unkuch"
-    assert respuesta["messages"][0]["response"] == solicitar_foto_dni_frontal()
+    assert flujo["state"] == "awaiting_specialty"
+    assert respuesta["messages"][0]["ui"]["type"] == "list"
+    assert respuesta["messages"][0]["ui"]["header_text"] == "Agregar Servicio 1 de 3"
+    assert respuesta["messages"][0]["response"] == "Escribe el *servicio principal* que ofreces."
 
 
 def test_validar_nombre_completo_rechaza_entrada_incompleta():
@@ -121,20 +125,6 @@ def test_validar_nombre_completo_rechaza_texto_generico():
     assert respuesta["is_valid"] is False
     assert respuesta["reason"] == "blocked"
     assert "nombre y apellido" in respuesta["message"].lower()
-
-
-def test_espera_nombre_rechaza_entrada_invalida():
-    flujo = {"state": "awaiting_name"}
-
-    respuesta = asyncio.run(
-        manejar_espera_nombre(
-            flujo=flujo,
-            texto_mensaje="juan",
-        )
-    )
-
-    assert flujo["state"] == "awaiting_name"
-    assert "nombre y apellido" in respuesta["messages"][0]["response"].lower()
 
 
 def test_mensaje_correccion_servicios_refuerza_especificidad():
@@ -318,7 +308,7 @@ def test_validar_servicio_semanticamente_recorta_normalized_service_visible():
     assert cliente_openai.chat.completions.calls == 2
 
 
-def test_espera_especialidad_agrega_servicio_y_pregunta_si_quiere_otro(monkeypatch):
+def test_espera_especialidad_muestra_confirmacion_antes_de_continuar(monkeypatch):
     monkeypatch.setattr(
         modulo_transformador,
         "TransformadorServicios",
@@ -354,9 +344,140 @@ def test_espera_especialidad_agrega_servicio_y_pregunta_si_quiere_otro(monkeypat
         )
     )
 
-    assert flujo["state"] == "awaiting_add_another_service"
+    assert flujo["state"] == "awaiting_profile_service_confirmation"
+    assert flujo["pending_service_candidate"] == "desarrollo web"
+    assert respuesta["messages"][0]["ui"]["type"] == "buttons"
+    assert respuesta["messages"][0]["ui"]["header_text"] == "Servicio 1 de 3 identificado:"
+
+
+def test_confirmacion_servicio_onboarding_avanza_al_siguiente_servicio(monkeypatch):
+    monkeypatch.setattr(
+        modulo_transformador,
+        "TransformadorServicios",
+        _TransformadorOK,
+    )
+
+    async def _fake_validar_servicio_semanticamente(**_kwargs):
+        return {
+            "is_valid_service": True,
+            "needs_clarification": False,
+            "normalized_service": "desarrollo web",
+            "domain_resolution_status": "matched",
+            "domain_code": "tecnologia",
+            "resolved_domain_code": "tecnologia",
+            "proposed_category_name": "desarrollo web",
+            "proposed_service_summary": "Desarrollo de sitios y aplicaciones web.",
+            "reason": "heuristic_accept",
+            "clarification_question": None,
+        }
+
+    monkeypatch.setattr(
+        "flows.gestores_estados."
+        "gestor_espera_especialidad.validar_servicio_semanticamente",
+        _fake_validar_servicio_semanticamente,
+    )
+    monkeypatch.setattr(
+        "flows.gestores_estados."
+        "gestor_espera_especialidad.preguntar_nuevo_servicio_con_ejemplos_dinamicos",
+        lambda **_kwargs: asyncio.sleep(0, result={
+            "response": "Escribe el *segundo servicio* que también ofreces.",
+            "ui": {
+                "type": "list",
+                "header_text": "Agregar Servicio 2 de 3",
+                "list_button_text": "Ver ejemplos",
+                "options": [],
+            },
+            "service_examples_lookup": {},
+        }),
+    )
+
+    flujo = {
+        "state": "awaiting_specialty",
+        "servicios_temporales": [],
+    }
+
+    respuesta = asyncio.run(
+        manejar_espera_especialidad(
+            flujo=flujo,
+            texto_mensaje="desarrollo web",
+            cliente_openai=object(),
+        )
+    )
+
+    assert flujo["state"] == "awaiting_profile_service_confirmation"
+
+    respuesta = asyncio.run(
+        manejar_confirmacion_servicio_perfil(
+            flujo=flujo,
+            texto_mensaje="",
+            selected_option="profile_service_confirm",
+        )
+    )
+
+    assert flujo["state"] == "awaiting_specialty"
     assert flujo["servicios_temporales"] == ["desarrollo web"]
-    assert "¿Quieres agregar otro servicio?" in respuesta["messages"][0]["response"]
+    assert respuesta["messages"][0]["ui"]["type"] == "list"
+    assert respuesta["messages"][0]["ui"]["header_text"] == "Agregar Servicio 2 de 3"
+    assert "segundo servicio" in respuesta["messages"][0]["response"].lower()
+
+
+def test_confirmacion_tercer_servicio_onboarding_va_a_consentimiento():
+    flujo = {
+        "servicios_temporales": ["servicio 1", "servicio 2"],
+        "pending_service_candidate": "servicio 3",
+        "pending_service_index": 2,
+        "state": "awaiting_profile_service_confirmation",
+    }
+
+    respuesta = asyncio.run(
+        manejar_confirmacion_servicio_perfil(
+            flujo=flujo,
+            texto_mensaje="",
+            selected_option="profile_service_confirm",
+        )
+    )
+
+    assert flujo["state"] == "awaiting_consent"
+    assert flujo["servicios_temporales"] == [
+        "servicio 1",
+        "servicio 2",
+        "servicio 3",
+    ]
+    assert respuesta["messages"][0]["ui"]["type"] == "buttons"
+    assert (
+        respuesta["messages"][0]["ui"]["id"]
+        == "provider_registration_final_consent_v1"
+    )
+    assert (
+        respuesta["messages"][0]["ui"]["header_type"]
+        == "image"
+    )
+    assert "antes de finalizar" in respuesta["messages"][0]["response"].lower()
+
+
+def test_espera_especialidad_onboarding_con_tres_servicios_va_a_consentimiento():
+    flujo = {
+        "servicios_temporales": [
+            "servicio 1",
+            "servicio 2",
+            "servicio 3",
+        ],
+        "state": "awaiting_specialty",
+    }
+
+    respuesta = asyncio.run(
+        manejar_espera_especialidad(
+            flujo=flujo,
+            texto_mensaje="servicio extra",
+            cliente_openai=object(),
+        )
+    )
+
+    assert flujo["state"] == "awaiting_consent"
+    assert flujo["specialty"] == "servicio 1, servicio 2, servicio 3"
+    assert respuesta["messages"][0]["ui"]["id"] == "provider_registration_final_consent_v1"
+    assert respuesta["messages"][0]["ui"]["type"] == "buttons"
+    assert "antes de finalizar" in respuesta["messages"][0]["response"].lower()
 
 
 def test_normalizacion_servicio_pide_aclaracion_en_lugar_de_revision(monkeypatch):
@@ -727,11 +848,9 @@ def test_confirmacion_servicios_acepta_resumen_y_pasa_a_experiencia():
         )
     )
 
-    assert flujo["state"] == "awaiting_experience"
+    assert flujo["state"] == "confirm"
     assert flujo["specialty"] == "desarrollo web, cableado estructurado"
-    assert (
-        "¿Cuántos años de experiencia tienes?" in respuesta["messages"][0]["response"]
-    )
+    assert "Antes de finalizar" in respuesta["messages"][0]["response"]
 
 
 def test_confirmacion_servicios_abre_menu_edicion():
@@ -963,6 +1082,7 @@ def test_actualizar_servicios_persiste_servicio_sin_canonizacion_taxonomica(
         def __init__(self, table_name, tables):
             self.table_name = table_name
             self.tables = tables
+            self._single = False
 
         def select(self, *_args, **_kwargs):
             return self
@@ -982,8 +1102,17 @@ def test_actualizar_servicios_persiste_servicio_sin_canonizacion_taxonomica(
         def limit(self, *_args, **_kwargs):
             return self
 
+        def single(self):
+            self._single = True
+            return self
+
         def execute(self):
-            return SimpleNamespace(data=self.tables.get(self.table_name, []))
+            datos = self.tables.get(self.table_name, [])
+            if self._single:
+                if isinstance(datos, list):
+                    datos = datos[0] if datos else None
+                self._single = False
+            return SimpleNamespace(data=datos)
 
     class _SupabaseStub:
         def __init__(self, tables):

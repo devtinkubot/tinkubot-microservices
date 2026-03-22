@@ -51,6 +51,7 @@ export interface ProviderRecord {
   verificationReviewer?: string | null;
   verificationReviewedAt?: string | null;
   approvedBasicAt?: string | null;
+  professionalProfileComplete?: boolean;
 }
 
 export interface ProviderActionPayload {

@@ -3,7 +3,11 @@
 from typing import Any, Dict, Optional
 
 from flows.constructores import construir_payload_menu_principal
-from flows.validadores.validador_entrada import parsear_entrada_red_social
+from services.servicios_proveedor.redes_sociales_slots import (
+    SOCIAL_NETWORK_FACEBOOK,
+    parsear_username_red_social,
+    resolver_redes_sociales,
+)
 from services import actualizar_redes_sociales
 from templates.interfaz import (
     confirmar_actualizacion_redes_sociales,
@@ -34,16 +38,45 @@ async def manejar_actualizacion_redes_sociales(
             ],
         }
 
-    red_social_parseada = parsear_entrada_red_social(texto_mensaje)
-    flujo["social_media_url"] = red_social_parseada["url"]
-    flujo["social_media_type"] = red_social_parseada["type"]
+    tipo_red = str(
+        flujo.get("current_social_network")
+        or (
+            SOCIAL_NETWORK_FACEBOOK
+            if flujo.get("state") == "awaiting_social_facebook_username"
+            else "instagram"
+        )
+    ).strip().lower()
+    red_social_parseada = parsear_username_red_social(texto_mensaje, tipo_red)
+    username = red_social_parseada["username"]
+    if not username:
+        return {
+            "success": False,
+            "messages": [
+                {"response": error_actualizar_redes_sociales()},
+            ],
+        }
+
+    redes_actuales = resolver_redes_sociales(flujo)
+    facebook_username = (
+        username if tipo_red == SOCIAL_NETWORK_FACEBOOK else redes_actuales["facebook_username"]
+    )
+    instagram_username = (
+        username if tipo_red == "instagram" else redes_actuales["instagram_username"]
+    )
+
+    flujo["facebook_username"] = facebook_username
+    flujo["instagram_username"] = instagram_username
 
     resultado = await actualizar_redes_sociales(
         supabase,
         proveedor_id,
-        red_social_parseada["url"],
-        red_social_parseada["type"],
+        facebook_username=facebook_username,
+        instagram_username=instagram_username,
+        preferred_type=tipo_red,
     )
+
+    flujo["social_media_url"] = resultado.get("social_media_url")
+    flujo["social_media_type"] = resultado.get("social_media_type")
 
     if not resultado.get("success"):
         flujo["state"] = "awaiting_menu_option"
@@ -61,6 +94,7 @@ async def manejar_actualizacion_redes_sociales(
             ],
         }
 
+    flujo.pop("current_social_network", None)
     retorno_estado = str(flujo.pop("profile_return_state", "") or "").strip()
     flujo["state"] = retorno_estado or "awaiting_menu_option"
     if retorno_estado:
@@ -71,7 +105,7 @@ async def manejar_actualizacion_redes_sociales(
             "messages": [
                 {
                     "response": confirmar_actualizacion_redes_sociales(
-                        bool(red_social_parseada["url"])
+                        bool(username)
                     )
                 },
                 await render_profile_view(
@@ -86,7 +120,7 @@ async def manejar_actualizacion_redes_sociales(
         "messages": [
             {
                 "response": confirmar_actualizacion_redes_sociales(
-                    bool(red_social_parseada["url"])
+                    bool(username)
                 )
             },
             construir_payload_menu_principal(

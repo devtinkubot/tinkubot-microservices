@@ -149,7 +149,7 @@ def test_manejar_estado_inicial_rejected_permanece_en_pending_verification():
     assert "revis" in respuesta["messages"][0]["response"].lower()
 
 
-def test_manejar_estado_inicial_approved_basic_muestra_cta_con_boton():
+def test_manejar_estado_inicial_approved_basic_muestra_menu_interactivo():
     flujo = {
         "has_consent": True,
         "full_name": "Proveedor Basico",
@@ -172,9 +172,9 @@ def test_manejar_estado_inicial_approved_basic_muestra_cta_con_boton():
     assert respuesta is not None
     assert flujo["state"] == "awaiting_menu_option"
     assert flujo["approved_basic"] is True
-    assert "Ya formas parte de TinkuBot" in respuesta["messages"][0]["response"]
-    assert respuesta["messages"][0]["ui"]["type"] == "buttons"
-    assert respuesta["messages"][0]["ui"]["options"][0]["id"] == "continue_profile_completion"
+    assert respuesta["messages"][0]["response"] == "Elige la opción de interés."
+    assert respuesta["messages"][0]["ui"]["type"] == "list"
+    assert respuesta["messages"][0]["ui"]["id"] == "provider_main_menu_v1"
 
 
 def test_manejar_estado_inicial_aprobado_muestra_menu_interactivo():

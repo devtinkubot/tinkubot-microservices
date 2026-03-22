@@ -22,11 +22,13 @@ from templates.registro import (
     error_ciudad_multiple,
     error_ciudad_no_reconocida,
     mensaje_error_resolviendo_ubicacion,
-    preguntar_nombre,
     solicitar_ciudad_registro,
+    payload_foto_dni_frontal,
+    solicitar_foto_dni_frontal,
 )
 
 NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse"
+NOMINATIM_SEARCH_URL = "https://nominatim.openstreetmap.org/search"
 NOMINATIM_USER_AGENT = "tinkubot-ai-proveedores/1.0 (support@tinkubot.com)"
 
 
@@ -92,6 +94,50 @@ async def _resolver_ciudad_desde_coordenadas(
         return None
 
 
+async def _resolver_ciudad_desde_texto(texto: str) -> Optional[str]:
+    consulta = limpiar_espacios(texto)
+    if not consulta:
+        return None
+
+    params = {
+        "format": "jsonv2",
+        "q": consulta,
+        "countrycodes": "ec",
+        "limit": 5,
+        "addressdetails": 1,
+        "accept-language": "es",
+    }
+    headers = {"User-Agent": NOMINATIM_USER_AGENT}
+    timeout = httpx.Timeout(2.5)
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            respuesta = await client.get(
+                NOMINATIM_SEARCH_URL,
+                params=params,
+                headers=headers,
+            )
+        if respuesta.status_code != 200:
+            return None
+        payload = respuesta.json()
+        if not isinstance(payload, list):
+            return None
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+            direccion = item.get("address") or {}
+            for campo in ("city", "town", "village", "municipality", "county"):
+                ciudad = _normalizar_ciudad_desde_texto(direccion.get(campo))
+                if ciudad:
+                    return ciudad
+            ciudad = _normalizar_ciudad_desde_texto(item.get("display_name"))
+            if ciudad:
+                return ciudad
+    except Exception:
+        return None
+    return None
+
+
 async def _persistir_ubicacion_proveedor(
     supabase: Any,
     proveedor_id: Optional[str],
@@ -154,12 +200,16 @@ async def manejar_espera_ciudad(
     longitud = _parsear_coordenada((ubicacion or {}).get("longitude"))
     ciudad_desde_payload = _extraer_ciudad_desde_payload_ubicacion(ubicacion)
     ciudad_resuelta = ciudad_desde_payload
+    ciudad_resuelta_texto = None
     if (
         not ciudad_resuelta
         and latitud is not None
         and longitud is not None
     ):
         ciudad_resuelta = await _resolver_ciudad_desde_coordenadas(latitud, longitud)
+    if not ciudad_resuelta and ciudad:
+        ciudad_resuelta_texto = await _resolver_ciudad_desde_texto(ciudad)
+        ciudad_resuelta = ciudad_resuelta_texto
 
     if latitud is not None:
         flujo["location_lat"] = latitud
@@ -190,12 +240,17 @@ async def manejar_espera_ciudad(
                     solicitar_ciudad_registro(),
                 ],
             }
-        return {
-            "success": True,
-            "messages": [solicitar_ciudad_registro()],
-        }
+        if not ciudad_resuelta_texto:
+            return {
+                "success": True,
+                "messages": [solicitar_ciudad_registro()],
+            }
 
     canonica, estado_validacion = validar_y_normalizar_ubicacion(ciudad)
+    if not canonica and ciudad_resuelta_texto:
+        canonica, estado_validacion = validar_y_normalizar_ubicacion(
+            ciudad_resuelta_texto
+        )
     if estado_validacion == VALIDATION_ERROR_TOO_SHORT:
         return {
             "success": True,
@@ -268,8 +323,8 @@ async def manejar_espera_ciudad(
             ],
         }
 
-    flujo["state"] = "awaiting_name"
+    flujo["state"] = "awaiting_dni_front_photo"
     return {
         "success": True,
-        "messages": [{"response": preguntar_nombre()}],
+        "messages": [payload_foto_dni_frontal()],
     }

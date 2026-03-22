@@ -25,10 +25,19 @@ def test_payload_consentimiento_proveedor_retorna_interactive_con_imagen_default
     assert "messages" in payload
     assert len(payload["messages"]) == 1
     mensaje = payload["messages"][0]
+    assert "Para poder conectarte con clientes" in mensaje["response"]
+    assert "- Nombres" in mensaje["response"]
+    assert "- Telefono" in mensaje["response"]
+    assert "- Ubicación" in mensaje["response"]
+    assert "- Foto de perfil" in mensaje["response"]
+    assert "https://www.tinku.bot/privacy" in mensaje["response"]
     assert mensaje["ui"]["type"] == "buttons"
     assert mensaje["ui"]["header_type"] == "image"
     assert "tinkubot_providers_onboarding.png" in mensaje["ui"]["header_media_url"]
+    assert mensaje["ui"]["footer_text"] == "Al *Aceptar* autorizas el uso de tu información."
+    assert len(mensaje["ui"]["options"]) == 1
     assert mensaje["ui"]["options"][0]["id"] == "continue_provider_onboarding"
+    assert mensaje["ui"]["options"][0]["title"] == "Aceptar"
 
 
 def test_construir_respuesta_solicitud_consentimiento_reusa_payload_interactivo():
@@ -37,6 +46,7 @@ def test_construir_respuesta_solicitud_consentimiento_reusa_payload_interactivo(
     assert respuesta["success"] is True
     assert len(respuesta["messages"]) == 1
     assert respuesta["messages"][0]["ui"]["type"] == "buttons"
+    assert len(respuesta["messages"][0]["ui"]["options"]) == 1
 
 
 def test_resolver_opcion_consentimiento_acepta_selected_option_interactivo():

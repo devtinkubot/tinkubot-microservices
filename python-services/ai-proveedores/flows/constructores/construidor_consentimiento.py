@@ -2,7 +2,10 @@
 
 from typing import Any, Dict
 
-from templates import mensaje_consentimiento_rechazado, payload_consentimiento_proveedor
+from templates.consentimiento.mensajes import (
+    mensaje_consentimiento_rechazado,
+    payload_consentimiento_proveedor,
+)
 
 from .construidor_menu import construir_menu_principal
 

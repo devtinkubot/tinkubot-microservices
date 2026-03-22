@@ -5,13 +5,19 @@ from typing import List
 
 def preguntar_servicios_registro() -> str:
     """Solicita el primer servicio del proveedor."""
-    return (
-        "*Escribe tu primer servicio* e indica el servicio y la especialidad o "
-        "área exacta.\n"
-        "Ejemplos: asesoría en derecho laboral, declaración de impuestos para "
-        "personas naturales, desarrollo de software a medida, instalación de "
-        "cámaras de seguridad, terapia psicológica, transporte de carga."
-    )
+    return "Escribe el *servicio principal* que ofreces."
+
+
+def preguntar_servicio_onboarding_registro(
+    indice: int,
+    maximo: int,
+) -> str:
+    """Solicita un servicio según el slot del onboarding."""
+    if indice <= 1:
+        return preguntar_servicios_registro()
+    if indice >= maximo:
+        return "Escribe el *tercer servicio* que también ofreces."
+    return "Escribe el *segundo servicio* que también ofreces."
 
 
 def preguntar_siguiente_servicio_registro(
@@ -22,34 +28,13 @@ def preguntar_siguiente_servicio_registro(
     """Solicita el siguiente servicio del proveedor."""
     if total_requerido:
         progreso = min(indice, total_requerido)
-        ejemplos_por_paso = {
-            1: (
-                "Ejemplo para abogado o técnico:\n"
-                "*asesoría en derecho laboral*, "
-                "*instalación de cámaras de seguridad*."
-            ),
-            2: (
-                "Ejemplo para contador o desarrollador:\n"
-                "*declaración de impuestos para personas naturales*, "
-                "*desarrollo de software a medida*."
-            ),
-            3: (
-                "Ejemplo para psicólogo o transportista:\n"
-                "*terapia psicológica para ansiedad*, "
-                "*transporte de carga pesada*."
-            ),
-        }
         return (
-            f"*{progreso}/{total_requerido}:* Escribe un *servicio o habilidad* "
-            "que ofreces, debes especificar la *especialidad* o *área exacta*.\n"
-            + ejemplos_por_paso.get(
-                progreso,
-                ejemplos_por_paso[1],
-            )
+            f"*{progreso}/{total_requerido}:* "
+            "Escribe otro *servicio* que también ofreces."
         )
     return (
-        f"*Escribe el servicio {indice} de {maximo}* indicando el servicio y la "
-        "especialidad o área exacta."
+        f"*Servicio {indice} de {maximo}:* "
+        "Escribe otro *servicio* que también ofreces."
     )
 
 

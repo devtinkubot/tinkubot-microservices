@@ -14,13 +14,13 @@ from templates.interfaz import (
     solicitar_dni_actualizacion,
 )
 from templates.registro import (
+    payload_foto_dni_frontal,
+    payload_experiencia_registro,
+    payload_selfie_registro,
     solicitar_ciudad_actualizacion,
-    payload_confirmacion_resumen,
     solicitar_foto_dni_frontal,
     solicitar_foto_dni_trasera,
     solicitar_foto_dni_trasera_requerida,
-    solicitar_selfie_registro,
-    solicitar_selfie_requerida_registro,
 )
 
 
@@ -42,19 +42,22 @@ def manejar_inicio_actualizacion_documentos(flujo: Dict[str, Any]) -> Dict[str, 
     }
 
 
-def manejar_dni_frontal(flujo: Dict[str, Any], carga: Dict[str, Any]) -> Dict[str, Any]:
+def manejar_dni_frontal(
+    flujo: Dict[str, Any],
+    carga: Dict[str, Any],
+) -> Dict[str, Any]:
     """Procesa foto frontal del DNI."""
     imagen_b64 = extraer_primera_imagen_base64(carga)
     if not imagen_b64:
         return {
             "success": True,
-            "messages": [{"response": solicitar_foto_dni_frontal()}],
+            "messages": [payload_foto_dni_frontal()],
         }
     flujo["dni_front_image"] = imagen_b64
-    flujo["state"] = "awaiting_dni_back_photo"
+    flujo["state"] = "awaiting_face_photo"
     return {
         "success": True,
-        "messages": [{"response": solicitar_foto_dni_trasera()}],
+        "messages": [payload_selfie_registro()],
     }
 
 
@@ -70,7 +73,7 @@ def manejar_dni_trasera(flujo: Dict[str, Any], carga: Dict[str, Any]) -> Dict[st
     flujo["state"] = "awaiting_face_photo"
     return {
         "success": True,
-        "messages": [{"response": solicitar_selfie_registro()}],
+        "messages": [payload_selfie_registro()],
     }
 
 
@@ -82,7 +85,7 @@ def manejar_dni_frontal_actualizacion(
     if not imagen_b64:
         return {
             "success": True,
-            "messages": [{"response": solicitar_foto_dni_frontal()}],
+            "messages": [payload_foto_dni_frontal()],
         }
     flujo["dni_front_image"] = imagen_b64
     if flujo.get("profile_edit_mode") == "personal_dni_front_update":
@@ -192,12 +195,11 @@ def manejar_selfie_registro(flujo: Dict[str, Any], carga: Dict[str, Any]) -> Dic
     if not imagen_b64:
         return {
             "success": True,
-            "response": solicitar_selfie_requerida_registro(),
+            "messages": [payload_selfie_registro()],
         }
     flujo["face_image"] = imagen_b64
-    resumen = construir_resumen_confirmacion(flujo)
-    flujo["state"] = "confirm"
+    flujo["state"] = "awaiting_experience"
     return {
         "success": True,
-        "messages": [payload_confirmacion_resumen(resumen)],
+        "messages": [payload_experiencia_registro()],
     }

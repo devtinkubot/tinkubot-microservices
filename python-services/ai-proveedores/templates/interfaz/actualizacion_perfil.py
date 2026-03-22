@@ -47,15 +47,15 @@ def error_actualizar_selfie() -> str:
 # ==================== REDES SOCIALES ====================
 
 
-def solicitar_red_social_actualizacion() -> str:
-    """Solicita el enlace de Instagram o Facebook, o permite omitir.
+def solicitar_red_social_actualizacion(red_social: str = "Instagram/Facebook") -> str:
+    """Solicita el username de una red social específica.
 
     Returns:
         Mensaje solicitando el enlace de red social o la opción de omitir
     """
     return (
-        "*Envíame tu enlace de Instagram/Facebook "
-        "o escribe 'omitir' para quitarlo.*"
+        f"*Envíame tu usuario de {red_social}.* "
+        "No envíes la URL completa; yo la completo por ti."
     )
 
 

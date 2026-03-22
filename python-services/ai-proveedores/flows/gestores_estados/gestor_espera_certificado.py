@@ -24,7 +24,6 @@ from templates.registro import (
     CERTIFICATE_SKIP_ID,
     construir_resumen_confirmacion_perfil_profesional,
     payload_confirmacion_resumen,
-    preguntar_siguiente_servicio_registro,
 )
 
 
@@ -39,39 +38,27 @@ async def manejar_espera_certificado(
     if texto in {"omitir", CERTIFICATE_SKIP_ID, "skip", "no"}:
         if flujo.get("profile_edit_mode") == "provider_certificate_add":
             flujo.pop("profile_edit_mode", None)
-            certificados_activos = await listar_certificados_proveedor(
-                str(flujo.get("provider_id") or "")
+            retorno_estado = (
+                str(
+                    flujo.pop(
+                        "profile_return_state", "viewing_professional_certificates"
+                    )
+                    or ""
+                ).strip()
+                or "viewing_professional_certificates"
             )
-            if certificados_activos:
-                retorno_estado = (
-                    str(
-                        flujo.pop(
-                            "profile_return_state", "viewing_professional_certificates"
-                        )
-                        or ""
-                    ).strip()
-                    or "viewing_professional_certificates"
-                )
-                flujo["state"] = retorno_estado
-                from .gestor_vistas_perfil import render_profile_view
-
-                return {
-                    "success": True,
-                    "messages": [
-                        await render_profile_view(
-                            flujo=flujo,
-                            estado=retorno_estado,
-                            proveedor_id=str(flujo.get("provider_id") or ""),
-                        )
-                    ],
-                }
-            flujo.pop("profile_return_state", None)
-            flujo["state"] = "awaiting_professional_info_action"
-            from .gestor_vistas_perfil import payload_submenu_informacion_profesional
+            flujo["state"] = retorno_estado
+            from .gestor_vistas_perfil import render_profile_view
 
             return {
                 "success": True,
-                "messages": [payload_submenu_informacion_profesional()],
+                "messages": [
+                    await render_profile_view(
+                        flujo=flujo,
+                        estado=retorno_estado,
+                        proveedor_id=str(flujo.get("provider_id") or ""),
+                    )
+                ],
             }
         if flujo.get("profile_edit_mode") == "provider_certificate_replace":
             flujo.pop("profile_edit_mode", None)
@@ -114,17 +101,15 @@ async def manejar_espera_certificado(
 
         servicios_temporales = list(flujo.get("servicios_temporales") or [])
         flujo["state"] = "awaiting_specialty"
+        from .gestor_espera_especialidad import _mensajes_prompt_servicio_onboarding
+
         return {
             "success": True,
-            "messages": [
-                {
-                    "response": preguntar_siguiente_servicio_registro(
-                        len(servicios_temporales) + 1,
-                        SERVICIOS_MAXIMOS,
-                        SERVICIOS_MINIMOS_PERFIL_PROFESIONAL,
-                    )
-                }
-            ],
+            "messages": await _mensajes_prompt_servicio_onboarding(
+                flujo=flujo,
+                indice=len(servicios_temporales) + 1,
+                maximo_visible=SERVICIOS_MINIMOS_PERFIL_PROFESIONAL,
+            ),
         }
 
     datos_base64 = extraer_primera_imagen_base64(carga)
@@ -301,15 +286,13 @@ async def manejar_espera_certificado(
 
     flujo["state"] = "awaiting_specialty"
     servicios_temporales = list(flujo.get("servicios_temporales") or [])
+    from .gestor_espera_especialidad import _mensajes_prompt_servicio_onboarding
+
     return {
         "success": True,
-        "messages": [
-            {
-                "response": preguntar_siguiente_servicio_registro(
-                    len(servicios_temporales) + 1,
-                    SERVICIOS_MAXIMOS,
-                    SERVICIOS_MINIMOS_PERFIL_PROFESIONAL,
-                )
-            },
-        ],
+        "messages": await _mensajes_prompt_servicio_onboarding(
+            flujo=flujo,
+            indice=len(servicios_temporales) + 1,
+            maximo_visible=SERVICIOS_MINIMOS_PERFIL_PROFESIONAL,
+        ),
     }

@@ -68,6 +68,10 @@ _EXPORTS = {
         "services.servicios_proveedor",
         "eliminar_certificado_proveedor",
     ),
+    "perfil_profesional_completo": (
+        "services.servicios_proveedor",
+        "perfil_profesional_completo",
+    ),
 }
 
 __all__ = list(_EXPORTS)

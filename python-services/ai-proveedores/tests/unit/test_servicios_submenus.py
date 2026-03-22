@@ -22,6 +22,12 @@ from flows.gestores_estados.gestor_confirmacion_servicios import (  # noqa: E402
 from flows.gestores_estados.gestor_espera_certificado import (  # noqa: E402
     manejar_espera_certificado,
 )
+from flows.gestores_estados.gestor_espera_experiencia import (  # noqa: E402
+    manejar_espera_experiencia,
+)
+from flows.gestores_estados.gestor_espera_especialidad import (  # noqa: E402
+    manejar_espera_especialidad,
+)
 from flows.gestores_estados.gestor_espera_especialidad import (  # noqa: E402
     manejar_espera_especialidad,
 )
@@ -38,19 +44,39 @@ from flows.gestores_estados.gestor_servicios import (  # noqa: E402
     manejar_agregar_servicios,
     manejar_confirmacion_agregar_servicios,
 )
+from flows.gestores_estados.gestor_espera_red_social import (  # noqa: E402
+    manejar_espera_red_social,
+)
+from flows.validadores.validador_entrada import (  # noqa: E402
+    parsear_entrada_red_social,
+)
 from flows.interpretacion.interpreta_respuesta import (  # noqa: E402
     interpretar_respuesta,
 )
 from flows.router import enrutar_estado  # noqa: E402
+from principal import normalizar_respuesta_whatsapp  # noqa: E402
 from services.servicios_proveedor.ejemplos_servicios_top import (  # noqa: E402
     obtener_ejemplos_servicios_top,
 )
 from templates.interfaz import DETAIL_ACTION_SERVICES_ADD  # noqa: E402
 from templates.interfaz import (  # noqa: E402
+    DETAIL_ACTION_BACK,
+    DETAIL_ACTION_SERVICE_CHANGE,
+    DETAIL_ACTION_SERVICE_DELETE,
+    DETAIL_ACTION_SOCIAL_CHANGE,
+    SERVICE_BACK_ID,
     SERVICE_EXAMPLE_ADMIN_ID,
     SERVICE_EXAMPLE_BACK_ID,
     SERVICE_EXAMPLE_LEGAL_ID,
     SERVICE_EXAMPLE_MECHANICS_ID,
+    SERVICE_SLOT_PREFIX,
+    SOCIAL_NETWORK_FACEBOOK_ID,
+    SOCIAL_NETWORK_INSTAGRAM_ID,
+)
+from templates.registro import (  # noqa: E402
+    SOCIAL_FACEBOOK_ID,
+    SOCIAL_INSTAGRAM_ID,
+    SOCIAL_SKIP_ID,
 )
 from templates.interfaz.menus import (  # noqa: E402
     payload_ejemplos_servicios_personalizados,
@@ -97,6 +123,7 @@ def test_render_profile_view_normaliza_url_dni_reverso_desde_storage(monkeypatch
         )
     )
 
+    assert respuesta["ui"]["type"] == "buttons"
     assert respuesta["ui"]["header_type"] == "image"
     assert (
         respuesta["ui"]["header_media_url"]
@@ -129,6 +156,76 @@ def test_render_profile_view_limpia_query_string_en_foto_perfil(monkeypatch):
     assert respuesta["ui"]["type"] == "buttons"
     assert respuesta["ui"]["header_type"] == "image"
     assert respuesta["ui"]["header_media_url"] == "https://broken.example/photo.jpg"
+
+
+def test_render_profile_view_certificado_usa_url_resuelta(monkeypatch):
+    async def _listar_certificados(_proveedor_id):
+        return [
+            {
+                "id": "cert-1",
+                "file_url": "https://invalid.example/cert.jpg?",
+                "display_order": 0,
+                "status": "active",
+            }
+        ]
+
+    monkeypatch.setattr(
+        modulo_gestor_vistas_perfil,
+        "listar_certificados_proveedor",
+        _listar_certificados,
+    )
+    monkeypatch.setattr(
+        modulo_gestor_vistas_perfil,
+        "_resolver_media_url",
+        lambda _url: "https://signed.example/certificates/cert-1.jpg",
+    )
+
+    respuesta = asyncio.run(
+        modulo_gestor_vistas_perfil.render_profile_view(
+            flujo={"selected_certificate_id": "cert-1"},
+            estado="viewing_professional_certificate",
+            proveedor_id="prov-1",
+        )
+    )
+
+    assert respuesta["response"] == "Certificado seleccionado."
+    assert respuesta["ui"]["type"] == "buttons"
+    assert respuesta["ui"]["header_type"] == "image"
+    assert (
+        respuesta["ui"]["header_media_url"]
+        == "https://signed.example/certificates/cert-1.jpg"
+    )
+
+
+def test_render_profile_view_certificado_muestra_fallback_si_no_hay_media(monkeypatch):
+    async def _listar_certificados(_proveedor_id):
+        return [
+            {
+                "id": "cert-1",
+                "file_url": "https://invalid.example/cert.jpg?",
+                "display_order": 0,
+                "status": "active",
+            }
+        ]
+
+    monkeypatch.setattr(
+        modulo_gestor_vistas_perfil,
+        "listar_certificados_proveedor",
+        _listar_certificados,
+    )
+    monkeypatch.setattr(modulo_gestor_vistas_perfil, "_resolver_media_url", lambda _url: "")
+
+    respuesta = asyncio.run(
+        modulo_gestor_vistas_perfil.render_profile_view(
+            flujo={"selected_certificate_id": "cert-1"},
+            estado="viewing_professional_certificate",
+            proveedor_id="prov-1",
+        )
+    )
+
+    assert respuesta["response"] == "No pudimos cargar el certificado actual."
+    assert respuesta["ui"]["type"] == "buttons"
+    assert respuesta["ui"]["options"][0]["id"] == "provider_detail_certificates_add"
 
 
 def test_selector_servicios_abre_agregado_directo():
@@ -454,6 +551,141 @@ def test_selector_servicios_regresa_al_menu_desde_lista():
     assert "Gestión de Servicios" in respuesta["messages"][0]["response"]
 
 
+def test_slot_vacio_de_servicio_abre_captura(monkeypatch):
+    async def _fake_prompt(**_kwargs):
+        return {
+            "response": "Prompt servicio",
+            "ui": {"type": "list", "options": [], "list_button_text": "Ver ejemplos"},
+            "service_examples_lookup": {},
+        }
+
+    monkeypatch.setattr(
+        modulo_gestor_vistas_perfil,
+        "preguntar_nuevo_servicio_con_ejemplos_dinamicos",
+        _fake_prompt,
+    )
+
+    flujo = {"services": ["Plomeria"], "provider_id": "prov-1"}
+
+    respuesta = asyncio.run(
+        modulo_gestor_vistas_perfil.manejar_vista_perfil(
+            flujo=flujo,
+            estado="viewing_professional_services",
+            texto_mensaje=f"{SERVICE_SLOT_PREFIX}4",
+            proveedor_id="prov-1",
+        )
+    )
+
+    assert flujo["state"] == "awaiting_service_add"
+    assert flujo["selected_service_index"] == 4
+    assert flujo["profile_edit_mode"] == "provider_service_add"
+    assert respuesta["response"] == "Prompt servicio"
+
+
+def test_slot_registrado_de_servicio_abre_detalle():
+    flujo = {"services": ["Plomeria", "Electricidad"], "provider_id": "prov-1"}
+
+    respuesta = asyncio.run(
+        modulo_gestor_vistas_perfil.manejar_vista_perfil(
+            flujo=flujo,
+            estado="viewing_professional_services",
+            texto_mensaje=f"{SERVICE_SLOT_PREFIX}1",
+            proveedor_id="prov-1",
+        )
+    )
+
+    assert flujo["state"] == "viewing_professional_service"
+    assert flujo["selected_service_index"] == 1
+    assert respuesta["messages"][0]["ui"]["header_text"] == "Servicio 2"
+    assert "Electricidad" in respuesta["messages"][0]["response"]
+
+
+def test_detalle_servicio_permite_reemplazo(monkeypatch):
+    async def _fake_prompt(**_kwargs):
+        return {
+            "response": "Prompt reemplazo",
+            "ui": {"type": "list", "options": [], "list_button_text": "Ver ejemplos"},
+            "service_examples_lookup": {},
+        }
+
+    monkeypatch.setattr(
+        modulo_gestor_vistas_perfil,
+        "preguntar_nuevo_servicio_con_ejemplos_dinamicos",
+        _fake_prompt,
+    )
+
+    flujo = {
+        "state": "viewing_professional_service",
+        "services": ["Plomeria", "Electricidad"],
+        "selected_service_index": 1,
+        "provider_id": "prov-1",
+    }
+
+    respuesta = asyncio.run(
+        modulo_gestor_vistas_perfil.manejar_vista_perfil(
+            flujo=flujo,
+            estado="viewing_professional_service",
+            texto_mensaje=DETAIL_ACTION_SERVICE_CHANGE,
+            proveedor_id="prov-1",
+        )
+    )
+
+    assert flujo["state"] == "awaiting_service_add"
+    assert flujo["profile_edit_mode"] == "provider_service_replace"
+    assert respuesta["response"] == "Prompt reemplazo"
+
+
+def test_detalle_servicio_elimina_y_vuelve_a_slots(monkeypatch):
+    async def _eliminar_servicio(_proveedor_id, _indice):
+        return ["Plomeria"]
+
+    monkeypatch.setattr(
+        "flows.gestores_estados.gestor_vistas_perfil.eliminar_servicio_proveedor",
+        _eliminar_servicio,
+    )
+
+    flujo = {
+        "state": "viewing_professional_service",
+        "services": ["Plomeria", "Electricidad"],
+        "selected_service_index": 1,
+        "provider_id": "prov-1",
+    }
+
+    respuesta = asyncio.run(
+        modulo_gestor_vistas_perfil.manejar_vista_perfil(
+            flujo=flujo,
+            estado="viewing_professional_service",
+            texto_mensaje=DETAIL_ACTION_SERVICE_DELETE,
+            proveedor_id="prov-1",
+        )
+    )
+
+    assert flujo["state"] == "viewing_professional_services"
+    assert flujo["services"] == ["Plomeria"]
+    assert respuesta["messages"][0]["ui"]["header_text"] == "Menu - Servicios"
+
+
+def test_detalle_servicio_regresar_vuelve_a_slots():
+    flujo = {
+        "state": "viewing_professional_service",
+        "services": ["Plomeria", "Electricidad"],
+        "selected_service_index": 1,
+        "provider_id": "prov-1",
+    }
+
+    respuesta = asyncio.run(
+        modulo_gestor_vistas_perfil.manejar_vista_perfil(
+            flujo=flujo,
+            estado="viewing_professional_service",
+            texto_mensaje=DETAIL_ACTION_BACK,
+            proveedor_id="prov-1",
+        )
+    )
+
+    assert flujo["state"] == "viewing_professional_services"
+    assert respuesta["messages"][0]["ui"]["header_text"] == "Menu - Servicios"
+
+
 def test_confirmacion_agregar_servicios_persiste_y_regresa_a_menu(monkeypatch):
     async def _agregar_servicios(proveedor_id, servicios):
         return ["desarrollo de software", *servicios]
@@ -606,6 +838,41 @@ def test_confirmacion_agregar_servicios_acepta_selected_option_button(monkeypatc
     assert "plomería" in respuesta["messages"][0]["response"]
 
 
+def test_confirmacion_agregar_servicios_reemplaza_slot_desde_menu(monkeypatch):
+    async def _actualizar_servicios(_proveedor_id, servicios):
+        return servicios
+
+    monkeypatch.setattr(
+        "flows.gestores_estados.gestor_servicios.actualizar_servicios",
+        _actualizar_servicios,
+    )
+
+    flujo = {
+        "state": "awaiting_service_add_confirmation",
+        "services": ["Pintura interior", "Electricidad"],
+        "service_add_temporales": ["Plomería"],
+        "profile_edit_mode": "provider_service_replace",
+        "profile_return_state": "viewing_professional_services",
+        "selected_service_index": 1,
+    }
+
+    respuesta = asyncio.run(
+        manejar_confirmacion_agregar_servicios(
+            flujo=flujo,
+            proveedor_id="prov-123",
+            texto_mensaje="Agregar",
+            selected_option=None,
+            cliente_openai=object(),
+        )
+    )
+
+    assert flujo["state"] == "viewing_professional_services"
+    assert flujo["services"] == ["Pintura interior", "Plomería"]
+    assert "profile_edit_mode" not in flujo
+    assert "selected_service_index" not in flujo
+    assert respuesta["messages"][0]["ui"]["header_text"] == "Menu - Servicios"
+
+
 def test_confirmacion_agregar_servicios_acepta_texto_agregar(monkeypatch):
     async def _agregar_servicios(proveedor_id, servicios):
         return ["Pintura interior", *servicios]
@@ -728,7 +995,7 @@ def test_menu_completar_perfil_abre_flujo_profesional_desde_cero():
 
     assert flujo["profile_completion_mode"] is True
     assert flujo["state"] == "awaiting_experience"
-    assert "años de experiencia general" in respuesta["messages"][0]["response"].lower()
+    assert "años de experiencia" in respuesta["messages"][0]["response"].lower()
 
 
 def test_menu_completar_perfil_reusa_servicios_existentes():
@@ -750,8 +1017,12 @@ def test_menu_completar_perfil_reusa_servicios_existentes():
     assert "años de experiencia" in respuesta["messages"][0]["response"].lower()
 
 
-def test_menu_approved_basic_solo_muestra_opcion_completar_perfil():
-    flujo = {"services": [], "approved_basic": True}
+def test_menu_approved_basic_mantiene_menu_operativo():
+    flujo = {
+        "services": [],
+        "approved_basic": True,
+        "full_name": "Diego Unkuch Gonzalez",
+    }
 
     respuesta = asyncio.run(
         manejar_estado_menu(
@@ -763,8 +1034,11 @@ def test_menu_approved_basic_solo_muestra_opcion_completar_perfil():
         )
     )
 
-    assert "Completar perfil profesional" in respuesta["messages"][1]["response"]
-    assert "Gestionar servicios" not in respuesta["messages"][1]["response"]
+    assert len(respuesta["messages"]) == 1
+    assert (
+        "información profesional"
+        in respuesta["messages"][0]["response"].lower()
+    )
 
 
 def test_menu_aprobado_abre_submenu_informacion_personal():
@@ -836,6 +1110,11 @@ def test_submenu_personal_foto_no_se_interpreta_como_opcion_dos():
 
     assert flujo["state"] == "viewing_personal_photo"
     assert respuesta["response"]["messages"][0]["ui"]["type"] == "buttons"
+    assert respuesta["response"]["messages"][0]["ui"]["header_type"] == "image"
+    assert (
+        respuesta["response"]["messages"][0]["ui"]["header_media_url"]
+        == "https://example.com/photo.jpg"
+    )
     assert (
         respuesta["response"]["messages"][0]["ui"]["options"][0]["id"]
         == "provider_detail_photo_change"
@@ -861,6 +1140,7 @@ def test_vista_dni_reverso_cambia_solo_reverso():
 
 def test_headers_menus_interactivos_son_consistentes():
     from templates.interfaz import (
+        SERVICE_BACK_ID,
         SERVICE_DELETE_BACK_ID,
         payload_detalle_servicios,
         payload_lista_eliminar_servicios,
@@ -872,13 +1152,26 @@ def test_headers_menus_interactivos_son_consistentes():
     principal = payload_menu_post_registro_proveedor()
     personal = payload_submenu_informacion_personal()
     profesional = payload_submenu_informacion_profesional()
-    servicios = payload_detalle_servicios(["Plomeria", "Electricidad"], 7)
+    servicios = payload_detalle_servicios(
+        [
+            "Plomeria",
+            (
+                "Servicio extremadamente largo que supera el maximo permitido "
+                "por Meta para la descripcion de una fila"
+            ),
+        ],
+        7,
+    )
 
     assert principal["ui"]["header_text"] == "Menu - Principal"
     assert personal["ui"]["header_text"] == "Menu - Informacion Personal"
     assert profesional["ui"]["header_text"] == "Menu - Informacion Profesional"
-    assert servicios["ui"]["header_text"] == "Servicios registrados (2/7)"
-    assert "Se listan los servicios" not in servicios["response"]
+    assert servicios["ui"]["header_text"] == "Menu - Servicios"
+    assert servicios["ui"]["options"][0]["title"] == "Servicio 1"
+    assert servicios["ui"]["options"][0]["description"] == "Plomeria"
+    assert len(servicios["ui"]["options"][1]["description"]) <= 72
+    assert servicios["ui"]["options"][2]["description"] == "No registrado"
+    assert servicios["ui"]["options"][-1]["id"] == SERVICE_BACK_ID
 
     eliminacion = payload_lista_eliminar_servicios(
         [
@@ -930,8 +1223,11 @@ def test_eliminar_servicio_acepta_selected_option_interactivo(monkeypatch):
     assert flujo["state"] == "viewing_professional_services"
     assert flujo["services"] == ["Plomeria"]
     assert (
-        respuesta["response"]["messages"][0]["ui"]["header_text"]
-        == "Servicios registrados (1/7)"
+        respuesta["response"]["messages"][0]["ui"]["header_text"] == "Menu - Servicios"
+    )
+    assert (
+        respuesta["response"]["messages"][0]["ui"]["options"][0]["description"]
+        == "Plomeria"
     )
 
 
@@ -963,14 +1259,57 @@ def test_eliminar_servicio_regresar_vuelve_a_detalle():
 
     assert flujo["state"] == "viewing_professional_services"
     assert (
-        respuesta["response"]["messages"][0]["ui"]["header_text"]
-        == "Servicios registrados (2/7)"
+        respuesta["response"]["messages"][0]["ui"]["header_text"] == "Menu - Servicios"
     )
 
 
 def test_submenu_profesional_certificado_inicia_reemplazo():
     async def _listar_certificados(_proveedor_id):
         return [{"id": "cert-1", "file_url": "https://example.com/cert.jpg"}]
+
+    monkeypatch = __import__("pytest").MonkeyPatch()
+    monkeypatch.setattr(
+        "flows.gestores_estados.gestor_menu.listar_certificados_proveedor",
+        _listar_certificados,
+    )
+    monkeypatch.setattr(
+        "flows.gestores_estados.gestor_vistas_perfil.listar_certificados_proveedor",
+        _listar_certificados,
+    )
+    monkeypatch.setattr(
+        "flows.gestores_estados.gestor_vistas_perfil.listar_certificados_proveedor",
+        _listar_certificados,
+    )
+    monkeypatch.setattr(
+        "flows.gestores_estados.gestor_vistas_perfil.listar_certificados_proveedor",
+        _listar_certificados,
+    )
+
+    flujo = {"approved_basic": False, "provider_id": "prov-1"}
+
+    try:
+        respuesta = asyncio.run(
+            manejar_submenu_informacion_profesional(
+                flujo=flujo,
+                texto_mensaje="provider_submenu_profesional_certificados",
+                opcion_menu=None,
+            )
+        )
+    finally:
+        monkeypatch.undo()
+
+    assert flujo["state"] == "viewing_professional_certificates"
+    assert respuesta["messages"][0]["ui"]["type"] == "list"
+    assert respuesta["messages"][0]["ui"]["options"][0]["title"] == "Certificado 1"
+    assert respuesta["messages"][0]["ui"]["options"][0]["description"] == "Registrado"
+
+
+def test_submenu_profesional_certificados_varios_muestra_lista():
+    async def _listar_certificados(_proveedor_id):
+        return [
+            {"id": "cert-1", "file_url": "https://example.com/cert-1.jpg"},
+            {"id": "cert-2", "file_url": "https://example.com/cert-2.jpg"},
+        ]
 
     monkeypatch = __import__("pytest").MonkeyPatch()
     monkeypatch.setattr(
@@ -997,18 +1336,86 @@ def test_submenu_profesional_certificado_inicia_reemplazo():
 
     assert flujo["state"] == "viewing_professional_certificates"
     assert respuesta["messages"][0]["ui"]["type"] == "list"
-    assert (
-        respuesta["messages"][0]["ui"]["options"][0]["id"]
-        == "provider_certificate_select:cert-1"
+    assert respuesta["messages"][0]["ui"]["options"][0]["description"] == "Registrado"
+    assert respuesta["messages"][0]["ui"]["options"][1]["description"] == "Registrado"
+    assert respuesta["messages"][0]["ui"]["options"][2]["description"] == "No registrado"
+
+
+def test_normalizar_respuesta_whatsapp_aplana_respuestas_anidadas():
+    respuesta = normalizar_respuesta_whatsapp(
+        {
+            "success": True,
+            "messages": [
+                {
+                    "response": [
+                        {
+                            "response": "",
+                            "media_url": "https://example.com/cert-1.jpg",
+                            "media_type": "image",
+                        },
+                        {
+                            "response": "Certificado seleccionado.",
+                            "ui": {"type": "buttons", "options": []},
+                        },
+                    ]
+                }
+            ],
+        }
     )
 
+    assert respuesta["success"] is True
+    assert len(respuesta["messages"]) == 2
+    assert respuesta["messages"][0]["response"] == ""
+    assert respuesta["messages"][0]["media_url"] == "https://example.com/cert-1.jpg"
+    assert respuesta["messages"][1]["response"] == "Certificado seleccionado."
+    assert respuesta["messages"][1]["ui"]["type"] == "buttons"
 
-def test_submenu_profesional_certificados_sin_items_abre_carga(monkeypatch):
+
+def test_menu_funciona_como_rescate_en_vista_certificado():
+    flujo = {
+        "state": "viewing_professional_certificate",
+        "approved_basic": False,
+        "provider_id": "prov-1",
+        "selected_certificate_id": "cert-1",
+        "profile_return_state": "viewing_professional_certificates",
+    }
+
+    respuesta = asyncio.run(
+        enrutar_estado(
+            estado="viewing_professional_certificate",
+            flujo=flujo,
+            texto_mensaje="Menu",
+            carga={},
+            telefono="593959091325@s.whatsapp.net",
+            opcion_menu="5",
+            tiene_consentimiento=True,
+            esta_registrado=True,
+            perfil_proveedor={"id": "prov-1"},
+            supabase=None,
+            servicio_embeddings=None,
+            cliente_openai=None,
+            subir_medios_identidad=None,
+            logger=None,
+        )
+    )
+
+    assert flujo["state"] == "awaiting_menu_option"
+    assert "selected_certificate_id" not in flujo
+    assert "profile_return_state" not in flujo
+    assert respuesta["persist_flow"] is True
+    assert respuesta["response"]["messages"][0]["ui"]["type"] == "list"
+
+
+def test_submenu_profesional_certificados_sin_items_muestra_slots(monkeypatch):
     async def _listar_certificados(_proveedor_id):
         return []
 
     monkeypatch.setattr(
         "flows.gestores_estados.gestor_menu.listar_certificados_proveedor",
+        _listar_certificados,
+    )
+    monkeypatch.setattr(
+        "flows.gestores_estados.gestor_vistas_perfil.listar_certificados_proveedor",
         _listar_certificados,
     )
 
@@ -1022,17 +1429,48 @@ def test_submenu_profesional_certificados_sin_items_abre_carga(monkeypatch):
         )
     )
 
+    assert flujo["state"] == "viewing_professional_certificates"
+    assert respuesta["messages"][0]["ui"]["type"] == "list"
+    assert respuesta["messages"][0]["ui"]["options"][0]["description"] == "No registrado"
+    assert respuesta["messages"][0]["ui"]["options"][1]["description"] == "No registrado"
+    assert respuesta["messages"][0]["ui"]["options"][2]["description"] == "No registrado"
+
+
+def test_slot_vacio_de_certificado_abre_carga(monkeypatch):
+    async def _listar_certificados(_proveedor_id):
+        return []
+
+    monkeypatch.setattr(
+        "flows.gestores_estados.gestor_vistas_perfil.listar_certificados_proveedor",
+        _listar_certificados,
+    )
+
+    flujo = {
+        "state": "viewing_professional_certificates",
+        "approved_basic": False,
+        "provider_id": "prov-1",
+    }
+
+    respuesta = asyncio.run(
+        modulo_gestor_vistas_perfil.manejar_vista_perfil(
+            flujo=flujo,
+            estado="viewing_professional_certificates",
+            texto_mensaje="provider_certificate_slot:0",
+            proveedor_id="prov-1",
+        )
+    )
+
     assert flujo["state"] == "awaiting_certificate"
     assert flujo["profile_edit_mode"] == "provider_certificate_add"
-    assert flujo["profile_return_state"] == "viewing_professional_certificate"
+    assert flujo["profile_return_state"] == "viewing_professional_certificates"
     assert "certificado profesional" in respuesta["messages"][0]["response"].lower()
 
 
-def test_submenu_profesional_redes_abre_vista_directa():
+def test_submenu_profesional_redes_abre_sublista():
     flujo = {
         "approved_basic": False,
         "provider_id": "prov-1",
-        "social_media_url": "https://instagram.com/test",
+        "instagram_username": "test",
     }
 
     respuesta = asyncio.run(
@@ -1044,26 +1482,300 @@ def test_submenu_profesional_redes_abre_vista_directa():
     )
 
     assert flujo["state"] == "viewing_professional_social"
-    assert respuesta["messages"][0]["ui"]["type"] == "buttons"
-    assert (
-        respuesta["messages"][0]["ui"]["options"][0]["id"]
-        == "provider_detail_social_change"
+    assert respuesta["messages"][0]["ui"]["type"] == "list"
+    assert respuesta["messages"][0]["ui"]["options"][0]["id"] == SOCIAL_NETWORK_FACEBOOK_ID
+    assert respuesta["messages"][0]["ui"]["options"][1]["id"] == SOCIAL_NETWORK_INSTAGRAM_ID
+    assert respuesta["messages"][0]["ui"]["options"][1]["description"] == "Registrada"
+
+
+def test_submenu_profesional_experiencia_abre_detalle():
+    flujo = {
+        "approved_basic": False,
+        "provider_id": "prov-1",
+        "experience_years": 10,
+    }
+
+    respuesta = asyncio.run(
+        manejar_submenu_informacion_profesional(
+            flujo=flujo,
+            texto_mensaje="provider_submenu_profesional_experiencia",
+            opcion_menu=None,
+        )
     )
-    assert "instagram.com/test" in respuesta["messages"][0]["response"].lower()
+
+    assert flujo["state"] == "viewing_professional_experience"
+    assert respuesta["messages"][0]["ui"]["type"] == "buttons"
+    assert respuesta["messages"][0]["ui"]["options"][0]["id"] == (
+        "provider_detail_experience_change"
+    )
+    assert "10 años" in respuesta["messages"][0]["response"].lower()
 
 
-def test_redes_sociales_sin_dato_muestra_no_registrada():
+def test_actualizacion_experiencia_desde_menu_regresa_detalle():
+    flujo = {
+        "state": "awaiting_experience",
+        "profile_edit_mode": "experience",
+        "profile_return_state": "viewing_professional_experience",
+        "experience_years": 3,
+    }
+
+    respuesta = asyncio.run(manejar_espera_experiencia(flujo, "8"))
+
+    assert flujo["state"] == "viewing_professional_experience"
+    assert respuesta["messages"][0]["ui"]["type"] == "buttons"
+    assert respuesta["messages"][0]["ui"]["header_text"] == "Experiencia general"
+    assert "8 años" in respuesta["messages"][0]["response"].lower()
+
+
+def test_redes_sociales_sin_datos_muestra_sublista_vacia():
     respuesta = asyncio.run(
         modulo_gestor_vistas_perfil.render_profile_view(
-            flujo={"social_media_url": None},
+            flujo={"facebook_username": None, "instagram_username": None},
             estado="viewing_professional_social",
             proveedor_id="prov-1",
         )
     )
 
+    assert respuesta["ui"]["type"] == "list"
+    assert respuesta["ui"]["options"][0]["description"] == "No registrada"
+    assert respuesta["ui"]["options"][1]["description"] == "No registrada"
+
+
+def test_render_profile_view_detalle_facebook():
+    respuesta = asyncio.run(
+        modulo_gestor_vistas_perfil.render_profile_view(
+            flujo={"facebook_username": "diego.unkuch"},
+            estado="viewing_professional_social_facebook",
+            proveedor_id="prov-1",
+        )
+    )
+
     assert respuesta["ui"]["type"] == "buttons"
-    assert respuesta["ui"]["options"][0]["id"] == "provider_detail_social_change"
-    assert "no registrada" in respuesta["response"].lower()
+    assert respuesta["ui"]["options"][0]["id"] == DETAIL_ACTION_SOCIAL_CHANGE
+    assert "diego.unkuch" in respuesta["response"].lower()
+    assert "facebook.com/diego.unkuch" in respuesta["response"].lower()
+
+
+def test_actualizacion_red_facebook_desde_router(monkeypatch):
+    async def _actualizar_redes_sociales(
+        _supabase,
+        _proveedor_id,
+        *,
+        facebook_username,
+        instagram_username,
+        preferred_type,
+    ):
+        assert facebook_username == "diego.unkuch"
+        assert instagram_username is None
+        assert preferred_type == "facebook"
+        return {
+            "success": True,
+            "social_media_url": "https://facebook.com/diego.unkuch",
+            "social_media_type": "facebook",
+            "facebook_username": "diego.unkuch",
+            "instagram_username": None,
+        }
+
+    monkeypatch.setattr(
+        "flows.gestores_estados.gestor_actualizacion_redes.actualizar_redes_sociales",
+        _actualizar_redes_sociales,
+    )
+
+    respuesta = asyncio.run(
+        enrutar_estado(
+            estado="awaiting_social_facebook_username",
+            flujo={
+                "state": "awaiting_social_facebook_username",
+                "provider_id": "prov-1",
+                "profile_return_state": "viewing_professional_social_facebook",
+                "current_social_network": "facebook",
+                "menu_limitado": False,
+                "approved_basic": False,
+            },
+            texto_mensaje="diego.unkuch",
+            carga={},
+            telefono="593959091325@s.whatsapp.net",
+            opcion_menu=None,
+            tiene_consentimiento=True,
+            esta_registrado=True,
+            perfil_proveedor={"id": "prov-1"},
+            supabase=object(),
+            servicio_embeddings=None,
+            cliente_openai=None,
+            subir_medios_identidad=None,
+            logger=None,
+        )
+    )
+
+    assert respuesta["persist_flow"] is True
+    assert respuesta["response"]["messages"][0]["response"] == "Redes sociales actualizadas."
+    assert respuesta["response"]["messages"][1]["ui"]["type"] == "buttons"
+
+
+def test_parsear_entrada_red_social_acepta_username_con_arroba():
+    resultado = parsear_entrada_red_social("@diego_unkuch")
+
+    assert resultado["type"] == "instagram"
+    assert resultado["url"] == "https://instagram.com/diego_unkuch"
+
+
+def test_onboarding_redes_sociales_abre_sublista():
+    flujo = {"profile_completion_mode": True}
+
+    respuesta = asyncio.run(manejar_espera_experiencia(flujo, "3"))
+
+    assert flujo["state"] == "awaiting_social_media"
+    assert respuesta["messages"][0]["ui"]["type"] == "list"
+    assert respuesta["messages"][0]["ui"]["options"][0]["id"] == SOCIAL_FACEBOOK_ID
+    assert respuesta["messages"][0]["ui"]["options"][1]["id"] == SOCIAL_INSTAGRAM_ID
+    assert respuesta["messages"][0]["ui"]["options"][2]["id"] == SOCIAL_SKIP_ID
+
+
+def test_onboarding_redes_sociales_pide_usuario_de_facebook():
+    flujo = {"profile_completion_mode": True, "state": "awaiting_social_media"}
+
+    respuesta = manejar_espera_red_social(
+        flujo,
+        None,
+        selected_option=SOCIAL_FACEBOOK_ID,
+    )
+
+    assert flujo["state"] == "awaiting_onboarding_social_facebook_username"
+    assert "facebook" in respuesta["messages"][0]["response"].lower()
+
+
+def test_onboarding_redes_sociales_registra_usuario_y_vuelve_a_lista():
+    flujo = {
+        "profile_completion_mode": True,
+        "state": "awaiting_onboarding_social_facebook_username",
+    }
+
+    respuesta = manejar_espera_red_social(flujo, "@diego.unkuch")
+
+    assert flujo["state"] == "awaiting_social_media"
+    assert flujo["facebook_username"] == "diego.unkuch"
+    assert flujo["social_media_type"] == "facebook"
+    assert respuesta["messages"][0]["ui"]["type"] == "list"
+
+
+def test_onboarding_redes_sociales_continuar_avanza_a_certificado():
+    flujo = {"profile_completion_mode": True, "state": "awaiting_social_media"}
+
+    respuesta = manejar_espera_red_social(
+        flujo,
+        None,
+        selected_option=SOCIAL_SKIP_ID,
+    )
+
+    assert flujo["state"] == "awaiting_certificate"
+    assert respuesta["messages"][0]["ui"]["type"] == "buttons"
+
+
+def test_onboarding_redes_sociales_continuar_conserva_red_ya_registrada():
+    flujo = {
+        "profile_completion_mode": True,
+        "state": "awaiting_social_media",
+        "facebook_username": "diego.unkuch",
+        "social_media_type": "facebook",
+    }
+
+    respuesta = manejar_espera_red_social(
+        flujo,
+        None,
+        selected_option=SOCIAL_SKIP_ID,
+    )
+
+    assert flujo["state"] == "awaiting_certificate"
+    assert flujo["facebook_username"] == "diego.unkuch"
+    assert flujo["social_media_type"] == "facebook"
+    assert flujo["social_media_url"] == "https://facebook.com/diego.unkuch"
+    assert respuesta["messages"][0]["ui"]["header_text"] == "Agregar Certificado"
+
+
+def test_onboarding_servicio_prompt_muestra_lista_de_ejemplos(monkeypatch):
+    async def _pregunta(*, indice=None, maximo=None, supabase=None, include_back_option=True):
+        return {
+            "response": f"Prompt servicio {indice}/{maximo}",
+            "ui": {
+                "type": "list",
+                "list_button_text": "Ver ejemplos",
+                "options": [
+                    {"id": "provider_service_example_mechanics", "title": "Gasfitería"}
+                ],
+            },
+            "service_examples_lookup": {
+                "provider_service_example_mechanics": {
+                    "id": "provider_service_example_mechanics",
+                    "title": "Gasfitería",
+                }
+            },
+        }
+
+    monkeypatch.setattr(
+        "flows.gestores_estados.gestor_espera_especialidad.preguntar_nuevo_servicio_con_ejemplos_dinamicos",
+        _pregunta,
+    )
+
+    respuesta = asyncio.run(
+        manejar_espera_especialidad(
+            flujo={"profile_completion_mode": True, "servicios_temporales": []},
+            texto_mensaje=SOCIAL_SKIP_ID,
+            selected_option=None,
+        )
+    )
+
+    assert respuesta["messages"][0]["ui"]["type"] == "list"
+    assert respuesta["messages"][0]["ui"]["list_button_text"] == "Ver ejemplos"
+    assert all(
+        option["id"] != SERVICE_EXAMPLE_BACK_ID
+        for option in respuesta["messages"][0]["ui"]["options"]
+    )
+
+
+def test_onboarding_servicio_ejemplo_devuelve_sugerencia_y_mantiene_lista(monkeypatch):
+    async def _pregunta(*, indice=None, maximo=None, supabase=None, include_back_option=True):
+        return {
+            "response": f"Prompt servicio {indice}/{maximo}",
+            "ui": {
+                "type": "list",
+                "list_button_text": "Ver ejemplos",
+                "options": [
+                    {"id": "provider_service_example_mechanics", "title": "Gasfitería"}
+                ],
+            },
+            "service_examples_lookup": {
+                "provider_service_example_mechanics": {
+                    "id": "provider_service_example_mechanics",
+                    "title": "Gasfitería",
+                }
+            },
+        }
+
+    monkeypatch.setattr(
+        "flows.gestores_estados.gestor_espera_especialidad.preguntar_nuevo_servicio_con_ejemplos_dinamicos",
+        _pregunta,
+    )
+
+    respuesta = asyncio.run(
+        manejar_espera_especialidad(
+            flujo={
+                "profile_completion_mode": True,
+                "state": "awaiting_specialty",
+                "servicios_temporales": [],
+                "service_examples_lookup": {
+                    "provider_service_example_mechanics": {
+                        "id": "provider_service_example_mechanics",
+                        "title": "Gasfitería",
+                    }
+                },
+            },
+            texto_mensaje=None,
+            selected_option="provider_service_example_mechanics",
+        )
+    )
+
+    assert "gasfiter" in respuesta["messages"][0]["response"].lower()
+    assert respuesta["messages"][1]["ui"]["type"] == "list"
 
 
 def test_actualizacion_nombre_regresa_menu_interactivo(monkeypatch):
@@ -1152,14 +1864,15 @@ def test_completar_perfil_envia_a_revision_humana(monkeypatch):
         )
     )
 
-    assert flujo["approved_basic"] is False
-    assert flujo["profile_pending_review"] is True
-    assert flujo["state"] == "pending_verification"
-    assert len(respuesta["response"]["messages"]) == 1
-    assert "revisando" in respuesta["response"]["messages"][0]["response"].lower()
+    assert flujo["approved_basic"] is True
+    assert flujo["profile_pending_review"] is False
+    assert flujo["state"] == "awaiting_menu_option"
+    assert len(respuesta["response"]["messages"]) == 2
+    assert "perfil profesional quedó actualizado" in (
+        respuesta["response"]["messages"][0]["response"].lower()
+    )
     assert (
-        "clientes que realmente necesitan tus servicios"
-        in respuesta["response"]["messages"][0]["response"].lower()
+        respuesta["response"]["messages"][1]["ui"]["id"] == "provider_main_menu_v1"
     )
 
 
@@ -1217,7 +1930,8 @@ def test_certificado_omitido_avanza_a_servicios():
     )
 
     assert flujo["state"] == "awaiting_specialty"
-    assert "2/3" in respuesta["messages"][0]["response"].lower()
+    assert respuesta["messages"][0]["ui"]["type"] == "list"
+    assert respuesta["messages"][0]["ui"]["list_button_text"] == "Ver ejemplos"
     assert (
         "ahora sí, vamos con tus servicios"
         not in respuesta["messages"][0]["response"].lower()
@@ -1240,7 +1954,8 @@ def test_control_viejo_no_se_interpreta_como_servicio():
     )
 
     assert flujo["state"] == "awaiting_specialty"
-    assert "2/3" in respuesta["messages"][0]["response"]
+    assert respuesta["messages"][0]["ui"]["type"] == "list"
+    assert respuesta["messages"][0]["ui"]["list_button_text"] == "Ver ejemplos"
 
 
 def test_servicio_perfil_pide_confirmacion_individual(monkeypatch):
@@ -1298,7 +2013,16 @@ def test_servicio_perfil_pide_confirmacion_individual(monkeypatch):
         "desarrollo aplicaciones moviles " "inteligencia artificial"
     )
     assert (
-        "servicio 1 de 3 identificado" in respuesta["messages"][0]["response"].lower()
+        respuesta["messages"][0]["ui"]["header_text"]
+        == "Servicio 1 de 3 identificado:"
+    )
+    assert (
+        respuesta["messages"][0]["response"]
+        == "*desarrollo aplicaciones moviles inteligencia artificial*."
+    )
+    assert (
+        respuesta["messages"][0]["ui"]["footer_text"]
+        == "¿Confirmas que es el servicio correcto?"
     )
 
 
@@ -1361,11 +2085,37 @@ def test_espera_especialidad_no_interrumpe_si_el_servicio_es_valido_y_domino_no_
         "diseño y gestión de proyectos tecnológicos para empresas públicas"
     )
     assert (
-        "servicio 1 de 3 identificado" in respuesta["messages"][0]["response"].lower()
+        respuesta["messages"][0]["ui"]["header_text"]
+        == "Servicio 1 de 3 identificado:"
+    )
+    assert (
+        respuesta["messages"][0]["response"]
+        == "*diseño y gestión de proyectos tecnológicos para empresas públicas*."
+    )
+    assert (
+        respuesta["messages"][0]["ui"]["footer_text"]
+        == "¿Confirmas que es el servicio correcto?"
     )
 
 
-def test_confirmar_servicio_perfil_avanza_al_siguiente_paso():
+def test_confirmar_servicio_perfil_avanza_al_siguiente_paso(monkeypatch):
+    async def _fake_prompt(**_kwargs):
+        return {
+            "response": "Escribe el *segundo servicio* que también ofreces.",
+            "ui": {
+                "type": "list",
+                "header_text": "Agregar Servicio 2 de 3",
+                "list_button_text": "Ver ejemplos",
+                "options": [],
+            },
+            "service_examples_lookup": {},
+        }
+
+    monkeypatch.setattr(
+        "flows.gestores_estados.gestor_espera_especialidad.preguntar_nuevo_servicio_con_ejemplos_dinamicos",
+        _fake_prompt,
+    )
+
     flujo = {
         "profile_completion_mode": True,
         "servicios_temporales": [],
@@ -1388,7 +2138,9 @@ def test_confirmar_servicio_perfil_avanza_al_siguiente_paso():
     assert flujo["servicios_temporales"] == [
         "desarrollo aplicaciones moviles inteligencia artificial"
     ]
-    assert "2/3" in respuesta["messages"][0]["response"].lower()
+    assert respuesta["messages"][0]["ui"]["type"] == "list"
+    assert respuesta["messages"][0]["ui"]["list_button_text"] == "Ver ejemplos"
+    assert "segundo servicio" in respuesta["messages"][0]["response"].lower()
 
 
 def test_tercer_servicio_confirmado_muestra_resumen_final_de_perfil():
