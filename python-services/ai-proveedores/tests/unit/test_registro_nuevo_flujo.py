@@ -9,16 +9,17 @@ sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from services.sesion_proveedor import manejar_estado_inicial  # noqa: E402
-from templates.interfaz.registro_inicio import (  # noqa: E402
-    MENU_ID_REGISTRARSE,
+from templates.onboarding.inicio import (  # noqa: E402
+    ONBOARDING_REGISTER_BUTTON_ID,
     payload_menu_registro_proveedor,
 )
-from templates.registro import (  # noqa: E402
-    payload_experiencia_registro,
+from templates.onboarding.experiencia import (  # noqa: E402
+    ONBOARDING_EXPERIENCE_RANGES_ID,
+    payload_experiencia_onboarding,
 )
-from templates.registro.documentacion import (  # noqa: E402
-    payload_foto_dni_frontal,
-    payload_selfie_registro,
+from templates.onboarding.documentos import (  # noqa: E402
+    payload_onboarding_dni_frontal,
+    payload_onboarding_foto_perfil,
 )
 
 
@@ -29,10 +30,21 @@ def test_payload_menu_registro_proveedor_incluye_header_image_y_registrarse():
     assert payload["ui"]["type"] == "buttons"
     assert payload["ui"]["header_type"] == "image"
     assert "tinkubot_provider_start_register.png" in payload["ui"]["header_media_url"]
-    assert payload["ui"]["options"][0]["id"] == MENU_ID_REGISTRARSE
+    assert payload["ui"]["options"][0]["id"] == ONBOARDING_REGISTER_BUTTON_ID
 
 
-def test_estado_inicial_sin_consentimiento_muestra_menu_de_registro():
+def test_payload_menu_registro_proveedor_usa_env_override(monkeypatch):
+    monkeypatch.setenv(
+        "WA_PROVIDER_ONBOARDING_BTN_REGISTRARSE_HEADER_URL",
+        "https://example.com/provider-start.png",
+    )
+
+    payload = payload_menu_registro_proveedor()
+
+    assert payload["ui"]["header_media_url"] == "https://example.com/provider-start.png"
+
+
+def test_estado_inicial_sin_consentimiento_muestra_onboarding():
     flujo = {}
 
     respuesta = asyncio.run(
@@ -52,37 +64,71 @@ def test_estado_inicial_sin_consentimiento_muestra_menu_de_registro():
     assert flujo["state"] == "awaiting_menu_option"
     assert flujo["mode"] == "registration"
     assert respuesta["messages"][0]["ui"]["type"] == "buttons"
-    assert respuesta["messages"][0]["ui"]["options"][0]["id"] == MENU_ID_REGISTRARSE
+    assert (
+        respuesta["messages"][0]["ui"]["options"][0]["id"]
+        == ONBOARDING_REGISTER_BUTTON_ID
+    )
 
 
-def test_payload_foto_dni_frontal_incluye_imagen_guia():
-    payload = payload_foto_dni_frontal()
+def test_estado_inicial_sin_provider_id_prioriza_onboarding():
+    flujo = {}
+
+    respuesta = asyncio.run(
+        manejar_estado_inicial(
+            estado=None,
+            flujo=flujo,
+            provider_id=None,
+            tiene_consentimiento=True,
+            esta_registrado=True,
+            esta_verificado=True,
+            menu_limitado=True,
+            approved_basic=True,
+            telefono="593999111251@s.whatsapp.net",
+        )
+    )
+
+    assert respuesta is not None
+    assert flujo["state"] == "awaiting_menu_option"
+    assert flujo["mode"] == "registration"
+    assert respuesta["messages"][0]["ui"]["type"] == "buttons"
+    assert (
+        respuesta["messages"][0]["ui"]["options"][0]["id"]
+        == ONBOARDING_REGISTER_BUTTON_ID
+    )
+
+
+def test_payload_onboarding_dni_frontal_incluye_imagen_guia():
+    payload = payload_onboarding_dni_frontal()
 
     assert payload["response"].startswith("Ahora envía una foto frontal de tu *cédula*")
     assert payload["media_type"] == "image"
     assert "tinkubot_dni_photo.png" in payload["media_url"]
 
 
-def test_payload_foto_dni_frontal_usa_env_override(monkeypatch):
-    monkeypatch.setenv("WA_PROVIDER_DNI_FRONT_GUIDE_URL", "https://example.com/dni.png")
+def test_payload_onboarding_dni_frontal_usa_env_override(monkeypatch):
+    monkeypatch.setenv(
+        "WA_PROVIDER_ONBOARDING_DNI_FRONT_GUIDE_URL",
+        "https://example.com/dni.png",
+    )
 
-    payload = payload_foto_dni_frontal()
+    payload = payload_onboarding_dni_frontal()
 
     assert payload["media_url"] == "https://example.com/dni.png"
 
 
-def test_payload_selfie_registro_incluye_imagen_guia():
-    payload = payload_selfie_registro()
+def test_payload_onboarding_foto_perfil_incluye_imagen_guia():
+    payload = payload_onboarding_foto_perfil()
 
     assert payload["response"].startswith("Ahora envía tu *foto de perfil*")
     assert payload["media_type"] == "image"
     assert "tinkubot_profile_photo.png" in payload["media_url"]
 
 
-def test_payload_experiencia_registro_incluye_lista():
-    payload = payload_experiencia_registro()
+def test_payload_experiencia_onboarding_incluye_lista():
+    payload = payload_experiencia_onboarding()
 
     assert payload["response"] == "Selecciona tus *años de experiencia*."
     assert payload["ui"]["type"] == "list"
     assert payload["ui"]["header_text"] == "Años de experiencia"
+    assert payload["ui"]["id"] == ONBOARDING_EXPERIENCE_RANGES_ID
     assert payload["ui"]["options"][0]["title"] == "Menos de 1 año"

@@ -30,6 +30,15 @@ def informar_timeout_inactividad() -> str:
     return "No tuve respuesta y *reinicié la conversación* para ayudarte mejor."
 
 
+def informar_reanudacion_inactividad() -> str:
+    """Informa que hubo inactividad, pero el flujo sigue en el mismo paso.
+
+    Returns:
+        Mensaje corto para retomar sin reiniciar el flujo
+    """
+    return "No tuve respuesta por un rato. Te retomo en el mismo paso para continuar."
+
+
 def informar_reinicio_completo() -> str:
     """Informa que se reinició completamente y sugiere empezar registro.
 

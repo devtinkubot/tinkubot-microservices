@@ -44,8 +44,12 @@ class SolicitudCreacionProveedor(BaseModel):
         city: Ciudad donde opera el proveedor (2-100 caracteres)
         services_list: Lista de 0-SERVICIOS_MAXIMOS servicios ofrecidos
         experience_years: Años de experiencia (default: 0)
+        experience_range: Rango legible de experiencia (opcional)
         social_media_url: URL de red social (opcional)
         social_media_type: Tipo de red social (opcional)
+        document_first_names: Nombres leídos del documento (opcional)
+        document_last_names: Apellidos leídos del documento (opcional)
+        document_id_number: Número de cédula (opcional)
         dni_front_photo_url: URL foto frontal DNI (opcional)
         dni_back_photo_url: URL foto trasera DNI (opcional)
         face_photo_url: URL foto facial (opcional)
@@ -61,10 +65,14 @@ class SolicitudCreacionProveedor(BaseModel):
     # profession: ELIMINADO - Ahora se usa provider_services
     services_list: List[str] = Field(default_factory=list)
     experience_years: Optional[int] = Field(default=0, ge=0)
+    experience_range: Optional[str] = None
     social_media_url: Optional[str] = None
     social_media_type: Optional[str] = None
     facebook_username: Optional[str] = None
     instagram_username: Optional[str] = None
+    document_first_names: Optional[str] = None
+    document_last_names: Optional[str] = None
+    document_id_number: Optional[str] = None
     dni_front_photo_url: Optional[str] = None
     dni_back_photo_url: Optional[str] = None
     face_photo_url: Optional[str] = None
@@ -130,8 +138,12 @@ class RespuestaProveedor(BaseModel):
         available: Disponibilidad actual
         verified: Estado de verificación
         experience_years: Años de experiencia
+        experience_range: Rango legible de experiencia
         social_media_url: URL de red social (opcional)
         social_media_type: Tipo de red social (opcional)
+        document_first_names: Nombres leídos del documento (opcional)
+        document_last_names: Apellidos leídos del documento (opcional)
+        document_id_number: Número de cédula (opcional)
         dni_front_photo_url: URL foto frontal DNI (opcional)
         dni_back_photo_url: URL foto trasera DNI (opcional)
         face_photo_url: URL foto facial (opcional)
@@ -154,10 +166,14 @@ class RespuestaProveedor(BaseModel):
     available: bool
     verified: bool
     experience_years: int
+    experience_range: Optional[str] = None
     social_media_url: Optional[str] = None
     social_media_type: Optional[str] = None
     facebook_username: Optional[str] = None
     instagram_username: Optional[str] = None
+    document_first_names: Optional[str] = None
+    document_last_names: Optional[str] = None
+    document_id_number: Optional[str] = None
     dni_front_photo_url: Optional[str] = None
     dni_back_photo_url: Optional[str] = None
     face_photo_url: Optional[str] = None

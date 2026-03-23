@@ -195,6 +195,7 @@ class ClienteBusqueda:
                 "verified": proveedor.get("verified", False),
                 "services": proveedor.get("services", []),
                 "years_of_experience": proveedor.get("years_of_experience"),
+                "experience_range": proveedor.get("experience_range"),
                 "created_at": proveedor.get("created_at"),
                 "similarity_score": proveedor.get("similarity_score"),
                 "matched_service_name": proveedor.get("matched_service_name"),

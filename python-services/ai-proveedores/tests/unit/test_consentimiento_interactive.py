@@ -34,7 +34,6 @@ def test_payload_consentimiento_proveedor_retorna_interactive_con_imagen_default
     assert mensaje["ui"]["type"] == "buttons"
     assert mensaje["ui"]["header_type"] == "image"
     assert "tinkubot_providers_onboarding.png" in mensaje["ui"]["header_media_url"]
-    assert mensaje["ui"]["footer_text"] == "Al *Aceptar* autorizas el uso de tu información."
     assert len(mensaje["ui"]["options"]) == 1
     assert mensaje["ui"]["options"][0]["id"] == "continue_provider_onboarding"
     assert mensaje["ui"]["options"][0]["title"] == "Aceptar"

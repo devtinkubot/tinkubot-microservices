@@ -6,6 +6,10 @@ from typing import Any, Dict, List, Optional
 
 from models.proveedores import SolicitudCreacionProveedor
 from services.servicios_proveedor.constantes import SERVICIOS_MAXIMOS
+from services.servicios_proveedor.estado_operativo import (
+    formatear_rango_experiencia,
+    normalizar_experiencia,
+)
 from services.servicios_proveedor.redes_sociales_slots import resolver_redes_sociales
 from services.servicios_proveedor.utilidades import (
     normalizar_texto_para_busqueda,
@@ -165,6 +169,21 @@ def normalizar_datos_proveedor(
         "phone": telefono,
         "real_phone": real_phone,
         "full_name": datos_crudos.full_name.strip().title(),  # Formato legible
+        "document_first_names": (
+            datos_crudos.document_first_names.strip()
+            if datos_crudos.document_first_names
+            else None
+        ),
+        "document_last_names": (
+            datos_crudos.document_last_names.strip()
+            if datos_crudos.document_last_names
+            else None
+        ),
+        "document_id_number": (
+            datos_crudos.document_id_number.strip()
+            if datos_crudos.document_id_number
+            else None
+        ),
         "city": normalizar_texto_para_busqueda(datos_crudos.city),  # minúsculas
         "location_lat": datos_crudos.location_lat,
         "location_lng": datos_crudos.location_lng,
@@ -174,6 +193,9 @@ def normalizar_datos_proveedor(
         "services_normalized": servicios_normalizados,  # Fase 5: Lista, no string
         "service_entries": service_entries,
         "experience_years": datos_crudos.experience_years or 0,
+        "experience_range": formatear_rango_experiencia(
+            normalizar_experiencia(datos_crudos.experience_years)
+        ),
         "has_consent": datos_crudos.has_consent,
         "verified": False,
         # Arrancamos en 5 para promediar con futuras calificaciones de clientes.
@@ -212,10 +234,15 @@ def garantizar_campos_obligatorios_proveedor(
 
     datos["rating"] = float(datos.get("rating") or 5.0)
     datos["experience_years"] = int(datos.get("experience_years") or 0)
+    datos["experience_range"] = datos.get("experience_range") or formatear_rango_experiencia(
+        datos["experience_years"]
+    )
     datos.setdefault("location_lat", None)
     datos.setdefault("location_lng", None)
     datos.setdefault("location_updated_at", None)
     datos.setdefault("city_confirmed_at", None)
+    datos.setdefault("onboarding_step", None)
+    datos.setdefault("onboarding_step_updated_at", None)
     datos.setdefault("facebook_username", None)
     datos.setdefault("instagram_username", None)
     # Fase 5: Eliminada referencia a 'profession'

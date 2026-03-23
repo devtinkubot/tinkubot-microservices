@@ -710,8 +710,8 @@
                       Pendientes de agregar info profesional
                     </div>
                     <div class="dashboard-metric-note">
-                      Proveedores aprobados que aún no completan experiencia y
-                      3 servicios principales.
+                      Proveedores aprobados que aún no completan experiencia y 3
+                      servicios principales.
                     </div>
                   </div>
                   <div class="dashboard-metric-icon">
@@ -783,8 +783,7 @@
                 Estos cuadros muestran el volumen actual de expertos en cada
                 etapa operativa para que podamos ver el embudo de registro sin
                 abrir los detalles. La información profesional ya no pasa por
-                aprobación obligatoria: se gestiona desde el menú del
-                proveedor.
+                aprobación obligatoria: se gestiona desde el menú del proveedor.
               </p>
             </div>
           </div>
@@ -924,8 +923,10 @@
                     <div class="row g-3">
                       <div class="col-md-6">
                         <div class="provider-detail-item">
-                          <span class="provider-detail-label">Persona</span>
-                          <span id="provider-detail-contact-name">—</span>
+                          <span class="provider-detail-label">Teléfono</span>
+                          <span id="provider-detail-phone" class="text-muted"
+                            >Sin número</span
+                          >
                         </div>
                         <div class="provider-detail-item">
                           <span class="provider-detail-label">Ubicación</span>
@@ -935,12 +936,6 @@
                         </div>
                       </div>
                       <div class="col-md-6">
-                        <div class="provider-detail-item">
-                          <span class="provider-detail-label">Teléfono</span>
-                          <span id="provider-detail-phone" class="text-muted"
-                            >Sin número</span
-                          >
-                        </div>
                         <div class="provider-detail-item">
                           <span class="provider-detail-label">Número real</span>
                           <span
@@ -964,13 +959,7 @@
                   <div class="provider-detail-section">
                     <h6>Información profesional</h6>
                     <div class="row g-3">
-                      <div class="col-md-6">
-                        <div class="provider-detail-item">
-                          <span class="provider-detail-label">Etapa</span>
-                          <span id="provider-detail-stage" class="text-muted"
-                            >Onboarding básico</span
-                          >
-                        </div>
+                      <div class="col-md-4">
                         <div class="provider-detail-item">
                           <span class="provider-detail-label"
                             >Años de experiencia</span
@@ -982,27 +971,7 @@
                           >
                         </div>
                       </div>
-                      <div class="col-md-6">
-                        <div class="provider-detail-item">
-                          <span class="provider-detail-label"
-                            >Estado actual</span
-                          >
-                          <span
-                            id="provider-detail-status-text"
-                            class="text-muted"
-                            >Pendiente</span
-                          >
-                        </div>
-                        <div class="provider-detail-item">
-                          <span class="provider-detail-label"
-                            >Última revisión</span
-                          >
-                          <span id="provider-detail-verifier" class="text-muted"
-                            >Pendiente de revisión</span
-                          >
-                        </div>
-                      </div>
-                      <div class="col-12">
+                      <div class="col-md-4">
                         <div class="provider-detail-item">
                           <span
                             class="provider-detail-label"
@@ -1015,13 +984,7 @@
                           </div>
                         </div>
                       </div>
-                    </div>
-                  </div>
-
-                  <div class="provider-detail-section">
-                    <h6>Canales y presencia</h6>
-                    <div class="row g-3">
-                      <div class="col-md-6">
+                      <div class="col-md-4">
                         <div class="provider-detail-item">
                           <span class="provider-detail-label">Red social</span>
                           <span
@@ -1031,6 +994,12 @@
                           >
                         </div>
                       </div>
+                    </div>
+                  </div>
+
+                  <div class="provider-detail-section">
+                    <h6>Canales y presencia</h6>
+                    <div class="row g-3">
                       <div class="col-md-6">
                         <div class="provider-detail-item">
                           <span class="provider-detail-label"
@@ -1074,41 +1043,112 @@
                   </div>
 
                   <div class="provider-detail-section">
-                    <h6>Documentos de identidad</h6>
-                    <div class="row g-3" id="provider-detail-documents"></div>
-                    <div
-                      id="provider-detail-documents-empty"
-                      class="alert alert-light border mt-2"
-                      role="alert"
-                      style="display: none"
-                    >
-                      El proveedor aún no cargó documentos de identidad para
-                      revisión.
-                    </div>
-                  </div>
-
-                  <div class="provider-detail-section">
-                    <h6>Certificados</h6>
-                    <div
-                      class="row g-3"
-                      id="provider-detail-certificates"
-                    ></div>
-                    <div
-                      id="provider-detail-certificates-empty"
-                      class="alert alert-light border mt-2"
-                      role="alert"
-                      style="display: none"
-                    >
-                      El proveedor aún no cargó certificados para revisión.
-                    </div>
-                  </div>
-
-                  <div class="provider-detail-section">
                     <h6>Observaciones previas</h6>
                     <div
                       class="alert alert-secondary"
                       id="provider-detail-existing-notes"
                     ></div>
+                  </div>
+
+                  <div class="provider-detail-section">
+                    <h6>Fotos de identidad</h6>
+                    <div
+                      class="row g-3"
+                      id="provider-detail-identity-photos"
+                    ></div>
+                    <div
+                      id="provider-detail-identity-photos-empty"
+                      class="alert alert-light border mt-2"
+                      role="alert"
+                      style="display: none"
+                    >
+                      El proveedor aún no cargó fotos de identidad para
+                      revisión.
+                    </div>
+                  </div>
+
+                  <div class="provider-detail-section">
+                    <h6>Campos de identidad</h6>
+                    <div class="row g-3 mb-0">
+                      <div class="col-md-5">
+                        <label
+                          class="form-label"
+                          for="provider-review-document-first-names"
+                        >
+                          Nombres
+                        </label>
+                        <input
+                          type="text"
+                          class="form-control"
+                          id="provider-review-document-first-names"
+                          placeholder="Ej. Ana María"
+                        />
+                      </div>
+                      <div class="col-md-5">
+                        <label
+                          class="form-label"
+                          for="provider-review-document-last-names"
+                        >
+                          Apellidos
+                        </label>
+                        <input
+                          type="text"
+                          class="form-control"
+                          id="provider-review-document-last-names"
+                          placeholder="Ej. Pérez López"
+                        />
+                      </div>
+                      <div class="col-md-2">
+                        <label
+                          class="form-label"
+                          for="provider-review-document-id-number"
+                        >
+                          Cédula
+                        </label>
+                        <input
+                          type="text"
+                          class="form-control"
+                          id="provider-review-document-id-number"
+                          placeholder="Ej. 1712345678"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="provider-detail-section">
+                    <h6>Identidad leída del documento</h6>
+                    <div class="row g-3">
+                      <div class="col-md-5">
+                        <div class="provider-detail-item">
+                          <span class="provider-detail-label">Nombres</span>
+                          <span
+                            id="provider-detail-document-first-names"
+                            class="text-muted"
+                            >—</span
+                          >
+                        </div>
+                      </div>
+                      <div class="col-md-5">
+                        <div class="provider-detail-item">
+                          <span class="provider-detail-label">Apellidos</span>
+                          <span
+                            id="provider-detail-document-last-names"
+                            class="text-muted"
+                            >—</span
+                          >
+                        </div>
+                      </div>
+                      <div class="col-md-2">
+                        <div class="provider-detail-item">
+                          <span class="provider-detail-label">Cédula</span>
+                          <span
+                            id="provider-detail-document-id-number"
+                            class="text-muted"
+                            >—</span
+                          >
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
                   <div class="provider-detail-section provider-review-form">
@@ -1148,8 +1188,8 @@
                         for="provider-review-check-docs"
                       >
                         <span id="provider-review-check-docs-label">
-                          Confirmo que revisé nombre, ciudad, consentimiento y
-                          documentación del proveedor.
+                          Confirmo que revisé la información, identidad y
+                          contacto del proveedor.
                         </span>
                       </label>
                     </div>

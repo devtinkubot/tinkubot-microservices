@@ -43,6 +43,7 @@ class ProviderInfo(BaseModel):
     verified: bool
     services: List[str]
     years_of_experience: Optional[int] = None
+    experience_range: Optional[str] = None
     created_at: datetime
     similarity_score: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     matched_service_name: Optional[str] = None

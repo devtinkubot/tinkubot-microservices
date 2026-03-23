@@ -7,8 +7,6 @@ from templates.consentimiento.mensajes import (
     payload_consentimiento_proveedor,
 )
 
-from .construidor_menu import construir_menu_principal
-
 
 def construir_respuesta_solicitud_consentimiento() -> Dict[str, Any]:
     """Construye respuesta completa con solicitud de consentimiento.
@@ -33,15 +31,14 @@ def construir_respuesta_consentimiento_aceptado(
     Returns:
         Diccionario con mensajes de confirmación y menú correspondiente.
     """
-    mensaje_menu = construir_menu_principal(
-        esta_registrado=esta_registrado,
-        menu_limitado=menu_limitado,
-        approved_basic=approved_basic,
-    )
     return {
         "success": True,
         "messages": [
-            {"response": mensaje_menu},
+            {
+                "response": (
+                    "✅ Gracias. Estamos revisando tu información y te avisaremos cuando quede listo."
+                )
+            }
         ],
     }
 

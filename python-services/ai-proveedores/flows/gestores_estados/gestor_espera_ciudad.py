@@ -15,7 +15,7 @@ from services.registro.parser_ubicacion import (
 from infrastructure.database import run_supabase
 from flows.constructores import construir_payload_menu_principal
 from services.servicios_proveedor.utilidades import limpiar_espacios
-from templates.registro import (
+from templates.onboarding.ciudad import (
     error_ciudad_caracteres_invalidos,
     error_ciudad_corta,
     error_ciudad_larga,
@@ -23,9 +23,8 @@ from templates.registro import (
     error_ciudad_no_reconocida,
     mensaje_error_resolviendo_ubicacion,
     solicitar_ciudad_registro,
-    payload_foto_dni_frontal,
-    solicitar_foto_dni_frontal,
 )
+from templates.onboarding.documentos import payload_onboarding_dni_frontal
 
 NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse"
 NOMINATIM_SEARCH_URL = "https://nominatim.openstreetmap.org/search"
@@ -211,6 +210,16 @@ async def manejar_espera_ciudad(
         ciudad_resuelta_texto = await _resolver_ciudad_desde_texto(ciudad)
         ciudad_resuelta = ciudad_resuelta_texto
 
+    tiene_ubicacion_estructurada = bool(
+        ciudad_desde_payload
+        or (latitud is not None and longitud is not None)
+    )
+    if tiene_ubicacion_estructurada and ciudad_resuelta:
+        # WhatsApp suele incluir un texto descriptivo largo junto a la ubicación.
+        # Cuando ya tenemos una ubicación estructurada, confiamos en la ciudad
+        # resuelta y no en el texto crudo, que puede parecer múltiples ciudades.
+        ciudad = ciudad_resuelta
+
     if latitud is not None:
         flujo["location_lat"] = latitud
     if longitud is not None:
@@ -326,5 +335,5 @@ async def manejar_espera_ciudad(
     flujo["state"] = "awaiting_dni_front_photo"
     return {
         "success": True,
-        "messages": [payload_foto_dni_frontal()],
+        "messages": [payload_onboarding_dni_frontal()],
     }

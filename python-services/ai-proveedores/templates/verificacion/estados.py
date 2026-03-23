@@ -19,7 +19,7 @@ def mensaje_proveedor_verificado() -> str:
     """Mensaje cuando el perfil ha sido verificado exitosamente."""
     return (
         "✅ Tu perfil profesional fue aprobado. "
-        "Ya puedes gestionar tu perfil y atender solicitudes de clientes."
+        "Ya puedes recibir solicitudes de clientes."
     )
 
 

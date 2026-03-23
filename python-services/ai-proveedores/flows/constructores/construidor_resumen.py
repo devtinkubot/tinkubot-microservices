@@ -13,7 +13,6 @@ def construir_resumen_confirmacion(flujo: Dict[str, Any]) -> str:
         Texto formateado con todos los datos a confirmar.
     """
     foto_frente = "Recibida" if flujo.get("dni_front_image") else "Pendiente"
-    foto_reverso = "Recibida" if flujo.get("dni_back_image") else "Pendiente"
     foto_perfil = "Recibida" if flujo.get("face_image") else "Pendiente"
 
     ciudad = flujo.get("city") or "No especificada"
@@ -25,7 +24,6 @@ def construir_resumen_confirmacion(flujo: Dict[str, Any]) -> str:
         f"- Ciudad: {ciudad}",
         f"- Nombre: {nombre}",
         f"- Foto Cédula (frente): {foto_frente}",
-        f"- Foto Cédula (reverso): {foto_reverso}",
         f"- Foto de perfil: {foto_perfil}",
     ]
     return "\n".join(lineas)

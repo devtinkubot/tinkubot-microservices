@@ -1,11 +1,39 @@
 """Mensajes para captura incremental de servicios durante el registro."""
 
-from typing import List
+import os
+from typing import Any, Dict, List
+
+SERVICIO_REGISTRO_HEADER_IMAGE_URL_ENV = "WA_PROVIDER_SERVICES_IMAGE_URL"
+
+
+def _resolver_url_guide(env_name: str) -> str:
+    valor = os.getenv(env_name, "").strip()
+    if not valor:
+        raise RuntimeError(
+            f"Falta configurar la variable de entorno {env_name} para la imagen "
+            "de servicios."
+        )
+    return valor
 
 
 def preguntar_servicios_registro() -> str:
     """Solicita el primer servicio del proveedor."""
-    return "Escribe el *servicio principal* que ofreces."
+    return preguntar_servicio_onboarding_registro(indice=1, maximo=3)
+
+
+def payload_servicio_registro_con_imagen(
+    indice: int,
+    maximo: int,
+) -> Dict[str, Any]:
+    """Solicita un servicio con una imagen guía para el registro."""
+    return {
+        "response": preguntar_servicio_onboarding_registro(
+            indice=indice,
+            maximo=maximo,
+        ),
+        "media_url": _resolver_url_guide(SERVICIO_REGISTRO_HEADER_IMAGE_URL_ENV),
+        "media_type": "image",
+    }
 
 
 def preguntar_servicio_onboarding_registro(
@@ -13,11 +41,18 @@ def preguntar_servicio_onboarding_registro(
     maximo: int,
 ) -> str:
     """Solicita un servicio según el slot del onboarding."""
-    if indice <= 1:
-        return preguntar_servicios_registro()
-    if indice >= maximo:
-        return "Escribe el *tercer servicio* que también ofreces."
-    return "Escribe el *segundo servicio* que también ofreces."
+    indice_visible = max(1, int(indice or 1))
+    maximo_visible = max(1, int(maximo or 1))
+    ordinales = {
+        1: "primer",
+        2: "segundo",
+        3: "tercer",
+    }
+    ordinal = ordinales.get(indice_visible, f"servicio {indice_visible}")
+    return (
+        f"*Agregar Servicio {indice_visible} de {maximo_visible}*\n\n"
+        f"Escribe el {ordinal} servicio que ofreces."
+    )
 
 
 def preguntar_siguiente_servicio_registro(

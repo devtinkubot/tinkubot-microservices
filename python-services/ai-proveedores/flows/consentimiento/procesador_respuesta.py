@@ -7,6 +7,7 @@ a la solicitud de consentimiento.
 
 import logging
 import sys
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -15,66 +16,99 @@ from typing import Any, Dict, Optional
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from flows.constructores import (  # noqa: E402
-    construir_respuesta_consentimiento_aceptado,
     construir_respuesta_consentimiento_rechazado,
     construir_respuesta_revision,
-    construir_respuesta_revision_con_menu_limitado,
 )
 from flows.interpretacion import interpretar_respuesta  # noqa: E402
 from flows.sesion import establecer_flujo, reiniciar_flujo  # noqa: E402
 from infrastructure.database import run_supabase  # noqa: E402
-from templates.registro import (  # noqa: E402
-    preguntar_real_phone,
-    solicitar_ciudad_registro,
+from services.registro import (  # noqa: E402
+    registrar_proveedor_en_base_datos,
+    validar_y_construir_proveedor,
 )
 
 logger = logging.getLogger(__name__)
 
 
-def _normalizar_estado_administrativo(
+async def asegurar_proveedor_persistido_tras_consentimiento(
+    *,
+    telefono: str,
+    flujo: Dict[str, Any],
     perfil_proveedor: Optional[Dict[str, Any]],
-) -> str:
-    if not perfil_proveedor:
-        return "pending"
+    supabase: Any = None,
+    subir_medios_fn: Optional[Callable[[str, Dict[str, Any]], Any]] = None,
+) -> tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """Asegura que el proveedor exista en Supabase tras consentir.
 
-    estado_crudo = str(perfil_proveedor.get("status") or "").strip().lower()
-    if estado_crudo in {"approved_basic", "aprobado_basico", "basic_approved"}:
-        return "approved_basic"
-    if estado_crudo in {
-        "profile_pending_review",
-        "perfil_pendiente_revision",
-        "professional_review_pending",
-    }:
-        return "profile_pending_review"
-    if estado_crudo in {"approved", "aprobado", "ok"}:
-        return "approved"
-    if estado_crudo in {"rejected", "rechazado", "denied"}:
-        return "rejected"
-    if estado_crudo in {
-        "interview_required",
-        "entrevista",
-        "auditoria",
-        "needs_info",
-        "falta_info",
-        "faltainfo",
-    }:
-        return "interview_required"
-    if estado_crudo in {"pending", "pendiente", "new"}:
-        return "pending"
-    return "approved" if perfil_proveedor.get("verified") else "pending"
+    Devuelve el perfil persistido y su provider_id cuando logra materializar el alta.
+    """
+    if supabase is None:
+        from principal import supabase as supabase_local  # Import dinámico
 
+        supabase = supabase_local
 
-def _perfil_tiene_menu_limitado(
-    perfil_proveedor: Optional[Dict[str, Any]],
-) -> bool:
-    if not perfil_proveedor:
-        return False
-    if _normalizar_estado_administrativo(perfil_proveedor) in {
-        "approved",
-        "approved_basic",
-    }:
-        return False
-    return _normalizar_estado_administrativo(perfil_proveedor) == "interview_required"
+    proveedor_id = (perfil_proveedor or {}).get("id")
+    if proveedor_id:
+        if subir_medios_fn is not None:
+            try:
+                await subir_medios_fn(str(proveedor_id), flujo)
+            except Exception as exc:
+                logger.warning(
+                    "No se pudieron persistir los medios de identidad para proveedor existente tras consentimiento para %s: %s",
+                    telefono,
+                    exc,
+                )
+        return perfil_proveedor, str(proveedor_id)
+
+    if not supabase:
+        return perfil_proveedor, None
+
+    try:
+        es_valido, mensaje_error, datos_proveedor = validar_y_construir_proveedor(
+            flujo,
+            telefono,
+        )
+        if not es_valido or datos_proveedor is None:
+            logger.warning(
+                "No se pudo reconstruir el proveedor desde el flujo tras consentimiento para %s: %s",
+                telefono,
+                mensaje_error,
+            )
+            return perfil_proveedor, None
+
+        proveedor_registrado = await registrar_proveedor_en_base_datos(
+            supabase,
+            datos_proveedor,
+        )
+        if not proveedor_registrado or not proveedor_registrado.get("id"):
+            logger.warning(
+                "No se pudo completar el alta de proveedor tras consentimiento para %s",
+                telefono,
+            )
+            return perfil_proveedor, None
+
+        provider_id = str(proveedor_registrado.get("id") or "").strip()
+        flujo["provider_id"] = provider_id
+        perfil_proveedor = proveedor_registrado
+
+        if provider_id and subir_medios_fn is not None:
+            try:
+                await subir_medios_fn(provider_id, flujo)
+            except Exception as exc:
+                logger.warning(
+                    "No se pudieron persistir los medios de identidad tras consentimiento para %s: %s",
+                    telefono,
+                    exc,
+                )
+
+        return perfil_proveedor, provider_id
+    except Exception as exc:
+        logger.warning(
+            "Error completando el alta del proveedor tras consentimiento para %s: %s",
+            telefono,
+            exc,
+        )
+        return perfil_proveedor, None
 
 
 def _resolver_opcion_consentimiento(carga: Dict[str, Any]) -> Optional[str]:
@@ -111,6 +145,7 @@ async def procesar_respuesta_consentimiento(  # noqa: C901
     flujo: Dict[str, Any],
     carga: Dict[str, Any],
     perfil_proveedor: Optional[Dict[str, Any]],
+    subir_medios_fn: Optional[Callable[[str, Dict[str, Any]], Any]] = None,
 ) -> Dict[str, Any]:
     """
     Procesar respuesta de consentimiento para registro de proveedores.
@@ -128,7 +163,6 @@ async def procesar_respuesta_consentimiento(  # noqa: C901
 
     from .registrador import registrar_consentimiento
     from .solicitador import solicitar_consentimiento
-    from services.sesion_proveedor import perfil_tiene_menu_limitado
 
     texto_mensaje = (carga.get("message") or carga.get("content") or "").strip()
     opcion = _resolver_opcion_consentimiento(carga)
@@ -151,45 +185,33 @@ async def procesar_respuesta_consentimiento(  # noqa: C901
     proveedor_id = perfil_proveedor.get("id") if perfil_proveedor else None
 
     if opcion == "1":
-        # Determinar si está completamente registrado (no solo consentimiento).
-        # Un usuario con solo consentimiento no está completamente registrado
-        esta_registrado_completo = bool(
-            perfil_proveedor
-            and perfil_proveedor.get("id")
-            and perfil_proveedor.get("full_name")  # Verificar que tiene datos completos
-            # Fase 4: Eliminada verificación de profession
-        )
-        estado_administrativo = _normalizar_estado_administrativo(perfil_proveedor)
-        esta_verificado = estado_administrativo in {"approved", "approved_basic"}
-        menu_limitado = _perfil_tiene_menu_limitado(perfil_proveedor)
-
         flujo["has_consent"] = True
-        post_consent_state = flujo.pop("post_consent_state", None)
-        if post_consent_state:
-            flujo["state"] = post_consent_state
-        elif not esta_registrado_completo:
-            requires_real_phone = bool(
-                flujo.get("requires_real_phone")
-                and not (
-                    flujo.get("real_phone")
-                    or (perfil_proveedor or {}).get("real_phone")
-                )
+
+        perfil_proveedor, proveedor_id = (
+            await asegurar_proveedor_persistido_tras_consentimiento(
+                telefono=telefono,
+                flujo=flujo,
+                perfil_proveedor=perfil_proveedor,
+                supabase=supabase,
+                subir_medios_fn=subir_medios_fn,
             )
-            flujo["state"] = (
-                "awaiting_real_phone" if requires_real_phone else "awaiting_city"
+        )
+
+        if not proveedor_id:
+            logger.warning(
+                "No se pudo resolver provider_id para consentimiento aceptado de %s",
+                telefono,
             )
-        elif not esta_verificado:
-            flujo["state"] = (
-                "awaiting_menu_option" if menu_limitado else "pending_verification"
-            )
-            flujo["menu_limitado"] = menu_limitado
-        else:
-            flujo["state"] = "awaiting_menu_option"
-            flujo["approved_basic"] = estado_administrativo == "approved_basic"
-            flujo["profile_pending_review"] = (
-                estado_administrativo == "profile_pending_review"
-            )
-        await establecer_flujo(telefono, flujo)
+            return {
+                "success": True,
+                "messages": [
+                    {
+                        "response": (
+                            "✅ Gracias. Estamos revisando tu información y te avisaremos cuando quede listo."
+                        )
+                    }
+                ],
+            }
 
         if supabase and proveedor_id:
             try:
@@ -212,35 +234,28 @@ async def procesar_respuesta_consentimiento(  # noqa: C901
                     exc,
                 )
 
+        flujo.update(
+            {
+                "state": "pending_verification",
+                "has_consent": True,
+                "menu_limitado": False,
+                "approved_basic": False,
+                "profile_pending_review": False,
+                "registration_allowed": False,
+                "awaiting_verification": True,
+            }
+        )
+        await establecer_flujo(telefono, flujo)
+
         await registrar_consentimiento(proveedor_id, telefono, carga, "accepted")
         logger.info("Consentimiento aceptado por proveedor %s", telefono)
 
-        if flujo.get("state") == "awaiting_real_phone":
-            return {
-                "success": True,
-                "messages": [
-                    {"response": preguntar_real_phone()},
-                ],
-            }
-
-        if flujo.get("state") == "awaiting_city":
-            return {
-                "success": True,
-                "messages": [solicitar_ciudad_registro()],
-            }
-
-        if flujo.get("state") == "pending_verification" and perfil_proveedor:
-            nombre_proveedor = perfil_proveedor["full_name"]
-            return construir_respuesta_revision(nombre_proveedor)
-        if (
-            flujo.get("state") == "awaiting_menu_option"
-            and menu_limitado
-            and perfil_proveedor
-        ):
-            nombre_proveedor = perfil_proveedor["full_name"]
-            return construir_respuesta_revision_con_menu_limitado(nombre_proveedor)
-
-        return construir_respuesta_consentimiento_aceptado(esta_registrado_completo)
+        nombre_proveedor = (
+            (perfil_proveedor or {}).get("full_name")
+            or flujo.get("full_name")
+            or "Proveedor"
+        )
+        return construir_respuesta_revision(nombre_proveedor)
 
     # Rechazo de consentimiento
     if supabase and proveedor_id:

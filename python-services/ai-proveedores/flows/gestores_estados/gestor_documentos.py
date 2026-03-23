@@ -1,5 +1,6 @@
 """Manejadores de estados para documentos de registro y actualización."""
 
+import logging
 from typing import Any, Dict, Optional
 
 from flows.constructores import (
@@ -13,15 +14,16 @@ from templates.interfaz import (
     error_actualizar_documentos,
     solicitar_dni_actualizacion,
 )
-from templates.registro import (
-    payload_foto_dni_frontal,
-    payload_experiencia_registro,
-    payload_selfie_registro,
-    solicitar_ciudad_actualizacion,
-    solicitar_foto_dni_frontal,
-    solicitar_foto_dni_trasera,
-    solicitar_foto_dni_trasera_requerida,
+from templates.onboarding.ciudad import solicitar_ciudad_actualizacion
+from templates.onboarding.experiencia import payload_experiencia_onboarding
+from templates.onboarding.documentos import (
+    payload_onboarding_dni_frontal,
+    payload_onboarding_foto_perfil,
 )
+from templates.registro.documentacion import payload_foto_dni_frontal
+
+
+logger = logging.getLogger(__name__)
 
 
 def manejar_inicio_documentos(flujo: Dict[str, Any]) -> Dict[str, Any]:
@@ -42,38 +44,45 @@ def manejar_inicio_actualizacion_documentos(flujo: Dict[str, Any]) -> Dict[str, 
     }
 
 
-def manejar_dni_frontal(
+async def manejar_dni_frontal(
     flujo: Dict[str, Any],
     carga: Dict[str, Any],
+    telefono: Optional[str] = None,
+    subir_medios_identidad: Any = None,
 ) -> Dict[str, Any]:
     """Procesa foto frontal del DNI."""
     imagen_b64 = extraer_primera_imagen_base64(carga)
     if not imagen_b64:
         return {
             "success": True,
-            "messages": [payload_foto_dni_frontal()],
+            "messages": [payload_onboarding_dni_frontal()],
         }
+    if telefono:
+        flujo["phone"] = telefono
+    flujo.pop("dni_front_photo_url", None)
     flujo["dni_front_image"] = imagen_b64
+    if subir_medios_identidad is not None:
+        try:
+            await subir_medios_identidad(
+                flujo.get("provider_id"),
+                flujo,
+            )
+        except Exception:
+            logger.warning("No se pudo persistir de inmediato la foto frontal del DNI")
     flujo["state"] = "awaiting_face_photo"
     return {
         "success": True,
-        "messages": [payload_selfie_registro()],
+        "messages": [payload_onboarding_foto_perfil()],
     }
 
 
 def manejar_dni_trasera(flujo: Dict[str, Any], carga: Dict[str, Any]) -> Dict[str, Any]:
-    """Procesa foto trasera del DNI."""
-    imagen_b64 = extraer_primera_imagen_base64(carga)
-    if not imagen_b64:
-        return {
-            "success": True,
-            "messages": [{"response": solicitar_foto_dni_trasera_requerida()}],
-        }
-    flujo["dni_back_image"] = imagen_b64
+    """Compatibilidad para estados legados de identidad."""
+    _ = extraer_primera_imagen_base64(carga)
     flujo["state"] = "awaiting_face_photo"
     return {
         "success": True,
-        "messages": [payload_selfie_registro()],
+        "messages": [payload_onboarding_foto_perfil()],
     }
 
 
@@ -85,20 +94,13 @@ def manejar_dni_frontal_actualizacion(
     if not imagen_b64:
         return {
             "success": True,
-            "messages": [payload_foto_dni_frontal()],
+            "messages": [payload_onboarding_dni_frontal()],
         }
     flujo["dni_front_image"] = imagen_b64
-    if flujo.get("profile_edit_mode") == "personal_dni_front_update":
-        flujo["state"] = "awaiting_dni_back_photo_update"
-        flujo["dni_back_image"] = None
-        return {
-            "success": True,
-            "messages": [{"response": "__persistir_dni_frontal__"}],
-        }
-    flujo["state"] = "awaiting_dni_back_photo_update"
+    flujo["state"] = "awaiting_menu_option"
     return {
         "success": True,
-        "messages": [{"response": solicitar_foto_dni_trasera()}],
+        "messages": [{"response": "__persistir_dni_frontal__"}],
     }
 
 
@@ -108,16 +110,15 @@ async def manejar_dni_trasera_actualizacion(
     proveedor_id: Optional[str],
     subir_medios_identidad,
 ) -> Dict[str, Any]:
-    """Procesa foto trasera del DNI y persiste actualización post-registro."""
+    """Persiste la foto frontal del DNI en la actualización post-registro."""
     imagen_b64 = extraer_primera_imagen_base64(carga)
-    if not imagen_b64:
+    if imagen_b64 and not flujo.get("dni_front_image"):
+        flujo["dni_front_image"] = imagen_b64
+    if not flujo.get("dni_front_image"):
         return {
             "success": True,
-            "messages": [{"response": solicitar_foto_dni_trasera_requerida()}],
+            "messages": [{"response": payload_foto_dni_frontal()}],
         }
-
-    if imagen_b64:
-        flujo["dni_back_image"] = imagen_b64
     if not proveedor_id or not subir_medios_identidad:
         flujo["state"] = "awaiting_menu_option"
         return {
@@ -138,10 +139,8 @@ async def manejar_dni_trasera_actualizacion(
         subir_medios_identidad,
         proveedor_id,
         flujo.get("dni_front_image"),
-        flujo.get("dni_back_image"),
     )
     flujo.pop("dni_front_image", None)
-    flujo.pop("dni_back_image", None)
     flujo.pop("profile_edit_mode", None)
     retorno_estado = str(flujo.pop("profile_return_state", "") or "").strip()
     flujo["state"] = retorno_estado or "awaiting_menu_option"
@@ -189,17 +188,33 @@ async def manejar_dni_trasera_actualizacion(
     }
 
 
-def manejar_selfie_registro(flujo: Dict[str, Any], carga: Dict[str, Any]) -> Dict[str, Any]:
+async def manejar_selfie_registro(
+    flujo: Dict[str, Any],
+    carga: Dict[str, Any],
+    telefono: Optional[str] = None,
+    subir_medios_identidad: Any = None,
+) -> Dict[str, Any]:
     """Procesa selfie del registro."""
     imagen_b64 = extraer_primera_imagen_base64(carga)
     if not imagen_b64:
         return {
             "success": True,
-            "messages": [payload_selfie_registro()],
+            "messages": [payload_onboarding_foto_perfil()],
         }
+    if telefono:
+        flujo["phone"] = telefono
+    flujo.pop("face_photo_url", None)
     flujo["face_image"] = imagen_b64
+    if subir_medios_identidad is not None:
+        try:
+            await subir_medios_identidad(
+                flujo.get("provider_id"),
+                flujo,
+            )
+        except Exception:
+            logger.warning("No se pudo persistir de inmediato la foto de perfil")
     flujo["state"] = "awaiting_experience"
     return {
         "success": True,
-        "messages": [payload_experiencia_registro()],
+        "messages": [payload_experiencia_onboarding()],
     }

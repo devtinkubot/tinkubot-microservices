@@ -7,14 +7,14 @@ from flows.constructores import (
     construir_menu_servicios,
     construir_payload_menu_principal,
 )
-from services import listar_certificados_proveedor
+from services import asegurar_proveedor_borrador, listar_certificados_proveedor
 from services.servicios_proveedor.constantes import SERVICIOS_MAXIMOS
 from .gestor_vistas_perfil import render_profile_view
 from templates.registro import (
     mensaje_inicio_perfil_profesional,
     payload_certificado_opcional,
 )
-from templates.interfaz.registro_inicio import MENU_ID_REGISTRARSE
+from templates.onboarding.inicio import ONBOARDING_REGISTER_BUTTON_ID
 from templates.interfaz import (
     MENU_ID_ELIMINAR_REGISTRO,
     MENU_ID_INFO_PERSONAL,
@@ -39,9 +39,9 @@ from templates.interfaz import (
     SUBMENU_ID_PROF_REDES,
     SUBMENU_ID_PROF_SERVICIOS,
 )
+from templates.onboarding.ciudad import solicitar_ciudad_registro
 from templates.registro import (
     PROMPT_INICIO_REGISTRO,
-    solicitar_ciudad_registro,
 )
 
 logger = logging.getLogger(__name__)
@@ -304,6 +304,8 @@ async def manejar_estado_menu(
     opcion_menu: Optional[str],
     esta_registrado: bool,
     menu_limitado: bool = False,
+    supabase: Any = None,
+    telefono: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Procesa el menú principal y devuelve la respuesta."""
     logger.info(
@@ -321,7 +323,7 @@ async def manejar_estado_menu(
     if not esta_registrado:
         if (
             opcion == "1"
-            or opcion == MENU_ID_REGISTRARSE
+            or opcion == ONBOARDING_REGISTER_BUTTON_ID
             or "registro" in texto_minusculas
             or "registrarse" in texto_minusculas
         ):
@@ -331,6 +333,14 @@ async def manejar_estado_menu(
             )
             logger.info("📤 Respuesta a devolver: '%s'", PROMPT_INICIO_REGISTRO)
             flujo["mode"] = "registration"
+            borrador = None
+            if supabase and telefono:
+                borrador = await asegurar_proveedor_borrador(
+                    supabase=supabase,
+                    telefono=telefono,
+                )
+            if borrador and borrador.get("id"):
+                flujo["provider_id"] = str(borrador.get("id") or "").strip()
             flujo["state"] = "awaiting_city"
             respuesta = {
                 "success": True,

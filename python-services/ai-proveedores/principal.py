@@ -42,11 +42,33 @@ from services.disponibilidad_interceptacion import (
 )
 from services.disponibilidad_admin import router as router_disponibilidad_admin
 from services.registro import limpiar_onboarding_proveedores
+from services.registro.eliminacion_proveedor import eliminar_registro_proveedor
+from services.registro.checkpoint_onboarding import (
+    es_perfil_onboarding_completo,
+    inferir_checkpoint_onboarding_desde_perfil,
+    persistir_checkpoint_onboarding,
+)
+from services.sesion_proveedor import sincronizar_flujo_con_perfil
 from supabase import Client, create_client
 from templates.registro import (
     PROFILE_SINGLE_USE_CONTROL_IDS,
     SERVICE_CONFIRM_ID,
     SERVICE_CORRECT_ID,
+    payload_servicio_registro_con_imagen,
+)
+from templates.interfaz import payload_confirmacion_servicios_menu
+from templates.onboarding import (
+    payload_experiencia_onboarding,
+    payload_onboarding_dni_frontal,
+    payload_onboarding_foto_perfil,
+    payload_menu_registro_proveedor,
+    solicitar_ciudad_registro,
+)
+from templates.sesion.manejo import (
+    informar_reinicio_con_eliminacion,
+    informar_reinicio_conversacion,
+    informar_reanudacion_inactividad,
+    informar_timeout_inactividad,
 )
 
 # Configuración desde variables de entorno
@@ -64,6 +86,8 @@ CLAVE_DEDUPE_INTERACTIVE_ACTION = "prov_interactive_action_dedupe:{}:{}:{}:{}"
 TTL_DEDUPE_INTERACTIVE_SEGUNDOS = int(
     os.getenv("PROVIDER_INTERACTIVE_DEDUPE_TTL_SECONDS", "900")
 )
+TIEMPO_INACTIVIDAD_SESION_SEGUNDOS = configuracion.ttl_flujo_segundos
+TIEMPO_AVISO_INACTIVIDAD_SEGUNDOS = 300
 ONBOARDING_STATES = {
     None,
     "pending_verification",
@@ -77,6 +101,16 @@ ONBOARDING_STATES = {
     "awaiting_add_another_service",
     "awaiting_services_confirmation",
     "confirm",
+}
+
+ONBOARDING_REANUDACION_STATES = {
+    "awaiting_menu_option",
+    "awaiting_city",
+    "awaiting_dni_front_photo",
+    "awaiting_face_photo",
+    "awaiting_experience",
+    "awaiting_specialty",
+    "awaiting_services_confirmation",
 }
 
 # Estados de menú post-registro (deben ignorar flujo de disponibilidad)
@@ -137,6 +171,103 @@ MEDIA_STATES = {
     "awaiting_dni_back_photo_update",
     "awaiting_face_photo_update",
 }
+
+
+def _normalizar_datetime_utc(valor: str) -> Optional[datetime]:
+    if not valor:
+        return None
+    try:
+        instante = datetime.fromisoformat(valor)
+    except ValueError:
+        return None
+    if instante.tzinfo is None:
+        return instante.replace(tzinfo=timezone.utc)
+    return instante.astimezone(timezone.utc)
+
+
+def _sesion_expirada_por_inactividad(
+    flujo: Dict[str, Any],
+    ahora_utc: datetime,
+    *,
+    umbral_segundos: int = TIEMPO_INACTIVIDAD_SESION_SEGUNDOS,
+) -> bool:
+    ultima_vista = (
+        flujo.get("last_seen_at")
+        or flujo.get("last_seen_at_prev")
+        or flujo.get("onboarding_step_updated_at")
+        or flujo.get("updated_at")
+    )
+    if not isinstance(ultima_vista, str):
+        return False
+    ultima_vista_dt = _normalizar_datetime_utc(ultima_vista)
+    if ultima_vista_dt is None:
+        return False
+    return (ahora_utc - ultima_vista_dt).total_seconds() > umbral_segundos
+
+
+def _rehidratar_estado_onboarding_desde_supabase(
+    flujo: Dict[str, Any],
+    perfil_proveedor: Optional[Dict[str, Any]],
+) -> bool:
+    """Reconstruye el estado del onboarding si Redis llegó vacío o incompleto."""
+    if flujo.get("state") or not perfil_proveedor:
+        return False
+
+    checkpoint = (
+        perfil_proveedor.get("onboarding_step")
+        or inferir_checkpoint_onboarding_desde_perfil(perfil_proveedor)
+    )
+    if not checkpoint:
+        return False
+
+    flujo["state"] = checkpoint
+    flujo["onboarding_step"] = checkpoint
+    if perfil_proveedor.get("onboarding_step_updated_at") is not None:
+        flujo["onboarding_step_updated_at"] = perfil_proveedor.get(
+            "onboarding_step_updated_at"
+        )
+    if checkpoint == "awaiting_menu_option" and not es_perfil_onboarding_completo(
+        perfil_proveedor
+    ):
+        flujo["mode"] = "registration"
+    elif checkpoint == "awaiting_menu_option":
+        flujo.pop("mode", None)
+    return True
+
+
+def _construir_reanudacion_onboarding(
+    flujo: Dict[str, Any],
+) -> Dict[str, Any]:
+    estado = str(flujo.get("state") or "").strip()
+    if estado == "awaiting_menu_option":
+        prompt = payload_menu_registro_proveedor()
+    elif estado == "awaiting_city":
+        prompt = solicitar_ciudad_registro()
+    elif estado == "awaiting_dni_front_photo":
+        prompt = payload_onboarding_dni_frontal()
+    elif estado == "awaiting_face_photo":
+        prompt = payload_onboarding_foto_perfil()
+    elif estado == "awaiting_experience":
+        prompt = payload_experiencia_onboarding()
+    elif estado == "awaiting_specialty":
+        prompt = payload_servicio_registro_con_imagen(indice=1, maximo=3)
+    elif estado == "awaiting_services_confirmation":
+        prompt = payload_confirmacion_servicios_menu(list(flujo.get("services") or []))
+    else:
+        prompt = {
+            "response": (
+                "Tu proceso de registro sigue activo. "
+                "Responde para continuar donde te quedaste."
+            )
+        }
+
+    return {
+        "success": True,
+        "messages": [
+            {"response": informar_reanudacion_inactividad()},
+            prompt,
+        ],
+    }
 
 # Configurar logging
 logging.basicConfig(level=getattr(logging, NIVEL_LOG))
@@ -223,7 +354,10 @@ class SolicitudAutoAsignacionGovernanceReviews(BaseModel):
 
 @app.on_event("startup")
 async def startup_event():
-    logger.info("✅ Session Timeout simple habilitado (5 minutos de inactividad)")
+    logger.info(
+        "✅ Session Timeout simple habilitado (%ss de inactividad)",
+        TIEMPO_INACTIVIDAD_SESION_SEGUNDOS,
+    )
     if supabase:
         app.state.onboarding_cleanup_task = asyncio.create_task(
             _bucle_limpieza_onboarding()
@@ -735,6 +869,47 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                 _resolver_message_id(carga),
             )
             return {"success": True, "messages": []}
+
+        perfil_proveedor = await obtener_perfil_proveedor_cacheado(telefono)
+        flujo = sincronizar_flujo_con_perfil(flujo, perfil_proveedor)
+        _rehidratar_estado_onboarding_desde_supabase(flujo, perfil_proveedor)
+
+        ahora_utc = datetime.now(timezone.utc)
+        estado_actual = str(flujo.get("state") or "").strip()
+        inactividad_critica = _sesion_expirada_por_inactividad(
+            flujo,
+            ahora_utc,
+            umbral_segundos=TIEMPO_INACTIVIDAD_SESION_SEGUNDOS,
+        )
+        if inactividad_critica and estado_actual in ONBOARDING_STATES:
+            resultado_eliminacion = None
+            if supabase:
+                resultado_eliminacion = await eliminar_registro_proveedor(
+                    supabase, telefono
+                )
+            await reiniciar_flujo(telefono)
+            flujo.clear()
+            flujo.update({"state": None, "mode": "registration"})
+            mensajes = (
+                [{"response": informar_reinicio_con_eliminacion()}]
+                if resultado_eliminacion and resultado_eliminacion.get("success")
+                else [{"response": informar_reinicio_conversacion()}]
+            )
+            return {"success": True, "messages": mensajes}
+
+        inactividad_reanudable = _sesion_expirada_por_inactividad(
+            flujo,
+            ahora_utc,
+            umbral_segundos=TIEMPO_AVISO_INACTIVIDAD_SEGUNDOS,
+        )
+        if inactividad_reanudable and estado_actual in ONBOARDING_REANUDACION_STATES:
+            flujo["last_seen_at_prev"] = flujo.get("last_seen_at") or ahora_utc.isoformat()
+            flujo["last_seen_at"] = ahora_utc.isoformat()
+            await establecer_flujo(telefono, flujo)
+            return normalizar_respuesta_whatsapp(
+                _construir_reanudacion_onboarding(flujo)
+            )
+
         hay_contexto_disponibilidad = await _hay_contexto_disponibilidad_activo(
             telefono_disponibilidad
         )
@@ -763,14 +938,28 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                 await establecer_flujo(telefono, flujo)
             return normalizar_respuesta_whatsapp(respuesta_disponibilidad)
 
-        perfil_proveedor = await obtener_perfil_proveedor_cacheado(telefono)
+        ahora_utc = datetime.now(timezone.utc)
+        if _sesion_expirada_por_inactividad(flujo, ahora_utc):
+            await establecer_flujo(
+                telefono,
+                {
+                    "last_seen_at": ahora_utc.isoformat(),
+                    "last_seen_at_prev": ahora_utc.isoformat(),
+                },
+            )
+            flujo = await obtener_flujo(telefono)
+
         tiene_real_phone = bool(
             flujo.get("real_phone") or (perfil_proveedor or {}).get("real_phone")
         )
         flujo["phone_user"] = phone_user
+        flujo["phone"] = telefono
         flujo["requires_real_phone"] = bool(is_lid and not tiene_real_phone)
         if not is_lid and phone_user and not flujo.get("real_phone"):
             flujo["real_phone"] = phone_user
+        last_seen_previo = flujo.get("last_seen_at") or ahora_utc.isoformat()
+        flujo["last_seen_at_prev"] = last_seen_previo
+        flujo["last_seen_at"] = ahora_utc.isoformat()
         resultado_manejo = await manejar_mensaje(
             flujo=flujo,
             telefono=telefono,
@@ -787,10 +976,24 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
         respuesta = normalizar_respuesta_whatsapp(resultado_manejo.get("response", {}))
         nuevo_flujo = resultado_manejo.get("new_flow")
         persistir_flujo = resultado_manejo.get("persist_flow", True)
-        if nuevo_flujo is not None:
+        flujo_a_persistir = nuevo_flujo if nuevo_flujo is not None else flujo
+        if persistir_flujo:
+            if supabase:
+                try:
+                    await persistir_checkpoint_onboarding(
+                        supabase,
+                        flujo_a_persistir,
+                        perfil_proveedor=flujo_a_persistir,
+                    )
+                except Exception as exc:
+                    logger.debug(
+                        "No se pudo persistir checkpoint onboarding para %s: %s",
+                        telefono,
+                        exc,
+                    )
+            await establecer_flujo(telefono, flujo_a_persistir)
+        elif nuevo_flujo is not None:
             await establecer_flujo(telefono, nuevo_flujo)
-        elif persistir_flujo:
-            await establecer_flujo(telefono, flujo)
         return respuesta
 
     except Exception as error:

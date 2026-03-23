@@ -8,7 +8,11 @@ from infrastructure.database import run_supabase
 
 from .actualizar_servicios import actualizar_servicios
 from .actualizar_servicios import _obtener_telefono_proveedor
-from .estado_operativo import normalizar_experiencia, perfil_profesional_completo
+from .estado_operativo import (
+    formatear_rango_experiencia,
+    normalizar_experiencia,
+    perfil_profesional_completo,
+)
 from .redes_sociales_slots import resolver_redes_sociales
 
 logger = logging.getLogger(__name__)
@@ -70,6 +74,7 @@ async def actualizar_perfil_profesional(
     payload_actualizacion = {
         "updated_at": datetime.utcnow().isoformat(),
         "experience_years": experiencia_normalizada,
+        "experience_range": formatear_rango_experiencia(experiencia_normalizada),
         "social_media_url": social_media_url,
         "social_media_type": social_media_type,
         "facebook_username": redes_sociales["facebook_username"],
@@ -108,6 +113,7 @@ async def actualizar_perfil_profesional(
         "success": True,
         "services": servicios_actualizados,
         "experience_years": experiencia_normalizada,
+        "experience_range": formatear_rango_experiencia(experiencia_normalizada),
         "social_media_url": social_media_url,
         "social_media_type": social_media_type,
         "facebook_username": redes_sociales["facebook_username"],

@@ -72,11 +72,17 @@ async def eliminar_registro_proveedor(
         resultado["deleted_from_db"] = True
         logger.info("✅ Proveedor %s eliminado de la base de datos", telefono)
 
-        from flows.sesion import marcar_perfil_eliminado
+        from flows.sesion import (
+            limpiar_claves_proveedor,
+            limpiar_marca_perfil_eliminado,
+            marcar_perfil_eliminado,
+        )
         from flows.sesion.gestor_flujo import reiniciar_flujo
 
         resultado["deleted_from_cache"] = await marcar_perfil_eliminado(telefono)
         await reiniciar_flujo(telefono)
+        await limpiar_claves_proveedor(telefono)
+        await limpiar_marca_perfil_eliminado(telefono)
         logger.info("✅ Caché y flujo conversacional limpiados para %s", telefono)
 
         resultado["success"] = True

@@ -10,40 +10,36 @@ async def actualizar_documentos_identidad(
     servicio_almacenamiento,
     proveedor_id: str,
     dni_front_base64: str | None,
-    dni_back_base64: str | None,
 ) -> Dict[str, Any]:
-    """Actualiza frontal y/o reverso de cédula para un proveedor existente."""
+    """Actualiza la foto frontal de cédula para un proveedor existente."""
     if not proveedor_id:
         raise ValueError("proveedor_id es requerido")
 
-    if not dni_front_base64 and not dni_back_base64:
+    if not dni_front_base64:
         return {
             "success": False,
-            "message": "Se requiere al menos una foto de la cédula.",
+            "message": "Se requiere la foto frontal de la cédula.",
         }
 
     try:
-        payload = {}
-        if dni_front_base64:
-            payload["dni_front_image"] = dni_front_base64
-        if dni_back_base64:
-            payload["dni_back_image"] = dni_back_base64
         await servicio_almacenamiento(
             proveedor_id,
-            payload,
+            {"dni_front_image": dni_front_base64},
         )
-        logger.info("✅ Documentos de identidad actualizados para proveedor %s", proveedor_id)
+        logger.info(
+            "✅ Cédula frontal actualizada para proveedor %s", proveedor_id
+        )
         return {
             "success": True,
-            "message": "Documentos actualizados correctamente.",
+            "message": "Cédula actualizada correctamente.",
         }
     except Exception as exc:
         logger.error(
-            "❌ Error actualizando documentos de identidad para %s: %s",
+            "❌ Error actualizando cédula frontal para %s: %s",
             proveedor_id,
             exc,
         )
         return {
             "success": False,
-            "message": "No se pudieron actualizar los documentos. Intenta nuevamente.",
+            "message": "No se pudo actualizar la cédula. Intenta nuevamente.",
         }

@@ -1,10 +1,7 @@
 export type ProviderStatus =
   | "pending"
-  | "approved_basic"
-  | "profile_pending_review"
   | "approved"
-  | "rejected"
-  | "interview_required";
+  | "rejected";
 
 export interface ProviderDocuments {
   dniFront?: string | null;
@@ -42,8 +39,12 @@ export interface ProviderRecord {
   servicesRaw?: string | null;
   servicesList?: string[];
   experienceYears?: number | null;
+  experienceRange?: string | null;
   socialMediaUrl?: string | null;
   socialMediaType?: string | null;
+  documentFirstNames?: string | null;
+  documentLastNames?: string | null;
+  documentIdNumber?: string | null;
   hasConsent?: boolean | null;
   rating?: number | null;
   documents?: ProviderDocuments;
@@ -60,6 +61,9 @@ export interface ProviderActionPayload {
   notes?: string;
   phone?: string;
   message?: string;
+  documentFirstNames?: string;
+  documentLastNames?: string;
+  documentIdNumber?: string;
 }
 
 export interface ProviderActionResponse {

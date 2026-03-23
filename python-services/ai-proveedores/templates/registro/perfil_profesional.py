@@ -12,11 +12,6 @@ SERVICE_ADD_YES_ID = "profile_add_another_service_yes"
 SERVICE_ADD_NO_ID = "profile_add_another_service_no"
 SERVICE_CONFIRM_ID = "profile_service_confirm"
 SERVICE_CORRECT_ID = "profile_service_correct"
-EXPERIENCE_UNDER_1_ID = "provider_experience_under_1"
-EXPERIENCE_1_3_ID = "provider_experience_1_3"
-EXPERIENCE_3_5_ID = "provider_experience_3_5"
-EXPERIENCE_5_10_ID = "provider_experience_5_10"
-EXPERIENCE_10_PLUS_ID = "provider_experience_10_plus"
 PROFILE_SINGLE_USE_CONTROL_IDS = {
     SOCIAL_SKIP_ID,
     CERTIFICATE_SKIP_ID,
@@ -36,48 +31,6 @@ PROFILE_CONTROL_IDS = {
 
 def preguntar_experiencia_general() -> str:
     return "Selecciona tus *años de experiencia*."
-
-
-def payload_experiencia_registro() -> Dict[str, Any]:
-    return {
-        "response": "Selecciona tus *años de experiencia*.",
-        "ui": {
-            "type": "list",
-            "id": "provider_registration_experience_v1",
-            "header_type": "text",
-            "header_text": "Años de experiencia",
-            "list_button_text": "Seleccionar",
-            "list_section_title": "Elige un rango",
-            "footer_text": "Podrás actualizarlo más adelante si lo necesitas.",
-            "options": [
-                {
-                    "id": EXPERIENCE_UNDER_1_ID,
-                    "title": "Menos de 1 año",
-                    "description": "Si estás empezando",
-                },
-                {
-                    "id": EXPERIENCE_1_3_ID,
-                    "title": "1 a 3 años",
-                    "description": "Experiencia inicial",
-                },
-                {
-                    "id": EXPERIENCE_3_5_ID,
-                    "title": "3 a 5 años",
-                    "description": "Ya trabajas con frecuencia",
-                },
-                {
-                    "id": EXPERIENCE_5_10_ID,
-                    "title": "5 a 10 años",
-                    "description": "Experiencia sólida",
-                },
-                {
-                    "id": EXPERIENCE_10_PLUS_ID,
-                    "title": "Más de 10 años",
-                    "description": "Amplia trayectoria",
-                },
-            ],
-        },
-    }
 
 
 def mensaje_inicio_perfil_profesional() -> str:
@@ -200,6 +153,7 @@ def payload_agregar_otro_servicio(
 def construir_resumen_confirmacion_perfil_profesional(
     *,
     experience_years: Any,
+    experience_range: Any = None,
     social_media_url: Any,
     social_media_type: Any = None,
     facebook_username: Any = None,
@@ -207,11 +161,13 @@ def construir_resumen_confirmacion_perfil_profesional(
     certificate_uploaded: bool,
     services: list[str],
 ) -> str:
-    experiencia = (
-        f"{experience_years} año{'s' if int(experience_years) != 1 else ''}"
-        if isinstance(experience_years, int) and experience_years >= 0
-        else "No registrada"
-    )
+    experiencia = str(experience_range or "").strip()
+    if not experiencia:
+        experiencia = (
+            f"{experience_years} año{'s' if int(experience_years) != 1 else ''}"
+            if isinstance(experience_years, int) and experience_years >= 0
+            else "No registrada"
+        )
     redes = resolver_redes_sociales(
         {
             "social_media_url": social_media_url,

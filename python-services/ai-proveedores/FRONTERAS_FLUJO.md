@@ -6,9 +6,11 @@ Este documento separa el flujo de onboarding del menú operativo del proveedor p
 
 Estos archivos forman parte del alta de proveedores y deben mantenerse juntos:
 
-- `templates/interfaz/registro_inicio.py`
+- `templates/onboarding/inicio.py`
 - `templates/registro/pasos_registro.py`
-- `templates/registro/ubicacion.py`
+- `templates/onboarding/ciudad.py`
+- `templates/onboarding/documentos.py`
+- `templates/onboarding/experiencia.py`
 - `templates/registro/documentacion.py`
 - `templates/registro/perfil_profesional.py`
 - `templates/registro/servicios.py`

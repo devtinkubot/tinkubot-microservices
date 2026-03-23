@@ -100,6 +100,22 @@ async def reiniciar_flujo(telefono: str) -> None:
     await cliente_redis.delete(CLAVE_FLUJO.format(telefono))
 
 
+async def limpiar_claves_proveedor(telefono: str) -> int:
+    """Elimina todas las claves Redis del proveedor asociadas al teléfono."""
+    telefono_limpio = (telefono or "").strip()
+    if not telefono_limpio:
+        return 0
+
+    patrones = [
+        f"prov_*{telefono_limpio}*",
+        f"prov_*{telefono_limpio.replace('@s.whatsapp.net', '')}*",
+    ]
+    eliminadas = 0
+    for patron in patrones:
+        eliminadas += await cliente_redis.delete_by_pattern(patron)
+    return eliminadas
+
+
 def es_disparador_registro(texto: str) -> bool:
     """
     Determinar si el texto indica una intención de registro.

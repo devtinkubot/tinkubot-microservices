@@ -7,7 +7,7 @@ from templates.interfaz.menus import (
     mensaje_menu_principal_proveedor,
     payload_menu_post_registro_proveedor,
 )
-from templates.interfaz.registro_inicio import payload_menu_registro_proveedor
+from templates.onboarding.inicio import payload_menu_registro_proveedor
 from templates.registro.pasos_registro import mensaje_guia_proveedor
 
 

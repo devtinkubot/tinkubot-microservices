@@ -60,6 +60,11 @@ def _ubicacion_proveedor(proveedor: Dict[str, Any]) -> str:
 
 
 def _experiencia_proveedor(proveedor: Dict[str, Any]) -> str:
+    experiencia_rango = proveedor.get("experience_range") or proveedor.get(
+        "experienceRange"
+    )
+    if isinstance(experiencia_rango, str) and experiencia_rango.strip():
+        return experiencia_rango.strip()
     experiencia = (
         proveedor.get("experience_years")
         or proveedor.get("experienceYears")

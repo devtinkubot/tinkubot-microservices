@@ -5,9 +5,9 @@ from typing import Any, Dict, Optional
 
 from services.registro.normalizacion import _normalizar_telefono_ecuador
 from services.servicios_proveedor.utilidades import limpiar_espacios
+from templates.onboarding.ciudad import preguntar_ciudad
 from templates.registro import (
     error_real_phone_invalido,
-    preguntar_ciudad,
 )
 
 

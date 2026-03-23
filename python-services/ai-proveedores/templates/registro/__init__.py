@@ -35,11 +35,6 @@ from .pasos_registro import (
 )
 from .perfil_profesional import (
     CERTIFICATE_SKIP_ID,
-    EXPERIENCE_10_PLUS_ID,
-    EXPERIENCE_1_3_ID,
-    EXPERIENCE_3_5_ID,
-    EXPERIENCE_5_10_ID,
-    EXPERIENCE_UNDER_1_ID,
     construir_resumen_confirmacion_perfil_profesional,
     mensaje_menu_edicion_perfil_profesional,
     PROFILE_CONTROL_IDS,
@@ -54,7 +49,6 @@ from .perfil_profesional import (
     mensaje_error_certificado_invalido,
     mensaje_inicio_perfil_profesional,
     mensaje_minimo_servicios_pendiente,
-    payload_experiencia_registro,
     payload_agregar_otro_servicio,
     payload_confirmacion_servicio_perfil,
     payload_certificado_opcional,
@@ -83,28 +77,13 @@ from .servicios import (
     mensaje_servicio_duplicado_registro,
     mensaje_servicio_eliminado_registro,
     preguntar_servicio_onboarding_registro,
+    payload_servicio_registro_con_imagen,
     preguntar_nuevo_servicio_reemplazo,
     preguntar_numero_servicio_eliminar,
     preguntar_numero_servicio_reemplazar,
     preguntar_servicios_registro,
     preguntar_siguiente_servicio_registro,
 )
-from .ubicacion import (
-    mensaje_error_resolviendo_ubicacion,
-    solicitar_ciudad_actualizacion,
-    solicitar_ciudad_registro,
-    ui_solicitud_ubicacion,
-)
-from .validacion_ciudad import (
-    error_ciudad_caracteres_invalidos,
-    error_ciudad_corta,
-    error_ciudad_frase,
-    error_ciudad_larga,
-    error_ciudad_multiple,
-    error_ciudad_no_reconocida,
-    preguntar_ciudad,
-)
-
 __all__ = [
     # Pasos de registro
     "PROMPT_INICIO_REGISTRO",
@@ -115,12 +94,6 @@ __all__ = [
     "preguntar_real_phone",
     "error_real_phone_invalido",
     "mensaje_inicio_perfil_profesional",
-    "payload_experiencia_registro",
-    "EXPERIENCE_UNDER_1_ID",
-    "EXPERIENCE_1_3_ID",
-    "EXPERIENCE_3_5_ID",
-    "EXPERIENCE_5_10_ID",
-    "EXPERIENCE_10_PLUS_ID",
     "preguntar_experiencia_general",
     # Documentación
     "payload_foto_dni_frontal",
@@ -143,6 +116,7 @@ __all__ = [
     "mensaje_lista_servicios_corregida",
     "preguntar_servicios_registro",
     "preguntar_servicio_onboarding_registro",
+    "payload_servicio_registro_con_imagen",
     "preguntar_siguiente_servicio_registro",
     "confirmar_servicio_y_preguntar_otro",
     "payload_agregar_otro_servicio",
@@ -183,16 +157,4 @@ __all__ = [
     "SERVICE_ADD_NO_ID",
     "SERVICE_CONFIRM_ID",
     "SERVICE_CORRECT_ID",
-    # Validación de ciudad
-    "preguntar_ciudad",
-    "error_ciudad_corta",
-    "error_ciudad_larga",
-    "error_ciudad_caracteres_invalidos",
-    "error_ciudad_multiple",
-    "error_ciudad_frase",
-    "error_ciudad_no_reconocida",
-    "solicitar_ciudad_registro",
-    "solicitar_ciudad_actualizacion",
-    "ui_solicitud_ubicacion",
-    "mensaje_error_resolviendo_ubicacion",
 ]

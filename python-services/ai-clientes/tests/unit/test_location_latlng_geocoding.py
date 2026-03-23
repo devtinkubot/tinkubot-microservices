@@ -114,3 +114,4 @@ async def test_awaiting_city_reusa_ciudad_confirmada_desde_ubicacion(monkeypatch
     )
 
     assert resultado["messages"][0]["response"] == "continuando flujo"
+

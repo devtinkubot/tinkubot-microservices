@@ -9,7 +9,8 @@ PROMPT_CONSENTIMIENTO = (
     "- Telefono\n"
     "- Ubicación\n"
     "- Foto de perfil\n\n"
-    "*Política de privacidad:* https://www.tinku.bot/privacy"
+    "Política de privacidad: https://www.tinku.bot/privacy\n"
+    "Al *Aceptar* autorizas el uso de tu información."
 )
 
 OPCION_ACEPTAR = "Aceptar"
@@ -40,7 +41,6 @@ def payload_consentimiento_proveedor() -> Dict[str, Any]:
         "options": [{"id": "continue_provider_onboarding", "title": OPCION_ACEPTAR}],
         "header_type": "image",
         "header_media_url": image_url,
-        "footer_text": "Al *Aceptar* autorizas el uso de tu información.",
     }
 
     return {

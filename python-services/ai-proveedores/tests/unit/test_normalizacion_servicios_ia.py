@@ -52,6 +52,7 @@ from services.servicios_proveedor.validacion_semantica import (  # noqa: E402
 )
 from templates.registro import (  # noqa: E402
     mensaje_correccion_servicios,
+    payload_servicio_registro_con_imagen,
     preguntar_servicios_registro,
     preguntar_servicio_onboarding_registro,
 )
@@ -70,6 +71,7 @@ class _TransformadorOK:
         return ["desarrollo web"]
 
 
+@pytest.fixture(autouse=True)
 def test_prompt_transformador_prioriza_detalle_y_evita_paraguas():
     prompt = modulo_transformador._crear_prompt_sistema()
 
@@ -85,14 +87,35 @@ def test_prompt_transformador_prioriza_detalle_y_evita_paraguas():
 def test_prompt_servicios_registro_usa_ejemplos_especificos():
     mensaje = preguntar_servicios_registro()
 
-    assert "servicio principal" in mensaje
-    assert "revisa los ejemplos" in mensaje
+    assert "Agregar Servicio 1 de 3" in mensaje
+    assert "primer servicio" in mensaje
 
 
 def test_prompt_servicio_onboarding_varia_por_slot():
-    assert "servicio principal" in preguntar_servicio_onboarding_registro(1, 3)
+    assert "Agregar Servicio 1 de 3" in preguntar_servicio_onboarding_registro(
+        1, 3
+    )
+    assert "primer servicio" in preguntar_servicio_onboarding_registro(1, 3)
+    assert "Agregar Servicio 2 de 3" in preguntar_servicio_onboarding_registro(
+        2, 3
+    )
     assert "segundo servicio" in preguntar_servicio_onboarding_registro(2, 3)
+    assert "Agregar Servicio 3 de 3" in preguntar_servicio_onboarding_registro(
+        3, 3
+    )
     assert "tercer servicio" in preguntar_servicio_onboarding_registro(3, 3)
+
+
+def test_prompt_servicio_onboarding_usa_env_override(monkeypatch):
+    monkeypatch.setenv(
+        "WA_PROVIDER_SERVICES_IMAGE_URL",
+        "https://example.com/services-image.png",
+    )
+
+    respuesta = payload_servicio_registro_con_imagen(1, 3)
+
+    assert respuesta["media_type"] == "image"
+    assert respuesta["media_url"] == "https://example.com/services-image.png"
 
 
 @pytest.mark.asyncio
@@ -106,9 +129,13 @@ async def test_espera_experiencia_onboarding_muestra_lista_de_ejemplos():
     )
 
     assert flujo["state"] == "awaiting_specialty"
-    assert respuesta["messages"][0]["ui"]["type"] == "list"
-    assert respuesta["messages"][0]["ui"]["header_text"] == "Agregar Servicio 1 de 3"
-    assert respuesta["messages"][0]["response"] == "Escribe el *servicio principal* que ofreces."
+    assert flujo["experience_range"] == "3 a 5 años"
+    assert respuesta["messages"][0]["media_type"] == "image"
+    assert "tinkubot_add_services.png" in respuesta["messages"][0]["media_url"]
+    assert (
+        respuesta["messages"][0]["response"]
+        == "*Agregar Servicio 1 de 3*\n\nEscribe el primer servicio que ofreces."
+    )
 
 
 def test_validar_nombre_completo_rechaza_entrada_incompleta():
@@ -376,20 +403,6 @@ def test_confirmacion_servicio_onboarding_avanza_al_siguiente_servicio(monkeypat
         "gestor_espera_especialidad.validar_servicio_semanticamente",
         _fake_validar_servicio_semanticamente,
     )
-    monkeypatch.setattr(
-        "flows.gestores_estados."
-        "gestor_espera_especialidad.preguntar_nuevo_servicio_con_ejemplos_dinamicos",
-        lambda **_kwargs: asyncio.sleep(0, result={
-            "response": "Escribe el *segundo servicio* que también ofreces.",
-            "ui": {
-                "type": "list",
-                "header_text": "Agregar Servicio 2 de 3",
-                "list_button_text": "Ver ejemplos",
-                "options": [],
-            },
-            "service_examples_lookup": {},
-        }),
-    )
 
     flujo = {
         "state": "awaiting_specialty",
@@ -416,9 +429,12 @@ def test_confirmacion_servicio_onboarding_avanza_al_siguiente_servicio(monkeypat
 
     assert flujo["state"] == "awaiting_specialty"
     assert flujo["servicios_temporales"] == ["desarrollo web"]
-    assert respuesta["messages"][0]["ui"]["type"] == "list"
-    assert respuesta["messages"][0]["ui"]["header_text"] == "Agregar Servicio 2 de 3"
-    assert "segundo servicio" in respuesta["messages"][0]["response"].lower()
+    assert respuesta["messages"][0]["media_type"] == "image"
+    assert "tinkubot_add_services.png" in respuesta["messages"][0]["media_url"]
+    assert (
+        respuesta["messages"][0]["response"]
+        == "*Agregar Servicio 2 de 3*\n\nEscribe el segundo servicio que ofreces."
+    )
 
 
 def test_confirmacion_tercer_servicio_onboarding_va_a_consentimiento():
@@ -444,15 +460,11 @@ def test_confirmacion_tercer_servicio_onboarding_va_a_consentimiento():
         "servicio 3",
     ]
     assert respuesta["messages"][0]["ui"]["type"] == "buttons"
-    assert (
-        respuesta["messages"][0]["ui"]["id"]
-        == "provider_registration_final_consent_v1"
-    )
-    assert (
-        respuesta["messages"][0]["ui"]["header_type"]
-        == "image"
-    )
-    assert "antes de finalizar" in respuesta["messages"][0]["response"].lower()
+    assert respuesta["messages"][0]["ui"]["id"] == "provider_onboarding_continue_v1"
+    assert respuesta["messages"][0]["ui"]["header_type"] == "image"
+    assert "para poder conectarte con clientes" in respuesta["messages"][0][
+        "response"
+    ].lower()
 
 
 def test_espera_especialidad_onboarding_con_tres_servicios_va_a_consentimiento():
@@ -475,9 +487,11 @@ def test_espera_especialidad_onboarding_con_tres_servicios_va_a_consentimiento()
 
     assert flujo["state"] == "awaiting_consent"
     assert flujo["specialty"] == "servicio 1, servicio 2, servicio 3"
-    assert respuesta["messages"][0]["ui"]["id"] == "provider_registration_final_consent_v1"
+    assert respuesta["messages"][0]["ui"]["id"] == "provider_onboarding_continue_v1"
     assert respuesta["messages"][0]["ui"]["type"] == "buttons"
-    assert "antes de finalizar" in respuesta["messages"][0]["response"].lower()
+    assert "para poder conectarte con clientes" in respuesta["messages"][0][
+        "response"
+    ].lower()
 
 
 def test_normalizacion_servicio_pide_aclaracion_en_lugar_de_revision(monkeypatch):
@@ -850,7 +864,9 @@ def test_confirmacion_servicios_acepta_resumen_y_pasa_a_experiencia():
 
     assert flujo["state"] == "confirm"
     assert flujo["specialty"] == "desarrollo web, cableado estructurado"
-    assert "Antes de finalizar" in respuesta["messages"][0]["response"]
+    assert "para poder conectarte con clientes" in respuesta["messages"][0][
+        "response"
+    ].lower()
 
 
 def test_confirmacion_servicios_abre_menu_edicion():

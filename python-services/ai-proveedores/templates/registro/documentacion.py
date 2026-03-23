@@ -8,8 +8,8 @@ import os
 from typing import Any, Dict
 
 
-FOTO_DNI_FRONTAL_GUIDE_URL_ENV = "WA_PROVIDER_DNI_FRONT_GUIDE_URL"
-FOTO_PERFIL_GUIDE_URL_ENV = "WA_PROVIDER_FACE_GUIDE_URL"
+DNI_FRONT_GUIDE_URL_ENV = "WA_PROVIDER_ONBOARDING_DNI_FRONT_GUIDE_URL"
+PROFILE_PHOTO_GUIDE_URL_ENV = "WA_PROVIDER_ONBOARDING_PROFILE_PHOTO_GUIDE_URL"
 
 FOTO_DNI_FRONTAL_GUIDE_URL_DEFAULT = (
     "https://euescxureboitxqjduym.supabase.co/storage/v1/object/sign/"
@@ -54,7 +54,7 @@ def payload_foto_dni_frontal() -> Dict[str, Any]:
     return {
         "response": solicitar_foto_dni_frontal(),
         "media_url": _resolver_url_guide(
-            FOTO_DNI_FRONTAL_GUIDE_URL_ENV,
+            DNI_FRONT_GUIDE_URL_ENV,
             FOTO_DNI_FRONTAL_GUIDE_URL_DEFAULT,
         ),
         "media_type": "image",
@@ -105,7 +105,7 @@ def payload_selfie_registro() -> Dict[str, Any]:
     return {
         "response": solicitar_selfie_registro(),
         "media_url": _resolver_url_guide(
-            FOTO_PERFIL_GUIDE_URL_ENV,
+            PROFILE_PHOTO_GUIDE_URL_ENV,
             FOTO_PERFIL_GUIDE_URL_DEFAULT,
         ),
         "media_type": "image",

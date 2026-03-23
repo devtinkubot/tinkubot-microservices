@@ -1,8 +1,9 @@
 """Router de estados para el flujo de proveedores."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
+from config import configuracion
 from flows.consentimiento import solicitar_consentimiento
 from flows.constructores import (
     construir_payload_menu_principal,
@@ -65,25 +66,25 @@ from flows.gestores_estados.gestor_servicios import (
     manejar_eliminar_servicio,
 )
 from flows.gestores_estados.gestor_vistas_perfil import manejar_vista_perfil
+from flows.onboarding import es_estado_onboarding, manejar_entrada_onboarding
 from flows.sesion import reiniciar_flujo
 from services import (
     actualizar_perfil_profesional,
     agregar_certificado_proveedor,
+    asegurar_proveedor_borrador,
     eliminar_registro_proveedor,
     registrar_proveedor_en_base_datos,
 )
 from services.sesion_proveedor import (
     manejar_aprobacion_reciente,
-    manejar_estado_inicial,
     manejar_pendiente_revision,
     resolver_estado_registro,
     sincronizar_flujo_con_perfil,
 )
-from templates.registro import (
-    PROMPT_INICIO_REGISTRO,
-    payload_foto_dni_frontal,
-    solicitar_ciudad_registro,
-)
+from templates.onboarding.inicio import ONBOARDING_REGISTER_BUTTON_ID
+from templates.onboarding.ciudad import solicitar_ciudad_registro
+from templates.onboarding.documentos import payload_onboarding_dni_frontal
+from templates.registro import PROMPT_INICIO_REGISTRO
 from templates.sesion.manejo import (
     informar_reinicio_con_eliminacion,
     informar_reinicio_conversacion,
@@ -100,6 +101,8 @@ RESET_KEYWORDS = {
     "start",
     "nuevo",
 }
+
+TIEMPO_INACTIVIDAD_SESION_SEGUNDOS = configuracion.ttl_flujo_segundos
 
 def _es_salida_a_menu(texto_mensaje: str, opcion_menu: Optional[str]) -> bool:
     texto = (texto_mensaje or "").strip().lower()
@@ -140,25 +143,30 @@ async def manejar_mensaje(
             )
         await reiniciar_flujo(telefono)
         flujo.clear()
-        flujo.update({"state": "awaiting_menu_option", "mode": "registration"})
+        flujo.update({"state": None, "mode": "registration"})
         if resultado_eliminacion and resultado_eliminacion.get("success"):
             mensajes = [{"response": informar_reinicio_con_eliminacion()}]
         else:
             mensajes = [{"response": informar_reinicio_conversacion()}]
-        mensajes.append(construir_payload_menu_principal(esta_registrado=False))
         return {
             "response": {"success": True, "messages": mensajes},
-            "new_flow": flujo,
-            "persist_flow": True,
+            "new_flow": None,
+            "persist_flow": False,
         }
 
-    ahora_utc = datetime.utcnow()
+    ahora_utc = datetime.now(timezone.utc)
     ahora_iso = ahora_utc.isoformat()
-    ultima_vista_cruda = flujo.get("last_seen_at_prev")
+    ultima_vista_cruda = flujo.get("last_seen_at") or flujo.get("last_seen_at_prev")
     if ultima_vista_cruda:
         try:
             ultima_vista_dt = datetime.fromisoformat(ultima_vista_cruda)
-            if (ahora_utc - ultima_vista_dt).total_seconds() > 300:
+            if ultima_vista_dt.tzinfo is None:
+                ultima_vista_dt = ultima_vista_dt.replace(tzinfo=timezone.utc)
+            else:
+                ultima_vista_dt = ultima_vista_dt.astimezone(timezone.utc)
+            if (
+                ahora_utc - ultima_vista_dt
+            ).total_seconds() > TIEMPO_INACTIVIDAD_SESION_SEGUNDOS:
                 await reiniciar_flujo(telefono)
                 flujo.clear()
                 flujo.update(
@@ -226,27 +234,76 @@ async def manejar_mensaje(
         except Exception as exc:
             logger.debug("No se pudo parsear last_seen_at_prev: %s", exc)
 
+    last_seen_previo = flujo.get("last_seen_at") or ahora_iso
+    flujo["last_seen_at_prev"] = last_seen_previo
     flujo["last_seen_at"] = ahora_iso
-    flujo["last_seen_at_prev"] = flujo.get("last_seen_at", ahora_iso)
 
     flujo = sincronizar_flujo_con_perfil(flujo, perfil_proveedor)
+    provider_id = str(flujo.get("provider_id") or "").strip()
+    logger.info(
+        "🧭 router.contexto_entrada telefono=%s provider_id=%s selected_option=%s",
+        telefono,
+        provider_id or None,
+        str(carga.get("selected_option") or "").strip() or None,
+    )
+    respuesta_entrada_onboarding = await manejar_entrada_onboarding(
+        flujo=flujo,
+        telefono=telefono,
+        texto_mensaje=texto_mensaje,
+        carga=carga,
+        supabase=supabase,
+    )
+    if respuesta_entrada_onboarding:
+        logger.info(
+            "🧭 router.entrada_onboarding telefono=%s provider_id_absent=%s",
+            telefono,
+            not bool(provider_id),
+        )
+        return {"response": respuesta_entrada_onboarding, "persist_flow": True}
+
+    estado_actual = flujo.get("state")
+    if not provider_id or es_estado_onboarding(estado_actual):
+        resultado_onboarding = await enrutar_estado(
+            estado=estado_actual,
+            flujo=flujo,
+            texto_mensaje=texto_mensaje,
+            carga=carga,
+            telefono=telefono,
+            opcion_menu=opcion_menu,
+            tiene_consentimiento=bool(flujo.get("has_consent")),
+            esta_registrado=bool(flujo.get("provider_id")),
+            perfil_proveedor=perfil_proveedor,
+            supabase=supabase,
+            servicio_embeddings=servicio_embeddings,
+            cliente_openai=cliente_openai,
+            subir_medios_identidad=subir_medios_identidad,
+            logger=logger,
+        )
+        if resultado_onboarding is not None:
+            logger.info(
+                "🧭 router.onboarding_enrutado telefono=%s state=%s persist=%s",
+                telefono,
+                estado_actual,
+                resultado_onboarding.get("persist_flow", True),
+            )
+            return resultado_onboarding
+
     tiene_consentimiento, esta_registrado, esta_verificado, esta_pendiente_revision = (
         resolver_estado_registro(flujo, perfil_proveedor)
     )
     logger.info(
         "🧭 router.estado_resuelto telefono=%s state=%s consent=%s "
-        "registrado=%s verificado=%s pendiente=%s",
+        "registrado=%s verificado=%s pendiente=%s provider_id=%s",
         telefono,
         flujo.get("state"),
         tiene_consentimiento,
         esta_registrado,
         esta_verificado,
         esta_pendiente_revision,
+        provider_id or None,
     )
-
-    proveedor_id = perfil_proveedor.get("id") if perfil_proveedor else None
     respuesta_pendiente = manejar_pendiente_revision(
-        flujo, proveedor_id, esta_pendiente_revision
+        flujo, provider_id or None, esta_pendiente_revision
     )
     if respuesta_pendiente:
         logger.info("🧭 router.pendiente_revision telefono=%s", telefono)
@@ -260,24 +317,6 @@ async def manejar_mensaje(
     if respuesta_verificacion:
         logger.info("🧭 router.aprobacion_reciente telefono=%s", telefono)
         return {"response": respuesta_verificacion, "persist_flow": True}
-
-    respuesta_inicial = await manejar_estado_inicial(
-        estado=flujo.get("state"),
-        flujo=flujo,
-        tiene_consentimiento=tiene_consentimiento,
-        esta_registrado=esta_registrado,
-        esta_verificado=esta_verificado,
-        menu_limitado=bool(flujo.get("menu_limitado")),
-        approved_basic=bool(flujo.get("approved_basic")),
-        telefono=telefono,
-    )
-    if respuesta_inicial:
-        logger.info(
-            "🧭 router.estado_inicial telefono=%s new_state=%s",
-            telefono,
-            flujo.get("state"),
-        )
-        return {"response": respuesta_inicial, "persist_flow": True}
 
     resultado_enrutado = await enrutar_estado(
         estado=flujo.get("state"),
@@ -366,21 +405,31 @@ async def enrutar_estado(  # noqa: C901
             telefono=telefono,
             carga=carga,
             perfil_proveedor=perfil_proveedor,
+            supabase=supabase,
+            subir_medios_identidad=subir_medios_identidad,
         )
         return {"response": respuesta, "persist_flow": True}
 
     if not tiene_consentimiento:
         texto_normalizado = (texto_mensaje or "").strip().lower()
+        selected_option = str(carga.get("selected_option") or "").strip().lower()
         if (
             estado == "awaiting_menu_option"
             and not esta_registrado
             and (
                 opcion_menu == "1"
+                or selected_option == ONBOARDING_REGISTER_BUTTON_ID
                 or "registro" in texto_normalizado
                 or "registrarse" in texto_normalizado
             )
         ):
             flujo["mode"] = "registration"
+            borrador = await asegurar_proveedor_borrador(
+                supabase=supabase,
+                telefono=telefono,
+            )
+            if borrador and borrador.get("id"):
+                flujo["provider_id"] = str(borrador.get("id") or "").strip()
             flujo["state"] = "awaiting_city"
             return {
                 "response": solicitar_ciudad_registro(),
@@ -430,6 +479,8 @@ async def enrutar_estado(  # noqa: C901
             opcion_menu=opcion_menu,
             esta_registrado=esta_registrado,
             menu_limitado=bool(flujo.get("menu_limitado")),
+            supabase=supabase,
+            telefono=telefono,
         )
         return {"response": respuesta, "persist_flow": True}
 
@@ -610,9 +661,8 @@ async def enrutar_estado(  # noqa: C901
                     "messages": [
                         {
                             "response": (
-                                "✅ Tu perfil profesional quedó actualizado. "
-                                "Completar experiencia y 3 servicios te permite "
-                                "participar en solicitudes de clientes."
+                                "✅ Tu perfil quedó actualizado. "
+                                "Ya puedes recibir solicitudes de clientes."
                             )
                         },
                         construir_payload_menu_principal(
@@ -672,9 +722,8 @@ async def enrutar_estado(  # noqa: C901
                     "messages": [
                         {
                             "response": (
-                                "✅ Tu perfil profesional quedó actualizado. "
-                                "Completar experiencia y 3 servicios te permite "
-                                "participar en solicitudes de clientes."
+                                "✅ Tu perfil quedó actualizado. "
+                                "Ya puedes recibir solicitudes de clientes."
                             )
                         },
                         construir_payload_menu_principal(
@@ -775,8 +824,7 @@ async def enrutar_estado(  # noqa: C901
     if estado == "awaiting_dni_front_photo_update":
         respuesta = manejar_dni_frontal_actualizacion(flujo, carga)
         if (
-            flujo.get("profile_edit_mode") == "personal_dni_front_update"
-            and respuesta.get("messages")
+            respuesta.get("messages")
             and respuesta["messages"][0].get("response") == "__persistir_dni_frontal__"
         ):
             respuesta = await manejar_dni_trasera_actualizacion(
@@ -878,7 +926,12 @@ async def enrutar_estado(  # noqa: C901
         return {"response": respuesta, "persist_flow": True}
 
     if estado == "awaiting_dni_front_photo":
-        respuesta = manejar_dni_frontal(flujo, carga)
+        respuesta = await manejar_dni_frontal(
+            flujo,
+            carga,
+            telefono=telefono,
+            subir_medios_identidad=subir_medios_identidad,
+        )
         return {"response": respuesta, "persist_flow": True}
 
     if estado == "awaiting_dni_back_photo":
@@ -886,14 +939,19 @@ async def enrutar_estado(  # noqa: C901
         return {"response": respuesta, "persist_flow": True}
 
     if estado == "awaiting_face_photo":
-        respuesta = manejar_selfie_registro(flujo, carga)
+        respuesta = await manejar_selfie_registro(
+            flujo,
+            carga,
+            telefono=telefono,
+            subir_medios_identidad=subir_medios_identidad,
+        )
         return {"response": respuesta, "persist_flow": True}
 
     if estado == "awaiting_address":
         flujo["state"] = "awaiting_dni_front_photo"
         respuesta = {
             "success": True,
-            "messages": [payload_foto_dni_frontal()],
+            "messages": [payload_onboarding_dni_frontal()],
         }
         return {"response": respuesta, "persist_flow": True}
 

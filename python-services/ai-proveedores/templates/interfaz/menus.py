@@ -421,7 +421,9 @@ def payload_detalle_ubicacion(ciudad: str) -> Dict[str, Any]:
 
 
 def payload_detalle_experiencia(experiencia: Any) -> Dict[str, Any]:
-    if isinstance(experiencia, int) and experiencia >= 0:
+    if isinstance(experiencia, str) and experiencia.strip():
+        experiencia_visible = experiencia.strip()
+    elif isinstance(experiencia, int) and experiencia >= 0:
         experiencia_visible = (
             f"{experiencia} año{'s' if experiencia != 1 else ''}"
         )

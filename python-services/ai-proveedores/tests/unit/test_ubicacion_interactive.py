@@ -18,7 +18,7 @@ from services.registro.normalizacion import (  # noqa: E402
 from services.registro.validacion_registro import (  # noqa: E402
     validar_y_construir_proveedor,
 )
-from templates.registro import solicitar_ciudad_registro  # noqa: E402
+from templates.onboarding.ciudad import solicitar_ciudad_registro  # noqa: E402
 
 
 def test_solicitar_ciudad_registro_incluye_location_request():
@@ -32,7 +32,7 @@ def test_solicitar_ciudad_registro_incluye_location_request():
         )
     )
     assert payload["ui"]["type"] == "location_request"
-    assert payload["ui"]["id"] == "provider_location_request_city_initial"
+    assert payload["ui"]["id"] == "onboarding_city_location_request_initial"
 
 
 @pytest.mark.asyncio
@@ -91,6 +91,34 @@ async def test_manejar_espera_ciudad_si_no_resuelve_repregunta_manual(monkeypatc
         "No pude identificar la ciudad exacta"
         in respuesta["messages"][0]["response"]
     )
+
+
+@pytest.mark.asyncio
+async def test_manejar_espera_ciudad_prioriza_ubicacion_estructurada_sobre_texto_ambiguo(
+    monkeypatch,
+):
+    async def _resolver(_lat, _lng):
+        return "Cuenca"
+
+    monkeypatch.setattr(
+        "flows.gestores_estados.gestor_espera_ciudad."
+        "_resolver_ciudad_desde_coordenadas",
+        _resolver,
+    )
+
+    flujo = {"state": "awaiting_city"}
+    respuesta = await manejar_espera_ciudad(
+        flujo,
+        "Centrosur, Max Uhle y Pumapungo , Cuenca, 016, A, EC",
+        carga={"location": {"latitude": -2.9039, "longitude": -78.9838}},
+        supabase=None,
+        proveedor_id=None,
+    )
+
+    assert respuesta["success"] is True
+    assert flujo["city"] == "cuenca"
+    assert flujo["state"] == "awaiting_dni_front_photo"
+    assert "cédula" in respuesta["messages"][0]["response"].lower()
 
 
 @pytest.mark.asyncio

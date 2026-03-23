@@ -15,6 +15,11 @@ from services.sesion_proveedor import (  # noqa: E402
     resolver_estado_registro,
     sincronizar_flujo_con_perfil,
 )
+from services.registro.checkpoint_onboarding import (  # noqa: E402
+    inferir_checkpoint_onboarding_desde_perfil,
+    determinar_checkpoint_onboarding,
+    es_perfil_onboarding_completo,
+)
 from services.registro.normalizacion import (  # noqa: E402
     garantizar_campos_obligatorios_proveedor,
 )
@@ -25,6 +30,7 @@ def test_resolver_estado_registro_pending_no_habilita_menu_limitado():
     perfil = {
         "id": "prov-1",
         "full_name": "Proveedor Pendiente",
+        "has_consent": True,
         "verified": False,
         "status": "pending",
     }
@@ -35,19 +41,20 @@ def test_resolver_estado_registro_pending_no_habilita_menu_limitado():
     assert perfil_tiene_menu_limitado(perfil) is False
 
 
-def test_resolver_estado_registro_interview_required_habilita_menu_limitado():
+def test_resolver_estado_registro_interview_required_aprueba_acceso_basico():
     flujo = {"has_consent": True}
     perfil = {
         "id": "prov-1b",
         "full_name": "Proveedor En Revision",
+        "has_consent": True,
         "verified": False,
         "status": "interview_required",
     }
 
     resultado = resolver_estado_registro(flujo, perfil)
 
-    assert resultado == (True, True, False, False)
-    assert perfil_tiene_menu_limitado(perfil) is True
+    assert resultado == (True, True, True, False)
+    assert perfil_tiene_menu_limitado(perfil) is False
 
 
 def test_resolver_estado_registro_approved_basic_habilita_acceso_sin_menu_limitado():
@@ -55,6 +62,7 @@ def test_resolver_estado_registro_approved_basic_habilita_acceso_sin_menu_limita
     perfil = {
         "id": "prov-basic",
         "full_name": "Proveedor Basico",
+        "has_consent": True,
         "verified": False,
         "status": "approved_basic",
     }
@@ -65,18 +73,19 @@ def test_resolver_estado_registro_approved_basic_habilita_acceso_sin_menu_limita
     assert perfil_tiene_menu_limitado(perfil) is False
 
 
-def test_resolver_estado_registro_profile_pending_review_mantiene_revision():
+def test_resolver_estado_registro_profile_pending_review_aprueba_acceso_basico():
     flujo = {"has_consent": True}
     perfil = {
         "id": "prov-review",
         "full_name": "Proveedor Profesional",
+        "has_consent": True,
         "verified": False,
         "status": "profile_pending_review",
     }
 
     resultado = resolver_estado_registro(flujo, perfil)
 
-    assert resultado == (True, True, False, True)
+    assert resultado == (True, True, True, False)
     assert perfil_tiene_menu_limitado(perfil) is False
 
 
@@ -85,6 +94,7 @@ def test_resolver_estado_registro_rejected_mantiene_bloqueo():
     perfil = {
         "id": "prov-2",
         "full_name": "Proveedor Rechazado",
+        "has_consent": True,
         "verified": False,
         "status": "rejected",
     }
@@ -95,16 +105,18 @@ def test_resolver_estado_registro_rejected_mantiene_bloqueo():
     assert perfil_tiene_menu_limitado(perfil) is False
 
 
-def test_manejar_estado_inicial_interview_required_devuelve_revision_con_menu_limitado():  # noqa: E501
+def test_manejar_estado_inicial_menu_limitado_devuelve_revision_con_menu_limitado():  # noqa: E501
     flujo = {
         "has_consent": True,
         "full_name": "Proveedor En Revision",
+        "provider_id": "prov-menu-limited",
     }
 
     respuesta = asyncio.run(
         manejar_estado_inicial(
             estado=None,
             flujo=flujo,
+            provider_id="prov-menu-limited",
             tiene_consentimiento=True,
             esta_registrado=True,
             esta_verificado=False,
@@ -127,12 +139,14 @@ def test_manejar_estado_inicial_rejected_permanece_en_pending_verification():
     flujo = {
         "has_consent": True,
         "full_name": "Proveedor Rechazado",
+        "provider_id": "prov-rejected",
     }
 
     respuesta = asyncio.run(
         manejar_estado_inicial(
             estado=None,
             flujo=flujo,
+            provider_id="prov-rejected",
             tiene_consentimiento=True,
             esta_registrado=True,
             esta_verificado=False,
@@ -154,12 +168,14 @@ def test_manejar_estado_inicial_approved_basic_muestra_menu_interactivo():
         "has_consent": True,
         "full_name": "Proveedor Basico",
         "approved_basic": True,
+        "provider_id": "prov-basic",
     }
 
     respuesta = asyncio.run(
         manejar_estado_inicial(
             estado=None,
             flujo=flujo,
+            provider_id="prov-basic",
             tiene_consentimiento=True,
             esta_registrado=True,
             esta_verificado=True,
@@ -182,12 +198,14 @@ def test_manejar_estado_inicial_aprobado_muestra_menu_interactivo():
         "has_consent": True,
         "full_name": "Proveedor Aprobado",
         "approved_basic": False,
+        "provider_id": "prov-approved",
     }
 
     respuesta = asyncio.run(
         manejar_estado_inicial(
             estado=None,
             flujo=flujo,
+            provider_id="prov-approved",
             tiene_consentimiento=True,
             esta_registrado=True,
             esta_verificado=True,
@@ -250,6 +268,8 @@ def test_sincronizar_flujo_con_perfil_prioriza_datos_durables_sobre_redis():
         "services_list": ["servicio supabase"],
         "generic_services_removed": ["pendiente supabase"],
         "real_phone": "593999111222",
+        "experience_years": 3,
+        "experience_range": "3 a 5 años",
         "verified": True,
     }
 
@@ -260,6 +280,87 @@ def test_sincronizar_flujo_con_perfil_prioriza_datos_durables_sobre_redis():
     assert flujo["location_lng"] == -78.9
     assert flujo["services"] == ["servicio supabase", "pendiente supabase"]
     assert flujo["real_phone"] == "593999111222"
+    assert flujo["experience_years"] == 3
+    assert flujo["experience_range"] == "3 a 5 años"
+
+
+def test_sincronizar_flujo_con_perfil_copia_datos_de_identidad():
+    flujo = {}
+    perfil = {
+        "id": "prov-identity",
+        "full_name": "Proveedor Identidad",
+        "document_first_names": "Ana Maria",
+        "document_last_names": "Perez Lopez",
+        "document_id_number": "0912345678",
+        "services_list": [],
+        "verified": True,
+    }
+
+    sincronizar_flujo_con_perfil(flujo, perfil)
+
+    assert flujo["document_first_names"] == "Ana Maria"
+    assert flujo["document_last_names"] == "Perez Lopez"
+    assert flujo["document_id_number"] == "0912345678"
+
+
+def test_sincronizar_flujo_con_perfil_copia_checkpoint_onboarding():
+    flujo = {}
+    perfil = {
+        "id": "prov-checkpoint",
+        "full_name": "Proveedor Checkpoint",
+        "onboarding_step": "awaiting_face_photo",
+        "onboarding_step_updated_at": "2026-03-23T12:00:00+00:00",
+        "services_list": [],
+    }
+
+    sincronizar_flujo_con_perfil(flujo, perfil)
+
+    assert flujo["onboarding_step"] == "awaiting_face_photo"
+    assert flujo["onboarding_step_updated_at"] == "2026-03-23T12:00:00+00:00"
+
+
+def test_checkpoint_onboarding_infiere_desde_perfil_durable():
+    perfil = {
+        "id": "prov-infer",
+        "full_name": "",
+        "city": "",
+        "dni_front_photo_url": None,
+        "face_photo_url": None,
+        "experience_range": None,
+        "services_list": [],
+        "has_consent": False,
+        "verified": False,
+        "status": "pending",
+    }
+
+    assert inferir_checkpoint_onboarding_desde_perfil(perfil) == "awaiting_city"
+
+
+def test_checkpoint_onboarding_detecta_perfil_completo():
+    perfil = {
+        "id": "prov-complete",
+        "full_name": "Proveedor Completo",
+        "city": "cuenca",
+        "dni_front_photo_url": "https://example.com/dni.jpg",
+        "face_photo_url": "https://example.com/face.jpg",
+        "experience_range": "3 a 5 años",
+        "services_list": ["Plomeria"],
+        "has_consent": True,
+        "verified": False,
+        "status": "pending",
+    }
+
+    assert es_perfil_onboarding_completo(perfil) is True
+    assert inferir_checkpoint_onboarding_desde_perfil(perfil) == "awaiting_menu_option"
+
+
+def test_checkpoint_onboarding_determina_persistencia_solo_en_onboarding():
+    flujo = {
+        "state": "viewing_personal_name",
+        "provider_id": "prov-checkpoint",
+    }
+
+    assert determinar_checkpoint_onboarding(flujo) is None
 
 
 def test_sincronizar_flujo_con_perfil_marca_approved_basic():
@@ -277,7 +378,7 @@ def test_sincronizar_flujo_con_perfil_marca_approved_basic():
     assert flujo["approved_basic"] is True
 
 
-def test_sincronizar_flujo_con_perfil_marca_profile_pending_review():
+def test_sincronizar_flujo_con_perfil_marca_profile_pending_review_como_aprobado_basico():
     flujo = {}
     perfil = {
         "id": "prov-review",
@@ -289,7 +390,8 @@ def test_sincronizar_flujo_con_perfil_marca_profile_pending_review():
 
     sincronizar_flujo_con_perfil(flujo, perfil)
 
-    assert flujo["profile_pending_review"] is True
+    assert flujo["approved_basic"] is True
+    assert flujo["profile_pending_review"] is False
 
 
 def test_garantizar_campos_obligatorios_preserva_status_existente():

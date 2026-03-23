@@ -9,6 +9,7 @@ from .gestor_flujo import (
     obtener_flujo,
     PALABRAS_DISPARO,
     PALABRAS_REINICIO,
+    limpiar_claves_proveedor,
     reiniciar_flujo,
 )
 from .gestor_perfil import (
@@ -32,6 +33,7 @@ __all__ = [
     "CLAVE_FLUJO",
     "PALABRAS_DISPARO",
     "PALABRAS_REINICIO",
+    "limpiar_claves_proveedor",
     "obtener_perfil_proveedor",
     "cachear_perfil_proveedor",
     "refrescar_cache_perfil_proveedor",

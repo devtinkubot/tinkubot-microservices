@@ -18,13 +18,14 @@ from services.servicios_proveedor.utilidades import (
 from services.servicios_proveedor.validacion_semantica import (
     validar_servicio_semanticamente,
 )
+from flows.constructores import construir_respuesta_solicitud_consentimiento
 from templates.registro import (
     PROFILE_CONTROL_IDS,
     mensaje_maximo_servicios_registro,
     mensaje_resumen_servicios_registro,
     mensaje_servicio_duplicado_registro,
     payload_confirmacion_servicio_perfil,
-    payload_resumen_consentimiento_registro,
+    payload_servicio_registro_con_imagen,
     preguntar_servicio_onboarding_registro,
     preguntar_siguiente_servicio_registro,
 )
@@ -76,14 +77,15 @@ async def _prompt_servicio_onboarding(
     indice: int,
     maximo_visible: int,
 ) -> Dict[str, Any]:
-    respuesta = await preguntar_nuevo_servicio_con_ejemplos_dinamicos(
+    respuesta = payload_servicio_registro_con_imagen(
         indice=indice,
         maximo=maximo_visible,
-        supabase=_resolver_supabase_runtime(),
-        include_back_option=False,
     )
-    flujo["service_examples_lookup"] = respuesta.get("service_examples_lookup") or {}
-    return respuesta
+    flujo["service_examples_lookup"] = {}
+    return {
+        **respuesta,
+        "service_examples_lookup": {},
+    }
 
 
 async def _mensajes_prompt_servicio_onboarding(
@@ -101,7 +103,7 @@ async def _mensajes_prompt_servicio_onboarding(
         indice=indice,
         maximo=maximo_visible,
     )
-    return [{"response": respuesta["response"], "ui": respuesta["ui"]}]
+    return [respuesta]
 
 
 async def normalizar_servicio_registro_individual(
@@ -316,7 +318,9 @@ async def manejar_espera_especialidad(
         flujo["state"] = "awaiting_consent"
         return {
             "success": True,
-            "messages": [payload_resumen_consentimiento_registro(flujo)],
+            "messages": construir_respuesta_solicitud_consentimiento()[
+                "messages"
+            ],
         }
 
     if texto_limpio in PROFILE_CONTROL_IDS:

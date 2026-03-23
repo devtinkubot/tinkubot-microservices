@@ -43,6 +43,9 @@ interface AccionProveedorOpciones {
   reviewer?: string;
   phone?: string;
   message?: string;
+  documentFirstNames?: string;
+  documentLastNames?: string;
+  documentIdNumber?: string;
 }
 
 type ModalInstance = {
@@ -78,20 +81,26 @@ const limpiarTelefono = (valor: string | null | undefined): string | null => {
   return limpio.length > 0 ? limpio : null;
 };
 
-const limpiarTelefonoWhatsApp = (valor: string | null | undefined): string | null => {
+const limpiarTelefonoWhatsApp = (
+  valor: string | null | undefined,
+): string | null => {
   const telefono = limpiarTelefono(valor);
   if (!telefono) return null;
   const digitos = telefono.replace(/[^\d]/g, "");
   return digitos.length > 0 ? digitos : null;
 };
 
-function extraerPrimerNombre(nombreCompleto: string | null | undefined): string {
+function extraerPrimerNombre(
+  nombreCompleto: string | null | undefined,
+): string {
   const texto = nombreCompleto?.trim();
   if (!texto) return "Proveedor";
   return texto.split(/\s+/).filter(Boolean)[0] || "Proveedor";
 }
 
-function construirUrlWhatsApp(telefono: string | null | undefined): string | null {
+function construirUrlWhatsApp(
+  telefono: string | null | undefined,
+): string | null {
   const digitos = limpiarTelefonoWhatsApp(telefono);
   if (!digitos) return null;
   return `https://wa.me/${digitos}`;
@@ -178,16 +187,34 @@ function formatearFechaLarga(valor?: string | null): string {
   return formateadorFecha.format(fecha);
 }
 
+function formatearRangoExperiencia(
+  experiencia?: number | string | null,
+): string | null {
+  if (typeof experiencia === "string" && experiencia.trim().length > 0) {
+    return experiencia.trim();
+  }
+  if (typeof experiencia !== "number" || !Number.isFinite(experiencia)) {
+    return null;
+  }
+  if (experiencia < 1) {
+    return "Menos de 1 año";
+  }
+  if (experiencia < 3) {
+    return "1 a 3 años";
+  }
+  if (experiencia < 5) {
+    return "3 a 5 años";
+  }
+  if (experiencia < 10) {
+    return "5 a 10 años";
+  }
+  return "Más de 10 años";
+}
+
 function obtenerEtiquetaEstadoListado(
   status?: ProviderRecord["status"] | null,
 ): string {
   switch (status) {
-    case "approved_basic":
-      return "Información personal aprobada";
-    case "profile_pending_review":
-      return "Revisión legacy";
-    case "interview_required":
-      return "Entrevista";
     case "rejected":
       return "Rechazado";
     case "approved":
@@ -202,12 +229,6 @@ function obtenerClaseEstadoListado(
   status?: ProviderRecord["status"] | null,
 ): string {
   switch (status) {
-    case "approved_basic":
-      return "bg-info text-dark";
-    case "profile_pending_review":
-      return "bg-primary";
-    case "interview_required":
-      return "bg-secondary";
     case "rejected":
       return "bg-danger";
     case "approved":
@@ -231,17 +252,17 @@ function actualizarEncabezadoBucket() {
       subtitulo.textContent =
         "Proveedores con información personal aprobada que todavía no completan experiencia y 3 servicios principales.";
     }
-    if (vacio)
-      vacio.textContent = "No hay perfiles profesionales incompletos.";
+    if (vacio) vacio.textContent = "No hay perfiles profesionales incompletos.";
     if (textoCarga)
-      textoCarga.textContent = "Obteniendo perfiles profesionales incompletos...";
+      textoCarga.textContent =
+        "Obteniendo perfiles profesionales incompletos...";
     return;
   }
 
   if (titulo) titulo.textContent = "Onboarding por revisar";
   if (subtitulo) {
     subtitulo.textContent =
-      "Revisa consentimiento, ciudad, identidad y documentos del proveedor antes del alta inicial.";
+      "Revisa consentimiento, ciudad e identidad del proveedor antes del alta inicial.";
   }
   if (vacio) vacio.textContent = "No hay onboardings pendientes por revisar.";
   if (textoCarga)
@@ -290,63 +311,6 @@ function mostrarErrorModal(mensaje?: string) {
     contenedor.textContent = "";
     contenedor.classList.add("d-none");
   }
-}
-
-function actualizarDocumentos(proveedor: ProviderRecord) {
-  const contenedor = obtenerElemento<HTMLDivElement>(
-    "#provider-detail-documents",
-  );
-  const placeholder = obtenerElemento<HTMLDivElement>(
-    "#provider-detail-documents-empty",
-  );
-  if (!contenedor || !placeholder) return;
-
-  const documentos = proveedor.documents ?? {};
-  const items: Array<{ url: string; etiqueta: string }> = [];
-  if (documentos.dniFront) {
-    items.push({
-      url: documentos.dniFront,
-      etiqueta: "Documento identidad - frente",
-    });
-  }
-  if (documentos.dniBack) {
-    items.push({
-      url: documentos.dniBack,
-      etiqueta: "Documento identidad - reverso",
-    });
-  }
-  if (documentos.face) {
-    items.push({ url: documentos.face, etiqueta: "Foto de perfil / rostro" });
-  }
-
-  if (items.length === 0) {
-    contenedor.innerHTML = "";
-    placeholder.style.display = "block";
-    return;
-  }
-
-  const tarjetas = items
-    .map(
-      (item) => `
-        <div class="col-md-4">
-          <div class="provider-document-card">
-            <div class="provider-document-thumb">
-              <a href="${escaparHtml(item.url)}" target="_blank" rel="noopener noreferrer">
-                <img src="${escaparHtml(
-                  item.url,
-                )}" alt="${escaparHtml(item.etiqueta)}" loading="lazy"
-                     onerror="this.onerror=null; this.src='data:image/svg+xml;base64,${btoa('<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100\" height=\"100\" viewBox=\"0 0 100 100\"><rect width=\"100\" height=\"100\" fill=\"#f8f9fa\"/><text x=\"50\" y=\"50\" text-anchor=\"middle\" dy=\".3em\" fill=\"#6c757d\" font-family=\"Arial\" font-size=\"12\">Imagen no disponible</text></svg>')}; this.style.background='#f8f9fa'; this.style.border='1px solid #dee2e6';" />
-              </a>
-            </div>
-            <p class="provider-document-label">${escaparHtml(item.etiqueta)}</p>
-          </div>
-        </div>
-      `,
-    )
-    .join("");
-
-  contenedor.innerHTML = tarjetas;
-  placeholder.style.display = "none";
 }
 
 function actualizarCertificados(proveedor: ProviderRecord) {
@@ -474,6 +438,97 @@ function actualizarNotas(proveedor: ProviderRecord) {
   }
 }
 
+function actualizarFotosIdentidad(proveedor: ProviderRecord) {
+  const contenedor = obtenerElemento<HTMLDivElement>(
+    "#provider-detail-identity-photos",
+  );
+  const placeholder = obtenerElemento<HTMLDivElement>(
+    "#provider-detail-identity-photos-empty",
+  );
+  if (!contenedor || !placeholder) return;
+
+  const fotos = [
+    {
+      url: proveedor.documents?.dniFront ?? null,
+      etiqueta: "Cédula frontal",
+    },
+    {
+      url: proveedor.documents?.face ?? null,
+      etiqueta: "Foto de perfil",
+    },
+  ];
+
+  const tieneImagenes = fotos.some((foto) => Boolean(foto.url));
+  if (!tieneImagenes) {
+    contenedor.innerHTML = "";
+    placeholder.style.display = "block";
+    return;
+  }
+
+  const tarjetas = fotos
+    .map(
+      (foto) => `
+        <div class="col-md-6">
+          <div class="provider-document-card">
+            <div class="provider-document-thumb">
+              ${
+                foto.url
+                  ? `<a href="${escaparHtml(foto.url)}" target="_blank" rel="noopener noreferrer">
+                      <img
+                        src="${escaparHtml(foto.url)}"
+                        alt="${escaparHtml(foto.etiqueta)}"
+                        loading="lazy"
+                      />
+                    </a>`
+                  : `<div class="d-flex align-items-center justify-content-center h-100"><span class="text-muted small">Sin imagen</span></div>`
+              }
+            </div>
+            <p class="provider-document-label">${escaparHtml(foto.etiqueta)}</p>
+          </div>
+        </div>
+      `,
+    )
+    .join("");
+
+  contenedor.innerHTML = tarjetas;
+  placeholder.style.display = "none";
+}
+
+function actualizarCamposIdentidad(proveedor: ProviderRecord) {
+  establecerTexto(
+    "#provider-detail-document-first-names",
+    proveedor.documentFirstNames,
+  );
+  establecerTexto(
+    "#provider-detail-document-last-names",
+    proveedor.documentLastNames,
+  );
+  establecerTexto(
+    "#provider-detail-document-id-number",
+    proveedor.documentIdNumber,
+  );
+
+  const nombres = obtenerElemento<HTMLInputElement>(
+    "#provider-review-document-first-names",
+  );
+  const apellidos = obtenerElemento<HTMLInputElement>(
+    "#provider-review-document-last-names",
+  );
+  const cedula = obtenerElemento<HTMLInputElement>(
+    "#provider-review-document-id-number",
+  );
+
+  if (nombres) {
+    nombres.value = proveedor.documentFirstNames ?? "";
+  }
+  if (apellidos) {
+    apellidos.value = proveedor.documentLastNames ?? "";
+  }
+  if (cedula) {
+    cedula.value = proveedor.documentIdNumber ?? "";
+  }
+}
+
 function actualizarPerfilProfesional(proveedor: ProviderRecord) {
   const servicios = obtenerElemento<HTMLDivElement>(
     "#provider-detail-services",
@@ -497,11 +552,9 @@ function actualizarPerfilProfesional(proveedor: ProviderRecord) {
     lista.length - serviciosPrincipales.length,
     0,
   );
-  const experienciaValor =
-    typeof proveedor.experienceYears === "number" &&
-    Number.isFinite(proveedor.experienceYears)
-      ? `${proveedor.experienceYears} año${proveedor.experienceYears === 1 ? "" : "s"}`
-      : null;
+  const experienciaValor = formatearRangoExperiencia(
+    proveedor.experienceRange ?? proveedor.experienceYears,
+  );
   const urlRedSocial = proveedor.socialMediaUrl?.trim();
   const tipoRedSocial = proveedor.socialMediaType?.trim();
   const etiquetaRedSocial = urlRedSocial
@@ -558,8 +611,7 @@ function actualizarOpcionesResultadoRevision(proveedor: ProviderRecord) {
   if (!estadoSelect) return;
 
   const opciones = [
-    { value: "approved_basic", label: "Información personal aprobada" },
-    { value: "interview_required", label: "Entrevista requerida" },
+    { value: "approved", label: "Aprobar" },
     { value: "rejected", label: "Rechazado" },
   ];
 
@@ -602,19 +654,19 @@ function actualizarCopyRevision(proveedor: ProviderRecord) {
     tituloPerfil.textContent = "Servicios del perfil";
   }
   if (tituloRevision) {
-    tituloRevision.textContent = "Revisión administrativa de la información personal";
+    tituloRevision.textContent = "Validación administrativa";
   }
   if (checklist) {
     checklist.textContent =
-      "Confirmo que revisé nombre, ciudad, consentimiento y documentación del proveedor.";
+      "Confirmo que revisé la información, identidad y contacto del proveedor.";
   }
   if (ayudaMensaje) {
     ayudaMensaje.textContent =
-      "Se enviará este mensaje al proveedor junto con el resultado del onboarding básico.";
+      "Se enviará este mensaje al proveedor junto con la aprobación o el rechazo.";
   }
   if (mensajeTextarea) {
     mensajeTextarea.placeholder =
-      "Ej. Tu registro básico fue aprobado. Ya puedes ingresar al menú de proveedor.";
+      "Ej. Tu registro fue aprobado. Ya puedes recibir solicitudes de clientes.";
   }
   if (ayudaFooter) {
     ayudaFooter.textContent =
@@ -637,6 +689,24 @@ function limpiarFormularioRevision() {
   );
   if (notasTextarea) {
     notasTextarea.value = "";
+  }
+  const nombresTextarea = obtenerElemento<HTMLInputElement>(
+    "#provider-review-document-first-names",
+  );
+  if (nombresTextarea) {
+    nombresTextarea.value = "";
+  }
+  const apellidosTextarea = obtenerElemento<HTMLInputElement>(
+    "#provider-review-document-last-names",
+  );
+  if (apellidosTextarea) {
+    apellidosTextarea.value = "";
+  }
+  const cedulaTextarea = obtenerElemento<HTMLInputElement>(
+    "#provider-review-document-id-number",
+  );
+  if (cedulaTextarea) {
+    cedulaTextarea.value = "";
   }
   const mensajeTextarea = obtenerElemento<HTMLTextAreaElement>(
     "#provider-review-message",
@@ -687,25 +757,13 @@ function actualizarBadgeEstado(status: ProviderRecord["status"]) {
   );
 
   switch (status) {
-    case "approved_basic":
-      badge.classList.add("bg-info", "text-dark");
-      badge.textContent = "Información personal aprobada";
-      break;
-    case "profile_pending_review":
-      badge.classList.add("bg-primary");
-      badge.textContent = "Revisión legacy";
-      break;
     case "approved":
       badge.classList.add("bg-success");
-      badge.textContent = "Proveedor operativo";
+      badge.textContent = "Proveedor aprobado";
       break;
     case "rejected":
       badge.classList.add("bg-danger");
       badge.textContent = "Rechazado";
-      break;
-    case "interview_required":
-      badge.classList.add("bg-secondary");
-      badge.textContent = "Entrevista";
       break;
     default:
       badge.classList.add("bg-warning", "text-dark");
@@ -727,13 +785,9 @@ function actualizarDetalleProveedor(proveedor: ProviderRecord) {
   );
   establecerTexto(
     "#provider-detail-stage",
-    proveedor.status === "profile_pending_review"
-      ? "Revisión legacy"
-      : proveedor.status === "approved_basic"
-        ? "Información personal aprobada"
-        : proveedor.status === "approved"
-          ? "Proveedor operativo"
-          : "Onboarding básico",
+    proveedor.status === "approved"
+      ? "Proveedor aprobado"
+      : "Onboarding básico",
   );
 
   const ubicacion =
@@ -760,9 +814,10 @@ function actualizarDetalleProveedor(proveedor: ProviderRecord) {
 
   actualizarContacto(proveedor);
   actualizarPerfilProfesional(proveedor);
-  actualizarDocumentos(proveedor);
+  actualizarFotosIdentidad(proveedor);
   actualizarCertificados(proveedor);
   actualizarNotas(proveedor);
+  actualizarCamposIdentidad(proveedor);
   actualizarCopyRevision(proveedor);
   actualizarOpcionesResultadoRevision(proveedor);
 
@@ -822,8 +877,8 @@ async function cargarProveedoresBucket() {
   try {
     const proveedores =
       estado.bucketActivo === "profile_incomplete"
-          ? await apiProveedores.obtenerProveedoresPerfilProfesionalIncompleto()
-          : await apiProveedores.obtenerProveedoresNuevos();
+        ? await apiProveedores.obtenerProveedoresPerfilProfesionalIncompleto()
+        : await apiProveedores.obtenerProveedoresNuevos();
     estado.proveedores = proveedores;
     renderizarProveedores();
   } catch (error) {
@@ -929,24 +984,19 @@ function manejarAccionesDeProveedores(evento: Event) {
 
 function construirMensajeSugerido(
   status: ProviderRecord["status"],
-  nombre?: string | null,
+  proveedor?: ProviderRecord | null,
 ): string {
-  const nombreLimpio = nombre?.trim();
+  const nombreLimpio = extraerPrimerNombre(
+    proveedor?.documentFirstNames ||
+      proveedor?.name ||
+      proveedor?.contact ||
+      null,
+  );
   switch (status) {
-    case "approved_basic":
-      return "";
-    case "profile_pending_review":
-      return nombreLimpio
-        ? `✅ Hola *${nombreLimpio}*, estamos revisando tu caso administrativo.`
-        : "✅ Estamos revisando tu caso administrativo.";
     case "approved":
       return nombreLimpio
-        ? `✅ Hola *${nombreLimpio}*, tu perfil profesional fue aprobado. Ya puedes operar como proveedor en TinkuBot.`
-        : "✅ Tu perfil profesional fue aprobado. Ya puedes operar como proveedor en TinkuBot.";
-    case "interview_required":
-      return nombreLimpio
-        ? `Hola ${nombreLimpio}, necesitamos una validación adicional para continuar con tu registro básico. Responde a este mensaje para coordinar el siguiente paso.`
-        : "Necesitamos una validación adicional para continuar con tu registro básico. Responde a este mensaje para coordinar el siguiente paso.";
+        ? `✅ Hola *${nombreLimpio}*, tu perfil fue aprobado y ya puedes recibir solicitudes de clientes.`
+        : "✅ Tu perfil fue aprobado y ya puedes recibir solicitudes de clientes.";
     case "rejected":
       return nombreLimpio
         ? `Hola ${nombreLimpio}, no pudimos aprobar tu registro básico con la información enviada. Revisa tus datos y documentos y vuelve a intentarlo.`
@@ -968,7 +1018,7 @@ function actualizarVisibilidadMensajeRevision(
   const mensajeTextarea = obtenerElemento<HTMLTextAreaElement>(
     "#provider-review-message",
   );
-  const usaMensajeEstandar = status === "approved_basic";
+  const usaMensajeEstandar = status === "approved";
 
   if (grupoMensaje) {
     grupoMensaje.style.display = usaMensajeEstandar ? "none" : "";
@@ -1007,12 +1057,24 @@ function manejarAccionModal() {
   const checklistDocs = obtenerElemento<HTMLInputElement>(
     "#provider-review-check-docs",
   );
+  const nombresInput = obtenerElemento<HTMLInputElement>(
+    "#provider-review-document-first-names",
+  );
+  const apellidosInput = obtenerElemento<HTMLInputElement>(
+    "#provider-review-document-last-names",
+  );
+  const cedulaInput = obtenerElemento<HTMLInputElement>(
+    "#provider-review-document-id-number",
+  );
 
   const estadoSeleccionado = (estadoSelect?.value ||
     "") as ProviderRecord["status"];
   const notas = notasTextarea?.value.trim() ?? "";
   const mensaje = mensajeTextarea?.value.trim() ?? "";
   const reviewer = revisorInput?.value.trim() ?? undefined;
+  const documentFirstNames = nombresInput?.value.trim() ?? "";
+  const documentLastNames = apellidosInput?.value.trim() ?? "";
+  const documentIdNumber = cedulaInput?.value.trim() ?? "";
   const telefono = limpiarTelefono(
     proveedor.contactPhone ?? proveedor.phone ?? "",
   );
@@ -1023,10 +1085,7 @@ function manejarAccionModal() {
     return;
   }
 
-  if (
-    estadoSeleccionado !== "approved_basic" &&
-    mensaje.length === 0
-  ) {
+  if (estadoSeleccionado !== "approved" && mensaje.length === 0) {
     mostrarErrorModal("Ingresa el mensaje que recibirá el proveedor.");
     mensajeTextarea?.focus();
     return;
@@ -1039,12 +1098,29 @@ function manejarAccionModal() {
   }
 
   if (
-    estadoSeleccionado === "approved_basic" &&
+    estadoSeleccionado === "approved" &&
     checklistDocs &&
     !checklistDocs.checked
   ) {
-    mostrarErrorModal("Confirma que revisaste los documentos del proveedor.");
+    mostrarErrorModal("Confirma que revisaste la información del proveedor.");
     checklistDocs.focus();
+    return;
+  }
+
+  if (
+    estadoSeleccionado === "approved" &&
+    (!documentFirstNames || !documentLastNames || !documentIdNumber)
+  ) {
+    mostrarErrorModal(
+      "Completa nombres, apellidos y cédula antes de aprobar el proveedor.",
+    );
+    if (!documentFirstNames) {
+      nombresInput?.focus();
+    } else if (!documentLastNames) {
+      apellidosInput?.focus();
+    } else {
+      cedulaInput?.focus();
+    }
     return;
   }
 
@@ -1053,8 +1129,14 @@ function manejarAccionModal() {
     notes: notas.length > 0 ? notas : undefined,
     reviewer,
     phone: telefono ?? undefined,
+    documentFirstNames:
+      documentFirstNames.length > 0 ? documentFirstNames : undefined,
+    documentLastNames:
+      documentLastNames.length > 0 ? documentLastNames : undefined,
+    documentIdNumber:
+      documentIdNumber.length > 0 ? documentIdNumber : undefined,
     message:
-      estadoSeleccionado === "approved_basic"
+      estadoSeleccionado === "approved"
         ? undefined
         : mensaje.length > 0
           ? mensaje
@@ -1113,28 +1195,16 @@ function renderizarEncabezadoTabla() {
 
   encabezado.innerHTML = `
     <tr>
-      <th>Proveedor</th>
-      <th>Ciudad</th>
       <th>Contacto</th>
-      <th>Registrado</th>
-      <th>Notas</th>
+      <th>Ciudad</th>
+      <th>Fecha de Registro</th>
       <th class="text-end">Revisión</th>
     </tr>
   `;
 }
 
 function renderizarFilaProveedorGeneral(proveedor: ProviderRecord): string {
-  const {
-    id,
-    name,
-    businessName,
-    contact,
-    contactPhone,
-    registeredAt,
-    notes,
-    city,
-    status,
-  } = proveedor;
+  const { id, contact, contactPhone, registeredAt, city } = proveedor;
 
   const infoContacto = [
     contact ?? null,
@@ -1145,30 +1215,19 @@ function renderizarFilaProveedorGeneral(proveedor: ProviderRecord): string {
     .filter(Boolean)
     .join("");
 
-  const textoNotas = notes
-    ? escaparHtml(notes)
-    : '<span class="text-muted">Sin notas</span>';
-
   const ubicacion = city
     ? escaparHtml(city)
     : '<span class="text-muted">Sin ciudad</span>';
 
   return `
     <tr data-provider-id="${id}">
-      <td>
-        <div class="fw-semibold">${escaparHtml(businessName || name)}</div>
-        <span class="badge ${obtenerClaseEstadoListado(status)}">
-          ${escaparHtml(obtenerEtiquetaEstadoListado(status))}
-        </span>
-      </td>
-      <td>${ubicacion}</td>
       <td>${infoContacto || '<span class="text-muted">Sin contacto</span>'}</td>
+      <td>${ubicacion}</td>
       <td>
         <span class="text-muted small">
           ${escaparHtml(formatearFechaLarga(registeredAt))}
         </span>
       </td>
-      <td>${textoNotas}</td>
       <td class="text-end">
         <button
           type="button"
@@ -1320,7 +1379,7 @@ function enlazarEventos() {
       }
       mensajeTextarea.value = construirMensajeSugerido(
         status,
-        estado.proveedorSeleccionado?.name,
+        estado.proveedorSeleccionado,
       );
     });
   }

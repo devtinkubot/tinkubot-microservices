@@ -15,10 +15,12 @@ def determinar_estado_registro(perfil_proveedor: Optional[Dict[str, Any]]) -> bo
     """
     Determinar si el proveedor está COMPLETAMENTE registrado (True) o es nuevo (False).
 
-    Un proveedor con solo consentimiento pero sin datos completos no está registrado.
+    Un proveedor solo se considera registrado cuando ya dio consentimiento
+    y tiene un nombre persistido.
     Se considera que un proveedor está completamente registrado cuando tiene:
     - ID en el sistema
     - Nombre completo
+    - Consentimiento aceptado
 
     Args:
         perfil_proveedor: Diccionario con el perfil del proveedor
@@ -29,6 +31,7 @@ def determinar_estado_registro(perfil_proveedor: Optional[Dict[str, Any]]) -> bo
     return bool(
         perfil_proveedor
         and perfil_proveedor.get("id")
+        and perfil_proveedor.get("has_consent")
         and perfil_proveedor.get("full_name")  # Verificar datos completos
         # Fase 4: Eliminada verificación de profession
     )

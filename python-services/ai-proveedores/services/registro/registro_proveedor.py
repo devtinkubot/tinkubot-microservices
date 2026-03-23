@@ -55,6 +55,76 @@ def _normalizar_entradas_servicio(servicios: List[Any]) -> List[Dict[str, str]]:
     return entradas
 
 
+async def asegurar_proveedor_borrador(
+    supabase: Client,
+    telefono: str,
+    tiempo_espera: float = 5.0,
+) -> Optional[Dict[str, Any]]:
+    """Crea o recupera un proveedor borrador para iniciar onboarding.
+
+    Este registro existe solo para materializar el `provider_id` temprano.
+    No marca consentimiento ni el onboarding completo como finalizado.
+    """
+    if not supabase:
+        return None
+
+    telefono_normalizado = str(telefono or "").strip()
+    if not telefono_normalizado:
+        return None
+
+    payload_borrador = {
+        "phone": telefono_normalizado,
+        "full_name": "",
+        "city": "",
+        "status": "pending",
+        "has_consent": False,
+        "verified": False,
+        "experience_years": 0,
+        "experience_range": None,
+        "updated_at": datetime.utcnow().isoformat(),
+    }
+
+    resultado = await run_supabase(
+        lambda: supabase.table("providers")
+        .upsert(payload_borrador, on_conflict="phone")
+        .execute(),
+        timeout=tiempo_espera,
+        label="providers.upsert_draft",
+    )
+    error_resultado = getattr(resultado, "error", None)
+    if error_resultado:
+        logger.error("❌ Supabase rechazó el borrador: %s", error_resultado)
+        return None
+
+    registro_borrador: Optional[Dict[str, Any]] = None
+    datos_resultado = getattr(resultado, "data", None)
+    if isinstance(datos_resultado, list) and datos_resultado:
+        registro_borrador = datos_resultado[0]
+    elif isinstance(datos_resultado, dict) and datos_resultado:
+        registro_borrador = datos_resultado
+
+    if registro_borrador is None:
+        try:
+            reconsulta = await run_supabase(
+                lambda: supabase.table("providers")
+                .select("*")
+                .eq("phone", telefono_normalizado)
+                .limit(1)
+                .execute(),
+                timeout=tiempo_espera,
+                label="providers.fetch_draft_after_upsert",
+            )
+            if reconsulta.data:
+                registro_borrador = reconsulta.data[0]
+        except Exception as error_reconsulta:
+            logger.warning(
+                "⚠️ No se pudo recuperar borrador del proveedor: %s",
+                error_reconsulta,
+            )
+
+    return registro_borrador
+
+
 async def insertar_servicios_proveedor(
     supabase: Client,
     proveedor_id: str,
@@ -413,12 +483,27 @@ async def registrar_proveedor_en_base_datos(
                 "full_name": registro_insertado.get(
                     "full_name", datos_normalizados["full_name"]
                 ),
+                "document_first_names": registro_insertado.get(
+                    "document_first_names",
+                    datos_normalizados.get("document_first_names"),
+                ),
+                "document_last_names": registro_insertado.get(
+                    "document_last_names",
+                    datos_normalizados.get("document_last_names"),
+                ),
+                "document_id_number": registro_insertado.get(
+                    "document_id_number",
+                    datos_normalizados.get("document_id_number"),
+                ),
                 "city": registro_insertado.get("city", datos_normalizados["city"]),
                 # Fase 6: Eliminado campo 'profession'
                 "services_normalized": servicios_normalizados,
                 "service_entries": service_entries,
                 "experience_years": registro_insertado.get(
                     "experience_years", datos_normalizados["experience_years"]
+                ),
+                "experience_range": registro_insertado.get(
+                    "experience_range", datos_normalizados.get("experience_range")
                 ),
                 "rating": registro_insertado.get(
                     "rating", datos_normalizados["rating"]

@@ -143,6 +143,34 @@ const limpiarTexto = (valor) => {
   return undefined;
 };
 
+const limpiarTextoIdentidad = (...valores) => {
+  for (const valor of valores) {
+    const limpio = limpiarTexto(valor);
+    if (limpio) {
+      return limpio;
+    }
+  }
+  return null;
+};
+
+const construirNotasIdentidad = ({
+  documentFirstNames,
+  documentLastNames,
+  documentIdNumber,
+}) => {
+  const segmentos = [];
+  if (documentFirstNames) {
+    segmentos.push(`Nombres: ${documentFirstNames}`);
+  }
+  if (documentLastNames) {
+    segmentos.push(`Apellidos: ${documentLastNames}`);
+  }
+  if (documentIdNumber) {
+    segmentos.push(`Cédula: ${documentIdNumber}`);
+  }
+  return segmentos.join(" | ");
+};
+
 const timestampIncluyeZona = (valor) =>
   /(?:[zZ]|[+-]\d{2}(?::?\d{2})?)$/.test(valor);
 
@@ -178,7 +206,7 @@ const tienePerfilProfesionalCompleto = (proveedor) => {
 const esProveedorPerfilProfesionalPendiente = (proveedor) =>
   Boolean(
     proveedor &&
-      proveedor.status === "approved_basic" &&
+      proveedor.status === "approved" &&
       !tienePerfilProfesionalCompleto(proveedor),
   );
 
@@ -228,12 +256,9 @@ const construirMensajeAprobacion = (nombre) => {
     message: [
       `¡Hola ${primerNombre || "proveedor"}, ya puedes trabajar!`,
       "",
-      "Tu información fue aprobada. Para empezar a recibir clientes, completa tu perfil profesional:",
+      "Tu información fue aprobada y ya puedes recibir solicitudes de clientes.",
       "",
-      "📋 Años de experiencia",
-      "🛠️ 3 servicios que ofreces",
-      "",
-      "Tómate 2 minutos y listo.",
+      "Si después quieres completar más detalles de tu perfil, podrás hacerlo desde el menú.",
     ].join("\n"),
     ui: {
       type: "buttons",
@@ -244,7 +269,7 @@ const construirMensajeAprobacion = (nombre) => {
       options: [
         {
           id: "provider_menu_info_profesional",
-          title: "Completar perfil",
+          title: "Ir al menú",
         },
       ],
     },
@@ -254,9 +279,9 @@ const construirMensajeAprobacion = (nombre) => {
 const construirMensajeAprobacionPerfil = (nombre) => {
   const safeName = limpiarTexto(nombre);
   if (safeName) {
-    return `✅ Hola *${safeName}*, tu perfil profesional fue aprobado. Ya puedes operar como proveedor en TinkuBot.`;
+    return `✅ Hola *${safeName}*, tu perfil fue aprobado y ya puedes recibir solicitudes de clientes.`;
   }
-  return "✅ Tu perfil profesional fue aprobado. Ya puedes operar como proveedor en TinkuBot.";
+  return "✅ Tu perfil fue aprobado y ya puedes recibir solicitudes de clientes.";
 };
 
 const construirMenuProveedorAprobado = () => ({
@@ -416,28 +441,28 @@ const normalizarEstadoProveedor = (registro) => {
   if (
     ["approved_basic", "aprobado_basico", "basic_approved"].includes(estado)
   ) {
-    return "approved_basic";
+    return "approved";
   }
   if (
     [
       "profile_pending_review",
       "perfil_pendiente_revision",
       "professional_review_pending",
+      "interview_required",
+      "entrevista",
+      "auditoria",
+      "needs_info",
+      "falta_info",
+      "faltainfo",
     ].includes(estado)
   ) {
-    return "profile_pending_review";
+    return "approved";
   }
   if (["approved", "aprobado", "ok"].includes(estado)) {
     return "approved";
   }
   if (["rejected", "rechazado", "denied"].includes(estado)) {
     return "rejected";
-  }
-  if (["needs_info", "falta_info", "faltainfo"].includes(estado)) {
-    return "interview_required";
-  }
-  if (["interview_required", "entrevista", "auditoria"].includes(estado)) {
-    return "interview_required";
   }
   if (["pending", "pendiente"].includes(estado)) {
     return "pending";
@@ -449,6 +474,9 @@ const normalizarProveedorSupabase = (registro) => {
   const nombre =
     limpiarTexto(registro?.full_name) ||
     limpiarTexto(registro?.name) ||
+    limpiarTexto(registro?.contact_phone) ||
+    limpiarTexto(registro?.phone) ||
+    limpiarTexto(registro?.real_phone) ||
     "Proveedor sin nombre";
   const businessName = limpiarTexto(registro?.business_name) || null;
   const contact =
@@ -495,6 +523,20 @@ const normalizarProveedorSupabase = (registro) => {
       : Number.isFinite(Number(registro?.experience_years))
         ? Number(registro?.experience_years)
         : null;
+  const experienceRange =
+    limpiarTexto(registro?.experience_range) ||
+    limpiarTexto(registro?.experienceRange) ||
+    (typeof experienceYears === "number"
+      ? experienceYears < 1
+        ? "Menos de 1 año"
+        : experienceYears < 3
+          ? "1 a 3 años"
+          : experienceYears < 5
+            ? "3 a 5 años"
+            : experienceYears < 10
+              ? "5 a 10 años"
+              : "Más de 10 años"
+      : null);
   const socialMediaUrl =
     limpiarTexto(registro?.social_media_url) ||
     limpiarTexto(registro?.social_media_link) ||
@@ -503,6 +545,26 @@ const normalizarProveedorSupabase = (registro) => {
     limpiarTexto(registro?.social_media_type) ||
     limpiarTexto(registro?.social_media_platform) ||
     null;
+  const documentFirstNames = limpiarTextoIdentidad(
+    registro?.document_first_names,
+    registro?.identity_first_names,
+    registro?.first_names,
+    registro?.document_names,
+  );
+  const documentLastNames = limpiarTextoIdentidad(
+    registro?.document_last_names,
+    registro?.identity_last_names,
+    registro?.last_names,
+    registro?.document_surnames,
+  );
+  const documentIdNumber = limpiarTextoIdentidad(
+    registro?.document_id_number,
+    registro?.identity_document_number,
+    registro?.id_number,
+    registro?.dni_number,
+    registro?.cedula_number,
+    registro?.cedula,
+  );
   const hasConsent =
     typeof registro?.has_consent === "boolean" ? registro.has_consent : null;
   const rating =
@@ -517,6 +579,11 @@ const normalizarProveedorSupabase = (registro) => {
     normalizarTimestampComoUtc(registro?.inserted_at) ||
     new Date().toISOString();
   const notes = limpiarTexto(registro?.notes) || null;
+  const identityNotes = construirNotasIdentidad({
+    documentFirstNames,
+    documentLastNames,
+    documentIdNumber,
+  });
   const dniFrontPhotoUrl = prepararUrlDocumento(
     registro?.dni_front_photo_url,
     registro?.dni_front_url,
@@ -589,10 +656,14 @@ const normalizarProveedorSupabase = (registro) => {
     servicesRaw,
     servicesList,
     experienceYears,
+    experienceRange,
     socialMediaUrl,
     socialMediaType,
     hasConsent,
     rating,
+    documentFirstNames,
+    documentLastNames,
+    documentIdNumber,
     documents: {
       dniFront: dniFrontPhotoUrl,
       dniBack: dniBackPhotoUrl,
@@ -606,6 +677,7 @@ const normalizarProveedorSupabase = (registro) => {
       servicesList,
       experienceYears,
     }),
+    identityNotes: identityNotes || null,
   };
 };
 
@@ -676,7 +748,9 @@ const construirRutaSupabasePendientes = (incluirEstado = true) => {
   ];
 
   if (incluirEstado) {
-    parametrosBase.push("or=(status.is.null,status.in.(new,pending))");
+    parametrosBase.push(
+      "or=(status.is.null,status.in.(new,pending,pending_verification))",
+    );
   }
 
   return `${supabaseProvidersTable}?${parametrosBase.join("&")}`;
@@ -725,7 +799,7 @@ const construirRutaSupabasePostRevision = () => {
     `limit=${pendingLimit}`,
     `order=created_at.desc`,
     "select=*,provider_services(service_name,service_name_normalized,display_order),provider_certificates(id,file_url,display_order,status,created_at,updated_at)",
-    "status=in.(profile_pending_review,interview_required,rejected)",
+    "status=eq.rejected",
   ];
 
   return `${supabaseProvidersTable}?${parametrosBase.join("&")}`;
@@ -754,8 +828,8 @@ const construirRutaSupabaseResumenEstadosProveedores = () => {
   const parametrosBase = [
     "limit=5000",
     "order=created_at.asc",
-    "select=id,full_name,phone,real_phone,created_at,approved_notified_at,verification_reviewed_at,status,experience_years,provider_services(service_name,service_name_normalized,display_order)",
-    "status=in.(pending,approved_basic,profile_pending_review,interview_required,approved)",
+    "select=*,provider_services(service_name,service_name_normalized,display_order)",
+    "status=in.(pending,pending_verification,approved,rejected)",
   ];
 
   return `${supabaseProvidersTable}?${parametrosBase.join("&")}`;
@@ -802,7 +876,7 @@ const obtenerResumenEstadosProveedoresSupabase = async () => {
       continue;
     }
 
-    if (provider.status === "approved_basic") {
+    if (provider.status === "approved") {
       summary.personalApproved += 1;
       if (provider.professionalProfileComplete) {
         summary.profileComplete += 1;
@@ -810,18 +884,6 @@ const obtenerResumenEstadosProveedoresSupabase = async () => {
         summary.professionalToComplete += 1;
       }
       continue;
-    }
-
-    if (
-      provider.status === "profile_pending_review" ||
-      provider.status === "interview_required"
-    ) {
-      summary.professionalUnderReview += 1;
-      continue;
-    }
-
-    if (provider.status === "approved") {
-      summary.profileComplete += 1;
     }
   }
 
@@ -833,7 +895,7 @@ const construirRutaSupabasePerfilProfesionalIncompleto = () => {
     `limit=${pendingLimit}`,
     `order=approved_notified_at.asc.nullslast,created_at.asc`,
     "select=*,provider_services(service_name,service_name_normalized,display_order),provider_certificates(id,file_url,display_order,status,created_at,updated_at)",
-    "status=eq.approved_basic",
+    "status=eq.approved",
   ];
 
   return `${supabaseProvidersTable}?${parametrosBase.join("&")}`;
@@ -966,7 +1028,7 @@ async function aprobarProveedor(providerId, _payload = {}, requestId = null) {
     const timestamp = new Date().toISOString();
     const payloadPrincipal = {
       verified: false,
-      status: "approved_basic",
+      status: "approved",
       updated_at: timestamp,
       approved_notified_at: timestamp,
     };
@@ -986,7 +1048,7 @@ async function aprobarProveedor(providerId, _payload = {}, requestId = null) {
         ? datosActualizados[0]
         : null;
 
-    const mensaje = "Onboarding básico aprobado correctamente.";
+    const mensaje = "Proveedor aprobado correctamente.";
 
     const approvalResult = construirMensajeAprobacion(registro?.full_name);
     const telefonoBruto = registro?.real_phone || registro?.phone;
@@ -1002,7 +1064,7 @@ async function aprobarProveedor(providerId, _payload = {}, requestId = null) {
 
     return construirRespuestaAccion(
       providerId,
-      "approved_basic",
+      "approved",
       mensaje,
       registro,
     );
@@ -1062,11 +1124,8 @@ async function revisarProveedor(providerId, payload = {}, requestId = null) {
     const estadoFinal =
       estadoSolicitado &&
       [
-        "approved_basic",
-        "profile_pending_review",
         "approved",
         "rejected",
-        "interview_required",
       ].includes(estadoSolicitado)
         ? estadoSolicitado
         : null;
@@ -1087,10 +1146,48 @@ async function revisarProveedor(providerId, payload = {}, requestId = null) {
       verified: estadoFinal === "approved",
     };
 
-    if (estadoFinal === "approved" || estadoFinal === "approved_basic") {
+    const documentFirstNames = limpiarTexto(
+      payload.documentFirstNames || payload.document_first_names,
+    );
+    const documentLastNames = limpiarTexto(
+      payload.documentLastNames || payload.document_last_names,
+    );
+    const documentIdNumber = limpiarTexto(
+      payload.documentIdNumber || payload.document_id_number,
+    );
+    const identityNotes = construirNotasIdentidad({
+      documentFirstNames,
+      documentLastNames,
+      documentIdNumber,
+    });
+
+    if (
+      estadoFinal === "approved" &&
+      (!documentFirstNames || !documentLastNames || !documentIdNumber)
+    ) {
+      return {
+        providerId,
+        status: "pending",
+        updatedAt: timestamp,
+        message:
+          "Completa nombres, apellidos y cédula antes de aprobar el proveedor.",
+      };
+    }
+
+    if (estadoFinal === "approved") {
       payloadBase.approved_notified_at = timestamp;
     } else if (estadoFinal === "rejected") {
       payloadBase.rejected_notified_at = timestamp;
+    }
+
+    if (documentFirstNames) {
+      payloadBase.document_first_names = documentFirstNames;
+    }
+    if (documentLastNames) {
+      payloadBase.document_last_names = documentLastNames;
+    }
+    if (documentIdNumber) {
+      payloadBase.document_id_number = documentIdNumber;
     }
 
     if (limpiarTexto(payload.notes)) {
@@ -1107,6 +1204,13 @@ async function revisarProveedor(providerId, payload = {}, requestId = null) {
       updated_at: timestamp,
       verified: estadoFinal === "approved",
     };
+    if (identityNotes) {
+      payloadFallback.notes = payloadBase.notes
+        ? `${payloadBase.notes}\n${identityNotes}`
+        : identityNotes;
+    } else if (payloadBase.notes) {
+      payloadFallback.notes = payloadBase.notes;
+    }
 
     const datosActualizados = await intentarActualizacionSupabase(
       providerId,
@@ -1121,27 +1225,15 @@ async function revisarProveedor(providerId, payload = {}, requestId = null) {
 
     let mensajeProveedor = limpiarTexto(payload.message);
     let uiProveedor = null;
-    if (estadoFinal === "approved_basic") {
+    if (estadoFinal === "approved") {
       const resultado = construirMensajeAprobacion(registro?.full_name);
       mensajeProveedor = resultado.message;
       uiProveedor = resultado.ui;
     } else if (!mensajeProveedor) {
-      if (estadoFinal === "approved") {
-        mensajeProveedor = construirMensajeAprobacionPerfil(
-          registro?.full_name,
-        );
-      } else if (estadoFinal === "profile_pending_review") {
-        mensajeProveedor = construirMensajeRevisionPerfilProfesional(
-          registro?.full_name,
-        );
-      } else if (estadoFinal === "interview_required") {
-        mensajeProveedor = construirMensajeEntrevista(registro?.full_name);
-      } else {
-        mensajeProveedor = construirMensajeRechazo(
-          registro?.full_name,
-          payload.notes,
-        );
-      }
+      mensajeProveedor = construirMensajeRechazo(
+        registro?.full_name,
+        payload.notes,
+      );
     }
 
     const telefonoRevisarBruto =

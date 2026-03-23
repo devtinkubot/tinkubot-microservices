@@ -17,6 +17,10 @@ _EXPORTS = {
         "services.registro",
         "registrar_proveedor_en_base_datos",
     ),
+    "asegurar_proveedor_borrador": (
+        "services.registro",
+        "asegurar_proveedor_borrador",
+    ),
     "limpiar_onboarding_proveedores": (
         "services.registro",
         "limpiar_onboarding_proveedores",

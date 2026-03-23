@@ -1524,7 +1524,7 @@ def test_actualizacion_experiencia_desde_menu_regresa_detalle():
     assert flujo["state"] == "viewing_professional_experience"
     assert respuesta["messages"][0]["ui"]["type"] == "buttons"
     assert respuesta["messages"][0]["ui"]["header_text"] == "Experiencia general"
-    assert "8 años" in respuesta["messages"][0]["response"].lower()
+    assert "5 a 10 años" in respuesta["messages"][0]["response"].lower()
 
 
 def test_redes_sociales_sin_datos_muestra_sublista_vacia():
@@ -1693,29 +1693,6 @@ def test_onboarding_redes_sociales_continuar_conserva_red_ya_registrada():
 
 
 def test_onboarding_servicio_prompt_muestra_lista_de_ejemplos(monkeypatch):
-    async def _pregunta(*, indice=None, maximo=None, supabase=None, include_back_option=True):
-        return {
-            "response": f"Prompt servicio {indice}/{maximo}",
-            "ui": {
-                "type": "list",
-                "list_button_text": "Ver ejemplos",
-                "options": [
-                    {"id": "provider_service_example_mechanics", "title": "Gasfitería"}
-                ],
-            },
-            "service_examples_lookup": {
-                "provider_service_example_mechanics": {
-                    "id": "provider_service_example_mechanics",
-                    "title": "Gasfitería",
-                }
-            },
-        }
-
-    monkeypatch.setattr(
-        "flows.gestores_estados.gestor_espera_especialidad.preguntar_nuevo_servicio_con_ejemplos_dinamicos",
-        _pregunta,
-    )
-
     respuesta = asyncio.run(
         manejar_espera_especialidad(
             flujo={"profile_completion_mode": True, "servicios_temporales": []},
@@ -1724,38 +1701,14 @@ def test_onboarding_servicio_prompt_muestra_lista_de_ejemplos(monkeypatch):
         )
     )
 
-    assert respuesta["messages"][0]["ui"]["type"] == "list"
-    assert respuesta["messages"][0]["ui"]["list_button_text"] == "Ver ejemplos"
-    assert all(
-        option["id"] != SERVICE_EXAMPLE_BACK_ID
-        for option in respuesta["messages"][0]["ui"]["options"]
+    assert respuesta["messages"][0]["media_type"] == "image"
+    assert "tinkubot_add_services.png" in respuesta["messages"][0]["media_url"]
+    assert respuesta["messages"][0]["response"] == (
+        "*Agregar Servicio 1 de 3*\n\nEscribe el primer servicio que ofreces."
     )
 
 
 def test_onboarding_servicio_ejemplo_devuelve_sugerencia_y_mantiene_lista(monkeypatch):
-    async def _pregunta(*, indice=None, maximo=None, supabase=None, include_back_option=True):
-        return {
-            "response": f"Prompt servicio {indice}/{maximo}",
-            "ui": {
-                "type": "list",
-                "list_button_text": "Ver ejemplos",
-                "options": [
-                    {"id": "provider_service_example_mechanics", "title": "Gasfitería"}
-                ],
-            },
-            "service_examples_lookup": {
-                "provider_service_example_mechanics": {
-                    "id": "provider_service_example_mechanics",
-                    "title": "Gasfitería",
-                }
-            },
-        }
-
-    monkeypatch.setattr(
-        "flows.gestores_estados.gestor_espera_especialidad.preguntar_nuevo_servicio_con_ejemplos_dinamicos",
-        _pregunta,
-    )
-
     respuesta = asyncio.run(
         manejar_espera_especialidad(
             flujo={
@@ -1775,25 +1728,18 @@ def test_onboarding_servicio_ejemplo_devuelve_sugerencia_y_mantiene_lista(monkey
     )
 
     assert "gasfiter" in respuesta["messages"][0]["response"].lower()
-    assert respuesta["messages"][1]["ui"]["type"] == "list"
+    assert respuesta["messages"][1]["media_type"] == "image"
+    assert "tinkubot_add_services.png" in respuesta["messages"][1]["media_url"]
 
 
-def test_actualizacion_nombre_regresa_menu_interactivo(monkeypatch):
-    async def _actualizar_nombre_proveedor(_supabase, _proveedor_id, nombre):
-        return {"success": True, "full_name": nombre.title()}
-
-    monkeypatch.setattr(
-        "flows.gestores_estados.gestor_espera_nombre.actualizar_nombre_proveedor",
-        _actualizar_nombre_proveedor,
-    )
-
+def test_espera_nombre_legado_salta_a_cedula_frontal():
     flujo = {
         "state": "awaiting_name",
         "profile_edit_mode": "personal_name",
-        "profile_return_state": "viewing_personal_name",
         "menu_limitado": False,
         "approved_basic": False,
         "full_name": "Maria Lopez",
+        "city": "cuenca",
     }
 
     respuesta = asyncio.run(
@@ -1805,14 +1751,11 @@ def test_actualizacion_nombre_regresa_menu_interactivo(monkeypatch):
         )
     )
 
-    assert flujo["state"] == "viewing_personal_name"
-    assert respuesta["messages"][1]["ui"]["type"] == "buttons"
+    assert flujo["state"] == "awaiting_dni_front_photo"
+    assert respuesta["messages"][0]["media_type"] == "image"
     assert (
-        respuesta["messages"][1]["ui"]["options"][0]["id"]
-        == "provider_detail_name_change"
+        "cédula" in respuesta["messages"][0]["response"].lower()
     )
-
-
 def test_completar_perfil_envia_a_revision_humana(monkeypatch):
     async def _actualizar_perfil_profesional(**kwargs):
         return {"success": True}
@@ -1868,7 +1811,7 @@ def test_completar_perfil_envia_a_revision_humana(monkeypatch):
     assert flujo["profile_pending_review"] is False
     assert flujo["state"] == "awaiting_menu_option"
     assert len(respuesta["response"]["messages"]) == 2
-    assert "perfil profesional quedó actualizado" in (
+    assert "tu perfil quedó actualizado" in (
         respuesta["response"]["messages"][0]["response"].lower()
     )
     assert (
@@ -1930,8 +1873,12 @@ def test_certificado_omitido_avanza_a_servicios():
     )
 
     assert flujo["state"] == "awaiting_specialty"
-    assert respuesta["messages"][0]["ui"]["type"] == "list"
-    assert respuesta["messages"][0]["ui"]["list_button_text"] == "Ver ejemplos"
+    assert respuesta["messages"][0]["media_type"] == "image"
+    assert "tinkubot_add_services.png" in respuesta["messages"][0]["media_url"]
+    assert (
+        "Agregar Servicio"
+        in respuesta["messages"][0]["response"]
+    )
     assert (
         "ahora sí, vamos con tus servicios"
         not in respuesta["messages"][0]["response"].lower()
@@ -1954,8 +1901,8 @@ def test_control_viejo_no_se_interpreta_como_servicio():
     )
 
     assert flujo["state"] == "awaiting_specialty"
-    assert respuesta["messages"][0]["ui"]["type"] == "list"
-    assert respuesta["messages"][0]["ui"]["list_button_text"] == "Ver ejemplos"
+    assert respuesta["messages"][0]["media_type"] == "image"
+    assert "tinkubot_add_services.png" in respuesta["messages"][0]["media_url"]
 
 
 def test_servicio_perfil_pide_confirmacion_individual(monkeypatch):
@@ -2099,23 +2046,6 @@ def test_espera_especialidad_no_interrumpe_si_el_servicio_es_valido_y_domino_no_
 
 
 def test_confirmar_servicio_perfil_avanza_al_siguiente_paso(monkeypatch):
-    async def _fake_prompt(**_kwargs):
-        return {
-            "response": "Escribe el *segundo servicio* que también ofreces.",
-            "ui": {
-                "type": "list",
-                "header_text": "Agregar Servicio 2 de 3",
-                "list_button_text": "Ver ejemplos",
-                "options": [],
-            },
-            "service_examples_lookup": {},
-        }
-
-    monkeypatch.setattr(
-        "flows.gestores_estados.gestor_espera_especialidad.preguntar_nuevo_servicio_con_ejemplos_dinamicos",
-        _fake_prompt,
-    )
-
     flujo = {
         "profile_completion_mode": True,
         "servicios_temporales": [],
@@ -2138,9 +2068,9 @@ def test_confirmar_servicio_perfil_avanza_al_siguiente_paso(monkeypatch):
     assert flujo["servicios_temporales"] == [
         "desarrollo aplicaciones moviles inteligencia artificial"
     ]
-    assert respuesta["messages"][0]["ui"]["type"] == "list"
-    assert respuesta["messages"][0]["ui"]["list_button_text"] == "Ver ejemplos"
-    assert "segundo servicio" in respuesta["messages"][0]["response"].lower()
+    assert respuesta["messages"][0]["media_type"] == "image"
+    assert "tinkubot_add_services.png" in respuesta["messages"][0]["media_url"]
+    assert "Agregar Servicio 2 de 3" in respuesta["messages"][0]["response"]
 
 
 def test_tercer_servicio_confirmado_muestra_resumen_final_de_perfil():
@@ -2166,10 +2096,14 @@ def test_tercer_servicio_confirmado_muestra_resumen_final_de_perfil():
         )
     )
 
-    assert flujo["state"] == "awaiting_profile_completion_confirmation"
-    assert "confirma tus datos" in respuesta["messages"][0]["response"].lower()
-    assert "servicio 1" in respuesta["messages"][0]["response"].lower()
-    assert "servicio 3" in respuesta["messages"][0]["response"].lower()
+    assert flujo["state"] == "awaiting_consent"
+    assert (
+        respuesta["messages"][0]["ui"]["id"] == "provider_onboarding_continue_v1"
+    )
+    assert "vamos a utilizar la siguiente información" in (
+        respuesta["messages"][0]["response"].lower()
+    )
+    assert "servicio 1" not in respuesta["messages"][0]["response"].lower()
 
 
 def test_no_acepto_abre_menu_edicion_integral():

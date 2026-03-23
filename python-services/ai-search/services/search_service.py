@@ -351,6 +351,7 @@ class SearchService:
             verified=row.get("verified", False),
             services=services,
             years_of_experience=row.get("experience_years"),
+            experience_range=row.get("experience_range"),
             created_at=row.get("created_at", datetime.now()),
             similarity_score=similarity_score,
             matched_service_name=row.get("matched_service_name"),

@@ -7,8 +7,8 @@ from templates.verificacion.estados import mensaje_proveedor_en_revision
 from templates.registro import (
     CONFIRM_ACCEPT_ID,
     CONFIRM_REJECT_ID,
-    payload_resumen_consentimiento_registro,
 )
+from flows.constructores import construir_respuesta_solicitud_consentimiento
 from flows.validadores.validador_entrada import parsear_cadena_servicios
 from services.registro import validar_y_construir_proveedor
 
@@ -174,5 +174,5 @@ async def manejar_confirmacion(
     # Opción no reconocida - reenviar solicitud con botones
     return {
         "success": True,
-        "messages": [payload_resumen_consentimiento_registro(flujo)],
+        "messages": construir_respuesta_solicitud_consentimiento()["messages"],
     }

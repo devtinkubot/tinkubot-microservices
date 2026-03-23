@@ -82,6 +82,37 @@ def _valor_visible(valor: Any, predeterminado: str = "No registrado") -> str:
     return texto or predeterminado
 
 
+def _formatear_datos_identidad(flujo: Dict[str, Any]) -> str:
+    nombre_visible = _valor_visible(flujo.get("full_name"))
+    nombres_documento = _valor_visible(
+        flujo.get("document_first_names"),
+        "",
+    )
+    apellidos_documento = _valor_visible(
+        flujo.get("document_last_names"),
+        "",
+    )
+    cedula_documento = _valor_visible(
+        flujo.get("document_id_number"),
+        "",
+    )
+
+    partes = [f"*Nombre actual*\n{nombre_visible}"]
+    if (
+        nombres_documento
+        or apellidos_documento
+        or cedula_documento
+    ):
+        partes.append(
+            "*Datos de registro*\n"
+            f"Nombres: {nombres_documento or 'No registrado'}\n"
+            f"Apellidos: {apellidos_documento or 'No registrado'}\n"
+            f"Cédula: {cedula_documento or 'No registrada'}"
+        )
+
+    return "\n\n".join(partes)
+
+
 def _resolver_redes_desde_flujo(flujo: Dict[str, Any]) -> Dict[str, Optional[str]]:
     return resolver_redes_sociales(flujo)
 
@@ -106,7 +137,7 @@ async def render_profile_view(
     proveedor_id: Optional[str],
 ) -> Dict[str, Any]:
     if estado == "viewing_personal_name":
-        return payload_detalle_nombre(_valor_visible(flujo.get("full_name")))
+        return payload_detalle_nombre(_formatear_datos_identidad(flujo))
 
     if estado == "viewing_personal_city":
         return payload_detalle_ubicacion(
@@ -155,7 +186,9 @@ async def render_profile_view(
         )
 
     if estado == "viewing_professional_experience":
-        return payload_detalle_experiencia(flujo.get("experience_years"))
+        return payload_detalle_experiencia(
+            flujo.get("experience_range") or flujo.get("experience_years")
+        )
 
     if estado == "viewing_professional_social":
         redes = _resolver_redes_desde_flujo(flujo)

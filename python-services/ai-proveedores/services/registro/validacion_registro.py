@@ -61,17 +61,28 @@ def validar_y_construir_proveedor(
         )
 
     try:
+        nombre_visible = (
+            flujo.get("name")
+            or flujo.get("full_name")
+            or flujo.get("real_phone")
+            or flujo.get("phone_user")
+            or telefono
+        )
         proveedor = SolicitudCreacionProveedor(
             phone=telefono,
             real_phone=flujo.get("real_phone") or flujo.get("phone_user"),
-            full_name=flujo.get("name") or "",
+            full_name=str(nombre_visible).strip() or "Pendiente de nombre",
             city=ciudad_canonica,
             # Fase 4: Eliminado campo profession - ya no existe en el modelo
             services_list=servicios_lista,
             experience_years=flujo.get("experience_years"),
+            experience_range=flujo.get("experience_range"),
             has_consent=flujo.get("has_consent", False),
             social_media_url=flujo.get("social_media_url"),
             social_media_type=flujo.get("social_media_type"),
+            document_first_names=flujo.get("document_first_names"),
+            document_last_names=flujo.get("document_last_names"),
+            document_id_number=flujo.get("document_id_number"),
             location_lat=flujo.get("location_lat"),
             location_lng=flujo.get("location_lng"),
         )

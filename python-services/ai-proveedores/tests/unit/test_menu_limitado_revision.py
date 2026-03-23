@@ -20,6 +20,7 @@ def test_manejar_estado_inicial_habilita_menu_limitado_en_interview_required():
         manejar_estado_inicial(
             estado=None,
             flujo=flujo,
+            provider_id="prov-interview",
             tiene_consentimiento=True,
             esta_registrado=True,
             esta_verificado=False,
@@ -119,3 +120,42 @@ def test_menu_approved_basic_opcion_invalida_muestra_error_bien_formado():
     assert "no reconoc" in resultado["messages"][0]["response"].lower()
     assert resultado["messages"][1]["ui"]["type"] == "list"
     assert resultado["messages"][1]["ui"]["id"] == "provider_main_menu_v1"
+
+
+def test_registro_crea_borrador_y_provider_id(monkeypatch):
+    async def _asegurar_proveedor_borrador(*, supabase, telefono):
+        return {"id": "prov-borrador-1", "phone": telefono}
+
+    monkeypatch.setattr(
+        "flows.router.asegurar_proveedor_borrador",
+        _asegurar_proveedor_borrador,
+    )
+
+    flujo = {
+        "state": "awaiting_menu_option",
+        "mode": "registration",
+        "has_consent": False,
+    }
+
+    resultado = asyncio.run(
+        enrutar_estado(
+            estado=flujo.get("state"),
+            flujo=flujo,
+            texto_mensaje="registrarse",
+            carga={},
+            telefono="593999111999@s.whatsapp.net",
+            opcion_menu=None,
+            tiene_consentimiento=False,
+            esta_registrado=False,
+            perfil_proveedor=None,
+            supabase=object(),
+            servicio_embeddings=None,
+            cliente_openai=None,
+            subir_medios_identidad=None,
+            logger=None,
+        )
+    )
+
+    assert resultado is not None
+    assert flujo["state"] == "awaiting_city"
+    assert flujo["provider_id"] == "prov-borrador-1"

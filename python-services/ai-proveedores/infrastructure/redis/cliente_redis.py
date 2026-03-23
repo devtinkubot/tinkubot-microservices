@@ -141,6 +141,32 @@ class ClienteRedis:
 
         return 0
 
+    async def delete_by_pattern(self, pattern: str) -> int:
+        """Eliminar todas las claves que coincidan con un patrón."""
+        if not pattern:
+            return 0
+
+        if not self._connected and not self.redis_client:
+            await self.connect()
+
+        if self._connected and self.redis_client:
+            try:
+                claves = [clave async for clave in self.redis_client.scan_iter(match=pattern)]
+                if not claves:
+                    return 0
+                eliminadas = await self.redis_client.delete(*claves)
+                logger.debug(
+                    "🗑️ Eliminadas %s claves por patrón en Redis: %s",
+                    int(eliminadas or 0),
+                    pattern,
+                )
+                return int(eliminadas or 0)
+            except Exception as e:
+                logger.error(f"❌ Error eliminando por patrón en Redis: {e}")
+                raise
+
+        return 0
+
 
 # Instancia global
 cliente_redis = ClienteRedis()

@@ -1,8 +1,7 @@
 """
 Módulo de almacenamiento de imágenes en Supabase Storage para proveedores.
 
-Este módulo gestiona la subida, actualización y recuperación de imágenes
-de documentos de identidad de proveedores (DNI frontal, DNI reverso, foto de rostro).
+Este módulo gestiona la subida, actualización y recuperación de medios de identidad.
 """
 
 import logging
@@ -140,7 +139,6 @@ async def subir_imagen_proveedor(
 async def actualizar_imagenes_proveedor(
     proveedor_id: str,
     dni_front_url: Optional[str] = None,
-    dni_back_url: Optional[str] = None,
     face_url: Optional[str] = None,
 ) -> bool:
     """
@@ -149,7 +147,6 @@ async def actualizar_imagenes_proveedor(
     Args:
         proveedor_id: UUID del proveedor
         dni_front_url: URL de foto frontal del DNI
-        dni_back_url: URL de foto posterior del DNI
         face_url: URL de foto de rostro
 
     Returns:
@@ -164,13 +161,10 @@ async def actualizar_imagenes_proveedor(
         datos_actualizacion = {}
 
         url_frontal = _coerce_storage_string(dni_front_url)
-        url_reverso = _coerce_storage_string(dni_back_url)
         url_rostro = _coerce_storage_string(face_url)
 
         if url_frontal:
             datos_actualizacion["dni_front_photo_url"] = url_frontal
-        if url_reverso:
-            datos_actualizacion["dni_back_photo_url"] = url_reverso
         if url_rostro:
             datos_actualizacion["face_photo_url"] = url_rostro
 
@@ -328,27 +322,78 @@ async def obtener_urls_imagenes_proveedor(
         return {}
 
 
+async def _obtener_telefono_proveedor(
+    supabase: Any, proveedor_id: str
+) -> Optional[str]:
+    try:
+        resultado = await run_supabase(
+            lambda: supabase.table("providers")
+            .select("phone")
+            .eq("id", proveedor_id)
+            .limit(1)
+            .execute(),
+            label="providers.phone_by_id_for_images",
+        )
+        if resultado.data:
+            telefono = resultado.data[0].get("phone")
+            if isinstance(telefono, str) and telefono.strip():
+                return telefono.strip()
+    except Exception as exc:
+        logger.warning(
+            "⚠️ No se pudo obtener teléfono para refrescar cache de imágenes (%s): %s",
+            proveedor_id,
+            exc,
+        )
+    return None
+
+
+def _normalizar_identificador_archivo(valor: Optional[str]) -> str:
+    """Convierte un teléfono o identificador en una base estable para archivos."""
+    texto = str(valor or "").strip()
+    if not texto:
+        return ""
+    base = texto.split("@", 1)[0].strip()
+    if not base:
+        return ""
+    base = re.sub(r"[^0-9A-Za-z_-]+", "", base)
+    return base.strip()
+
+
 async def subir_medios_identidad(
-    proveedor_id: str,
+    proveedor_id: Optional[str],
     flujo: Dict[str, Any],
-) -> None:
+    nombre_base_archivo: Optional[str] = None,
+) -> Dict[str, Optional[str]]:
     supabase = get_supabase_client()
     if not supabase:
-        return
+        return {}
 
     subidas: Dict[str, Optional[str]] = {
         "front": None,
-        "back": None,
         "face": None,
     }
 
+    identificador_archivo = _normalizar_identificador_archivo(
+        nombre_base_archivo
+        or flujo.get("phone")
+        or flujo.get("telefono")
+        or proveedor_id
+    )
+    if not identificador_archivo and not proveedor_id:
+        logger.warning("⚠️ No hay identificador estable para subir medios de identidad")
+        return subidas
+
     mapeo = [
-        ("dni_front_image", "dni-front", "front"),
-        ("dni_back_image", "dni-back", "back"),
-        ("face_image", "face", "face"),
+        ("dni_front_image", "dni-front", "front", "dni_front_photo_url"),
+        ("face_image", "face", "face", "face_photo_url"),
     ]
 
-    for clave, tipo_archivo, destino in mapeo:
+    for clave, tipo_archivo, destino, clave_url in mapeo:
+        url_existente = _coerce_storage_string(flujo.get(clave_url))
+        if url_existente:
+            subidas[destino] = url_existente
+            continue
+
         datos_base64 = flujo.get(clave)
         if not datos_base64:
             continue
@@ -362,11 +407,12 @@ async def subir_medios_identidad(
         mimetype = procesamiento.get("mimetype") or "image/jpeg"
         try:
             url = await subir_imagen_proveedor(
-                proveedor_id,
+                proveedor_id or identificador_archivo,
                 bytes_imagen,
                 tipo_archivo,
                 extension,
                 mimetype,
+                identificador_archivo or None,
             )
         except Exception as exc:
             logger.error(
@@ -375,26 +421,63 @@ async def subir_medios_identidad(
             url = None
         if url:
             subidas[destino] = url
+            flujo[clave_url] = url
+            flujo.pop(clave, None)
             logger.info(
                 "📤 Documento %s almacenado para %s -> %s",
                 tipo_archivo,
-                proveedor_id,
+                proveedor_id or identificador_archivo,
                 url,
             )
 
     if any(subidas.values()):
-        logger.info(
-            "📝 Actualizando documentos en tabla para %s (frente=%s, reverso=%s, rostro=%s)",
-            proveedor_id,
-            bool(subidas.get("front")),
-            bool(subidas.get("back")),
-            bool(subidas.get("face")),
-        )
-        await actualizar_imagenes_proveedor(
-            proveedor_id,
-            subidas.get("front"),
-            subidas.get("back"),
-            subidas.get("face"),
-        )
+        if proveedor_id:
+            logger.info(
+                "📝 Actualizando medios en tabla para %s (frente=%s, rostro=%s)",
+                proveedor_id,
+                bool(subidas.get("front")),
+                bool(subidas.get("face")),
+            )
+            await actualizar_imagenes_proveedor(
+                proveedor_id,
+                subidas.get("front"),
+                subidas.get("face"),
+            )
+
+        if proveedor_id:
+            telefono = await _obtener_telefono_proveedor(supabase, proveedor_id)
+            if telefono:
+                try:
+                    from flows.sesion import (
+                        invalidar_cache_perfil_proveedor,
+                        refrescar_cache_perfil_proveedor,
+                    )
+                except ImportError:
+                    invalidar_cache_perfil_proveedor = None
+                    refrescar_cache_perfil_proveedor = None
+
+                if invalidar_cache_perfil_proveedor:
+                    await invalidar_cache_perfil_proveedor(telefono)
+                if refrescar_cache_perfil_proveedor:
+                    try:
+                        await refrescar_cache_perfil_proveedor(telefono)
+                    except Exception as exc:
+                        logger.warning(
+                            "⚠️ No se pudo refrescar cache del perfil %s tras subir imágenes: %s",
+                            telefono,
+                            exc,
+                        )
+        else:
+            logger.info(
+                "📝 Medios persistidos en flujo temporal para %s (frente=%s, rostro=%s)",
+                identificador_archivo,
+                bool(subidas.get("front")),
+                bool(subidas.get("face")),
+            )
     else:
-        logger.warning("⚠️ No se subieron documentos válidos para %s", proveedor_id)
+        logger.warning(
+            "⚠️ No se subieron documentos válidos para %s",
+            proveedor_id or identificador_archivo,
+        )
+
+    return subidas

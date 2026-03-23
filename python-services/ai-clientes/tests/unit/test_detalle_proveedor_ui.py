@@ -21,6 +21,7 @@ def test_bloque_detalle_proveedor_usa_resumen_corto():
             "name": "Diego Unkuch Gonzalez",
             "city": "Cuenca",
             "experience_years": 10,
+            "experience_range": "Más de 10 años",
             "rating": 5.0,
         }
     )
@@ -28,7 +29,7 @@ def test_bloque_detalle_proveedor_usa_resumen_corto():
     assert mensaje == "\n".join(
         [
             "*Ubicación:* Cuenca",
-            "*Experiencia:* 10 año(s)",
+            "*Experiencia:* Más de 10 años",
             "*Calificación:* 5.0",
         ]
     )

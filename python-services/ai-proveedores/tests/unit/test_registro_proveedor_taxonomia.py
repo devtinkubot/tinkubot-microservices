@@ -7,6 +7,7 @@ from services.registro.registro_proveedor import (
     insertar_servicios_proveedor,
     registrar_proveedor_en_base_datos,
 )
+from services.registro.normalizacion import normalizar_datos_proveedor
 
 
 def test_registro_inicial_persiste_servicios_normalizados_sin_taxonomia_runtime(
@@ -34,6 +35,7 @@ def test_registro_inicial_persiste_servicios_normalizados_sin_taxonomia_runtime(
                         "full_name": "Diego",
                         "city": "quito",
                         "experience_years": 3,
+                        "experience_range": "3 a 5 años",
                         "rating": 5.0,
                         "verified": False,
                         "has_consent": True,
@@ -97,6 +99,9 @@ def test_registro_inicial_persiste_servicios_normalizados_sin_taxonomia_runtime(
         has_consent=True,
         social_media_url=None,
         social_media_type=None,
+        document_first_names="Diego",
+        document_last_names="Unkuch Gonzalez",
+        document_id_number="0912345678",
     )
 
     resultado = asyncio.run(
@@ -108,6 +113,10 @@ def test_registro_inicial_persiste_servicios_normalizados_sin_taxonomia_runtime(
     )
 
     assert resultado is not None
+    assert captured["upsert_payload"]["document_first_names"] == "Diego"
+    assert captured["upsert_payload"]["document_last_names"] == "Unkuch Gonzalez"
+    assert captured["upsert_payload"]["document_id_number"] == "0912345678"
+    assert captured["upsert_payload"]["experience_range"] == "3 a 5 años"
     assert captured["servicios"] == [
         {
             "raw_service_text": "laboralista",
@@ -116,6 +125,32 @@ def test_registro_inicial_persiste_servicios_normalizados_sin_taxonomia_runtime(
         }
     ]
     assert captured["proveedor_id"] == "prov-1"
+    assert resultado["document_first_names"] == "Diego"
+    assert resultado["document_last_names"] == "Unkuch Gonzalez"
+    assert resultado["document_id_number"] == "0912345678"
+    assert resultado["experience_range"] == "3 a 5 años"
+
+
+def test_normalizar_datos_proveedor_incluye_identidad_documental():
+    solicitud = SolicitudCreacionProveedor(
+        phone="593959091325@s.whatsapp.net",
+        real_phone="593959091325",
+        full_name="diego",
+        city="Quito",
+        services_list=[],
+        experience_years=1,
+        has_consent=True,
+        document_first_names="Diego",
+        document_last_names="Unkuch Gonzalez",
+        document_id_number="0912345678",
+    )
+
+    normalizado = normalizar_datos_proveedor(solicitud)
+
+    assert normalizado["document_first_names"] == "Diego"
+    assert normalizado["document_last_names"] == "Unkuch Gonzalez"
+    assert normalizado["document_id_number"] == "0912345678"
+    assert normalizado["experience_range"] == "1 a 3 años"
 
 
 def test_insertar_servicios_persiste_taxonomia_sugerida_sin_revision(

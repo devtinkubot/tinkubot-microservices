@@ -24,9 +24,8 @@ from templates.registro import (
     mensaje_resumen_servicios_registro,
     mensaje_servicio_actualizado,
     mensaje_servicio_eliminado_registro,
-    payload_confirmacion_resumen,
-    payload_resumen_consentimiento_registro,
     payload_certificado_opcional,
+    payload_confirmacion_resumen,
     payload_red_social_opcional,
     preguntar_experiencia_general,
     preguntar_nuevo_servicio_reemplazo,
@@ -36,6 +35,7 @@ from templates.registro import (
     SERVICE_ADD_NO_ID,
     SERVICE_ADD_YES_ID,
 )
+from flows.constructores import construir_respuesta_solicitud_consentimiento
 
 logger = logging.getLogger(__name__)
 
@@ -146,9 +146,12 @@ async def manejar_confirmacion_servicio_perfil(
             cantidad = len(flujo.get("servicios_temporales") or [])
             if cantidad >= SERVICIOS_MINIMOS_PERFIL_PROFESIONAL:
                 flujo["state"] = "awaiting_consent"
+                flujo["post_consent_state"] = "pending_verification"
                 return {
                     "success": True,
-                    "messages": [payload_resumen_consentimiento_registro(flujo)],
+                    "messages": construir_respuesta_solicitud_consentimiento()[
+                        "messages"
+                    ],
                 }
 
             flujo["state"] = "awaiting_specialty"
@@ -220,7 +223,9 @@ async def manejar_confirmacion_servicio_perfil(
             flujo["state"] = "awaiting_consent"
             return {
                 "success": True,
-                "messages": [payload_resumen_consentimiento_registro(flujo)],
+                "messages": construir_respuesta_solicitud_consentimiento()[
+                    "messages"
+                ],
             }
 
         flujo["state"] = "awaiting_specialty"
@@ -479,7 +484,7 @@ async def manejar_confirmacion_servicios(
         flujo["state"] = "confirm"
         return {
             "success": True,
-            "messages": [payload_resumen_consentimiento_registro(flujo)],
+            "messages": construir_respuesta_solicitud_consentimiento()["messages"],
         }
 
     if texto_limpio in {"2", "no", "corregir", "editar", "cambiar"}:
