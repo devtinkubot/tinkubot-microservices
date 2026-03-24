@@ -101,11 +101,11 @@ async def manejar_espera_certificado(
 
         servicios_temporales = list(flujo.get("servicios_temporales") or [])
         flujo["state"] = "awaiting_specialty"
-        from .gestor_espera_especialidad import _mensajes_prompt_servicio_onboarding
+        from .gestor_espera_especialidad import _mensajes_prompt_servicio_compartido
 
         return {
             "success": True,
-            "messages": await _mensajes_prompt_servicio_onboarding(
+            "messages": await _mensajes_prompt_servicio_compartido(
                 flujo=flujo,
                 indice=len(servicios_temporales) + 1,
                 maximo_visible=SERVICIOS_MINIMOS_PERFIL_PROFESIONAL,
@@ -286,11 +286,11 @@ async def manejar_espera_certificado(
 
     flujo["state"] = "awaiting_specialty"
     servicios_temporales = list(flujo.get("servicios_temporales") or [])
-    from .gestor_espera_especialidad import _mensajes_prompt_servicio_onboarding
+    from .gestor_espera_especialidad import _mensajes_prompt_servicio_compartido
 
     return {
         "success": True,
-        "messages": await _mensajes_prompt_servicio_onboarding(
+        "messages": await _mensajes_prompt_servicio_compartido(
             flujo=flujo,
             indice=len(servicios_temporales) + 1,
             maximo_visible=SERVICIOS_MINIMOS_PERFIL_PROFESIONAL,

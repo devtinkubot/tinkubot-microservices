@@ -108,13 +108,13 @@ async def manejar_confirmacion_servicio_perfil(
     maximo_visible = _maximo_visible(flujo)
 
     if not flujo.get("profile_completion_mode") and not flujo.get("profile_edit_mode"):
-        from .gestor_espera_especialidad import _mensajes_prompt_servicio_onboarding
+        from .gestor_espera_especialidad import _mensajes_prompt_servicio_compartido
 
         if not candidato:
             flujo["state"] = "awaiting_specialty"
             return {
                 "success": True,
-                "messages": await _mensajes_prompt_servicio_onboarding(
+                "messages": await _mensajes_prompt_servicio_compartido(
                     flujo=flujo,
                     indice=min(indice + 1, SERVICIOS_MINIMOS_PERFIL_PROFESIONAL),
                     maximo_visible=maximo_visible,
@@ -125,7 +125,7 @@ async def manejar_confirmacion_servicio_perfil(
             flujo["state"] = "awaiting_specialty"
             return {
                 "success": True,
-                "messages": await _mensajes_prompt_servicio_onboarding(
+                "messages": await _mensajes_prompt_servicio_compartido(
                     flujo=flujo,
                     indice=min(indice + 1, SERVICIOS_MINIMOS_PERFIL_PROFESIONAL),
                     maximo_visible=maximo_visible,
@@ -157,7 +157,7 @@ async def manejar_confirmacion_servicio_perfil(
             flujo["state"] = "awaiting_specialty"
             return {
                 "success": True,
-                "messages": await _mensajes_prompt_servicio_onboarding(
+                "messages": await _mensajes_prompt_servicio_compartido(
                     flujo=flujo,
                     indice=cantidad + 1,
                     maximo_visible=maximo_visible,
@@ -177,11 +177,11 @@ async def manejar_confirmacion_servicio_perfil(
 
     if not candidato:
         flujo["state"] = "awaiting_specialty"
-        from .gestor_espera_especialidad import _mensajes_prompt_servicio_onboarding
+        from .gestor_espera_especialidad import _mensajes_prompt_servicio_compartido
 
         return {
             "success": True,
-            "messages": await _mensajes_prompt_servicio_onboarding(
+            "messages": await _mensajes_prompt_servicio_compartido(
                 flujo=flujo,
                 indice=min(indice + 1, SERVICIOS_MINIMOS_PERFIL_PROFESIONAL),
                 maximo_visible=maximo_visible,
@@ -190,11 +190,11 @@ async def manejar_confirmacion_servicio_perfil(
 
     if opcion == "reject":
         flujo["state"] = "awaiting_specialty"
-        from .gestor_espera_especialidad import _mensajes_prompt_servicio_onboarding
+        from .gestor_espera_especialidad import _mensajes_prompt_servicio_compartido
 
         return {
             "success": True,
-            "messages": await _mensajes_prompt_servicio_onboarding(
+            "messages": await _mensajes_prompt_servicio_compartido(
                 flujo=flujo,
                 indice=min(indice + 1, SERVICIOS_MINIMOS_PERFIL_PROFESIONAL),
                 maximo_visible=maximo_visible,
@@ -229,11 +229,11 @@ async def manejar_confirmacion_servicio_perfil(
             }
 
         flujo["state"] = "awaiting_specialty"
-        from .gestor_espera_especialidad import _mensajes_prompt_servicio_onboarding
+        from .gestor_espera_especialidad import _mensajes_prompt_servicio_compartido
 
         return {
             "success": True,
-            "messages": await _mensajes_prompt_servicio_onboarding(
+            "messages": await _mensajes_prompt_servicio_compartido(
                 flujo=flujo,
                 indice=cantidad + 1,
                 maximo_visible=maximo_visible,

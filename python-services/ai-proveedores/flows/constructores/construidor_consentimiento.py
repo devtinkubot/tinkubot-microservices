@@ -2,7 +2,7 @@
 
 from typing import Any, Dict
 
-from templates.consentimiento.mensajes import (
+from templates.onboarding.consentimiento import (
     mensaje_consentimiento_rechazado,
     payload_consentimiento_proveedor,
 )

@@ -1,11 +1,9 @@
-"""Manejadores de estados para documentos de registro y actualización."""
+"""Manejadores de estados para documentos de actualización."""
 
-import logging
 from typing import Any, Dict, Optional
 
 from flows.constructores import (
     construir_payload_menu_principal,
-    construir_resumen_confirmacion,
 )
 from infrastructure.storage.utilidades import extraer_primera_imagen_base64
 from services import actualizar_documentos_identidad
@@ -15,15 +13,6 @@ from templates.interfaz import (
     solicitar_dni_actualizacion,
 )
 from templates.onboarding.ciudad import solicitar_ciudad_actualizacion
-from templates.onboarding.experiencia import payload_experiencia_onboarding
-from templates.onboarding.documentos import (
-    payload_onboarding_dni_frontal,
-    payload_onboarding_foto_perfil,
-)
-from templates.registro.documentacion import payload_foto_dni_frontal
-
-
-logger = logging.getLogger(__name__)
 
 
 def manejar_inicio_documentos(flujo: Dict[str, Any]) -> Dict[str, Any]:
@@ -41,48 +30,6 @@ def manejar_inicio_actualizacion_documentos(flujo: Dict[str, Any]) -> Dict[str, 
     return {
         "success": True,
         "messages": [{"response": solicitar_dni_actualizacion()}],
-    }
-
-
-async def manejar_dni_frontal(
-    flujo: Dict[str, Any],
-    carga: Dict[str, Any],
-    telefono: Optional[str] = None,
-    subir_medios_identidad: Any = None,
-) -> Dict[str, Any]:
-    """Procesa foto frontal del DNI."""
-    imagen_b64 = extraer_primera_imagen_base64(carga)
-    if not imagen_b64:
-        return {
-            "success": True,
-            "messages": [payload_onboarding_dni_frontal()],
-        }
-    if telefono:
-        flujo["phone"] = telefono
-    flujo.pop("dni_front_photo_url", None)
-    flujo["dni_front_image"] = imagen_b64
-    if subir_medios_identidad is not None:
-        try:
-            await subir_medios_identidad(
-                flujo.get("provider_id"),
-                flujo,
-            )
-        except Exception:
-            logger.warning("No se pudo persistir de inmediato la foto frontal del DNI")
-    flujo["state"] = "awaiting_face_photo"
-    return {
-        "success": True,
-        "messages": [payload_onboarding_foto_perfil()],
-    }
-
-
-def manejar_dni_trasera(flujo: Dict[str, Any], carga: Dict[str, Any]) -> Dict[str, Any]:
-    """Compatibilidad para estados legados de identidad."""
-    _ = extraer_primera_imagen_base64(carga)
-    flujo["state"] = "awaiting_face_photo"
-    return {
-        "success": True,
-        "messages": [payload_onboarding_foto_perfil()],
     }
 
 
@@ -117,7 +64,7 @@ async def manejar_dni_trasera_actualizacion(
     if not flujo.get("dni_front_image"):
         return {
             "success": True,
-            "messages": [{"response": payload_foto_dni_frontal()}],
+            "messages": [{"response": payload_onboarding_dni_frontal()}],
         }
     if not proveedor_id or not subir_medios_identidad:
         flujo["state"] = "awaiting_menu_option"
@@ -185,36 +132,4 @@ async def manejar_dni_trasera_actualizacion(
                 approved_basic=bool(flujo.get("approved_basic")),
             ),
         ],
-    }
-
-
-async def manejar_selfie_registro(
-    flujo: Dict[str, Any],
-    carga: Dict[str, Any],
-    telefono: Optional[str] = None,
-    subir_medios_identidad: Any = None,
-) -> Dict[str, Any]:
-    """Procesa selfie del registro."""
-    imagen_b64 = extraer_primera_imagen_base64(carga)
-    if not imagen_b64:
-        return {
-            "success": True,
-            "messages": [payload_onboarding_foto_perfil()],
-        }
-    if telefono:
-        flujo["phone"] = telefono
-    flujo.pop("face_photo_url", None)
-    flujo["face_image"] = imagen_b64
-    if subir_medios_identidad is not None:
-        try:
-            await subir_medios_identidad(
-                flujo.get("provider_id"),
-                flujo,
-            )
-        except Exception:
-            logger.warning("No se pudo persistir de inmediato la foto de perfil")
-    flujo["state"] = "awaiting_experience"
-    return {
-        "success": True,
-        "messages": [payload_experiencia_onboarding()],
     }

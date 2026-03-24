@@ -1,36 +1,27 @@
-"""
-Procesador de respuesta de consentimiento de proveedores.
-
-Este módulo maneja el procesamiento de la respuesta del proveedor
-a la solicitud de consentimiento.
-"""
+"""Lógica de negocio del consentimiento de onboarding."""
 
 import logging
-import sys
+import re
 from collections.abc import Callable
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Dict, Optional
 
-# Agregar el directorio raíz al sys.path para imports absolutos
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
-
-from flows.constructores import (  # noqa: E402
+from flows.constructores import (
     construir_respuesta_consentimiento_rechazado,
     construir_respuesta_revision,
+    construir_respuesta_solicitud_consentimiento,
 )
-from flows.interpretacion import interpretar_respuesta  # noqa: E402
-from flows.sesion import establecer_flujo, reiniciar_flujo  # noqa: E402
-from infrastructure.database import run_supabase  # noqa: E402
-from services.registro import (  # noqa: E402
+from flows.sesion import establecer_flujo, reiniciar_flujo
+from infrastructure.database import run_supabase
+from services.registro import (
     registrar_proveedor_en_base_datos,
     validar_y_construir_proveedor,
 )
-
+from services.onboarding.registrador import registrar_consentimiento
 logger = logging.getLogger(__name__)
 
 
-async def asegurar_proveedor_persistido_tras_consentimiento(
+async def asegurar_proveedor_persistido_tras_consentimiento_onboarding(
     *,
     telefono: str,
     flujo: Dict[str, Any],
@@ -38,12 +29,9 @@ async def asegurar_proveedor_persistido_tras_consentimiento(
     supabase: Any = None,
     subir_medios_fn: Optional[Callable[[str, Dict[str, Any]], Any]] = None,
 ) -> tuple[Optional[Dict[str, Any]], Optional[str]]:
-    """Asegura que el proveedor exista en Supabase tras consentir.
-
-    Devuelve el perfil persistido y su provider_id cuando logra materializar el alta.
-    """
+    """Asegura que el proveedor exista en Supabase tras consentir."""
     if supabase is None:
-        from principal import supabase as supabase_local  # Import dinámico
+        from principal import supabase as supabase_local
 
         supabase = supabase_local
 
@@ -116,6 +104,7 @@ def _resolver_opcion_consentimiento(carga: Dict[str, Any]) -> Optional[str]:
     seleccionado = str(carga.get("selected_option") or "").strip().lower()
     texto_mensaje = str(carga.get("message") or carga.get("content") or "").strip()
     texto_min = texto_mensaje.lower()
+    texto_normalizado = re.sub(r"[\s\.,;:!¡¿\?]+", " ", texto_min).strip()
 
     if seleccionado in {
         "continue_provider_onboarding",
@@ -127,48 +116,34 @@ def _resolver_opcion_consentimiento(carga: Dict[str, Any]) -> Optional[str]:
     if seleccionado in {"2", "rechazar", "decline", "cancelar"}:
         return "2"
 
-    if texto_min.startswith("1"):
+    if texto_normalizado in {"1", "si", "sí", "aceptar", "acepto", "ok", "continuar"}:
         return "1"
-    if texto_min.startswith("2"):
-        return "2"
-
-    interpretado = interpretar_respuesta(texto_min, "consentimiento")
-    if interpretado is True:
-        return "1"
-    if interpretado is False:
+    if texto_normalizado in {"2", "no", "rechazar", "declinar", "declino", "cancelar"}:
         return "2"
     return None
 
 
-async def procesar_respuesta_consentimiento(  # noqa: C901
+async def procesar_respuesta_consentimiento_onboarding(
+    *,
     telefono: str,
     flujo: Dict[str, Any],
     carga: Dict[str, Any],
     perfil_proveedor: Optional[Dict[str, Any]],
+    supabase: Any = None,
     subir_medios_fn: Optional[Callable[[str, Dict[str, Any]], Any]] = None,
 ) -> Dict[str, Any]:
-    """
-    Procesar respuesta de consentimiento para registro de proveedores.
+    """Procesa la respuesta de consentimiento del onboarding."""
 
-    Args:
-        telefono: Número de teléfono del proveedor
-        flujo: Diccionario con el estado actual del flujo
-        carga: Diccionario con los datos del mensaje recibido
-        perfil_proveedor: Diccionario con el perfil del proveedor (si existe)
+    if supabase is None:
+        from principal import supabase as supabase_local
 
-    Returns:
-        Diccionario con la respuesta a enviar al proveedor
-    """
-    from principal import supabase  # Import dinámico para evitar circular import
-
-    from .registrador import registrar_consentimiento
-    from .solicitador import solicitar_consentimiento
+        supabase = supabase_local
 
     texto_mensaje = (carga.get("message") or carga.get("content") or "").strip()
     opcion = _resolver_opcion_consentimiento(carga)
 
     logger.info(
-        "📝 Procesando respuesta consentimiento. Texto: '%s', selected_option='%s', Carga keys: %s",
+        "📝 Procesando respuesta consentimiento onboarding. Texto: '%s', selected_option='%s', Carga keys: %s",
         texto_mensaje,
         carga.get("selected_option"),
         list(carga.keys()),
@@ -180,7 +155,7 @@ async def procesar_respuesta_consentimiento(  # noqa: C901
             telefono,
             opcion,
         )
-        return await solicitar_consentimiento(telefono)
+        return construir_respuesta_solicitud_consentimiento()
 
     proveedor_id = perfil_proveedor.get("id") if perfil_proveedor else None
 
@@ -188,7 +163,7 @@ async def procesar_respuesta_consentimiento(  # noqa: C901
         flujo["has_consent"] = True
 
         perfil_proveedor, proveedor_id = (
-            await asegurar_proveedor_persistido_tras_consentimiento(
+            await asegurar_proveedor_persistido_tras_consentimiento_onboarding(
                 telefono=telefono,
                 flujo=flujo,
                 perfil_proveedor=perfil_proveedor,
@@ -213,20 +188,21 @@ async def procesar_respuesta_consentimiento(  # noqa: C901
                 ],
             }
 
-        if supabase and proveedor_id:
+        if provider_id := proveedor_id:
             try:
-                await run_supabase(
-                    lambda: supabase.table("providers")
-                    .update(
-                        {
-                            "has_consent": True,
-                            "updated_at": datetime.now().isoformat(),
-                        }
+                if supabase:
+                    await run_supabase(
+                        lambda: supabase.table("providers")
+                        .update(
+                            {
+                                "has_consent": True,
+                                "updated_at": datetime.now().isoformat(),
+                            }
+                        )
+                        .eq("id", provider_id)
+                        .execute(),
+                        label="providers.update_consent_true",
                     )
-                    .eq("id", proveedor_id)
-                    .execute(),
-                    label="providers.update_consent_true",
-                )
             except Exception as exc:
                 logger.error(
                     "No se pudo actualizar flag de consentimiento para %s: %s",
@@ -257,7 +233,6 @@ async def procesar_respuesta_consentimiento(  # noqa: C901
         )
         return construir_respuesta_revision(nombre_proveedor)
 
-    # Rechazo de consentimiento
     if supabase and proveedor_id:
         try:
             await run_supabase(
@@ -274,7 +249,9 @@ async def procesar_respuesta_consentimiento(  # noqa: C901
             )
         except Exception as exc:
             logger.error(
-                "No se pudo marcar rechazo de consentimiento para %s: %s", telefono, exc
+                "No se pudo marcar rechazo de consentimiento para %s: %s",
+                telefono,
+                exc,
             )
 
     await registrar_consentimiento(proveedor_id, telefono, carga, "declined")

@@ -9,8 +9,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import pytest
 
-from flows.gestores_estados.gestor_espera_ciudad import (  # noqa: E402
-    manejar_espera_ciudad,
+from flows.onboarding.handlers.ciudad import (  # noqa: E402
+    manejar_espera_ciudad_onboarding as manejar_espera_ciudad,
 )
 from services.registro.normalizacion import (  # noqa: E402
     normalizar_datos_proveedor,
@@ -41,7 +41,7 @@ async def test_manejar_espera_ciudad_acepta_ubicacion_y_resuelve_ciudad(monkeypa
         return "Cuenca"
 
     monkeypatch.setattr(
-        "flows.gestores_estados.gestor_espera_ciudad."
+        "flows.onboarding.handlers.ciudad."
         "_resolver_ciudad_desde_coordenadas",
         _resolver,
     )
@@ -71,7 +71,7 @@ async def test_manejar_espera_ciudad_si_no_resuelve_repregunta_manual(monkeypatc
         return None
 
     monkeypatch.setattr(
-        "flows.gestores_estados.gestor_espera_ciudad."
+        "flows.onboarding.handlers.ciudad."
         "_resolver_ciudad_desde_coordenadas",
         _resolver,
     )
@@ -101,7 +101,7 @@ async def test_manejar_espera_ciudad_prioriza_ubicacion_estructurada_sobre_texto
         return "Cuenca"
 
     monkeypatch.setattr(
-        "flows.gestores_estados.gestor_espera_ciudad."
+        "flows.onboarding.handlers.ciudad."
         "_resolver_ciudad_desde_coordenadas",
         _resolver,
     )
@@ -127,7 +127,7 @@ async def test_manejar_espera_ciudad_acepta_referencia_cercana_en_texto(monkeypa
         return "Cuenca"
 
     monkeypatch.setattr(
-        "flows.gestores_estados.gestor_espera_ciudad."
+        "flows.onboarding.handlers.ciudad."
         "_resolver_ciudad_desde_texto",
         _resolver_texto,
     )

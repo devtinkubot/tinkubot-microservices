@@ -7,20 +7,19 @@ Este documento separa el flujo de onboarding del menú operativo del proveedor p
 Estos archivos forman parte del alta de proveedores y deben mantenerse juntos:
 
 - `templates/onboarding/inicio.py`
-- `templates/registro/pasos_registro.py`
 - `templates/onboarding/ciudad.py`
 - `templates/onboarding/documentos.py`
 - `templates/onboarding/experiencia.py`
-- `templates/registro/documentacion.py`
-- `templates/registro/perfil_profesional.py`
-- `templates/registro/servicios.py`
-- `templates/registro/confirmacion.py`
-- `templates/registro/resumen_consentimiento.py`
-- `flows/gestores_estados/gestor_documentos.py`
-- `flows/gestores_estados/gestor_espera_nombre.py`
-- `flows/gestores_estados/gestor_espera_experiencia.py`
-- `flows/gestores_estados/gestor_confirmacion_servicios.py`
-- `flows/gestores_estados/gestor_confirmacion.py`
+- `templates/onboarding/consentimiento.py`
+- `templates/onboarding/caducidad.py`
+- `templates/onboarding/telefono.py`
+- `flows/onboarding/router.py`
+- `flows/onboarding/handlers/ciudad.py`
+- `flows/onboarding/handlers/documentos.py`
+- `flows/onboarding/handlers/experiencia.py`
+- `flows/onboarding/handlers/real_phone.py`
+- `flows/onboarding/handlers/servicios.py`
+- `flows/onboarding/handlers/consentimiento.py`
 - `flows/router.py`
 - `services/sesion_proveedor.py`
 - `templates/verificacion/estados.py`
@@ -49,12 +48,16 @@ La disponibilidad queda separada del onboarding y del menú del proveedor:
 
 Estos módulos siguen vivos porque aún existen rutas, fallbacks o tests que los usan. No se deben borrar todavía:
 
-- `templates/consentimiento/mensajes.py`
-- `flows/consentimiento/*`
-- `flows/constructores/construidor_consentimiento.py`
-- `flows/gestores_estados/gestor_consentimiento.py`
+- `flows/gestores_estados/gestor_documentos.py`
+- `flows/gestores_estados/gestor_espera_experiencia.py`
+- `flows/gestores_estados/gestor_espera_red_social.py`
+- `flows/gestores_estados/gestor_espera_nombre.py`
+- `flows/gestores_estados/gestor_confirmacion_servicios.py`
+- `flows/gestores_estados/gestor_confirmacion.py`
+- `tests/unit/test_gestor_documentos_actualizacion.py`
 - `tests/unit/test_consentimiento_interactive.py`
-- `tests/unit/test_dedupe_media.py`
+
+`gestor_espera_red_social.py` sigue vivo como flujo de perfil y completado post-alta, no como onboarding.
 
 ## 5. Candidatos a limpieza futura
 

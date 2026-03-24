@@ -11,8 +11,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from flows.gestores_estados.gestor_documentos import (
     manejar_dni_frontal_actualizacion,
     manejar_dni_trasera_actualizacion,
-    manejar_dni_frontal,
-    manejar_selfie_registro,
+)
+from flows.onboarding.handlers.documentos import (
+    manejar_dni_frontal_onboarding as manejar_dni_frontal,
+    manejar_foto_perfil_onboarding as manejar_selfie_registro,
 )
 
 

@@ -16,20 +16,21 @@ CLAVE_PENDIENTES_DISPONIBILIDAD = "availability:provider:{}:pending"
 CLAVE_CICLO_SOLICITUD = "availability:lifecycle:{}"
 CLAVE_ALIAS_DISPONIBILIDAD = "availability:alias:{}"
 ESTADO_ESPERANDO_DISPONIBILIDAD = "awaiting_availability_response"
-ONBOARDING_STATES = {
+STANDARD_ONBOARDING_STATES = {
     None,
     "pending_verification",
     "awaiting_consent",
-    "awaiting_real_phone",
     "awaiting_city",
     "awaiting_dni_front_photo",
-    "awaiting_dni_back_photo",
     "awaiting_face_photo",
     "awaiting_specialty",
     "awaiting_add_another_service",
     "awaiting_services_confirmation",
+    "awaiting_social_media_onboarding",
     "confirm",
 }
+MANUAL_PHONE_FALLBACK_STATES = {"awaiting_real_phone"}
+ONBOARDING_STATES = STANDARD_ONBOARDING_STATES | MANUAL_PHONE_FALLBACK_STATES
 MENU_STATES = {
     "awaiting_menu_option",
     "awaiting_personal_info_action",
@@ -63,6 +64,7 @@ MENU_STATES = {
 PROFILE_COMPLETION_STATES = {
     "awaiting_experience",
     "awaiting_social_media",
+    "awaiting_social_media_onboarding",
     "awaiting_onboarding_social_facebook_username",
     "awaiting_onboarding_social_instagram_username",
     "awaiting_certificate",

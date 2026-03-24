@@ -11,7 +11,6 @@ CHECKPOINT_STATES = {
     "awaiting_menu_option",
     "awaiting_city",
     "awaiting_dni_front_photo",
-    "awaiting_dni_back_photo",
     "awaiting_face_photo",
     "awaiting_experience",
     "awaiting_specialty",
@@ -20,7 +19,6 @@ CHECKPOINT_STATES = {
     "awaiting_real_phone",
     "awaiting_consent",
     "pending_verification",
-    "awaiting_name",
     "confirm",
 }
 

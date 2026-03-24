@@ -15,6 +15,7 @@ from templates.registro import (
     payload_certificado_opcional,
 )
 from templates.onboarding.inicio import ONBOARDING_REGISTER_BUTTON_ID
+from templates.onboarding.ciudad import solicitar_ciudad_registro
 from templates.interfaz import (
     MENU_ID_ELIMINAR_REGISTRO,
     MENU_ID_INFO_PERSONAL,
@@ -39,11 +40,6 @@ from templates.interfaz import (
     SUBMENU_ID_PROF_REDES,
     SUBMENU_ID_PROF_SERVICIOS,
 )
-from templates.onboarding.ciudad import solicitar_ciudad_registro
-from templates.registro import (
-    PROMPT_INICIO_REGISTRO,
-)
-
 logger = logging.getLogger(__name__)
 
 
@@ -331,7 +327,10 @@ async def manejar_estado_menu(
                 "✅ Usuario NO registrado seleccionó Registro. "
                 "Cambiando estado a awaiting_city"
             )
-            logger.info("📤 Respuesta a devolver: '%s'", PROMPT_INICIO_REGISTRO)
+            logger.info(
+                "📤 Respuesta a devolver: '%s'",
+                solicitar_ciudad_registro()["response"],
+            )
             flujo["mode"] = "registration"
             borrador = None
             if supabase and telefono:

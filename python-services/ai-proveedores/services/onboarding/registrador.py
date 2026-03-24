@@ -1,19 +1,11 @@
-"""
-Registrador de consentimiento de proveedores.
+"""Registro persistente del consentimiento de onboarding."""
 
-Este módulo maneja el registro persistente del consentimiento
-en la base de datos de Supabase.
-"""
+from __future__ import annotations
 
 import json
 import logging
-import sys
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Dict, Optional
-
-# Agregar el directorio raíz al sys.path para imports absolutos
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from infrastructure.database import run_supabase
 
@@ -26,15 +18,7 @@ async def registrar_consentimiento(
     carga: Dict[str, Any],
     respuesta: str,
 ) -> None:
-    """
-    Persistir registro de consentimiento en tabla consents.
-
-    Args:
-        proveedor_id: UUID del proveedor (opcional si aún no está registrado)
-        telefono: Número de teléfono del proveedor
-        carga: Diccionario con los datos del mensaje recibido
-        respuesta: Respuesta del proveedor ("accepted" o "declined")
-    """
+    """Persistir el consentimiento del onboarding en Supabase."""
     from principal import supabase  # Import dinámico para evitar circular import
 
     if not supabase:
@@ -64,5 +48,7 @@ async def registrar_consentimiento(
         )
     except Exception as exc:
         logger.error(
-            f"No se pudo guardar consentimiento de proveedor {telefono}: {exc}"
+            "No se pudo guardar consentimiento de proveedor %s: %s",
+            telefono,
+            exc,
         )

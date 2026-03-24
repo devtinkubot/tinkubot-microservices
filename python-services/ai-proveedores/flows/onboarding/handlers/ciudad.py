@@ -1,10 +1,11 @@
-"""Manejador del estado awaiting_city."""
+"""Handler de onboarding para el paso de ciudad."""
 
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 import httpx
 
+from infrastructure.database import run_supabase
 from services.registro.parser_ubicacion import (
     VALIDATION_ERROR_INVALID_CHARS,
     VALIDATION_ERROR_MULTIPLE,
@@ -12,8 +13,6 @@ from services.registro.parser_ubicacion import (
     VALIDATION_ERROR_TOO_SHORT,
     validar_y_normalizar_ubicacion,
 )
-from infrastructure.database import run_supabase
-from flows.constructores import construir_payload_menu_principal
 from services.servicios_proveedor.utilidades import limpiar_espacios
 from templates.onboarding.ciudad import (
     error_ciudad_caracteres_invalidos,
@@ -170,29 +169,14 @@ async def _persistir_ubicacion_proveedor(
     )
 
 
-async def manejar_espera_ciudad(
+async def manejar_espera_ciudad_onboarding(
     flujo: Dict[str, Any],
     texto_mensaje: Optional[str],
     carga: Optional[Dict[str, Any]] = None,
     supabase: Any = None,
     proveedor_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """
-    Procesa la entrada del usuario para el campo ciudad.
-
-    Validaciones:
-    - Solo UNA ubicación principal (ciudad o cantón)
-    - Longitud y caracteres permitidos
-    - Autocorrección de entradas compuestas (ej: "Cuenca, Azuay, Ecuador" -> "Cuenca")
-    - Rechazo de ubicaciones no reconocidas
-
-    Args:
-        flujo: Diccionario del flujo conversacional.
-        texto_mensaje: Mensaje del usuario con la ciudad.
-
-    Returns:
-        Respuesta con éxito y siguiente pregunta, o error de validación.
-    """
+    """Procesa la entrada de ciudad durante el onboarding."""
     ciudad = limpiar_espacios(texto_mensaje)
     ubicacion = (carga or {}).get("location") or {}
     latitud = _parsear_coordenada((ubicacion or {}).get("latitude"))
@@ -200,6 +184,7 @@ async def manejar_espera_ciudad(
     ciudad_desde_payload = _extraer_ciudad_desde_payload_ubicacion(ubicacion)
     ciudad_resuelta = ciudad_desde_payload
     ciudad_resuelta_texto = None
+
     if (
         not ciudad_resuelta
         and latitud is not None
@@ -211,13 +196,9 @@ async def manejar_espera_ciudad(
         ciudad_resuelta = ciudad_resuelta_texto
 
     tiene_ubicacion_estructurada = bool(
-        ciudad_desde_payload
-        or (latitud is not None and longitud is not None)
+        ciudad_desde_payload or (latitud is not None and longitud is not None)
     )
     if tiene_ubicacion_estructurada and ciudad_resuelta:
-        # WhatsApp suele incluir un texto descriptivo largo junto a la ubicación.
-        # Cuando ya tenemos una ubicación estructurada, confiamos en la ciudad
-        # resuelta y no en el texto crudo, que puede parecer múltiples ciudades.
         ciudad = ciudad_resuelta
 
     if latitud is not None:
@@ -286,7 +267,6 @@ async def manejar_espera_ciudad(
             "messages": [{"response": error_ciudad_no_reconocida()}],
         }
 
-    # Persistimos en minúsculas para mantener consistencia histórica.
     ciudad_normalizada = canonica.lower().strip()
     flujo["city"] = ciudad_normalizada
     flujo["city_confirmed_at"] = datetime.now(timezone.utc).isoformat()
@@ -301,36 +281,6 @@ async def manejar_espera_ciudad(
             )
         except Exception:
             pass
-
-    if flujo.get("profile_edit_mode") == "personal_city":
-        flujo.pop("profile_edit_mode", None)
-        retorno_estado = str(flujo.pop("profile_return_state", "") or "").strip()
-        flujo["state"] = retorno_estado or "awaiting_menu_option"
-        if retorno_estado:
-            from .gestor_vistas_perfil import render_profile_view
-
-            return {
-                "success": True,
-                "messages": [
-                    {"response": "✅ Tu ubicación principal fue actualizada correctamente."},
-                    await render_profile_view(
-                        flujo=flujo,
-                        estado=retorno_estado,
-                        proveedor_id=proveedor_id,
-                    ),
-                ],
-            }
-        return {
-            "success": True,
-            "messages": [
-                {"response": "✅ Tu ubicación principal fue actualizada correctamente."},
-                construir_payload_menu_principal(
-                    esta_registrado=True,
-                    menu_limitado=bool(flujo.get("menu_limitado")),
-                    approved_basic=bool(flujo.get("approved_basic")),
-                ),
-            ],
-        }
 
     flujo["state"] = "awaiting_dni_front_photo"
     return {

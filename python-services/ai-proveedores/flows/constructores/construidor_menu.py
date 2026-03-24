@@ -8,7 +8,6 @@ from templates.interfaz.menus import (
     payload_menu_post_registro_proveedor,
 )
 from templates.onboarding.inicio import payload_menu_registro_proveedor
-from templates.registro.pasos_registro import mensaje_guia_proveedor
 
 
 def construir_menu_principal(
@@ -80,8 +79,5 @@ def construir_respuesta_menu_registro() -> Dict[str, Any]:
     """
     return {
         "success": True,
-        "messages": [
-            {"response": mensaje_guia_proveedor()},
-            {"response": mensaje_menu_principal_proveedor()},
-        ],
+        "messages": [{"response": mensaje_menu_principal_proveedor()}],
     }

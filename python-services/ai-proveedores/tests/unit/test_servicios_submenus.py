@@ -4,6 +4,8 @@ import types
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 imghdr_stub = types.ModuleType("imghdr")
 setattr(imghdr_stub, "what", lambda *args, **kwargs: None)
 sys.modules.setdefault("imghdr", imghdr_stub)
@@ -47,16 +49,23 @@ from flows.gestores_estados.gestor_servicios import (  # noqa: E402
 from flows.gestores_estados.gestor_espera_red_social import (  # noqa: E402
     manejar_espera_red_social,
 )
+from flows.onboarding.handlers.redes_sociales import (  # noqa: E402
+    manejar_espera_red_social_onboarding,
+)
+from flows.onboarding.handlers.servicios_confirmacion import (  # noqa: E402
+    manejar_confirmacion_servicios_onboarding,
+)
 from flows.validadores.validador_entrada import (  # noqa: E402
     parsear_entrada_red_social,
 )
-from flows.interpretacion.interpreta_respuesta import (  # noqa: E402
-    interpretar_respuesta,
-)
 from flows.router import enrutar_estado  # noqa: E402
 from principal import normalizar_respuesta_whatsapp  # noqa: E402
+from services.shared import interpretar_respuesta  # noqa: E402
 from services.servicios_proveedor.ejemplos_servicios_top import (  # noqa: E402
     obtener_ejemplos_servicios_top,
+)
+from services.servicios_proveedor.redes_sociales_slots import (  # noqa: E402
+    extraer_redes_sociales_desde_texto,
 )
 from templates.interfaz import DETAIL_ACTION_SERVICES_ADD  # noqa: E402
 from templates.interfaz import (  # noqa: E402
@@ -77,6 +86,10 @@ from templates.registro import (  # noqa: E402
     SOCIAL_FACEBOOK_ID,
     SOCIAL_INSTAGRAM_ID,
     SOCIAL_SKIP_ID,
+)
+from templates.onboarding import (  # noqa: E402
+    REDES_SOCIALES_SKIP_ID,
+    payload_redes_sociales_onboarding_con_imagen,
 )
 from templates.interfaz.menus import (  # noqa: E402
     payload_ejemplos_servicios_personalizados,
@@ -1619,6 +1632,96 @@ def test_parsear_entrada_red_social_acepta_username_con_arroba():
     assert resultado["url"] == "https://instagram.com/diego_unkuch"
 
 
+def test_extraer_redes_sociales_desde_texto_en_una_sola_linea():
+    resultado = extraer_redes_sociales_desde_texto(
+        "1 facebook:diego.unkuch 2 instagram:@diegou"
+    )
+
+    assert resultado["facebook_username"] == "diego.unkuch"
+    assert resultado["instagram_username"] == "diegou"
+
+
+def test_payload_redes_sociales_onboarding_usa_env_override(monkeypatch):
+    monkeypatch.setenv(
+        "WA_PROVIDER_SOCIAL_NETWORK_IMAGE_URL",
+        "https://example.com/social-image.png",
+    )
+
+    respuesta = payload_redes_sociales_onboarding_con_imagen()
+
+    assert respuesta["ui"]["header_type"] == "image"
+    assert (
+        respuesta["ui"]["header_media_url"]
+        == "https://example.com/social-image.png"
+    )
+    assert respuesta["ui"]["options"][0]["id"] == REDES_SOCIALES_SKIP_ID
+
+
+@pytest.mark.asyncio
+async def test_onboarding_servicios_confirmados_abren_redes_onboarding(monkeypatch):
+    monkeypatch.setenv(
+        "WA_PROVIDER_SOCIAL_NETWORK_IMAGE_URL",
+        "https://example.com/social-image.png",
+    )
+    flujo = {
+        "state": "awaiting_services_confirmation",
+        "servicios_temporales": ["desarrollo de software", "soporte técnico"],
+    }
+
+    respuesta = await manejar_confirmacion_servicios_onboarding(
+        flujo=flujo,
+        texto_mensaje=None,
+        selected_option="profile_service_confirm",
+        cliente_openai=None,
+    )
+
+    assert flujo["state"] == "awaiting_social_media_onboarding"
+    assert respuesta["messages"][0]["ui"]["header_type"] == "image"
+    assert (
+        respuesta["messages"][0]["ui"]["header_media_url"]
+        == "https://example.com/social-image.png"
+    )
+
+
+@pytest.mark.asyncio
+async def test_onboarding_redes_sociales_omite_y_va_a_consentimiento(monkeypatch):
+    monkeypatch.setenv(
+        "WA_PROVIDER_SOCIAL_NETWORK_IMAGE_URL",
+        "https://example.com/social-image.png",
+    )
+    flujo = {"state": "awaiting_social_media_onboarding"}
+
+    respuesta = await manejar_espera_red_social_onboarding(
+        flujo=flujo,
+        texto_mensaje=None,
+        selected_option=REDES_SOCIALES_SKIP_ID,
+    )
+
+    assert flujo["state"] == "awaiting_consent"
+    assert respuesta["messages"][0]["ui"]["header_type"] == "image"
+    assert respuesta["messages"][0]["ui"]["options"][0]["title"] == "Aceptar"
+
+
+@pytest.mark.asyncio
+async def test_onboarding_redes_sociales_parsea_ambas_en_una_linea(monkeypatch):
+    monkeypatch.setenv(
+        "WA_PROVIDER_SOCIAL_NETWORK_IMAGE_URL",
+        "https://example.com/social-image.png",
+    )
+    flujo = {"state": "awaiting_social_media_onboarding"}
+
+    respuesta = await manejar_espera_red_social_onboarding(
+        flujo=flujo,
+        texto_mensaje="1 facebook:diego.unkuch 2 instagram:@diegou",
+    )
+
+    assert flujo["state"] == "awaiting_consent"
+    assert flujo["facebook_username"] == "diego.unkuch"
+    assert flujo["instagram_username"] == "diegou"
+    assert flujo["social_media_type"] == "instagram"
+    assert respuesta["messages"][0]["ui"]["header_type"] == "image"
+
+
 def test_onboarding_redes_sociales_abre_sublista():
     flujo = {"profile_completion_mode": True}
 
@@ -1704,7 +1807,9 @@ def test_onboarding_servicio_prompt_muestra_lista_de_ejemplos(monkeypatch):
     assert respuesta["messages"][0]["media_type"] == "image"
     assert "tinkubot_add_services.png" in respuesta["messages"][0]["media_url"]
     assert respuesta["messages"][0]["response"] == (
-        "*Agregar Servicio 1 de 3*\n\nEscribe el primer servicio que ofreces."
+        "*Cuéntanos tus servicios en una sola línea*\n\n"
+        "Revisa la imagen de ejemplo y envíanos hasta 7 servicios en un solo mensaje. "
+        "Mientras más claro y detallado sea cada servicio, mejor podremos clasificarlos."
     )
 
 
@@ -1875,14 +1980,10 @@ def test_certificado_omitido_avanza_a_servicios():
     assert flujo["state"] == "awaiting_specialty"
     assert respuesta["messages"][0]["media_type"] == "image"
     assert "tinkubot_add_services.png" in respuesta["messages"][0]["media_url"]
-    assert (
-        "Agregar Servicio"
-        in respuesta["messages"][0]["response"]
+    assert respuesta["messages"][0]["response"].startswith(
+        "*Cuéntanos tus servicios en una sola línea*"
     )
-    assert (
-        "ahora sí, vamos con tus servicios"
-        not in respuesta["messages"][0]["response"].lower()
-    )
+    assert "Revisa la imagen de ejemplo" in respuesta["messages"][0]["response"]
 
 
 def test_control_viejo_no_se_interpreta_como_servicio():
@@ -2070,7 +2171,9 @@ def test_confirmar_servicio_perfil_avanza_al_siguiente_paso(monkeypatch):
     ]
     assert respuesta["messages"][0]["media_type"] == "image"
     assert "tinkubot_add_services.png" in respuesta["messages"][0]["media_url"]
-    assert "Agregar Servicio 2 de 3" in respuesta["messages"][0]["response"]
+    assert respuesta["messages"][0]["response"].startswith(
+        "*Cuéntanos tus servicios en una sola línea*"
+    )
 
 
 def test_tercer_servicio_confirmado_muestra_resumen_final_de_perfil():

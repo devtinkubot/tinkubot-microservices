@@ -7,14 +7,14 @@ imghdr_stub.what = lambda *args, **kwargs: None
 sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from flows.consentimiento.procesador_respuesta import (  # noqa: E402
+from services.onboarding.consentimiento import (  # noqa: E402
     _resolver_opcion_consentimiento,
 )
 from flows.constructores.construidor_consentimiento import (  # noqa: E402
     construir_respuesta_solicitud_consentimiento,
 )
 from models.mensajes import RecepcionMensajeWhatsApp  # noqa: E402
-from templates.consentimiento.mensajes import (  # noqa: E402
+from templates.onboarding.consentimiento import (  # noqa: E402
     payload_consentimiento_proveedor,
 )
 

@@ -14,6 +14,7 @@ from .normalizador_texto_busqueda import normalizar_texto_para_busqueda
 from .normalizador_texto_visible import normalizar_texto_visible_corto
 from .normalizador_texto_visible_ia import normalizar_texto_visible_con_ia
 from .parser_servicios import parsear_servicios_con_limite
+from .parser_servicios import parsear_servicios_numerados_con_limite
 from .sanitizador_servicios import sanitizar_lista_servicios
 
 __all__ = [
@@ -28,6 +29,7 @@ __all__ = [
     "formatear_servicios_a_cadena",
     "dividir_cadena_servicios",
     "parsear_servicios_con_limite",
+    "parsear_servicios_numerados_con_limite",
     "extraer_servicios_almacenados",
     "construir_listado_servicios",
 ]

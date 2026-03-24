@@ -25,13 +25,21 @@ from flows.gestores_estados.gestor_espera_especialidad import (  # noqa: E402
     manejar_espera_especialidad,
     normalizar_servicio_registro_individual,
 )
-from flows.gestores_estados.gestor_espera_experiencia import (  # noqa: E402
-    manejar_espera_experiencia,
-)
 from flows.gestores_estados.gestor_servicios import (  # noqa: E402
     manejar_agregar_servicios,
     manejar_confirmacion_agregar_servicios,
 )
+from flows.onboarding.handlers.experiencia import (  # noqa: E402
+    manejar_espera_experiencia_onboarding,
+)
+from flows.onboarding.handlers.servicios import (  # noqa: E402
+    manejar_espera_servicios_onboarding,
+)
+from flows.onboarding.handlers.servicios_confirmacion import (  # noqa: E402
+    manejar_confirmacion_servicios_onboarding,
+    manejar_decision_agregar_otro_servicio_onboarding,
+)
+from flows.onboarding.router import manejar_estado_onboarding  # noqa: E402
 from flows.validadores import validar_nombre_completo  # noqa: E402
 from infrastructure.openai import (  # noqa: E402
     transformador_servicios as modulo_transformador,
@@ -44,17 +52,19 @@ from services.servicios_proveedor.asistente_clarificacion import (  # noqa: E402
 )
 from services.servicios_proveedor.utilidades import (  # noqa: E402
     dividir_cadena_servicios,
+    parsear_servicios_numerados_con_limite,
     normalizar_texto_visible_con_ia,
     normalizar_texto_visible_corto,
 )
 from services.servicios_proveedor.validacion_semantica import (  # noqa: E402
     validar_servicio_semanticamente,
 )
+from templates.onboarding import (  # noqa: E402
+    payload_servicios_onboarding_con_imagen,
+    preguntar_servicios_onboarding,
+)
 from templates.registro import (  # noqa: E402
     mensaje_correccion_servicios,
-    payload_servicio_registro_con_imagen,
-    preguntar_servicios_registro,
-    preguntar_servicio_onboarding_registro,
 )
 
 
@@ -84,45 +94,113 @@ def test_prompt_transformador_prioriza_detalle_y_evita_paraguas():
     assert 'No elimines conectores útiles como "de", "a", "para", "en"' in prompt
 
 
-def test_prompt_servicios_registro_usa_ejemplos_especificos():
-    mensaje = preguntar_servicios_registro()
+def test_prompt_servicios_onboarding_usa_formato_compacto():
+    mensaje = preguntar_servicios_onboarding()
 
-    assert "Agregar Servicio 1 de 3" in mensaje
-    assert "primer servicio" in mensaje
-
-
-def test_prompt_servicio_onboarding_varia_por_slot():
-    assert "Agregar Servicio 1 de 3" in preguntar_servicio_onboarding_registro(
-        1, 3
-    )
-    assert "primer servicio" in preguntar_servicio_onboarding_registro(1, 3)
-    assert "Agregar Servicio 2 de 3" in preguntar_servicio_onboarding_registro(
-        2, 3
-    )
-    assert "segundo servicio" in preguntar_servicio_onboarding_registro(2, 3)
-    assert "Agregar Servicio 3 de 3" in preguntar_servicio_onboarding_registro(
-        3, 3
-    )
-    assert "tercer servicio" in preguntar_servicio_onboarding_registro(3, 3)
+    assert "una sola línea" in mensaje
+    assert "hasta 7 servicios" in mensaje
+    assert "Revisa la imagen de ejemplo" in mensaje
 
 
-def test_prompt_servicio_onboarding_usa_env_override(monkeypatch):
+def test_prompt_servicios_onboarding_usa_env_override(monkeypatch):
     monkeypatch.setenv(
         "WA_PROVIDER_SERVICES_IMAGE_URL",
         "https://example.com/services-image.png",
     )
 
-    respuesta = payload_servicio_registro_con_imagen(1, 3)
+    respuesta = payload_servicios_onboarding_con_imagen()
 
     assert respuesta["media_type"] == "image"
     assert respuesta["media_url"] == "https://example.com/services-image.png"
 
 
 @pytest.mark.asyncio
+async def test_router_onboarding_nuevo_enruta_servicios_compactos(monkeypatch):
+    async def _fake_handler(**_kwargs):
+        return {
+            "success": True,
+            "messages": [{"response": "ok onboarding nuevo"}],
+        }
+
+    monkeypatch.setattr(
+        "flows.onboarding.router.manejar_espera_servicios_onboarding",
+        _fake_handler,
+    )
+
+    respuesta = await manejar_estado_onboarding(
+        estado="awaiting_specialty",
+        flujo={"mode": "registration"},
+        telefono="593999111200@s.whatsapp.net",
+        texto_mensaje="1 albañilería 2 plomería",
+        carga={},
+        supabase=None,
+    )
+
+    assert respuesta["success"] is True
+    assert respuesta["messages"][0]["response"] == "ok onboarding nuevo"
+
+
+@pytest.mark.asyncio
+async def test_handler_onboarding_experiencia_avanza_a_servicios():
+    flujo = {"state": "awaiting_experience"}
+
+    respuesta = await manejar_espera_experiencia_onboarding(
+        flujo=flujo,
+        texto_mensaje="3",
+        selected_option="provider_experience_3_5",
+    )
+
+    assert flujo["state"] == "awaiting_specialty"
+    assert respuesta["messages"][0]["media_type"] == "image"
+
+
+def test_parsear_servicios_numerados_con_limite_extrae_bloque_continuo():
+    servicios = parsear_servicios_numerados_con_limite(
+        "1 Albañilería general 2 Plomería y fontanería 3 Jardinería y poda de árboles",
+        maximos=7,
+    )
+
+    assert servicios == [
+        "Albañilería general",
+        "Plomería y fontanería",
+        "Jardinería y poda de árboles",
+    ]
+
+
+def test_parsear_servicios_numerados_con_limite_rechaza_bloque_sin_numeros():
+    servicios = parsear_servicios_numerados_con_limite(
+        "Albañilería general, plomería y fontanería, jardinería y poda de árboles",
+        maximos=7,
+    )
+
+    assert servicios == []
+
+
+def test_parsear_servicios_numerados_con_limite_recorta_a_siete():
+    servicios = parsear_servicios_numerados_con_limite(
+        (
+            "1 Servicio uno 2 Servicio dos 3 Servicio tres 4 Servicio cuatro "
+            "5 Servicio cinco 6 Servicio seis 7 Servicio siete 8 Servicio ocho"
+        ),
+        maximos=7,
+    )
+
+    assert servicios == [
+        "Servicio uno",
+        "Servicio dos",
+        "Servicio tres",
+        "Servicio cuatro",
+        "Servicio cinco",
+        "Servicio seis",
+        "Servicio siete",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_espera_experiencia_onboarding_muestra_lista_de_ejemplos():
     flujo = {"state": "awaiting_experience"}
 
-    respuesta = await manejar_espera_experiencia(
+    respuesta = await manejar_espera_experiencia_onboarding(
         flujo=flujo,
         texto_mensaje="3",
         selected_option="provider_experience_3_5",
@@ -134,7 +212,11 @@ async def test_espera_experiencia_onboarding_muestra_lista_de_ejemplos():
     assert "tinkubot_add_services.png" in respuesta["messages"][0]["media_url"]
     assert (
         respuesta["messages"][0]["response"]
-        == "*Agregar Servicio 1 de 3*\n\nEscribe el primer servicio que ofreces."
+        == (
+            "*Cuéntanos tus servicios en una sola línea*\n\n"
+            "Revisa la imagen de ejemplo y envíanos hasta 7 servicios en un solo mensaje. "
+            "Mientras más claro y detallado sea cada servicio, mejor podremos clasificarlos."
+        )
     )
 
 
@@ -335,27 +417,44 @@ def test_validar_servicio_semanticamente_recorta_normalized_service_visible():
     assert cliente_openai.chat.completions.calls == 2
 
 
-def test_espera_especialidad_muestra_confirmacion_antes_de_continuar(monkeypatch):
-    monkeypatch.setattr(
-        modulo_transformador,
-        "TransformadorServicios",
-        _TransformadorOK,
-    )
+def test_espera_especialidad_onboarding_con_linea_numerada_va_a_consentimiento(
+    monkeypatch,
+):
+    class _TransformadorLinea:
+        def __init__(self, cliente_openai, modelo=None):
+            self.cliente_openai = cliente_openai
+            self.modelo = modelo
 
-    async def _fake_validar_servicio_semanticamente(**_kwargs):
+        async def transformar_a_servicios(self, entrada_usuario, max_servicios=1):
+            entrada = entrada_usuario.lower()
+            if "desarrollo web" in entrada:
+                return ["desarrollo web"]
+            if "mantenimiento de software" in entrada:
+                return ["mantenimiento de software"]
+            if "soporte tecnico" in entrada or "soporte técnico" in entrada:
+                return ["soporte tecnico"]
+            return [entrada_usuario]
+
+    async def _fake_validar_servicio_semanticamente(**kwargs):
+        servicio = kwargs["service_name"]
         return {
             "is_valid_service": True,
             "needs_clarification": False,
-            "normalized_service": "desarrollo web",
+            "normalized_service": servicio,
             "domain_resolution_status": "matched",
             "domain_code": "tecnologia",
             "resolved_domain_code": "tecnologia",
-            "proposed_category_name": "desarrollo web",
-            "proposed_service_summary": "Desarrollo de sitios y aplicaciones web.",
+            "proposed_category_name": servicio,
+            "proposed_service_summary": f"Servicio de {servicio}.",
             "reason": "heuristic_accept",
             "clarification_question": None,
         }
 
+    monkeypatch.setattr(
+        modulo_transformador,
+        "TransformadorServicios",
+        _TransformadorLinea,
+    )
     monkeypatch.setattr(
         "flows.gestores_estados."
         "gestor_espera_especialidad.validar_servicio_semanticamente",
@@ -366,15 +465,58 @@ def test_espera_especialidad_muestra_confirmacion_antes_de_continuar(monkeypatch
     respuesta = asyncio.run(
         manejar_espera_especialidad(
             flujo=flujo,
-            texto_mensaje="desarrollo web",
+            texto_mensaje=(
+                "1 desarrollo web 2 mantenimiento de software 3 soporte tecnico"
+            ),
             cliente_openai=object(),
         )
     )
 
-    assert flujo["state"] == "awaiting_profile_service_confirmation"
-    assert flujo["pending_service_candidate"] == "desarrollo web"
-    assert respuesta["messages"][0]["ui"]["type"] == "buttons"
-    assert respuesta["messages"][0]["ui"]["header_text"] == "Servicio 1 de 3 identificado:"
+    assert flujo["state"] == "awaiting_services_confirmation"
+    assert flujo["servicios_temporales"] == [
+        "desarrollo web",
+        "mantenimiento de software",
+        "soporte tecnico",
+    ]
+    assert respuesta["messages"][0]["ui"]["header_text"] == "Resumen de servicios identificados"
+    assert respuesta["messages"][0]["ui"]["options"][0]["title"] == "Continuar"
+    assert respuesta["messages"][0]["ui"]["options"][1]["title"] == "Corregir"
+    assert "¿Estás de acuerdo con esta lista?" not in respuesta["messages"][0][
+        "response"
+    ]
+
+
+def test_espera_especialidad_onboarding_rechaza_multiservicio_sin_numeros(
+    monkeypatch,
+):
+    class _TransformadorLinea:
+        def __init__(self, cliente_openai, modelo=None):
+            self.cliente_openai = cliente_openai
+            self.modelo = modelo
+
+        async def transformar_a_servicios(self, entrada_usuario, max_servicios=1):
+            return [entrada_usuario]
+
+    monkeypatch.setattr(
+        modulo_transformador,
+        "TransformadorServicios",
+        _TransformadorLinea,
+    )
+
+    respuesta = asyncio.run(
+        manejar_espera_especialidad(
+            flujo={"state": "awaiting_specialty"},
+            texto_mensaje=(
+                "Albañilería general, plomería y fontanería, jardinería y poda de árboles"
+            ),
+            cliente_openai=object(),
+        )
+    )
+
+    assert respuesta["messages"][0]["response"] == (
+        "Revisa la imagen de ejemplo y envíanos hasta 7 servicios en un solo mensaje. "
+        "Mientras más claro y detallado sea cada servicio, mejor podremos clasificarlos."
+    )
 
 
 def test_confirmacion_servicio_onboarding_avanza_al_siguiente_servicio(monkeypatch):
@@ -407,6 +549,7 @@ def test_confirmacion_servicio_onboarding_avanza_al_siguiente_servicio(monkeypat
     flujo = {
         "state": "awaiting_specialty",
         "servicios_temporales": [],
+        "profile_completion_mode": True,
     }
 
     respuesta = asyncio.run(
@@ -433,7 +576,9 @@ def test_confirmacion_servicio_onboarding_avanza_al_siguiente_servicio(monkeypat
     assert "tinkubot_add_services.png" in respuesta["messages"][0]["media_url"]
     assert (
         respuesta["messages"][0]["response"]
-        == "*Agregar Servicio 2 de 3*\n\nEscribe el segundo servicio que ofreces."
+        == "*Cuéntanos tus servicios en una sola línea*\n\n"
+        "Revisa la imagen de ejemplo y envíanos hasta 7 servicios en un solo mensaje. "
+        "Mientras más claro y detallado sea cada servicio, mejor podremos clasificarlos."
     )
 
 
@@ -467,7 +612,42 @@ def test_confirmacion_tercer_servicio_onboarding_va_a_consentimiento():
     ].lower()
 
 
-def test_espera_especialidad_onboarding_con_tres_servicios_va_a_consentimiento():
+def test_espera_especialidad_onboarding_con_tres_servicios_va_a_consentimiento(
+    monkeypatch,
+):
+    class _TransformadorExtra:
+        def __init__(self, cliente_openai, modelo=None):
+            self.cliente_openai = cliente_openai
+            self.modelo = modelo
+
+        async def transformar_a_servicios(self, entrada_usuario, max_servicios=1):
+            return ["servicio extra"]
+
+    async def _fake_validar_servicio_semanticamente(**kwargs):
+        servicio = kwargs["service_name"]
+        return {
+            "is_valid_service": True,
+            "needs_clarification": False,
+            "normalized_service": servicio,
+            "domain_resolution_status": "matched",
+            "domain_code": "general",
+            "resolved_domain_code": "general",
+            "proposed_category_name": servicio,
+            "proposed_service_summary": f"Servicio de {servicio}.",
+            "reason": "heuristic_accept",
+            "clarification_question": None,
+        }
+
+    monkeypatch.setattr(
+        modulo_transformador,
+        "TransformadorServicios",
+        _TransformadorExtra,
+    )
+    monkeypatch.setattr(
+        "flows.gestores_estados."
+        "gestor_espera_especialidad.validar_servicio_semanticamente",
+        _fake_validar_servicio_semanticamente,
+    )
     flujo = {
         "servicios_temporales": [
             "servicio 1",
@@ -480,18 +660,19 @@ def test_espera_especialidad_onboarding_con_tres_servicios_va_a_consentimiento()
     respuesta = asyncio.run(
         manejar_espera_especialidad(
             flujo=flujo,
-            texto_mensaje="servicio extra",
+            texto_mensaje="1 servicio extra",
             cliente_openai=object(),
         )
     )
 
-    assert flujo["state"] == "awaiting_consent"
-    assert flujo["specialty"] == "servicio 1, servicio 2, servicio 3"
-    assert respuesta["messages"][0]["ui"]["id"] == "provider_onboarding_continue_v1"
-    assert respuesta["messages"][0]["ui"]["type"] == "buttons"
-    assert "para poder conectarte con clientes" in respuesta["messages"][0][
+    assert flujo["state"] == "awaiting_services_confirmation"
+    assert flujo["specialty"] == "servicio 1, servicio 2, servicio 3, servicio extra"
+    assert respuesta["messages"][0]["ui"]["header_text"] == "Resumen de servicios identificados"
+    assert respuesta["messages"][0]["ui"]["options"][0]["title"] == "Continuar"
+    assert respuesta["messages"][0]["ui"]["options"][1]["title"] == "Corregir"
+    assert "¿Estás de acuerdo con esta lista?" not in respuesta["messages"][0][
         "response"
-    ].lower()
+    ]
 
 
 def test_normalizacion_servicio_pide_aclaracion_en_lugar_de_revision(monkeypatch):
@@ -525,9 +706,9 @@ def test_normalizacion_servicio_pide_aclaracion_en_lugar_de_revision(monkeypatch
             "message": (
                 "Indica el tipo de instalación exacta que realizas.\n\n"
                 "Para ayudarte a aterrizarlo, estos servicios reales se parecen:\n"
-                "1. Instalación de paneles solares - Energía solar y fotovoltaica.\n"
-                "2. Mantenimiento de paneles solares - Limpieza y soporte técnico.\n"
-                "3. Instalación eléctrica residencial - Electricidad para hogares.\n\n"
+                "1 Instalación de paneles solares - Energía solar y fotovoltaica.\n"
+                "2 Mantenimiento de paneles solares - Limpieza y soporte técnico.\n"
+                "3 Instalación eléctrica residencial - Electricidad para hogares.\n\n"
                 "Respóndeme con una versión más específica."
             )
         }
@@ -632,14 +813,16 @@ def test_decision_agregar_otro_no_pasa_a_resumen_final():
     }
 
     respuesta = asyncio.run(
-        manejar_decision_agregar_otro_servicio(
+        manejar_decision_agregar_otro_servicio_onboarding(
             flujo=flujo,
             texto_mensaje="2",
         )
     )
 
     assert flujo["state"] == "awaiting_services_confirmation"
-    assert "Resumen de servicios principales" in respuesta["messages"][0]["response"]
+    assert respuesta["messages"][0]["ui"]["header_text"] == "Resumen de servicios identificados"
+    assert respuesta["messages"][0]["ui"]["options"][0]["title"] == "Continuar"
+    assert respuesta["messages"][0]["ui"]["options"][1]["title"] == "Corregir"
 
 
 def test_confirmacion_agregar_servicios_re_normaliza_correccion_manual(monkeypatch):
@@ -855,7 +1038,7 @@ def test_confirmacion_servicios_acepta_resumen_y_pasa_a_experiencia():
     }
 
     respuesta = asyncio.run(
-        manejar_confirmacion_servicios(
+        manejar_confirmacion_servicios_onboarding(
             flujo=flujo,
             texto_mensaje="1",
             cliente_openai=None,
@@ -876,7 +1059,7 @@ def test_confirmacion_servicios_abre_menu_edicion():
     }
 
     respuesta = asyncio.run(
-        manejar_confirmacion_servicios(
+        manejar_confirmacion_servicios_onboarding(
             flujo=flujo,
             texto_mensaje="2",
             cliente_openai=None,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, Optional
 from urllib.parse import parse_qs, urlparse
 
@@ -14,6 +15,15 @@ SOCIAL_NETWORKS = {
     SOCIAL_NETWORK_INSTAGRAM,
 }
 SOCIAL_SKIP_VALUES = {"omitir", "na", "n/a", "ninguno"}
+SOCIAL_NETWORK_KEYWORDS = {
+    "facebook": SOCIAL_NETWORK_FACEBOOK,
+    "fb": SOCIAL_NETWORK_FACEBOOK,
+    "instagram": SOCIAL_NETWORK_INSTAGRAM,
+    "ig": SOCIAL_NETWORK_INSTAGRAM,
+}
+SOCIAL_NETWORK_KEYWORD_RE = re.compile(
+    r"\b(?:facebook|fb|instagram|ig)\b", re.IGNORECASE
+)
 
 
 def _normalizar_username_crudo(valor: Optional[str]) -> Optional[str]:
@@ -91,6 +101,90 @@ def parsear_username_red_social(
         "type": tipo_red if username else None,
         "username": username,
         "url": construir_url_red_social(tipo_red, username),
+    }
+
+
+def extraer_redes_sociales_desde_texto(
+    texto_mensaje: Optional[str],
+) -> Dict[str, Optional[str]]:
+    texto = limpiar_espacios(texto_mensaje)
+    if not texto or texto.lower() in SOCIAL_SKIP_VALUES:
+        return {
+            "facebook_username": None,
+            "instagram_username": None,
+            "facebook_url": None,
+            "instagram_url": None,
+        }
+
+    coincidencias = list(SOCIAL_NETWORK_KEYWORD_RE.finditer(texto))
+    resultado = {
+        "facebook_username": None,
+        "instagram_username": None,
+        "facebook_url": None,
+        "instagram_url": None,
+    }
+
+    def _normalizar_segmento(valor: str) -> str:
+        segmento = limpiar_espacios(valor)
+        segmento = re.sub(r"^[\s:=-]+", "", segmento)
+        segmento = re.sub(r"\s+\d+\s*$", "", segmento)
+        return segmento.strip()
+
+    if coincidencias:
+        for indice, coincidencia in enumerate(coincidencias):
+            etiqueta = coincidencia.group(0).lower()
+            tipo_red = SOCIAL_NETWORK_KEYWORDS.get(etiqueta)
+            if not tipo_red:
+                continue
+
+            inicio = coincidencia.end()
+            fin = (
+                coincidencias[indice + 1].start()
+                if indice + 1 < len(coincidencias)
+                else len(texto)
+            )
+            segmento = _normalizar_segmento(texto[inicio:fin])
+            if not segmento:
+                continue
+
+            parseada = parsear_username_red_social(segmento, tipo_red)
+            if not parseada["username"]:
+                continue
+
+            if tipo_red == SOCIAL_NETWORK_FACEBOOK:
+                resultado["facebook_username"] = parseada["username"]
+                resultado["facebook_url"] = parseada["url"]
+            else:
+                resultado["instagram_username"] = parseada["username"]
+                resultado["instagram_url"] = parseada["url"]
+
+    if resultado["facebook_username"] or resultado["instagram_username"]:
+        return resultado
+
+    if "facebook.com" in texto.lower() or "fb.com" in texto.lower():
+        parseada = parsear_username_red_social(texto, SOCIAL_NETWORK_FACEBOOK)
+        return {
+            "facebook_username": parseada["username"],
+            "instagram_username": None,
+            "facebook_url": parseada["url"],
+            "instagram_url": None,
+        }
+
+    if "instagram.com" in texto.lower() or "instagr.am" in texto.lower():
+        parseada = parsear_username_red_social(texto, SOCIAL_NETWORK_INSTAGRAM)
+        return {
+            "facebook_username": None,
+            "instagram_username": parseada["username"],
+            "facebook_url": None,
+            "instagram_url": parseada["url"],
+        }
+
+    parseada = parsear_username_red_social(texto, SOCIAL_NETWORK_INSTAGRAM)
+    return {
+        "facebook_username": None,
+        "instagram_username": parseada["username"],
+        "facebook_url": None,
+        "instagram_url": parseada["url"],
     }
 
 

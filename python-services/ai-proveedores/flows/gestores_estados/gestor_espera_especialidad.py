@@ -1,6 +1,7 @@
-"""Manejador del estado awaiting_specialty para captura incremental."""
+"""Manejador de servicios para perfil/completado post-alta."""
 
 import logging
+import re
 from typing import Any, Dict, List, Optional
 
 from services.servicios_proveedor.asistente_clarificacion import (
@@ -13,6 +14,8 @@ from services.servicios_proveedor.constantes import (
 )
 from services.servicios_proveedor.utilidades import (
     limpiar_espacios,
+    parsear_servicios_con_limite,
+    parsear_servicios_numerados_con_limite,
     sanitizar_lista_servicios,
 )
 from services.servicios_proveedor.validacion_semantica import (
@@ -25,8 +28,7 @@ from templates.registro import (
     mensaje_resumen_servicios_registro,
     mensaje_servicio_duplicado_registro,
     payload_confirmacion_servicio_perfil,
-    payload_servicio_registro_con_imagen,
-    preguntar_servicio_onboarding_registro,
+    payload_resumen_servicios_registro,
     preguntar_siguiente_servicio_registro,
 )
 from templates.interfaz import (
@@ -35,7 +37,10 @@ from templates.interfaz import (
     SERVICE_EXAMPLE_LEGAL_ID,
     SERVICE_EXAMPLE_MECHANICS_ID,
     mensaje_ejemplo_servicio_seleccionado,
-    preguntar_nuevo_servicio_con_ejemplos_dinamicos,
+)
+from templates.onboarding.servicios import (
+    payload_servicios_onboarding_con_imagen,
+    preguntar_servicios_onboarding,
 )
 
 logger = logging.getLogger(__name__)
@@ -71,38 +76,23 @@ def _limite_visible_para_contexto(flujo: Dict[str, Any]) -> int:
     return SERVICIOS_MAXIMOS_ONBOARDING
 
 
-async def _prompt_servicio_onboarding(
+async def _mensajes_prompt_servicio_compartido(
     *,
     flujo: Dict[str, Any],
-    indice: int,
-    maximo_visible: int,
-) -> Dict[str, Any]:
-    respuesta = payload_servicio_registro_con_imagen(
-        indice=indice,
-        maximo=maximo_visible,
-    )
-    flujo["service_examples_lookup"] = {}
-    return {
-        **respuesta,
+    indice: Optional[int] = None,
+    maximo_visible: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    if indice is not None and maximo_visible is not None:
+        respuesta = payload_servicios_onboarding_con_imagen()
+        flujo["service_examples_lookup"] = {}
+        return [respuesta]
+
+    respuesta = {
+        "response": preguntar_servicios_onboarding(),
+        "media_type": "image",
+        "media_url": None,
         "service_examples_lookup": {},
     }
-
-
-async def _mensajes_prompt_servicio_onboarding(
-    *,
-    flujo: Dict[str, Any],
-    indice: int,
-    maximo_visible: int,
-) -> List[Dict[str, Any]]:
-    respuesta = await _prompt_servicio_onboarding(
-        flujo=flujo,
-        indice=indice,
-        maximo_visible=maximo_visible,
-    )
-    respuesta["response"] = preguntar_servicio_onboarding_registro(
-        indice=indice,
-        maximo=maximo_visible,
-    )
     return [respuesta]
 
 
@@ -113,7 +103,7 @@ async def normalizar_servicio_registro_individual(
     servicio_embeddings: Optional[Any] = None,
     review_source: str = "provider_onboarding",
 ) -> Dict[str, Any]:
-    """Normaliza un solo servicio durante el onboarding."""
+    """Normaliza un solo servicio durante el flujo de servicios."""
     especialidad_texto = limpiar_espacios(texto_mensaje)
     texto_minusculas = especialidad_texto.lower()
 
@@ -247,6 +237,99 @@ async def normalizar_servicio_registro_individual(
     }
 
 
+def _explicar_formato_servicios_compartido() -> str:
+    return (
+        "Revisa la imagen de ejemplo y envíanos hasta 7 servicios en un solo mensaje. "
+        "Mientras más claro y detallado sea cada servicio, mejor podremos clasificarlos."
+    )
+
+
+async def normalizar_servicios_registro_compartido(
+    *,
+    texto_mensaje: str,
+    cliente_openai: Optional[Any],
+    servicio_embeddings: Optional[Any] = None,
+    max_servicios: int = SERVICIOS_MAXIMOS_ONBOARDING,
+) -> Dict[str, Any]:
+    """Normaliza una línea compacta de servicios para onboarding."""
+    texto_limpio = limpiar_espacios(texto_mensaje)
+    if not texto_limpio:
+        return {"ok": False, "response": _explicar_formato_servicios_compartido()}
+
+    total_numeros_detectados = len(
+        re.findall(r"(?<!\d)(\d{1,2})\.\s*", texto_limpio)
+    )
+
+    servicios_numerados = parsear_servicios_numerados_con_limite(
+        texto_limpio,
+        maximos=max_servicios,
+    )
+    if not servicios_numerados:
+        if any(separador in texto_limpio for separador in [",", ";", "|", "/", "\n"]):
+            return {
+                "ok": False,
+                "response": _explicar_formato_servicios_compartido(),
+            }
+        candidatos_simples = parsear_servicios_con_limite(
+            texto_limpio,
+            maximos=max_servicios,
+            normalizar=False,
+        )
+        if len(candidatos_simples) > 1:
+            return {
+                "ok": False,
+                "response": _explicar_formato_servicios_compartido(),
+            }
+        servicios_numerados = candidatos_simples
+
+    if not servicios_numerados:
+        return {
+            "ok": False,
+            "response": _explicar_formato_servicios_compartido(),
+        }
+
+    if not cliente_openai:
+        return {
+            "ok": False,
+            "response": (
+                "*No pude procesar tus servicios en este momento.* "
+                "Por favor intenta nuevamente en unos minutos."
+            ),
+        }
+
+    servicios_validados: List[str] = []
+    for candidato in servicios_numerados[:max_servicios]:
+        resultado = await normalizar_servicio_registro_individual(
+            texto_mensaje=candidato,
+            cliente_openai=cliente_openai,
+            servicio_embeddings=servicio_embeddings,
+        )
+        if not resultado.get("ok"):
+            if resultado.get("needs_clarification"):
+                return resultado
+            return {
+                "ok": False,
+                "response": resultado.get("response")
+                or _explicar_formato_servicios_compartido(),
+            }
+
+        servicio = str(resultado.get("service") or "").strip()
+        if servicio and servicio not in servicios_validados:
+            servicios_validados.append(servicio)
+
+    if not servicios_validados:
+        return {
+            "ok": False,
+            "response": _explicar_formato_servicios_compartido(),
+        }
+
+    return {
+        "ok": True,
+        "services": servicios_validados,
+        "limit_reached": total_numeros_detectados > max_servicios,
+    }
+
+
 async def manejar_espera_especialidad(
     flujo: Dict[str, Any],
     texto_mensaje: Optional[str],
@@ -276,7 +359,7 @@ async def manejar_espera_especialidad(
             }
         ]
         mensajes.extend(
-            await _mensajes_prompt_servicio_onboarding(
+            await _mensajes_prompt_servicio_compartido(
                 flujo=flujo,
                 indice=len(servicios_temporales) + 1,
                 maximo_visible=maximo_visible,
@@ -291,90 +374,70 @@ async def manejar_espera_especialidad(
         flujo["state"] = "awaiting_specialty"
         return {
             "success": True,
-            "messages": await _mensajes_prompt_servicio_onboarding(
+            "messages": await _mensajes_prompt_servicio_compartido(
                 flujo=flujo,
                 indice=len(servicios_temporales) + 1,
                 maximo_visible=maximo_visible,
             ),
         }
 
-    if len(servicios_temporales) >= maximo_servicios:
-        if flujo.get("profile_completion_mode"):
+    if flujo.get("profile_completion_mode"):
+        if len(servicios_temporales) >= maximo_servicios:
             flujo["state"] = "awaiting_services_confirmation"
             return {
                 "success": True,
                 "messages": [
                     {"response": mensaje_maximo_servicios_registro(maximo_servicios)},
-                    {
-                        "response": mensaje_resumen_servicios_registro(
-                            servicios_temporales,
-                            maximo_visible,
-                        )
-                    },
+                    payload_resumen_servicios_registro(
+                        servicios_temporales,
+                        maximo_visible,
+                    ),
                 ],
             }
 
-        flujo["specialty"] = ", ".join(servicios_temporales)
-        flujo["state"] = "awaiting_consent"
-        return {
-            "success": True,
-            "messages": construir_respuesta_solicitud_consentimiento()[
-                "messages"
-            ],
-        }
-
-    if texto_limpio in PROFILE_CONTROL_IDS:
-        if flujo.get("profile_completion_mode"):
+        if texto_limpio in PROFILE_CONTROL_IDS:
+            if flujo.get("profile_completion_mode"):
+                return {
+                    "success": True,
+                    "messages": await _mensajes_prompt_servicio_compartido(
+                        flujo=flujo,
+                        indice=len(servicios_temporales) + 1,
+                        maximo_visible=maximo_visible,
+                    ),
+                }
             return {
                 "success": True,
-                "messages": await _mensajes_prompt_servicio_onboarding(
-                    flujo=flujo,
-                    indice=len(servicios_temporales) + 1,
-                    maximo_visible=maximo_visible,
-                ),
+                "messages": [
+                    {
+                        "response": preguntar_siguiente_servicio_registro(
+                            len(servicios_temporales) + 1,
+                            maximo_visible,
+                            SERVICIOS_MINIMOS_PERFIL_PROFESIONAL,
+                        )
+                    }
+                ],
             }
-        return {
-            "success": True,
-            "messages": [
-                {
-                    "response": preguntar_siguiente_servicio_registro(
-                        len(servicios_temporales) + 1,
-                        maximo_visible,
-                        (
-                            SERVICIOS_MINIMOS_PERFIL_PROFESIONAL
-                            if flujo.get("profile_completion_mode")
-                            else None
-                        ),
-                    )
-                }
-            ],
-        }
 
-    resultado = await normalizar_servicio_registro_individual(
-        texto_mensaje=texto_mensaje or "",
-        cliente_openai=cliente_openai,
-        servicio_embeddings=servicio_embeddings,
-        review_source=(
-            "provider_profile_completion"
-            if flujo.get("profile_completion_mode")
-            else "provider_onboarding"
-        ),
-    )
-    if not resultado.get("ok"):
-        flujo["state"] = "awaiting_specialty"
-        return {
-            "success": True,
-            "messages": [{"response": resultado["response"]}],
-        }
+        resultado = await normalizar_servicio_registro_individual(
+            texto_mensaje=texto_mensaje or "",
+            cliente_openai=cliente_openai,
+            servicio_embeddings=servicio_embeddings,
+            review_source="provider_profile_completion",
+        )
+        if not resultado.get("ok"):
+            flujo["state"] = "awaiting_specialty"
+            return {
+                "success": True,
+                "messages": [{"response": resultado["response"]}],
+            }
 
-    servicio = resultado["service"]
-    if servicio in servicios_temporales:
-        return {
-            "success": True,
-            "messages": [{"response": mensaje_servicio_duplicado_registro(servicio)}],
-        }
+        servicio = resultado["service"]
+        if servicio in servicios_temporales:
+            return {
+                "success": True,
+                "messages": [{"response": mensaje_servicio_duplicado_registro(servicio)}],
+            }
 
-    if flujo.get("profile_completion_mode"):
         indice_servicio = int(
             flujo.get("profile_edit_service_index", len(servicios_temporales))
         )
@@ -392,16 +455,93 @@ async def manejar_espera_especialidad(
             ],
         }
 
-    flujo["pending_service_candidate"] = servicio
-    flujo["pending_service_index"] = len(servicios_temporales)
-    flujo["state"] = "awaiting_profile_service_confirmation"
+    resultado = await normalizar_servicios_registro_compartido(
+        texto_mensaje=texto_mensaje or "",
+        cliente_openai=cliente_openai,
+        servicio_embeddings=servicio_embeddings,
+        max_servicios=SERVICIOS_MAXIMOS_ONBOARDING,
+    )
+    if not resultado.get("ok"):
+        flujo["state"] = "awaiting_specialty"
+        return {
+            "success": True,
+            "messages": [{"response": resultado["response"]}],
+        }
+
+    servicios_capturados = resultado["services"]
+    if not servicios_capturados:
+        flujo["state"] = "awaiting_specialty"
+        return {
+            "success": True,
+            "messages": [{"response": _explicar_formato_servicios_compartido()}],
+        }
+
+    nuevos_servicios = [
+        servicio
+        for servicio in servicios_capturados
+        if servicio not in servicios_temporales
+    ]
+    if not nuevos_servicios:
+        flujo["state"] = "awaiting_specialty"
+        return {
+            "success": True,
+            "messages": [
+                {
+                    "response": (
+                        "Ya tenías esos servicios en tu lista. "
+                        "Escribe otros distintos en la misma línea."
+                    )
+                }
+            ],
+        }
+
+    nuevos_servicios = nuevos_servicios[:SERVICIOS_MAXIMOS_ONBOARDING]
+
+    if nuevos_servicios:
+        flujo["servicios_temporales"] = list(
+            dict.fromkeys(servicios_temporales + nuevos_servicios)
+        )[:SERVICIOS_MAXIMOS_ONBOARDING]
+        flujo["services"] = list(flujo["servicios_temporales"])
+
+    cantidad = len(flujo.get("servicios_temporales") or [])
+    limit_reached = bool(resultado.get("limit_reached"))
+    if cantidad < SERVICIOS_MINIMOS_PERFIL_PROFESIONAL:
+        flujo["state"] = "awaiting_specialty"
+        mensaje_base = (
+            f"Ya capturé {cantidad} servicio(s), pero necesitamos "
+            f"al menos {SERVICIOS_MINIMOS_PERFIL_PROFESIONAL} para continuar.\n\n"
+            "Escribe los que faltan en la misma línea, por ejemplo:\n"
+            "1 Albañilería general 2 Plomería y fontanería 3 Jardinería"
+        )
+        if limit_reached:
+            mensaje_base = (
+                f"Tomé solo los primeros {SERVICIOS_MAXIMOS_ONBOARDING} servicios "
+                "porque ese es el máximo permitido.\n\n"
+                f"{mensaje_base}"
+            )
+        return {
+            "success": True,
+            "messages": [{"response": mensaje_base}],
+        }
+
+    flujo["specialty"] = ", ".join(flujo.get("servicios_temporales") or [])
+    flujo["state"] = "awaiting_services_confirmation"
+    mensajes = [
+        payload_resumen_servicios_registro(
+            list(flujo.get("servicios_temporales") or []),
+            maximo_visible,
+        )
+    ]
+    if limit_reached:
+        mensajes = [
+            {
+                "response": (
+                    f"Tomé solo los primeros {SERVICIOS_MAXIMOS_ONBOARDING} servicios "
+                    "porque ese es el máximo permitido."
+                )
+            }
+        ] + mensajes
     return {
         "success": True,
-        "messages": [
-            payload_confirmacion_servicio_perfil(
-                servicio=servicio,
-                indice=len(servicios_temporales) + 1,
-                total_requerido=SERVICIOS_MINIMOS_PERFIL_PROFESIONAL,
-            )
-        ],
+        "messages": mensajes,
     }

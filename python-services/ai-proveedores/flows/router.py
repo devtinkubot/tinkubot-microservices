@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from config import configuracion
-from flows.consentimiento import solicitar_consentimiento
 from flows.constructores import (
     construir_payload_menu_principal,
 )
@@ -27,30 +26,22 @@ from flows.gestores_estados.gestor_confirmacion_servicios import (
     manejar_reemplazo_servicio_registro,
     manejar_seleccion_reemplazo_servicio_registro,
 )
-from flows.gestores_estados.gestor_consentimiento import manejar_estado_consentimiento
 from flows.gestores_estados.gestor_documentos import (
-    manejar_dni_frontal,
     manejar_dni_frontal_actualizacion,
-    manejar_dni_trasera,
     manejar_dni_trasera_actualizacion,
     manejar_inicio_documentos,
-    manejar_selfie_registro,
 )
 from flows.gestores_estados.gestor_eliminacion import manejar_confirmacion_eliminacion
 from flows.gestores_estados.gestor_espera_certificado import (
     manejar_espera_certificado,
 )
-from flows.gestores_estados.gestor_espera_ciudad import manejar_espera_ciudad
-from flows.gestores_estados.gestor_espera_especialidad import (
-    manejar_espera_especialidad,
-)
 from flows.gestores_estados.gestor_espera_experiencia import (
     manejar_espera_experiencia,
 )
-from flows.gestores_estados.gestor_espera_nombre import manejar_espera_nombre
-from flows.gestores_estados.gestor_espera_real_phone import (
-    manejar_espera_real_phone,
+from flows.gestores_estados.gestor_espera_especialidad import (
+    manejar_espera_especialidad,
 )
+from flows.gestores_estados.gestor_espera_nombre import manejar_espera_nombre
 from flows.gestores_estados.gestor_espera_red_social import manejar_espera_red_social
 from flows.gestores_estados.gestor_menu import (
     iniciar_flujo_completar_perfil_profesional,
@@ -67,6 +58,28 @@ from flows.gestores_estados.gestor_servicios import (
 )
 from flows.gestores_estados.gestor_vistas_perfil import manejar_vista_perfil
 from flows.onboarding import es_estado_onboarding, manejar_entrada_onboarding
+from flows.onboarding.handlers.ciudad import manejar_espera_ciudad_onboarding
+from flows.onboarding.handlers.consentimiento import (
+    manejar_estado_consentimiento_onboarding,
+)
+from flows.onboarding.handlers.documentos import (
+    manejar_dni_frontal_onboarding,
+    manejar_foto_perfil_onboarding,
+)
+from flows.onboarding.handlers.experiencia import (
+    manejar_espera_experiencia_onboarding,
+)
+from flows.onboarding.handlers.real_phone import (
+    manejar_espera_real_phone_onboarding,
+)
+from flows.onboarding.handlers.redes_sociales import (
+    manejar_espera_red_social_onboarding,
+)
+from flows.onboarding.handlers.servicios_confirmacion import (
+    manejar_confirmacion_servicios_onboarding,
+    manejar_decision_agregar_otro_servicio_onboarding,
+)
+from flows.onboarding.router import manejar_estado_onboarding
 from flows.sesion import reiniciar_flujo
 from services import (
     actualizar_perfil_profesional,
@@ -84,7 +97,6 @@ from services.sesion_proveedor import (
 from templates.onboarding.inicio import ONBOARDING_REGISTER_BUTTON_ID
 from templates.onboarding.ciudad import solicitar_ciudad_registro
 from templates.onboarding.documentos import payload_onboarding_dni_frontal
-from templates.registro import PROMPT_INICIO_REGISTRO
 from templates.sesion.manejo import (
     informar_reinicio_con_eliminacion,
     informar_reinicio_conversacion,
@@ -262,6 +274,31 @@ async def manejar_mensaje(
         return {"response": respuesta_entrada_onboarding, "persist_flow": True}
 
     estado_actual = flujo.get("state")
+    if flujo.get("mode") == "registration" and es_estado_onboarding(estado_actual):
+        resultado_onboarding_nuevo = await manejar_estado_onboarding(
+            estado=estado_actual,
+            flujo=flujo,
+            telefono=telefono,
+            texto_mensaje=texto_mensaje,
+            carga=carga,
+            supabase=supabase,
+            perfil_proveedor=perfil_proveedor,
+            servicio_embeddings=servicio_embeddings,
+            cliente_openai=cliente_openai,
+            subir_medios_identidad=subir_medios_identidad,
+        )
+        if resultado_onboarding_nuevo is not None:
+            logger.info(
+                "🧭 router.onboarding_nuevo telefono=%s state=%s persist=%s",
+                telefono,
+                estado_actual,
+                resultado_onboarding_nuevo.get("persist_flow", True),
+            )
+            return {
+                "response": resultado_onboarding_nuevo,
+                "persist_flow": True,
+            }
+
     if not provider_id or es_estado_onboarding(estado_actual):
         resultado_onboarding = await enrutar_estado(
             estado=estado_actual,
@@ -398,7 +435,7 @@ async def enrutar_estado(  # noqa: C901
         return None
 
     if estado == "awaiting_consent":
-        respuesta = await manejar_estado_consentimiento(
+        respuesta = await manejar_estado_consentimiento_onboarding(
             flujo=flujo,
             tiene_consentimiento=tiene_consentimiento,
             esta_registrado=esta_registrado,
@@ -464,11 +501,7 @@ async def enrutar_estado(  # noqa: C901
             return {
                 "response": {
                     "success": True,
-                    "messages": [
-                        {
-                            "response": PROMPT_INICIO_REGISTRO
-                        }
-                    ],
+                    "messages": [solicitar_ciudad_registro()],
                 },
                 "persist_flow": True,
             }
@@ -622,58 +655,72 @@ async def enrutar_estado(  # noqa: C901
         return {"response": respuesta, "persist_flow": True}
 
     if estado == "awaiting_add_another_service":
-        respuesta = await manejar_decision_agregar_otro_servicio(
-            flujo=flujo,
-            texto_mensaje=texto_mensaje,
-        )
+        if flujo.get("profile_completion_mode") or flujo.get("profile_edit_mode"):
+            respuesta = await manejar_decision_agregar_otro_servicio(
+                flujo=flujo,
+                texto_mensaje=texto_mensaje,
+            )
+        else:
+            respuesta = await manejar_decision_agregar_otro_servicio_onboarding(
+                flujo=flujo,
+                texto_mensaje=texto_mensaje,
+            )
         return {"response": respuesta, "persist_flow": True}
 
     if estado == "awaiting_services_confirmation":
-        respuesta = await manejar_confirmacion_servicios(
-            flujo=flujo,
-            texto_mensaje=texto_mensaje,
-            cliente_openai=cliente_openai,
-        )
-        if (
-            flujo.get("profile_completion_mode")
-            and respuesta.get("success")
-            and flujo.get("state") == "profile_completion_finalize"
-        ):
-            servicios_temporales = list(flujo.get("servicios_temporales") or [])
-            await actualizar_perfil_profesional(
-                proveedor_id=str(flujo.get("provider_id") or ""),
-                servicios=servicios_temporales,
-                experience_years=flujo.get("experience_years"),
-                social_media_url=flujo.get("social_media_url"),
-                social_media_type=flujo.get("social_media_type"),
-                facebook_username=flujo.get("facebook_username"),
-                instagram_username=flujo.get("instagram_username"),
+        if flujo.get("profile_completion_mode") or flujo.get("profile_edit_mode"):
+            respuesta = await manejar_confirmacion_servicios(
+                flujo=flujo,
+                texto_mensaje=texto_mensaje,
+                cliente_openai=cliente_openai,
             )
-            flujo["services"] = servicios_temporales
-            flujo["state"] = "awaiting_menu_option"
-            flujo["profile_completion_mode"] = False
-            flujo["approved_basic"] = True
-            flujo["profile_pending_review"] = False
-            flujo.pop("servicios_temporales", None)
-            return {
-                "response": {
-                    "success": True,
-                    "messages": [
-                        {
-                            "response": (
-                                "✅ Tu perfil quedó actualizado. "
-                                "Ya puedes recibir solicitudes de clientes."
-                            )
-                        },
-                        construir_payload_menu_principal(
-                            esta_registrado=True,
-                            menu_limitado=False,
-                            approved_basic=True,
-                        ),
-                    ],
-                },
-                "persist_flow": True,
-            }
+            if (
+                flujo.get("profile_completion_mode")
+                and respuesta.get("success")
+                and flujo.get("state") == "profile_completion_finalize"
+            ):
+                servicios_temporales = list(flujo.get("servicios_temporales") or [])
+                await actualizar_perfil_profesional(
+                    proveedor_id=str(flujo.get("provider_id") or ""),
+                    servicios=servicios_temporales,
+                    experience_years=flujo.get("experience_years"),
+                    social_media_url=flujo.get("social_media_url"),
+                    social_media_type=flujo.get("social_media_type"),
+                    facebook_username=flujo.get("facebook_username"),
+                    instagram_username=flujo.get("instagram_username"),
+                )
+                flujo["services"] = servicios_temporales
+                flujo["state"] = "awaiting_menu_option"
+                flujo["profile_completion_mode"] = False
+                flujo["approved_basic"] = True
+                flujo["profile_pending_review"] = False
+                flujo.pop("servicios_temporales", None)
+                return {
+                    "response": {
+                        "success": True,
+                        "messages": [
+                            {
+                                "response": (
+                                    "✅ Tu perfil quedó actualizado. "
+                                    "Ya puedes recibir solicitudes de clientes."
+                                )
+                            },
+                            construir_payload_menu_principal(
+                                esta_registrado=True,
+                                menu_limitado=False,
+                                approved_basic=True,
+                            ),
+                        ],
+                    },
+                    "persist_flow": True,
+                }
+        else:
+            respuesta = await manejar_confirmacion_servicios_onboarding(
+                flujo=flujo,
+                texto_mensaje=texto_mensaje,
+                selected_option=carga.get("selected_option"),
+                cliente_openai=cliente_openai,
+            )
         return {"response": respuesta, "persist_flow": True}
 
     if estado == "awaiting_profile_completion_confirmation":
@@ -782,10 +829,25 @@ async def enrutar_estado(  # noqa: C901
         return {"response": respuesta, "persist_flow": True}
 
     if estado == "awaiting_experience":
-        respuesta = await manejar_espera_experiencia(
+        if flujo.get("profile_completion_mode") or flujo.get("profile_edit_mode"):
+            respuesta = await manejar_espera_experiencia(
+                flujo,
+                texto_mensaje,
+                selected_option=carga.get("selected_option"),
+            )
+        else:
+            respuesta = await manejar_espera_experiencia_onboarding(
+                flujo=flujo,
+                texto_mensaje=texto_mensaje,
+                selected_option=carga.get("selected_option"),
+            )
+        return {"response": respuesta, "persist_flow": True}
+
+    if estado == "awaiting_social_media_onboarding":
+        respuesta = await manejar_espera_red_social_onboarding(
             flujo,
             texto_mensaje,
-            selected_option=carga.get("selected_option"),
+            carga.get("selected_option"),
         )
         return {"response": respuesta, "persist_flow": True}
 
@@ -845,11 +907,13 @@ async def enrutar_estado(  # noqa: C901
         return {"response": respuesta, "persist_flow": True}
 
     if estado == "awaiting_real_phone":
-        respuesta = manejar_espera_real_phone(flujo, texto_mensaje)
+        respuesta = await manejar_espera_real_phone_onboarding(
+            flujo, texto_mensaje
+        )
         return {"response": respuesta, "persist_flow": True}
 
     if estado == "awaiting_city":
-        respuesta = await manejar_espera_ciudad(
+        respuesta = await manejar_espera_ciudad_onboarding(
             flujo,
             texto_mensaje,
             carga=carga,
@@ -926,7 +990,7 @@ async def enrutar_estado(  # noqa: C901
         return {"response": respuesta, "persist_flow": True}
 
     if estado == "awaiting_dni_front_photo":
-        respuesta = await manejar_dni_frontal(
+        respuesta = await manejar_dni_frontal_onboarding(
             flujo,
             carga,
             telefono=telefono,
@@ -934,12 +998,8 @@ async def enrutar_estado(  # noqa: C901
         )
         return {"response": respuesta, "persist_flow": True}
 
-    if estado == "awaiting_dni_back_photo":
-        respuesta = manejar_dni_trasera(flujo, carga)
-        return {"response": respuesta, "persist_flow": True}
-
     if estado == "awaiting_face_photo":
-        respuesta = await manejar_selfie_registro(
+        respuesta = await manejar_foto_perfil_onboarding(
             flujo,
             carga,
             telefono=telefono,

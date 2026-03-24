@@ -58,11 +58,13 @@ from templates.interfaz import (
     solicitar_red_social_actualizacion,
     solicitar_selfie_actualizacion,
 )
+from templates.onboarding.ciudad import (
+    solicitar_ciudad_actualizacion,
+)
 from templates.registro import (
     payload_certificado_opcional,
     preguntar_experiencia_general,
     preguntar_nombre,
-    solicitar_ciudad_actualizacion,
 )
 
 PERSONAL_PARENT_STATE = "awaiting_personal_info_action"

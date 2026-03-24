@@ -126,6 +126,28 @@ def test_boton_onboarding_registrarse_abre_ciudad(monkeypatch):
     assert resultado["response"]["ui"]["type"] == "location_request"
 
 
+def test_redes_sociales_onboarding_nuevo_y_legacy_separados():
+    assert modulo_onboarding_router.es_estado_onboarding("awaiting_social_media") is False
+    assert (
+        modulo_onboarding_router.es_estado_onboarding(
+            "awaiting_social_media_onboarding"
+        )
+        is True
+    )
+    assert (
+        modulo_onboarding_router.es_estado_onboarding(
+            "awaiting_onboarding_social_facebook_username"
+        )
+        is False
+    )
+    assert (
+        modulo_onboarding_router.es_estado_onboarding(
+            "awaiting_onboarding_social_instagram_username"
+        )
+        is False
+    )
+
+
 def test_numero_sin_provider_id_no_pasa_por_clasificacion_legacy(monkeypatch):
     flujo = {}
     logger = SimpleNamespace(info=lambda *args, **kwargs: None)

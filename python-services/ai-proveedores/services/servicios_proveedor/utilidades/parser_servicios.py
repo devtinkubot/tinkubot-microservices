@@ -1,12 +1,13 @@
-"""
-Utilidad para parseo de servicios con validación completa.
-"""
+"""Utilidades para parseo de servicios con validación completa."""
 
+import re
 from typing import List, Optional
 
 from ..constantes import SERVICIOS_MAXIMOS
 from .divisor_cadena_servicios import dividir_cadena_servicios
 from .normalizador_texto_busqueda import normalizar_texto_para_busqueda
+
+_NUMERO_SERVICIO_PATTERN = re.compile(r"(?<!\d)(\d{1,2})(?=\s)")
 
 
 def parsear_servicios_con_limite(
@@ -66,3 +67,47 @@ def parsear_servicios_con_limite(
             break
 
     return servicios_unicos
+
+
+def parsear_servicios_numerados_con_limite(
+    value: Optional[str],
+    maximos: int = SERVICIOS_MAXIMOS,
+) -> List[str]:
+    """Parses a compact numbered block like ``1 foo 2 bar 3 baz``.
+
+    The sequence must start at ``1`` and increment by one without gaps.
+    The numeric marker must be followed by whitespace only.
+    Returns an empty list when the block does not match the expected format.
+    """
+    if not value:
+        return []
+
+    texto = value.strip()
+    if not texto:
+        return []
+
+    coincidencias = list(_NUMERO_SERVICIO_PATTERN.finditer(texto))
+    if not coincidencias:
+        return []
+
+    servicios: List[str] = []
+    numero_esperado = 1
+
+    for idx, coincidencia in enumerate(coincidencias):
+        numero_actual = int(coincidencia.group(1))
+        if numero_actual != numero_esperado:
+            return []
+
+        inicio = coincidencia.end()
+        fin = coincidencias[idx + 1].start() if idx + 1 < len(coincidencias) else len(texto)
+        candidato = " ".join(texto[inicio:fin].strip().split())
+        if not candidato:
+            return []
+
+        if candidato not in servicios:
+            servicios.append(candidato)
+        numero_esperado += 1
+        if len(servicios) >= maximos:
+            break
+
+    return servicios

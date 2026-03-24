@@ -1,4 +1,4 @@
-"""Mensajes relacionados con el consentimiento de datos del proveedor."""
+"""Mensajes y payloads de consentimiento para onboarding."""
 
 import os
 from typing import Any, Dict
@@ -26,7 +26,7 @@ PROVIDER_ONBOARDING_DEFAULT_IMAGE_URL = (
 
 
 def payload_consentimiento_proveedor() -> Dict[str, Any]:
-    """Retorna payload interactivo de consentimiento para proveedores."""
+    """Retorna payload interactivo de consentimiento para onboarding."""
     image_url = (
         os.getenv(
             PROVIDER_ONBOARDING_IMAGE_URL_ENV,

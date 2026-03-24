@@ -11,7 +11,7 @@ import httpx
 from infrastructure.database import run_supabase
 from infrastructure.redis import cliente_redis
 from services.registro.eliminacion_proveedor import eliminar_registro_proveedor
-from templates.registro import (
+from templates.onboarding import (
     payload_baja_onboarding_72h,
     payload_recordatorio_onboarding_48h,
 )

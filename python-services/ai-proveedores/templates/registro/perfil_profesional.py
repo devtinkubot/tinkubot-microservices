@@ -29,12 +29,20 @@ PROFILE_CONTROL_IDS = {
 }
 
 
+PROMPT_NOMBRE_PERFIL = "*¿Cuál es tu nombre completo?*"
+
+
 def preguntar_experiencia_general() -> str:
     return "Selecciona tus *años de experiencia*."
 
 
 def mensaje_inicio_perfil_profesional() -> str:
     return preguntar_experiencia_general()
+
+
+def preguntar_nombre() -> str:
+    """Solicita el nombre completo en edición de perfil."""
+    return PROMPT_NOMBRE_PERFIL
 
 
 def payload_red_social_opcional() -> Dict[str, Any]:

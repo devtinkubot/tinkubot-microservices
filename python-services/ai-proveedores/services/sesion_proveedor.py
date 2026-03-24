@@ -2,15 +2,15 @@
 
 from typing import Any, Dict, Optional, Tuple
 
-from flows.consentimiento import solicitar_consentimiento
 from flows.constructores import (
     construir_payload_menu_principal,
+    construir_respuesta_solicitud_consentimiento,
     construir_respuesta_revision,
     construir_respuesta_revision_con_menu_limitado,
     construir_respuesta_verificado,
 )
-from flows.registro import determinar_estado_registro
 from services.servicios_proveedor.redes_sociales_slots import resolver_redes_sociales
+from services.registro import determinar_estado_registro
 from templates.onboarding.inicio import payload_menu_registro_proveedor
 
 ESTADOS_APROBADOS_OPERATIVOS = {"approved", "approved_basic"}
@@ -293,7 +293,7 @@ async def manejar_estado_inicial(
         nuevo_flujo = {"state": "awaiting_consent", "has_consent": False}
         flujo.clear()
         flujo.update(nuevo_flujo)
-        return await solicitar_consentimiento(telefono)
+        return construir_respuesta_solicitud_consentimiento()
 
     if not esta_registrado:
         flujo.clear()

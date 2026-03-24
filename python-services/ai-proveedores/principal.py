@@ -14,8 +14,6 @@ import uvicorn
 from config import configuracion
 from fastapi import FastAPI, Header
 from fastapi.middleware.cors import CORSMiddleware
-from flows.interpretacion import interpretar_respuesta
-
 # Import de módulos especializados del flujo de proveedores
 from flows.router import manejar_mensaje
 
@@ -26,6 +24,7 @@ from flows.sesion import (
     obtener_flujo,
     obtener_perfil_proveedor,
     obtener_perfil_proveedor_cacheado,
+    reiniciar_flujo,
 )
 from infrastructure.database import run_supabase, set_supabase_client
 from infrastructure.embeddings.servicio_embeddings import ServicioEmbeddings
@@ -41,6 +40,7 @@ from services.disponibilidad_interceptacion import (
     _resolver_alias_disponibilidad as _resolver_alias_disponibilidad_impl,
 )
 from services.disponibilidad_admin import router as router_disponibilidad_admin
+from services.shared import interpretar_respuesta
 from services.registro import limpiar_onboarding_proveedores
 from services.registro.eliminacion_proveedor import eliminar_registro_proveedor
 from services.registro.checkpoint_onboarding import (
@@ -49,12 +49,12 @@ from services.registro.checkpoint_onboarding import (
     persistir_checkpoint_onboarding,
 )
 from services.sesion_proveedor import sincronizar_flujo_con_perfil
+from services.servicios_proveedor.actualizar_servicios import actualizar_servicios
 from supabase import Client, create_client
 from templates.registro import (
     PROFILE_SINGLE_USE_CONTROL_IDS,
     SERVICE_CONFIRM_ID,
     SERVICE_CORRECT_ID,
-    payload_servicio_registro_con_imagen,
 )
 from templates.interfaz import payload_confirmacion_servicios_menu
 from templates.onboarding import (
@@ -62,6 +62,7 @@ from templates.onboarding import (
     payload_onboarding_dni_frontal,
     payload_onboarding_foto_perfil,
     payload_menu_registro_proveedor,
+    payload_servicios_onboarding_con_imagen,
     solicitar_ciudad_registro,
 )
 from templates.sesion.manejo import (
@@ -88,20 +89,23 @@ TTL_DEDUPE_INTERACTIVE_SEGUNDOS = int(
 )
 TIEMPO_INACTIVIDAD_SESION_SEGUNDOS = configuracion.ttl_flujo_segundos
 TIEMPO_AVISO_INACTIVIDAD_SEGUNDOS = 300
-ONBOARDING_STATES = {
+STANDARD_ONBOARDING_STATES = {
     None,
     "pending_verification",
     "awaiting_consent",
-    "awaiting_real_phone",
     "awaiting_city",
     "awaiting_dni_front_photo",
-    "awaiting_dni_back_photo",
     "awaiting_face_photo",
     "awaiting_specialty",
     "awaiting_add_another_service",
     "awaiting_services_confirmation",
+    "awaiting_social_media_onboarding",
     "confirm",
 }
+
+MANUAL_PHONE_FALLBACK_STATES = {"awaiting_real_phone"}
+
+ONBOARDING_STATES = STANDARD_ONBOARDING_STATES | MANUAL_PHONE_FALLBACK_STATES
 
 ONBOARDING_REANUDACION_STATES = {
     "awaiting_menu_option",
@@ -111,6 +115,7 @@ ONBOARDING_REANUDACION_STATES = {
     "awaiting_experience",
     "awaiting_specialty",
     "awaiting_services_confirmation",
+    "awaiting_social_media_onboarding",
 }
 
 # Estados de menú post-registro (deben ignorar flujo de disponibilidad)
@@ -147,6 +152,7 @@ MENU_STATES = {
 PROFILE_COMPLETION_STATES = {
     "awaiting_experience",
     "awaiting_social_media",
+    "awaiting_social_media_onboarding",
     "awaiting_onboarding_social_facebook_username",
     "awaiting_onboarding_social_instagram_username",
     "awaiting_certificate",
@@ -165,7 +171,6 @@ PROFILE_COMPLETION_STATES = {
 }
 MEDIA_STATES = {
     "awaiting_dni_front_photo",
-    "awaiting_dni_back_photo",
     "awaiting_face_photo",
     "awaiting_dni_front_photo_update",
     "awaiting_dni_back_photo_update",
@@ -247,10 +252,14 @@ def _construir_reanudacion_onboarding(
         prompt = payload_onboarding_dni_frontal()
     elif estado == "awaiting_face_photo":
         prompt = payload_onboarding_foto_perfil()
+    elif estado == "awaiting_real_phone":
+        from templates.onboarding.telefono import preguntar_real_phone
+
+        prompt = {"response": preguntar_real_phone()}
     elif estado == "awaiting_experience":
         prompt = payload_experiencia_onboarding()
     elif estado == "awaiting_specialty":
-        prompt = payload_servicio_registro_con_imagen(indice=1, maximo=3)
+        prompt = payload_servicios_onboarding_con_imagen()
     elif estado == "awaiting_services_confirmation":
         prompt = payload_confirmacion_servicios_menu(list(flujo.get("services") or []))
     else:
@@ -268,6 +277,52 @@ def _construir_reanudacion_onboarding(
             prompt,
         ],
     }
+
+
+def _normalizar_lista_servicios_flujo(flujo: Dict[str, Any]) -> list[str]:
+    servicios = flujo.get("servicios_temporales")
+    if servicios is None:
+        servicios = flujo.get("services")
+    resultado: list[str] = []
+    for servicio in list(servicios or []):
+        texto = str(servicio or "").strip()
+        if texto and texto not in resultado:
+            resultado.append(texto)
+    return resultado
+
+
+async def _sincronizar_servicios_si_cambiaron(
+    flujo_anterior: Dict[str, Any],
+    flujo_actual: Dict[str, Any],
+) -> bool:
+    provider_id = str(
+        flujo_actual.get("provider_id") or flujo_anterior.get("provider_id") or ""
+    ).strip()
+    if not provider_id or not supabase:
+        return False
+
+    servicios_previos = _normalizar_lista_servicios_flujo(flujo_anterior)
+    servicios_actuales = _normalizar_lista_servicios_flujo(flujo_actual)
+    if servicios_previos == servicios_actuales:
+        return False
+
+    try:
+        servicios_persistidos = await actualizar_servicios(
+            provider_id,
+            servicios_actuales,
+        )
+    except Exception as exc:
+        logger.warning(
+            "No se pudieron sincronizar los servicios persistidos para %s: %s",
+            provider_id,
+            exc,
+        )
+        return False
+
+    flujo_actual["services"] = servicios_persistidos
+    if "servicios_temporales" in flujo_actual:
+        flujo_actual["servicios_temporales"] = list(servicios_persistidos)
+    return True
 
 # Configurar logging
 logging.basicConfig(level=getattr(logging, NIVEL_LOG))
@@ -954,12 +1009,15 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
         )
         flujo["phone_user"] = phone_user
         flujo["phone"] = telefono
+        # Solo necesitamos captura manual cuando el remitente entra por LID
+        # y no tenemos un teléfono reutilizable desde el webhook.
         flujo["requires_real_phone"] = bool(is_lid and not tiene_real_phone)
         if not is_lid and phone_user and not flujo.get("real_phone"):
             flujo["real_phone"] = phone_user
         last_seen_previo = flujo.get("last_seen_at") or ahora_utc.isoformat()
         flujo["last_seen_at_prev"] = last_seen_previo
         flujo["last_seen_at"] = ahora_utc.isoformat()
+        servicios_previos = _normalizar_lista_servicios_flujo(flujo)
         resultado_manejo = await manejar_mensaje(
             flujo=flujo,
             telefono=telefono,
@@ -977,6 +1035,10 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
         nuevo_flujo = resultado_manejo.get("new_flow")
         persistir_flujo = resultado_manejo.get("persist_flow", True)
         flujo_a_persistir = nuevo_flujo if nuevo_flujo is not None else flujo
+        await _sincronizar_servicios_si_cambiaron(
+            {"provider_id": flujo.get("provider_id"), "services": servicios_previos},
+            flujo_a_persistir,
+        )
         if persistir_flujo:
             if supabase:
                 try:

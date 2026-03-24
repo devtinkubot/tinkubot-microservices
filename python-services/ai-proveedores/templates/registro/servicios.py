@@ -1,58 +1,12 @@
-"""Mensajes para captura incremental de servicios durante el registro."""
+"""Mensajes para edición y confirmación de servicios en el flujo legado."""
 
-import os
 from typing import Any, Dict, List
 
-SERVICIO_REGISTRO_HEADER_IMAGE_URL_ENV = "WA_PROVIDER_SERVICES_IMAGE_URL"
+from .perfil_profesional import SERVICE_CONFIRM_ID, SERVICE_CORRECT_ID
 
 
-def _resolver_url_guide(env_name: str) -> str:
-    valor = os.getenv(env_name, "").strip()
-    if not valor:
-        raise RuntimeError(
-            f"Falta configurar la variable de entorno {env_name} para la imagen "
-            "de servicios."
-        )
-    return valor
-
-
-def preguntar_servicios_registro() -> str:
-    """Solicita el primer servicio del proveedor."""
-    return preguntar_servicio_onboarding_registro(indice=1, maximo=3)
-
-
-def payload_servicio_registro_con_imagen(
-    indice: int,
-    maximo: int,
-) -> Dict[str, Any]:
-    """Solicita un servicio con una imagen guía para el registro."""
-    return {
-        "response": preguntar_servicio_onboarding_registro(
-            indice=indice,
-            maximo=maximo,
-        ),
-        "media_url": _resolver_url_guide(SERVICIO_REGISTRO_HEADER_IMAGE_URL_ENV),
-        "media_type": "image",
-    }
-
-
-def preguntar_servicio_onboarding_registro(
-    indice: int,
-    maximo: int,
-) -> str:
-    """Solicita un servicio según el slot del onboarding."""
-    indice_visible = max(1, int(indice or 1))
-    maximo_visible = max(1, int(maximo or 1))
-    ordinales = {
-        1: "primer",
-        2: "segundo",
-        3: "tercer",
-    }
-    ordinal = ordinales.get(indice_visible, f"servicio {indice_visible}")
-    return (
-        f"*Agregar Servicio {indice_visible} de {maximo_visible}*\n\n"
-        f"Escribe el {ordinal} servicio que ofreces."
-    )
+def _formatear_lista_servicios(servicios: List[str]) -> str:
+    return "\n".join([f"{idx + 1}. {servicio}" for idx, servicio in enumerate(servicios)])
 
 
 def preguntar_siguiente_servicio_registro(
@@ -89,16 +43,31 @@ def confirmar_servicio_y_preguntar_otro(
 
 def mensaje_resumen_servicios_registro(servicios: List[str], maximo: int) -> str:
     """Muestra el resumen final de servicios capturados."""
-    servicios_formateados = "\n".join(
-        [f"{idx + 1}. {servicio}" for idx, servicio in enumerate(servicios)]
-    )
+    servicios_formateados = _formatear_lista_servicios(servicios)
     return (
-        f"*Resumen de servicios principales ({len(servicios)}/{maximo}):*\n\n"
-        f"{servicios_formateados}\n\n"
-        "¿Estás de acuerdo con esta lista?\n"
-        "*1.* Sí, continuar\n"
-        "*2.* No, corregir"
+        f"*Resumen de servicios identificados ({len(servicios)}/{maximo}):*\n\n"
+        f"{servicios_formateados}"
     )
+
+
+def payload_resumen_servicios_registro(
+    servicios: List[str],
+    maximo: int,
+) -> Dict[str, Any]:
+    """Muestra el resumen final de servicios con botones de confirmación."""
+    return {
+        "response": _formatear_lista_servicios(servicios),
+        "ui": {
+            "type": "buttons",
+            "id": "provider_services_summary_v1",
+            "header_type": "text",
+            "header_text": "Resumen de servicios identificados",
+            "options": [
+                {"id": SERVICE_CONFIRM_ID, "title": "Continuar"},
+                {"id": SERVICE_CORRECT_ID, "title": "Corregir"},
+            ],
+        },
+    }
 
 
 def mensaje_menu_edicion_servicios_registro(

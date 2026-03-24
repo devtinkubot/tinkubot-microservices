@@ -2,7 +2,7 @@
 
 from typing import Any, Dict
 
-from templates.consentimiento.mensajes import payload_consentimiento_proveedor
+from templates.onboarding.consentimiento import payload_consentimiento_proveedor
 
 
 def construir_resumen_consentimiento_registro(_flujo: Dict[str, Any]) -> str:

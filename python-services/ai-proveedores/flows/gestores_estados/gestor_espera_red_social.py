@@ -1,4 +1,4 @@
-"""Manejador del estado awaiting_social_media."""
+"""Manejador de redes sociales para perfil y completado post-alta."""
 
 from typing import Any, Dict, Optional
 

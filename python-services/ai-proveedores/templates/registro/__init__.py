@@ -15,24 +15,6 @@ from .confirmacion_servicios import (
     mensaje_lista_servicios_corregida,
     mensaje_servicios_aceptados,
 )
-from .documentacion import (
-    payload_foto_dni_frontal,
-    payload_selfie_registro,
-    solicitar_foto_dni_frontal,
-    solicitar_foto_dni_trasera,
-    solicitar_foto_dni_trasera_requerida,
-    solicitar_selfie_registro,
-    solicitar_selfie_requerida_registro,
-)
-from .pasos_registro import (
-    MENSAJE_GUIA,
-    PROMPT_INICIO_REGISTRO,
-    error_real_phone_invalido,
-    mensaje_guia_proveedor,
-    preguntar_actualizar_ciudad,
-    preguntar_nombre,
-    preguntar_real_phone,
-)
 from .perfil_profesional import (
     CERTIFICATE_SKIP_ID,
     construir_resumen_confirmacion_perfil_profesional,
@@ -55,8 +37,9 @@ from .perfil_profesional import (
     payload_red_social_opcional,
     payload_red_social_opcional_estado,
     preguntar_experiencia_general,
+    preguntar_nombre,
 )
-from .caducidad_onboarding import (
+from templates.onboarding.caducidad import (
     TEMPLATE_EXPIRY_72H_ID,
     TEMPLATE_EXPIRY_72H_LANGUAGE,
     TEMPLATE_WARNING_48H_ID,
@@ -76,33 +59,22 @@ from .servicios import (
     mensaje_servicio_actualizado,
     mensaje_servicio_duplicado_registro,
     mensaje_servicio_eliminado_registro,
-    preguntar_servicio_onboarding_registro,
-    payload_servicio_registro_con_imagen,
+    payload_resumen_servicios_registro,
     preguntar_nuevo_servicio_reemplazo,
     preguntar_numero_servicio_eliminar,
     preguntar_numero_servicio_reemplazar,
-    preguntar_servicios_registro,
     preguntar_siguiente_servicio_registro,
+)
+from templates.onboarding.telefono import (
+    error_real_phone_invalido,
+    preguntar_real_phone,
 )
 __all__ = [
     # Pasos de registro
-    "PROMPT_INICIO_REGISTRO",
-    "MENSAJE_GUIA",
-    "mensaje_guia_proveedor",
-    "preguntar_actualizar_ciudad",
-    "preguntar_nombre",
     "preguntar_real_phone",
     "error_real_phone_invalido",
     "mensaje_inicio_perfil_profesional",
     "preguntar_experiencia_general",
-    # Documentación
-    "payload_foto_dni_frontal",
-    "payload_selfie_registro",
-    "solicitar_foto_dni_frontal",
-    "solicitar_foto_dni_trasera",
-    "solicitar_foto_dni_trasera_requerida",
-    "solicitar_selfie_registro",
-    "solicitar_selfie_requerida_registro",
     # Confirmación
     "payload_confirmacion_resumen",
     "construir_resumen_consentimiento_registro",
@@ -114,9 +86,6 @@ __all__ = [
     "mensaje_correccion_servicios",
     "mensaje_servicios_aceptados",
     "mensaje_lista_servicios_corregida",
-    "preguntar_servicios_registro",
-    "preguntar_servicio_onboarding_registro",
-    "payload_servicio_registro_con_imagen",
     "preguntar_siguiente_servicio_registro",
     "confirmar_servicio_y_preguntar_otro",
     "payload_agregar_otro_servicio",
@@ -130,6 +99,7 @@ __all__ = [
     "mensaje_servicio_eliminado_registro",
     "mensaje_servicio_duplicado_registro",
     "mensaje_maximo_servicios_registro",
+    "payload_resumen_servicios_registro",
     "mensaje_debes_registrar_al_menos_un_servicio",
     "mensaje_debes_registrar_mas_servicios",
     "mensaje_error_opcion_agregar_otro",
@@ -140,6 +110,7 @@ __all__ = [
     "mensaje_error_certificado_invalido",
     "mensaje_minimo_servicios_pendiente",
     "construir_resumen_confirmacion_perfil_profesional",
+    "preguntar_nombre",
     "mensaje_menu_edicion_perfil_profesional",
     "payload_recordatorio_onboarding_48h",
     "payload_baja_onboarding_72h",

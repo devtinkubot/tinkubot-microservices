@@ -1,21 +1,20 @@
-"""Manejador del estado awaiting_consent."""
+"""Handler de onboarding para consentimiento."""
 
 from typing import Any, Dict, Optional
 
-from flows.consentimiento import (
-    procesar_respuesta_consentimiento,
+from flows.constructores import (
+    construir_payload_menu_principal,
+    construir_respuesta_revision,
 )
-from flows.consentimiento.procesador_respuesta import (
-    asegurar_proveedor_persistido_tras_consentimiento,
+from services.onboarding.consentimiento import (
+    asegurar_proveedor_persistido_tras_consentimiento_onboarding,
+    procesar_respuesta_consentimiento_onboarding,
 )
-from flows.constructores import construir_payload_menu_principal, construir_respuesta_revision
 from templates.onboarding.ciudad import solicitar_ciudad_registro
-from templates.registro import (
-    preguntar_real_phone,
-)
+from templates.onboarding.telefono import preguntar_real_phone
 
 
-async def manejar_estado_consentimiento(
+async def manejar_estado_consentimiento_onboarding(
     *,
     flujo: Dict[str, Any],
     tiene_consentimiento: bool,
@@ -26,11 +25,10 @@ async def manejar_estado_consentimiento(
     supabase: Any = None,
     subir_medios_identidad: Any = None,
 ) -> Dict[str, Any]:
-    """Procesa el estado de consentimiento y devuelve la respuesta."""
     if tiene_consentimiento:
         if not esta_registrado:
             perfil_proveedor, provider_id = (
-                await asegurar_proveedor_persistido_tras_consentimiento(
+                await asegurar_proveedor_persistido_tras_consentimiento_onboarding(
                     telefono=telefono,
                     flujo=flujo,
                     perfil_proveedor=perfil_proveedor,
@@ -57,17 +55,20 @@ async def manejar_estado_consentimiento(
                     or "Proveedor"
                 )
                 return construir_respuesta_revision(nombre_proveedor)
-            requiere_real_phone = bool(
+
+            needs_manual_phone_fallback = bool(
                 flujo.get("requires_real_phone") and not flujo.get("real_phone")
             )
             flujo["state"] = (
-                "awaiting_real_phone" if requiere_real_phone else "awaiting_city"
+                "awaiting_real_phone"
+                if needs_manual_phone_fallback
+                else "awaiting_city"
             )
             return {
                 "success": True,
                 "messages": (
                     [{"response": preguntar_real_phone()}]
-                    if requiere_real_phone
+                    if needs_manual_phone_fallback
                     else [solicitar_ciudad_registro()]
                 ),
             }
@@ -84,10 +85,11 @@ async def manejar_estado_consentimiento(
             ],
         }
 
-    return await procesar_respuesta_consentimiento(
-        telefono,
-        flujo,
-        carga,
-        perfil_proveedor,
+    return await procesar_respuesta_consentimiento_onboarding(
+        telefono=telefono,
+        flujo=flujo,
+        carga=carga,
+        perfil_proveedor=perfil_proveedor,
+        supabase=supabase,
         subir_medios_fn=subir_medios_identidad,
     )

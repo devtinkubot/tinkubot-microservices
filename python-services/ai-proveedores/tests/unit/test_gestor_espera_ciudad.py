@@ -1,13 +1,15 @@
 import pytest
 
-from flows.gestores_estados.gestor_espera_ciudad import manejar_espera_ciudad
+from flows.onboarding.handlers.ciudad import manejar_espera_ciudad_onboarding
 from templates.onboarding.ciudad import error_ciudad_multiple
 
 
 @pytest.mark.asyncio
 async def test_manejar_espera_ciudad_autocorrige_y_avanza_estado():
     flujo = {"state": "awaiting_city"}
-    respuesta = await manejar_espera_ciudad(flujo, "Cuenca, Azuay, Ecuador")
+    respuesta = await manejar_espera_ciudad_onboarding(
+        flujo, "Cuenca, Azuay, Ecuador"
+    )
 
     assert respuesta["success"] is True
     assert flujo["city"] == "cuenca"
@@ -17,7 +19,7 @@ async def test_manejar_espera_ciudad_autocorrige_y_avanza_estado():
 @pytest.mark.asyncio
 async def test_manejar_espera_ciudad_rechaza_provincia():
     flujo = {"state": "awaiting_city"}
-    respuesta = await manejar_espera_ciudad(flujo, "Azuay")
+    respuesta = await manejar_espera_ciudad_onboarding(flujo, "Azuay")
 
     assert respuesta["success"] is True
     assert flujo["state"] == "awaiting_city"
