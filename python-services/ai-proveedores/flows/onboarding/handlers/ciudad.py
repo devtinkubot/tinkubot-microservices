@@ -282,7 +282,7 @@ async def manejar_espera_ciudad_onboarding(
         except Exception:
             pass
 
-    flujo["state"] = "awaiting_dni_front_photo"
+    flujo["state"] = "onboarding_dni_front_photo"
     return {
         "success": True,
         "messages": [payload_onboarding_dni_frontal()],

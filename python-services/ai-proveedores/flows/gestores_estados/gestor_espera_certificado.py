@@ -84,7 +84,7 @@ async def manejar_espera_certificado(
         flujo["certificate_uploaded"] = False
         if flujo.get("profile_edit_mode") == "certificate":
             flujo.pop("profile_edit_mode", None)
-            flujo["state"] = "awaiting_profile_completion_confirmation"
+            flujo["state"] = "maintenance_profile_completion_confirmation"
             return {
                 "success": True,
                 "messages": [
@@ -100,7 +100,7 @@ async def manejar_espera_certificado(
             }
 
         servicios_temporales = list(flujo.get("servicios_temporales") or [])
-        flujo["state"] = "awaiting_specialty"
+        flujo["state"] = "maintenance_specialty"
         from .gestor_espera_especialidad import _mensajes_prompt_servicio_compartido
 
         return {
@@ -193,7 +193,6 @@ async def manejar_espera_certificado(
                 {"response": "✅ Tu certificado activo fue actualizado correctamente."},
                 construir_payload_menu_principal(
                     esta_registrado=True,
-                    menu_limitado=bool(flujo.get("menu_limitado")),
                     approved_basic=bool(flujo.get("approved_basic")),
                 ),
             ],
@@ -269,7 +268,7 @@ async def manejar_espera_certificado(
     flujo["pending_certificate_file_url"] = file_url
     if flujo.get("profile_edit_mode") == "certificate":
         flujo.pop("profile_edit_mode", None)
-        flujo["state"] = "awaiting_profile_completion_confirmation"
+        flujo["state"] = "maintenance_profile_completion_confirmation"
         return {
             "success": True,
             "messages": [
@@ -284,7 +283,7 @@ async def manejar_espera_certificado(
             ],
         }
 
-    flujo["state"] = "awaiting_specialty"
+    flujo["state"] = "maintenance_specialty"
     servicios_temporales = list(flujo.get("servicios_temporales") or [])
     from .gestor_espera_especialidad import _mensajes_prompt_servicio_compartido
 

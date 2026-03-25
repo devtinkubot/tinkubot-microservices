@@ -137,7 +137,7 @@ def payload_agregar_otro_servicio(
 ) -> Dict[str, Any]:
     mensaje = (
         f"Servicio {cantidad_actual} de {maximo} registrado: *{servicio}*.\n\n"
-        "¿Quieres agregar otro servicio?"
+        "¿Deseas sumar otro servicio?"
     )
     if cantidad_actual < minimo_requerido:
         faltan = minimo_requerido - cantidad_actual

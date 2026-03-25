@@ -2,7 +2,6 @@
 
 from .router import (
     es_estado_onboarding,
-    manejar_entrada_onboarding,
     manejar_estado_onboarding,
 )
 from .handlers import (
@@ -18,7 +17,6 @@ from .handlers import (
 
 __all__ = [
     "es_estado_onboarding",
-    "manejar_entrada_onboarding",
     "manejar_estado_onboarding",
     "manejar_espera_ciudad_onboarding",
     "manejar_espera_red_social_onboarding",

@@ -161,6 +161,22 @@ def extraer_redes_sociales_desde_texto(
     if resultado["facebook_username"] or resultado["instagram_username"]:
         return resultado
 
+    texto_minusculas = texto.lower()
+    tiene_indicador_explicito = (
+        "facebook.com" in texto_minusculas
+        or "fb.com" in texto_minusculas
+        or "instagram.com" in texto_minusculas
+        or "instagr.am" in texto_minusculas
+        or texto.startswith("@")
+    )
+    if not tiene_indicador_explicito:
+        return {
+            "facebook_username": None,
+            "instagram_username": None,
+            "facebook_url": None,
+            "instagram_url": None,
+        }
+
     if "facebook.com" in texto.lower() or "fb.com" in texto.lower():
         parseada = parsear_username_red_social(texto, SOCIAL_NETWORK_FACEBOOK)
         return {

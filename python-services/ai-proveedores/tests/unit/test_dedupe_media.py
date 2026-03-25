@@ -35,12 +35,12 @@ async def test_dedupe_multimedia_ignora_reentrega_con_mismo_message_id(monkeypat
 
     primera = await _es_mensaje_multimedia_duplicado(
         "593999111222@s.whatsapp.net",
-        "awaiting_dni_front_photo",
+        "onboarding_dni_front_photo",
         carga,
     )
     segunda = await _es_mensaje_multimedia_duplicado(
         "593999111222@s.whatsapp.net",
-        "awaiting_dni_front_photo",
+        "onboarding_dni_front_photo",
         carga,
     )
 
@@ -61,12 +61,12 @@ async def test_dedupe_interactivo_ignora_reentrega_con_mismo_message_id(monkeypa
 
     primera = await _es_mensaje_interactivo_duplicado(
         "593999111222@s.whatsapp.net",
-        "awaiting_consent",
+        "onboarding_consent",
         carga,
     )
     segunda = await _es_mensaje_interactivo_duplicado(
         "593999111222@s.whatsapp.net",
-        "awaiting_consent",
+        "onboarding_consent",
         carga,
     )
 
@@ -90,7 +90,7 @@ async def test_dedupe_interactivo_accion_unica(monkeypatch):
     )
     segunda = await _es_mensaje_interactivo_duplicado(
         "593999111222@s.whatsapp.net",
-        "awaiting_specialty",
+        "onboarding_specialty",
         {
             "id": "wamid-interactive-11",
             "message_type": "interactive_button_reply",
@@ -116,13 +116,13 @@ async def test_dedupe_interactivo_confirmacion_servicio_sin_message_id(
 
     primera = await _es_mensaje_interactivo_duplicado(
         "593999111222@s.whatsapp.net",
-        "awaiting_service_add_confirmation",
+        "maintenance_service_add_confirmation",
         carga,
         flujo={"services": ["uno", "dos"]},
     )
     segunda = await _es_mensaje_interactivo_duplicado(
         "593999111222@s.whatsapp.net",
-        "awaiting_service_action",
+        "maintenance_service_action",
         carga,
         flujo={"services": ["uno", "dos", "tres"]},
     )
@@ -145,7 +145,7 @@ async def test_dedupe_interactivo_confirmacion_servicio_con_nonce_diferente(
 
     primera = await _es_mensaje_interactivo_duplicado(
         "593999111222@s.whatsapp.net",
-        "awaiting_service_add_confirmation",
+        "maintenance_service_add_confirmation",
         carga,
         flujo={
             "services": ["uno", "dos"],
@@ -154,7 +154,7 @@ async def test_dedupe_interactivo_confirmacion_servicio_con_nonce_diferente(
     )
     segunda = await _es_mensaje_interactivo_duplicado(
         "593999111222@s.whatsapp.net",
-        "awaiting_service_add_confirmation",
+        "maintenance_service_add_confirmation",
         carga,
         flujo={
             "services": ["uno", "dos"],

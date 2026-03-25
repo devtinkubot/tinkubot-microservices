@@ -40,7 +40,7 @@ from flows.onboarding.handlers.servicios_confirmacion import (  # noqa: E402
     manejar_decision_agregar_otro_servicio_onboarding,
 )
 from flows.onboarding.router import manejar_estado_onboarding  # noqa: E402
-from flows.validadores import validar_nombre_completo  # noqa: E402
+from flows.validadores.validador_nombre import validar_nombre_completo  # noqa: E402
 from infrastructure.openai import (  # noqa: E402
     transformador_servicios as modulo_transformador,
 )
@@ -97,9 +97,12 @@ def test_prompt_transformador_prioriza_detalle_y_evita_paraguas():
 def test_prompt_servicios_onboarding_usa_formato_compacto():
     mensaje = preguntar_servicios_onboarding()
 
-    assert "una sola línea" in mensaje
-    assert "hasta 7 servicios" in mensaje
-    assert "Revisa la imagen de ejemplo" in mensaje
+    assert mensaje == (
+        "*Describe el servicio que ofreces*\n\n"
+        "Escribe solo un servicio por mensaje. "
+        "Mientras más claro y detallado sea, mejor podremos clasificarlo."
+    )
+    assert "Servicio guardado." not in mensaje
 
 
 def test_prompt_servicios_onboarding_usa_env_override(monkeypatch):
@@ -112,6 +115,54 @@ def test_prompt_servicios_onboarding_usa_env_override(monkeypatch):
 
     assert respuesta["media_type"] == "image"
     assert respuesta["media_url"] == "https://example.com/services-image.png"
+
+
+@pytest.mark.asyncio
+async def test_onboarding_experiencia_solo_primera_vez_muestra_imagen(monkeypatch):
+    monkeypatch.setenv(
+        "WA_PROVIDER_SERVICES_IMAGE_URL",
+        "https://example.com/services-image.png",
+    )
+
+    flujo = {"state": "awaiting_experience"}
+
+    respuesta = await manejar_espera_experiencia_onboarding(
+        flujo=flujo,
+        texto_mensaje="5",
+    )
+
+    assert flujo["state"] == "onboarding_specialty"
+    assert flujo["services_guide_shown"] is True
+    assert respuesta["messages"][0]["media_type"] == "image"
+    assert respuesta["messages"][0]["media_url"] == (
+        "https://example.com/services-image.png"
+    )
+
+
+@pytest.mark.asyncio
+async def test_onboarding_agregar_otro_servicio_va_sin_imagen(monkeypatch):
+    monkeypatch.setenv(
+        "WA_PROVIDER_SERVICES_IMAGE_URL",
+        "https://example.com/services-image.png",
+    )
+
+    flujo = {
+        "state": "awaiting_add_another_service",
+        "services_guide_shown": True,
+        "servicios_temporales": ["instalaciones eléctricas"],
+    }
+
+    respuesta = await manejar_decision_agregar_otro_servicio_onboarding(
+        flujo=flujo,
+        texto_mensaje="si",
+    )
+
+    assert flujo["state"] == "onboarding_specialty"
+    assert respuesta["messages"][0]["response"].startswith(
+        "*Describe el servicio que ofreces*"
+    )
+    assert "media_type" not in respuesta["messages"][0]
+    assert "media_url" not in respuesta["messages"][0]
 
 
 @pytest.mark.asyncio
@@ -150,7 +201,7 @@ async def test_handler_onboarding_experiencia_avanza_a_servicios():
         selected_option="provider_experience_3_5",
     )
 
-    assert flujo["state"] == "awaiting_specialty"
+    assert flujo["state"] == "onboarding_specialty"
     assert respuesta["messages"][0]["media_type"] == "image"
 
 
@@ -206,16 +257,16 @@ async def test_espera_experiencia_onboarding_muestra_lista_de_ejemplos():
         selected_option="provider_experience_3_5",
     )
 
-    assert flujo["state"] == "awaiting_specialty"
+    assert flujo["state"] == "onboarding_specialty"
     assert flujo["experience_range"] == "3 a 5 años"
     assert respuesta["messages"][0]["media_type"] == "image"
     assert "tinkubot_add_services.png" in respuesta["messages"][0]["media_url"]
     assert (
         respuesta["messages"][0]["response"]
         == (
-            "*Cuéntanos tus servicios en una sola línea*\n\n"
-            "Revisa la imagen de ejemplo y envíanos hasta 7 servicios en un solo mensaje. "
-            "Mientras más claro y detallado sea cada servicio, mejor podremos clasificarlos."
+            "*Describe el servicio que ofreces*\n\n"
+            "Escribe solo un servicio por mensaje. "
+            "Mientras más claro y detallado sea, mejor podremos clasificarlo."
         )
     )
 
@@ -472,7 +523,7 @@ def test_espera_especialidad_onboarding_con_linea_numerada_va_a_consentimiento(
         )
     )
 
-    assert flujo["state"] == "awaiting_services_confirmation"
+    assert flujo["state"] == "onboarding_services_confirmation"
     assert flujo["servicios_temporales"] == [
         "desarrollo web",
         "mantenimiento de software",
@@ -514,8 +565,8 @@ def test_espera_especialidad_onboarding_rechaza_multiservicio_sin_numeros(
     )
 
     assert respuesta["messages"][0]["response"] == (
-        "Revisa la imagen de ejemplo y envíanos hasta 7 servicios en un solo mensaje. "
-        "Mientras más claro y detallado sea cada servicio, mejor podremos clasificarlos."
+        "Escribe el servicio con el mayor detalle posible. "
+        "Si necesitas, sepáralo por coma o en una línea distinta."
     )
 
 
@@ -560,7 +611,7 @@ def test_confirmacion_servicio_onboarding_avanza_al_siguiente_servicio(monkeypat
         )
     )
 
-    assert flujo["state"] == "awaiting_profile_service_confirmation"
+    assert flujo["state"] == "maintenance_profile_service_confirmation"
 
     respuesta = asyncio.run(
         manejar_confirmacion_servicio_perfil(
@@ -570,15 +621,15 @@ def test_confirmacion_servicio_onboarding_avanza_al_siguiente_servicio(monkeypat
         )
     )
 
-    assert flujo["state"] == "awaiting_specialty"
+    assert flujo["state"] == "maintenance_specialty"
     assert flujo["servicios_temporales"] == ["desarrollo web"]
     assert respuesta["messages"][0]["media_type"] == "image"
     assert "tinkubot_add_services.png" in respuesta["messages"][0]["media_url"]
     assert (
         respuesta["messages"][0]["response"]
-        == "*Cuéntanos tus servicios en una sola línea*\n\n"
-        "Revisa la imagen de ejemplo y envíanos hasta 7 servicios en un solo mensaje. "
-        "Mientras más claro y detallado sea cada servicio, mejor podremos clasificarlos."
+        == "*Describe el servicio que ofreces*\n\n"
+        "Escribe solo un servicio por mensaje. "
+        "Mientras más claro y detallado sea, mejor podremos clasificarlo."
     )
 
 
@@ -587,7 +638,7 @@ def test_confirmacion_tercer_servicio_onboarding_va_a_consentimiento():
         "servicios_temporales": ["servicio 1", "servicio 2"],
         "pending_service_candidate": "servicio 3",
         "pending_service_index": 2,
-        "state": "awaiting_profile_service_confirmation",
+        "state": "maintenance_profile_service_confirmation",
     }
 
     respuesta = asyncio.run(
@@ -598,18 +649,13 @@ def test_confirmacion_tercer_servicio_onboarding_va_a_consentimiento():
         )
     )
 
-    assert flujo["state"] == "awaiting_consent"
+    assert flujo["state"] == "pending_verification"
     assert flujo["servicios_temporales"] == [
         "servicio 1",
         "servicio 2",
         "servicio 3",
     ]
-    assert respuesta["messages"][0]["ui"]["type"] == "buttons"
-    assert respuesta["messages"][0]["ui"]["id"] == "provider_onboarding_continue_v1"
-    assert respuesta["messages"][0]["ui"]["header_type"] == "image"
-    assert "para poder conectarte con clientes" in respuesta["messages"][0][
-        "response"
-    ].lower()
+    assert "en revisión" in respuesta["messages"][0]["response"].lower()
 
 
 def test_espera_especialidad_onboarding_con_tres_servicios_va_a_consentimiento(
@@ -665,7 +711,7 @@ def test_espera_especialidad_onboarding_con_tres_servicios_va_a_consentimiento(
         )
     )
 
-    assert flujo["state"] == "awaiting_services_confirmation"
+    assert flujo["state"] == "onboarding_services_confirmation"
     assert flujo["specialty"] == "servicio 1, servicio 2, servicio 3, servicio extra"
     assert respuesta["messages"][0]["ui"]["header_text"] == "Resumen de servicios identificados"
     assert respuesta["messages"][0]["ui"]["options"][0]["title"] == "Continuar"
@@ -812,17 +858,26 @@ def test_decision_agregar_otro_no_pasa_a_resumen_final():
         "servicios_temporales": ["desarrollo web", "cableado estructurado"],
     }
 
-    respuesta = asyncio.run(
-        manejar_decision_agregar_otro_servicio_onboarding(
-            flujo=flujo,
-            texto_mensaje="2",
-        )
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setenv(
+        "WA_PROVIDER_SOCIAL_NETWORK_IMAGE_URL",
+        "https://example.com/social-network.png",
     )
+    try:
+        respuesta = asyncio.run(
+            manejar_decision_agregar_otro_servicio_onboarding(
+                flujo=flujo,
+                texto_mensaje="2",
+            )
+        )
+    finally:
+        monkeypatch.undo()
 
-    assert flujo["state"] == "awaiting_services_confirmation"
-    assert respuesta["messages"][0]["ui"]["header_text"] == "Resumen de servicios identificados"
-    assert respuesta["messages"][0]["ui"]["options"][0]["title"] == "Continuar"
-    assert respuesta["messages"][0]["ui"]["options"][1]["title"] == "Corregir"
+    assert flujo["state"] == "onboarding_social_media"
+    assert respuesta["messages"][0]["ui"]["header_type"] == "image"
+    assert respuesta["messages"][0]["ui"]["header_media_url"] == (
+        "https://example.com/social-network.png"
+    )
 
 
 def test_confirmacion_agregar_servicios_re_normaliza_correccion_manual(monkeypatch):
@@ -851,7 +906,7 @@ def test_confirmacion_agregar_servicios_re_normaliza_correccion_manual(monkeypat
         _fake_validar_servicio_semanticamente,
     )
     flujo = {
-        "state": "awaiting_service_add_confirmation",
+        "state": "maintenance_service_add_confirmation",
         "services": ["Pintura interior"],
         "service_add_temporales": ["plomería"],
     }
@@ -865,7 +920,7 @@ def test_confirmacion_agregar_servicios_re_normaliza_correccion_manual(monkeypat
         )
     )
 
-    assert flujo["state"] == "awaiting_service_add_confirmation"
+    assert flujo["state"] == "maintenance_service_add_confirmation"
     assert flujo["service_add_temporales"] == ["plomería"]
     assert "plomería" in respuesta["messages"][0]["response"]
 
@@ -1033,7 +1088,7 @@ def test_normalizar_servicio_acepta_transporte_y_barco(monkeypatch):
 
 def test_confirmacion_servicios_acepta_resumen_y_pasa_a_experiencia():
     flujo = {
-        "state": "awaiting_services_confirmation",
+        "state": "onboarding_services_confirmation",
         "servicios_temporales": ["desarrollo web", "cableado estructurado"],
     }
 
@@ -1045,16 +1100,16 @@ def test_confirmacion_servicios_acepta_resumen_y_pasa_a_experiencia():
         )
     )
 
-    assert flujo["state"] == "confirm"
+    assert flujo["state"] == "onboarding_social_media"
     assert flujo["specialty"] == "desarrollo web, cableado estructurado"
-    assert "para poder conectarte con clientes" in respuesta["messages"][0][
+    assert "agrega tus redes sociales" in respuesta["messages"][0][
         "response"
     ].lower()
 
 
 def test_confirmacion_servicios_abre_menu_edicion():
     flujo = {
-        "state": "awaiting_services_confirmation",
+        "state": "onboarding_services_confirmation",
         "servicios_temporales": ["desarrollo web", "cableado estructurado"],
     }
 
@@ -1066,7 +1121,7 @@ def test_confirmacion_servicios_abre_menu_edicion():
         )
     )
 
-    assert flujo["state"] == "awaiting_services_edit_action"
+    assert flujo["state"] == "onboarding_services_edit_action"
     assert "¿Qué deseas corregir?" in respuesta["messages"][1]["response"]
 
 
@@ -1100,20 +1155,20 @@ def test_reemplazo_servicio_en_edicion(monkeypatch):
         _fake_validar_servicio_semanticamente,
     )
     flujo = {
-        "state": "awaiting_services_edit_action",
+        "state": "onboarding_services_edit_action",
         "servicios_temporales": ["desarrollo web", "cableado estructurado"],
     }
 
     respuesta_select = asyncio.run(
         manejar_accion_edicion_servicios_registro(flujo, "1")
     )
-    assert flujo["state"] == "awaiting_services_edit_replace_select"
+    assert flujo["state"] == "onboarding_services_edit_replace_select"
     assert "reemplazar" in respuesta_select["messages"][1]["response"].lower()
 
     respuesta_indice = asyncio.run(
         manejar_seleccion_reemplazo_servicio_registro(flujo, "2")
     )
-    assert flujo["state"] == "awaiting_services_edit_replace_input"
+    assert flujo["state"] == "onboarding_services_edit_replace_input"
     assert "servicio 2" in respuesta_indice["messages"][0]["response"].lower()
 
     respuesta_reemplazo = asyncio.run(
@@ -1123,7 +1178,7 @@ def test_reemplazo_servicio_en_edicion(monkeypatch):
             cliente_openai=object(),
         )
     )
-    assert flujo["state"] == "awaiting_services_confirmation"
+    assert flujo["state"] == "onboarding_services_confirmation"
     assert flujo["servicios_temporales"] == [
         "desarrollo web",
         "asesoría para rebaja de pensión alimenticia",
@@ -1133,7 +1188,7 @@ def test_reemplazo_servicio_en_edicion(monkeypatch):
 
 def test_eliminacion_servicio_en_edicion():
     flujo = {
-        "state": "awaiting_services_edit_delete_select",
+        "state": "onboarding_services_edit_delete_select",
         "servicios_temporales": ["desarrollo web", "cableado estructurado"],
     }
 
@@ -1144,7 +1199,7 @@ def test_eliminacion_servicio_en_edicion():
         )
     )
 
-    assert flujo["state"] == "awaiting_services_confirmation"
+    assert flujo["state"] == "onboarding_services_confirmation"
     assert flujo["servicios_temporales"] == ["cableado estructurado"]
     assert "Servicio eliminado" in respuesta["messages"][0]["response"]
 
@@ -1186,7 +1241,7 @@ def test_agregar_servicios_acepta_servicio_sin_bloqueo_taxonomico(monkeypatch):
 
     respuesta = asyncio.run(
         manejar_agregar_servicios(
-            flujo={"state": "awaiting_service_add", "services": []},
+            flujo={"state": "maintenance_service_add", "services": []},
             proveedor_id="prov-1",
             texto_mensaje="transporte de mercancías",
             cliente_openai=object(),

@@ -36,7 +36,7 @@ def informar_reanudacion_inactividad() -> str:
     Returns:
         Mensaje corto para retomar sin reiniciar el flujo
     """
-    return "No tuve respuesta por un rato. Te retomo en el mismo paso para continuar."
+    return "⌛ He detectado un momento de inactividad. *Retomamos el último paso para continuar.*"
 
 
 def informar_reinicio_completo() -> str:

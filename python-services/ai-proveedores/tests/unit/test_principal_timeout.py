@@ -32,21 +32,21 @@ def test_sesion_expira_cuando_supera_el_umbral():
 
 
 def test_reanudacion_onboarding_ciudad_repite_mismo_paso():
-    flujo = {"state": "awaiting_city"}
+    flujo = {"state": "onboarding_city"}
 
     resultado = principal._construir_reanudacion_onboarding(flujo)
 
-    assert resultado["messages"][0]["response"].startswith("No tuve respuesta por un rato")
+    assert resultado["messages"][0]["response"].startswith("⌛ He detectado")
     assert resultado["messages"][1]["response"].startswith(
         "Ahora comparte tu *ubicación*"
     )
 
 
 def test_reanudacion_onboarding_dni_repite_cedula():
-    flujo = {"state": "awaiting_dni_front_photo"}
+    flujo = {"state": "onboarding_dni_front_photo"}
 
     resultado = principal._construir_reanudacion_onboarding(flujo)
 
     assert resultado["messages"][1]["response"].startswith(
-        "Ahora envía una foto frontal de tu *cédula*"
+        "*Envía una foto frontal de tu cédula.*"
     )

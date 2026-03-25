@@ -5,7 +5,7 @@ Modelos compatibles con el esquema unificado de proveedores
 
 import re
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 from services.servicios_proveedor.constantes import SERVICIOS_MAXIMOS
@@ -64,6 +64,7 @@ class SolicitudCreacionProveedor(BaseModel):
     city: str = Field(..., min_length=2, max_length=100)
     # profession: ELIMINADO - Ahora se usa provider_services
     services_list: List[str] = Field(default_factory=list)
+    service_entries: List[Dict[str, Any]] = Field(default_factory=list)
     experience_years: Optional[int] = Field(default=0, ge=0)
     experience_range: Optional[str] = None
     social_media_url: Optional[str] = None
@@ -88,6 +89,15 @@ class SolicitudCreacionProveedor(BaseModel):
         """
         Valida que la lista de servicios no supere SERVICIOS_MAXIMOS elementos.
         """
+        if len(v) > SERVICIOS_MAXIMOS:
+            raise ValueError(f"Máximo {SERVICIOS_MAXIMOS} servicios permitidos")
+        return v
+
+    @field_validator("service_entries")
+    @classmethod
+    def validate_service_entries(
+        cls, v: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
         if len(v) > SERVICIOS_MAXIMOS:
             raise ValueError(f"Máximo {SERVICIOS_MAXIMOS} servicios permitidos")
         return v

@@ -3,3 +3,5 @@
 
 # Excepciones (solo estos archivos se trackean)
 !.gitignore
+!provider-contexts/
+!provider-contexts/**

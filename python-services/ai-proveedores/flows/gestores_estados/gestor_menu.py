@@ -7,15 +7,13 @@ from flows.constructores import (
     construir_menu_servicios,
     construir_payload_menu_principal,
 )
-from services import asegurar_proveedor_borrador, listar_certificados_proveedor
+from services import listar_certificados_proveedor
 from services.servicios_proveedor.constantes import SERVICIOS_MAXIMOS
 from .gestor_vistas_perfil import render_profile_view
 from templates.registro import (
     mensaje_inicio_perfil_profesional,
     payload_certificado_opcional,
 )
-from templates.onboarding.inicio import ONBOARDING_REGISTER_BUTTON_ID
-from templates.onboarding.ciudad import solicitar_ciudad_registro
 from templates.interfaz import (
     MENU_ID_ELIMINAR_REGISTRO,
     MENU_ID_INFO_PERSONAL,
@@ -26,7 +24,6 @@ from templates.interfaz import (
     error_opcion_no_reconocida,
     informar_cierre_sesion,
     solicitar_confirmacion_eliminacion,
-    solicitar_dni_actualizacion,
     SUBMENU_ID_PERSONAL_DOCUMENTOS,
     SUBMENU_ID_PERSONAL_DNI_FRONTAL,
     SUBMENU_ID_PERSONAL_DNI_REVERSO,
@@ -50,7 +47,7 @@ def iniciar_flujo_completar_perfil_profesional(
     servicios_temporales = list(flujo.get("services") or [])
     flujo["profile_completion_mode"] = True
     flujo["servicios_temporales"] = servicios_temporales
-    flujo["state"] = "awaiting_experience"
+    flujo["state"] = "maintenance_experience"
     return {
         "success": True,
         "messages": [{"response": mensaje_inicio_perfil_profesional()}],
@@ -60,7 +57,6 @@ def iniciar_flujo_completar_perfil_profesional(
 def _payload_menu_principal_desde_flujo(flujo: Dict[str, Any]) -> Dict[str, Any]:
     return construir_payload_menu_principal(
         esta_registrado=True,
-        menu_limitado=bool(flujo.get("menu_limitado")),
         approved_basic=bool(flujo.get("approved_basic")),
         provider_name=str(flujo.get("full_name") or flujo.get("name") or ""),
     )
@@ -299,7 +295,6 @@ async def manejar_estado_menu(
     texto_mensaje: str,
     opcion_menu: Optional[str],
     esta_registrado: bool,
-    menu_limitado: bool = False,
     supabase: Any = None,
     telefono: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -314,85 +309,26 @@ async def manejar_estado_menu(
     opcion = opcion_menu
     texto_minusculas = (texto_mensaje or "").strip().lower()
     approved_basic = bool(flujo.get("approved_basic"))
-    max_opcion_menu = 5 if menu_limitado else 4
-
-    if not esta_registrado:
-        if (
-            opcion == "1"
-            or opcion == ONBOARDING_REGISTER_BUTTON_ID
-            or "registro" in texto_minusculas
-            or "registrarse" in texto_minusculas
-        ):
-            logger.info(
-                "✅ Usuario NO registrado seleccionó Registro. "
-                "Cambiando estado a awaiting_city"
-            )
-            logger.info(
-                "📤 Respuesta a devolver: '%s'",
-                solicitar_ciudad_registro()["response"],
-            )
-            flujo["mode"] = "registration"
-            borrador = None
-            if supabase and telefono:
-                borrador = await asegurar_proveedor_borrador(
-                    supabase=supabase,
-                    telefono=telefono,
-                )
-            if borrador and borrador.get("id"):
-                flujo["provider_id"] = str(borrador.get("id") or "").strip()
-            flujo["state"] = "awaiting_city"
-            respuesta = {
-                "success": True,
-                "messages": [solicitar_ciudad_registro()],
-            }
-            logger.info("📦 Response completo: %s", respuesta)
-            return respuesta
-        if opcion == "2" or "salir" in texto_minusculas:
-            flujo.clear()
-            flujo["has_consent"] = True
-            return {
-                "success": True,
-                "messages": [{"response": informar_cierre_sesion()}],
-            }
-
-        return {
-            "success": True,
-            "messages": [
-                {"response": error_opcion_no_reconocida(1, 2)},
-                construir_payload_menu_principal(esta_registrado=False),
-            ],
-        }
+    max_opcion_menu = 4
 
     servicios_actuales = flujo.get("services") or []
     if "completar perfil" in texto_minusculas or "perfil profesional" in texto_minusculas:
         return iniciar_flujo_completar_perfil_profesional(flujo)
-    if menu_limitado and (
-        opcion == "4"
-        or "cedula" in texto_minusculas
-        or "cédula" in texto_minusculas
-        or "dni" in texto_minusculas
-    ):
-        flujo["state"] = "awaiting_dni_front_photo_update"
-        return {
-            "success": True,
-            "messages": [{"response": solicitar_dni_actualizacion()}],
-        }
-
-    if not menu_limitado and _es_opcion_info_personal(texto_minusculas, opcion):
+    if _es_opcion_info_personal(texto_minusculas, opcion):
         flujo["state"] = "awaiting_personal_info_action"
         return {
             "success": True,
             "messages": [payload_submenu_informacion_personal()],
         }
 
-    if not menu_limitado and _es_opcion_info_profesional(texto_minusculas, opcion):
+    if _es_opcion_info_profesional(texto_minusculas, opcion):
         flujo["state"] = "awaiting_professional_info_action"
         return {
             "success": True,
             "messages": [payload_submenu_informacion_profesional()],
         }
 
-    if not menu_limitado and (
+    if (
         opcion == "3"
         or texto_minusculas == MENU_ID_ELIMINAR_REGISTRO
         or "eliminar" in texto_minusculas
@@ -416,7 +352,6 @@ async def manejar_estado_menu(
             "esta_registrado": True,
             "provider_id": flujo.get("provider_id"),
             "services": servicios_actuales,
-            "menu_limitado": menu_limitado,
             "approved_basic": approved_basic,
         }
         flujo.clear()

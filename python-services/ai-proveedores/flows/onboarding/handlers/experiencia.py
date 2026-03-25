@@ -45,7 +45,8 @@ async def manejar_espera_experiencia_onboarding(
 
     flujo["experience_years"] = anios
     flujo["experience_range"] = formatear_rango_experiencia(anios)
-    flujo["state"] = "awaiting_specialty"
+    flujo["state"] = "onboarding_specialty"
+    flujo["services_guide_shown"] = True
 
     respuesta_servicio = payload_servicios_onboarding_con_imagen()
     return {

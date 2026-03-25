@@ -35,8 +35,8 @@ def confirmar_servicio_y_preguntar_otro(
     """Confirma un servicio válido y pregunta si desea agregar otro."""
     return (
         f"Servicio {cantidad_actual} de {maximo} registrado: *{servicio}*.\n\n"
-        "¿Quieres agregar otro servicio?\n"
-        "*1.* Agregar otro\n"
+        "¿Deseas sumar otro servicio?\n"
+        "*1.* Sí, sumar otro\n"
         "*2.* No, continuar"
     )
 

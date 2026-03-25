@@ -494,15 +494,34 @@ const normalizarProveedorSupabase = (registro) => {
         .filter((item) => item && typeof item.service_name === "string")
         .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
         .map((item) => ({
-          serviceName: item.service_name.trim(),
+          serviceName: limpiarTexto(item.service_name) || null,
+          serviceNameNormalized: limpiarTexto(item.service_name_normalized) || null,
+          rawServiceText: limpiarTexto(item.raw_service_text) || null,
+          serviceSummary: limpiarTexto(item.service_summary) || null,
+          domainCode: limpiarTexto(item.domain_code) || null,
+          categoryName: limpiarTexto(item.category_name) || null,
+          classificationConfidence:
+            typeof item.classification_confidence === "number"
+              ? item.classification_confidence
+              : Number.isFinite(Number(item.classification_confidence))
+                ? Number(item.classification_confidence)
+                : null,
+          requiresReview:
+            typeof item.requires_review === "boolean"
+              ? item.requires_review
+              : null,
         }))
-        .filter((item) => item.serviceName.length > 0)
+        .filter((item) => Boolean(item.serviceName))
     : [];
   const servicesFromRelation = providerServicesDetailed.map(
     (item) => item.serviceName,
   );
   const servicesRaw =
     limpiarTexto(registro?.services) ||
+    providerServicesDetailed
+      .map((item) => item.rawServiceText || item.serviceName)
+      .filter(Boolean)
+      .join(" | ") ||
     (servicesFromRelation.length > 0 ? servicesFromRelation.join(" | ") : null);
   const servicesList =
     servicesFromRelation.length > 0
@@ -511,7 +530,7 @@ const normalizarProveedorSupabase = (registro) => {
         ? registro.services_list.filter(
             (item) => typeof item === "string" && item.trim().length > 0,
           )
-        : servicesRaw
+    : servicesRaw
           ? servicesRaw
               .split("|")
               .map((item) => item.trim())
@@ -655,6 +674,7 @@ const normalizarProveedorSupabase = (registro) => {
     province: provincia,
     servicesRaw,
     servicesList,
+    servicesAudit: providerServicesDetailed,
     experienceYears,
     experienceRange,
     socialMediaUrl,
@@ -744,7 +764,7 @@ const construirRutaSupabasePendientes = (incluirEstado = true) => {
   const parametrosBase = [
     `limit=${pendingLimit}`,
     `order=created_at.desc`,
-    "select=*,provider_services(service_name,service_name_normalized,display_order),provider_certificates(id,file_url,display_order,status,created_at,updated_at)",
+    "select=*,provider_services(service_name,service_name_normalized,raw_service_text,service_summary,domain_code,category_name,classification_confidence,display_order),provider_certificates(id,file_url,display_order,status,created_at,updated_at)",
   ];
 
   if (incluirEstado) {
@@ -798,7 +818,7 @@ const construirRutaSupabasePostRevision = () => {
   const parametrosBase = [
     `limit=${pendingLimit}`,
     `order=created_at.desc`,
-    "select=*,provider_services(service_name,service_name_normalized,display_order),provider_certificates(id,file_url,display_order,status,created_at,updated_at)",
+    "select=*,provider_services(service_name,service_name_normalized,raw_service_text,service_summary,domain_code,category_name,classification_confidence,display_order),provider_certificates(id,file_url,display_order,status,created_at,updated_at)",
     "status=eq.rejected",
   ];
 
@@ -828,7 +848,7 @@ const construirRutaSupabaseResumenEstadosProveedores = () => {
   const parametrosBase = [
     "limit=5000",
     "order=created_at.asc",
-    "select=*,provider_services(service_name,service_name_normalized,display_order)",
+    "select=*,provider_services(service_name,service_name_normalized,raw_service_text,service_summary,domain_code,category_name,classification_confidence,display_order)",
     "status=in.(pending,pending_verification,approved,rejected)",
   ];
 
@@ -894,7 +914,7 @@ const construirRutaSupabasePerfilProfesionalIncompleto = () => {
   const parametrosBase = [
     `limit=${pendingLimit}`,
     `order=approved_notified_at.asc.nullslast,created_at.asc`,
-    "select=*,provider_services(service_name,service_name_normalized,display_order),provider_certificates(id,file_url,display_order,status,created_at,updated_at)",
+    "select=*,provider_services(service_name,service_name_normalized,raw_service_text,service_summary,domain_code,category_name,classification_confidence,display_order),provider_certificates(id,file_url,display_order,status,created_at,updated_at)",
     "status=eq.approved",
   ];
 
@@ -935,7 +955,7 @@ const obtenerProveedoresPerfilProfesionalIncompletoSupabase = async () => {
 
 const construirRutaSupabasePorId = (providerId) => {
   const encodedId = encodeURIComponent(providerId);
-  return `${supabaseProvidersTable}?id=eq.${encodedId}&select=*,provider_services(service_name,service_name_normalized,display_order),provider_certificates(id,file_url,display_order,status,created_at,updated_at)`;
+  return `${supabaseProvidersTable}?id=eq.${encodedId}&select=*,provider_services(service_name,service_name_normalized,raw_service_text,service_summary,domain_code,category_name,classification_confidence,display_order),provider_certificates(id,file_url,display_order,status,created_at,updated_at)`;
 };
 
 const intentarActualizacionSupabase = async (

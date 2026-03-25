@@ -10,8 +10,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from services.sesion_proveedor import (  # noqa: E402
     manejar_aprobacion_reciente,
+    manejar_bloqueo_revision_posterior,
     manejar_estado_inicial,
-    perfil_tiene_menu_limitado,
     resolver_estado_registro,
     sincronizar_flujo_con_perfil,
 )
@@ -25,7 +25,7 @@ from services.registro.normalizacion import (  # noqa: E402
 )
 
 
-def test_resolver_estado_registro_pending_no_habilita_menu_limitado():
+def test_resolver_estado_registro_pending_mantiene_bloqueo():
     flujo = {"has_consent": True}
     perfil = {
         "id": "prov-1",
@@ -38,7 +38,6 @@ def test_resolver_estado_registro_pending_no_habilita_menu_limitado():
     resultado = resolver_estado_registro(flujo, perfil)
 
     assert resultado == (True, True, False, False)
-    assert perfil_tiene_menu_limitado(perfil) is False
 
 
 def test_resolver_estado_registro_interview_required_aprueba_acceso_basico():
@@ -54,10 +53,9 @@ def test_resolver_estado_registro_interview_required_aprueba_acceso_basico():
     resultado = resolver_estado_registro(flujo, perfil)
 
     assert resultado == (True, True, True, False)
-    assert perfil_tiene_menu_limitado(perfil) is False
 
 
-def test_resolver_estado_registro_approved_basic_habilita_acceso_sin_menu_limitado():
+def test_resolver_estado_registro_approved_basic_habilita_acceso_basico():
     flujo = {"has_consent": True}
     perfil = {
         "id": "prov-basic",
@@ -70,7 +68,6 @@ def test_resolver_estado_registro_approved_basic_habilita_acceso_sin_menu_limita
     resultado = resolver_estado_registro(flujo, perfil)
 
     assert resultado == (True, True, True, False)
-    assert perfil_tiene_menu_limitado(perfil) is False
 
 
 def test_resolver_estado_registro_profile_pending_review_aprueba_acceso_basico():
@@ -86,7 +83,6 @@ def test_resolver_estado_registro_profile_pending_review_aprueba_acceso_basico()
     resultado = resolver_estado_registro(flujo, perfil)
 
     assert resultado == (True, True, True, False)
-    assert perfil_tiene_menu_limitado(perfil) is False
 
 
 def test_resolver_estado_registro_rejected_mantiene_bloqueo():
@@ -102,10 +98,9 @@ def test_resolver_estado_registro_rejected_mantiene_bloqueo():
     resultado = resolver_estado_registro(flujo, perfil)
 
     assert resultado == (True, True, False, True)
-    assert perfil_tiene_menu_limitado(perfil) is False
 
 
-def test_manejar_estado_inicial_menu_limitado_devuelve_revision_con_menu_limitado():  # noqa: E501
+def test_manejar_estado_inicial_en_revision_devuelve_menu_normal():
     flujo = {
         "has_consent": True,
         "full_name": "Proveedor En Revision",
@@ -120,7 +115,6 @@ def test_manejar_estado_inicial_menu_limitado_devuelve_revision_con_menu_limitad
             tiene_consentimiento=True,
             esta_registrado=True,
             esta_verificado=False,
-            menu_limitado=True,
             approved_basic=False,
             telefono="593999111240@s.whatsapp.net",
         )
@@ -128,11 +122,9 @@ def test_manejar_estado_inicial_menu_limitado_devuelve_revision_con_menu_limitad
 
     assert respuesta is not None
     assert flujo["state"] == "awaiting_menu_option"
-    assert flujo["menu_limitado"] is True
     assert len(respuesta["messages"]) == 2
     assert "revis" in respuesta["messages"][0]["response"].lower()
-    assert "Gestionar servicios" in respuesta["messages"][1]["response"]
-    assert "Eliminar mi registro" not in respuesta["messages"][1]["response"]
+    assert "Información personal" in respuesta["messages"][1]["ui"]["options"][0]["title"]
 
 
 def test_manejar_estado_inicial_rejected_permanece_en_pending_verification():
@@ -150,17 +142,17 @@ def test_manejar_estado_inicial_rejected_permanece_en_pending_verification():
             tiene_consentimiento=True,
             esta_registrado=True,
             esta_verificado=False,
-            menu_limitado=False,
             approved_basic=False,
             telefono="593999111241@s.whatsapp.net",
         )
     )
 
     assert respuesta is not None
-    assert flujo["state"] == "pending_verification"
+    assert flujo["state"] == "awaiting_menu_option"
     assert respuesta["messages"]
-    assert len(respuesta["messages"]) == 1
+    assert len(respuesta["messages"]) == 2
     assert "revis" in respuesta["messages"][0]["response"].lower()
+    assert respuesta["messages"][1]["ui"]["type"] == "list"
 
 
 def test_manejar_estado_inicial_approved_basic_muestra_menu_interactivo():
@@ -179,7 +171,6 @@ def test_manejar_estado_inicial_approved_basic_muestra_menu_interactivo():
             tiene_consentimiento=True,
             esta_registrado=True,
             esta_verificado=True,
-            menu_limitado=False,
             approved_basic=True,
             telefono="593999111299@s.whatsapp.net",
         )
@@ -209,7 +200,6 @@ def test_manejar_estado_inicial_aprobado_muestra_menu_interactivo():
             tiene_consentimiento=True,
             esta_registrado=True,
             esta_verificado=True,
-            menu_limitado=False,
             approved_basic=False,
             telefono="593999111288@s.whatsapp.net",
         )
@@ -247,6 +237,59 @@ def test_manejar_aprobacion_reciente_notifica_una_sola_vez():
 
     assert segunda_respuesta is None
     assert flujo["state"] == "awaiting_menu_option"
+
+
+def test_manejar_bloqueo_revision_posterior_responde_hasta_tres_veces_y_luego_silencia():
+    flujo = {
+        "state": "pending_verification",
+        "full_name": "Proveedor En Revision",
+    }
+
+    respuestas = [
+        manejar_bloqueo_revision_posterior(
+            flujo=flujo,
+            perfil_proveedor=None,
+            esta_verificado=False,
+        )
+        for _ in range(4)
+    ]
+
+    for respuesta in respuestas[:3]:
+        assert respuesta is not None
+        assert "en revisión" in respuesta["messages"][0]["response"].lower()
+
+    assert respuestas[3] is not None
+    assert respuestas[3]["messages"] == []
+    assert flujo["pending_review_attempts"] == 3
+    assert flujo["review_silenced"] is True
+
+
+def test_manejar_bloqueo_revision_posterior_detecta_perfil_completo_pendiente():
+    flujo = {"state": None, "full_name": "Proveedor Completo"}
+    perfil = {
+        "id": "prov-review",
+        "full_name": "Proveedor Completo",
+        "has_consent": True,
+        "verified": False,
+        "status": "pending",
+        "city": "Quito",
+        "dni_front_photo_url": "dni-front.jpg",
+        "face_photo_url": "face.jpg",
+        "experience_range": "5 a 10 años",
+        "services_list": ["Plomería"],
+    }
+
+    respuesta = manejar_bloqueo_revision_posterior(
+        flujo=flujo,
+        perfil_proveedor=perfil,
+        esta_verificado=False,
+    )
+
+    assert respuesta is not None
+    assert flujo["state"] == "pending_verification"
+    assert flujo["provider_id"] == "prov-review"
+    assert flujo["pending_review_attempts"] == 1
+    assert "en revisión" in respuesta["messages"][0]["response"].lower()
 
 
 def test_sincronizar_flujo_con_perfil_prioriza_datos_durables_sobre_redis():
@@ -308,15 +351,32 @@ def test_sincronizar_flujo_con_perfil_copia_checkpoint_onboarding():
     perfil = {
         "id": "prov-checkpoint",
         "full_name": "Proveedor Checkpoint",
-        "onboarding_step": "awaiting_face_photo",
+        "onboarding_step": "onboarding_face_photo",
         "onboarding_step_updated_at": "2026-03-23T12:00:00+00:00",
         "services_list": [],
     }
 
     sincronizar_flujo_con_perfil(flujo, perfil)
 
-    assert flujo["onboarding_step"] == "awaiting_face_photo"
+    assert flujo["onboarding_step"] == "onboarding_face_photo"
     assert flujo["onboarding_step_updated_at"] == "2026-03-23T12:00:00+00:00"
+
+
+def test_sincronizar_flujo_con_perfil_reconstruye_checkpoint_legacy_desde_perfil():
+    flujo = {}
+    perfil = {
+        "id": "prov-legacy-checkpoint",
+        "full_name": "Proveedor Legacy",
+        "city": "Quito",
+        "dni_front_photo_url": "dni-front.jpg",
+        "face_photo_url": None,
+        "onboarding_step": "awaiting_face_photo",
+        "services_list": [],
+    }
+
+    sincronizar_flujo_con_perfil(flujo, perfil)
+
+    assert flujo["onboarding_step"] == "onboarding_face_photo"
 
 
 def test_checkpoint_onboarding_infiere_desde_perfil_durable():
@@ -333,7 +393,7 @@ def test_checkpoint_onboarding_infiere_desde_perfil_durable():
         "status": "pending",
     }
 
-    assert inferir_checkpoint_onboarding_desde_perfil(perfil) == "awaiting_city"
+    assert inferir_checkpoint_onboarding_desde_perfil(perfil) == "onboarding_city"
 
 
 def test_checkpoint_onboarding_detecta_perfil_completo():

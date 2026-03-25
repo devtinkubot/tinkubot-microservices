@@ -27,16 +27,20 @@ def preguntar_redes_sociales_onboarding() -> str:
 
 def payload_redes_sociales_onboarding_con_imagen() -> Dict[str, Any]:
     """Solicita redes sociales con una imagen guía para onboarding."""
+    image_url = os.getenv(REDES_SOCIALES_ONBOARDING_IMAGE_URL_ENV, "").strip()
+    ui: Dict[str, Any] = {
+        "type": "buttons",
+        "id": "provider_onboarding_social_media_v1",
+        "footer_text": "Si no deseas agregarlas ahora, toca Omitir.",
+        "options": [{"id": REDES_SOCIALES_SKIP_ID, "title": "Omitir"}],
+    }
+    if image_url:
+        ui["header_type"] = "image"
+        ui["header_media_url"] = image_url
+    else:
+        ui["header_type"] = "text"
+        ui["header_text"] = "Redes sociales"
     return {
         "response": preguntar_redes_sociales_onboarding(),
-        "ui": {
-            "type": "buttons",
-            "id": "provider_onboarding_social_media_v1",
-            "header_type": "image",
-            "header_media_url": _resolver_url_guide(
-                REDES_SOCIALES_ONBOARDING_IMAGE_URL_ENV
-            ),
-            "footer_text": "Si no deseas agregarlas ahora, toca Omitir.",
-            "options": [{"id": REDES_SOCIALES_SKIP_ID, "title": "Omitir"}],
-        },
+        "ui": ui,
     }

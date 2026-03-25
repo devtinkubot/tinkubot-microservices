@@ -533,6 +533,12 @@ function actualizarPerfilProfesional(proveedor: ProviderRecord) {
   const servicios = obtenerElemento<HTMLDivElement>(
     "#provider-detail-services",
   );
+  const auditoriaServicios = obtenerElemento<HTMLDivElement>(
+    "#provider-detail-services-audit",
+  );
+  const auditoriaServiciosEmpty = obtenerElemento<HTMLDivElement>(
+    "#provider-detail-services-audit-empty",
+  );
   const experiencia = obtenerElemento<HTMLElement>(
     "#provider-detail-experience",
   );
@@ -582,6 +588,72 @@ function actualizarPerfilProfesional(proveedor: ProviderRecord) {
     } else {
       servicios.textContent = "Sin servicios registrados";
       servicios.classList.add("text-muted");
+    }
+  }
+
+  if (auditoriaServicios && auditoriaServiciosEmpty) {
+    const auditItems = Array.isArray(proveedor.servicesAudit)
+      ? proveedor.servicesAudit
+      : [];
+    if (auditItems.length > 0) {
+      auditoriaServicios.innerHTML = auditItems
+        .map((item, index) => {
+          const crudo = item.rawServiceText || item.serviceName || "Sin texto";
+          const normalizado =
+            item.serviceNameNormalized ||
+            item.serviceName ||
+            item.rawServiceText ||
+            "Sin normalización";
+          const confianza =
+            typeof item.classificationConfidence === "number" &&
+            Number.isFinite(item.classificationConfidence)
+              ? `${Math.round(item.classificationConfidence * 100)}%`
+              : "—";
+          const requiereRevision =
+            Boolean(item.requiresReview) ||
+            (typeof item.classificationConfidence === "number" &&
+              item.classificationConfidence < 0.7);
+          const borde = requiereRevision
+            ? "border-danger"
+            : "border-success";
+          const badge = requiereRevision
+            ? '<span class="badge bg-danger">Revisión</span>'
+            : '<span class="badge bg-success">Claro</span>';
+          const dominio = item.domainCode
+            ? `<span class="badge bg-secondary me-1">${escaparHtml(item.domainCode)}</span>`
+            : "";
+          const categoria = item.categoryName
+            ? `<span class="badge bg-light text-dark border">${escaparHtml(item.categoryName)}</span>`
+            : "";
+          const resumen = item.serviceSummary
+            ? `<div class="small text-muted mt-1">${escaparHtml(item.serviceSummary)}</div>`
+            : "";
+          return `
+            <div class="card mb-2 ${borde}">
+              <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-start gap-2">
+                  <div>
+                    <div class="fw-semibold">${index + 1}. ${escaparHtml(normalizado)}</div>
+                    <div class="small text-muted">Crudo: ${escaparHtml(crudo)}</div>
+                  </div>
+                  ${badge}
+                </div>
+                <div class="mt-2 d-flex flex-wrap gap-1">
+                  ${dominio}
+                  ${categoria}
+                  <span class="badge bg-info text-dark">Confianza ${escaparHtml(confianza)}</span>
+                </div>
+                ${resumen}
+              </div>
+            </div>
+          `;
+        })
+        .join("");
+      auditoriaServiciosEmpty.style.display = "none";
+      auditoriaServicios.classList.remove("text-muted");
+    } else {
+      auditoriaServicios.innerHTML = "";
+      auditoriaServiciosEmpty.style.display = "block";
     }
   }
 

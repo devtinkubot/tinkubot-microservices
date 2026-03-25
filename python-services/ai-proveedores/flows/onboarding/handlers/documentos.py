@@ -51,7 +51,7 @@ async def manejar_dni_frontal_onboarding(
         flujo.get("provider_id"),
         flujo,
     )
-    flujo["state"] = "awaiting_face_photo"
+    flujo["state"] = "onboarding_face_photo"
     return {
         "success": True,
         "messages": [payload_onboarding_foto_perfil()],
@@ -81,7 +81,7 @@ async def manejar_foto_perfil_onboarding(
         flujo.get("provider_id"),
         flujo,
     )
-    flujo["state"] = "awaiting_experience"
+    flujo["state"] = "onboarding_experience"
     return {
         "success": True,
         "messages": [payload_experiencia_onboarding()],

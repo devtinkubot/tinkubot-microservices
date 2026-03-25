@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import flows.router as modulo_router  # noqa: E402
 import flows.onboarding.router as modulo_onboarding_router  # noqa: E402
+from routes.availability import manejar_estado_disponibilidad  # noqa: E402
 from flows.router import enrutar_estado, manejar_mensaje
 from templates.onboarding.inicio import ONBOARDING_REGISTER_BUTTON_ID
 
@@ -61,8 +62,48 @@ def test_estado_esperando_disponibilidad_permite_volver_menu():
     assert resultado["response"]["messages"]
 
 
+def test_router_availability_directo_regresa_recordatorio():
+    flujo = {"state": "awaiting_availability_response"}
+
+    resultado = asyncio.run(
+        manejar_estado_disponibilidad(
+            flujo=flujo,
+            estado="awaiting_availability_response",
+            texto_mensaje="hola",
+            opcion_menu=None,
+            esta_registrado=True,
+        )
+    )
+
+    assert resultado is not None
+    assert resultado["persist_flow"] is True
+    assert flujo["state"] == "awaiting_availability_response"
+    assert "solicitud pendiente de disponibilidad" in resultado["response"]["messages"][0][
+        "response"
+    ].lower()
+
+
+def test_router_availability_directo_vuelve_al_menu():
+    flujo = {"state": "awaiting_availability_response"}
+
+    resultado = asyncio.run(
+        manejar_estado_disponibilidad(
+            flujo=flujo,
+            estado="awaiting_availability_response",
+            texto_mensaje="menu",
+            opcion_menu=None,
+            esta_registrado=True,
+        )
+    )
+
+    assert resultado is not None
+    assert resultado["persist_flow"] is True
+    assert flujo["state"] == "awaiting_menu_option"
+    assert resultado["response"]["messages"]
+
+
 def test_reset_solo_devuelve_mensaje_de_reinicio():
-    flujo = {"state": "awaiting_city"}
+    flujo = {"state": "onboarding_city"}
     logger = SimpleNamespace(info=lambda *args, **kwargs: None)
     modulo_router.reiniciar_flujo = lambda _telefono: asyncio.sleep(0)
     resultado = asyncio.run(
@@ -88,17 +129,8 @@ def test_reset_solo_devuelve_mensaje_de_reinicio():
     assert "reinici" in resultado["response"]["messages"][0]["response"].lower()
 
 
-def test_boton_onboarding_registrarse_abre_ciudad(monkeypatch):
+def test_boton_onboarding_sin_registro_abre_consentimiento(monkeypatch):
     flujo = {"state": "awaiting_menu_option", "mode": "registration"}
-
-    async def _fake_asegurar_proveedor_borrador(*args, **kwargs):
-        return {"id": "prov-draft-1"}
-
-    monkeypatch.setattr(
-        modulo_onboarding_router,
-        "asegurar_proveedor_borrador",
-        _fake_asegurar_proveedor_borrador,
-    )
 
     resultado = asyncio.run(
         enrutar_estado(
@@ -121,57 +153,64 @@ def test_boton_onboarding_registrarse_abre_ciudad(monkeypatch):
 
     assert resultado is not None
     assert resultado["persist_flow"] is True
-    assert flujo["state"] == "awaiting_city"
-    assert resultado["response"]["response"].startswith("Ahora comparte tu *ubicación*")
-    assert resultado["response"]["ui"]["type"] == "location_request"
+    assert flujo["state"] == "onboarding_consent"
+    assert resultado["response"]["messages"][0]["response"].startswith(
+        "Para poder conectarte con clientes"
+    )
 
 
 def test_redes_sociales_onboarding_nuevo_y_legacy_separados():
     assert modulo_onboarding_router.es_estado_onboarding("awaiting_social_media") is False
     assert (
         modulo_onboarding_router.es_estado_onboarding(
-            "awaiting_social_media_onboarding"
+            "onboarding_social_media"
         )
         is True
     )
     assert (
         modulo_onboarding_router.es_estado_onboarding(
-            "awaiting_onboarding_social_facebook_username"
+            "onboarding_social_facebook_username"
         )
         is False
     )
     assert (
         modulo_onboarding_router.es_estado_onboarding(
-            "awaiting_onboarding_social_instagram_username"
+            "onboarding_social_instagram_username"
         )
         is False
     )
 
 
-def test_numero_sin_provider_id_no_pasa_por_clasificacion_legacy(monkeypatch):
+def test_numero_sin_provider_id_usa_estado_canonico(monkeypatch):
     flujo = {}
     logger = SimpleNamespace(info=lambda *args, **kwargs: None)
 
-    async def _fake_manejar_entrada_onboarding(**kwargs):
+    async def _fake_manejar_contexto_onboarding(**kwargs):
         assert kwargs["flujo"].get("state") is None
+        assert kwargs["esta_registrado"] is False
         return {
-            "success": True,
-            "messages": [
-                {
-                    "response": "¡Hola! Vamos a crear tu perfil de proveedor paso a paso."
-                }
-            ],
+            "response": {
+                "success": True,
+                "messages": [
+                    {
+                        "response": "Para poder conectarte con clientes vamos a utilizar"
+                    }
+                ],
+            },
+            "persist_flow": True,
         }
-
-    def _legacy_no_deberia_llamarse(*_args, **_kwargs):
-        raise AssertionError("La clasificación legacy no debe ejecutarse sin provider_id")
 
     monkeypatch.setattr(
         modulo_router,
-        "manejar_entrada_onboarding",
-        _fake_manejar_entrada_onboarding,
+        "resolver_estado_registro",
+        lambda *_args, **_kwargs: (False, False, False, False),
     )
-    monkeypatch.setattr(modulo_router, "resolver_estado_registro", _legacy_no_deberia_llamarse)
+
+    monkeypatch.setattr(
+        modulo_router,
+        "manejar_contexto_onboarding",
+        _fake_manejar_contexto_onboarding,
+    )
 
     resultado = asyncio.run(
         manejar_mensaje(
@@ -192,22 +231,13 @@ def test_numero_sin_provider_id_no_pasa_por_clasificacion_legacy(monkeypatch):
     assert resultado is not None
     assert resultado["persist_flow"] is True
     assert resultado["response"]["messages"][0]["response"].startswith(
-        "¡Hola! Vamos a crear tu perfil de proveedor"
+        "Para poder conectarte con clientes vamos a utilizar"
     )
 
 
 def test_boton_onboarding_no_repite_bienvenida(monkeypatch):
     flujo = {"state": "awaiting_menu_option", "mode": "registration"}
     logger = SimpleNamespace(info=lambda *args, **kwargs: None)
-
-    async def _fake_asegurar_proveedor_borrador(*args, **kwargs):
-        return {"id": "prov-draft-1"}
-
-    monkeypatch.setattr(
-        modulo_onboarding_router,
-        "asegurar_proveedor_borrador",
-        _fake_asegurar_proveedor_borrador,
-    )
 
     resultado = asyncio.run(
         manejar_mensaje(
@@ -227,17 +257,18 @@ def test_boton_onboarding_no_repite_bienvenida(monkeypatch):
 
     assert resultado is not None
     assert resultado["persist_flow"] is True
-    assert flujo["state"] == "awaiting_city"
-    assert flujo["provider_id"] == "prov-draft-1"
+    assert flujo["state"] == "onboarding_consent"
     assert resultado["response"]["messages"][0]["response"].startswith(
-        "Ahora comparte tu *ubicación*"
+        "Para poder conectarte con clientes"
     )
 
 
 def test_inactividad_menor_al_umbral_no_reinicia(monkeypatch):
     ahora = datetime.now(timezone.utc)
     flujo = {
-        "state": "awaiting_city",
+        "state": None,
+        "provider_id": "prov-1",
+        "has_consent": True,
         "last_seen_at": (ahora - timedelta(minutes=10)).isoformat(),
     }
     logger = SimpleNamespace(info=lambda *args, **kwargs: None)
@@ -282,7 +313,7 @@ def test_inactividad_menor_al_umbral_no_reinicia(monkeypatch):
 def test_inactividad_mayor_al_umbral_reinicia(monkeypatch):
     ahora = datetime.now(timezone.utc)
     flujo = {
-        "state": "awaiting_city",
+        "state": "onboarding_city",
         "last_seen_at": (ahora - timedelta(hours=2)).isoformat(),
     }
     logger = SimpleNamespace(info=lambda *args, **kwargs: None)
@@ -291,11 +322,7 @@ def test_inactividad_mayor_al_umbral_reinicia(monkeypatch):
     async def _fake_reiniciar_flujo(_telefono):
         reinicios.append(_telefono)
 
-    def _legacy_no_deberia_llamarse(*_args, **_kwargs):
-        raise AssertionError("No debe continuar al enrutado normal si expiró")
-
     monkeypatch.setattr(modulo_router, "reiniciar_flujo", _fake_reiniciar_flujo)
-    monkeypatch.setattr(modulo_router, "enrutar_estado", _legacy_no_deberia_llamarse)
     monkeypatch.setattr(
         modulo_router,
         "resolver_estado_registro",
@@ -311,12 +338,6 @@ def test_inactividad_mayor_al_umbral_reinicia(monkeypatch):
         "construir_payload_menu_principal",
         lambda **_kwargs: {"response": "menu"},
     )
-    monkeypatch.setattr(
-        modulo_router,
-        "manejar_pendiente_revision",
-        lambda *_args, **_kwargs: None,
-    )
-
     resultado = asyncio.run(
         manejar_mensaje(
             flujo=flujo,
@@ -335,3 +356,10 @@ def test_inactividad_mayor_al_umbral_reinicia(monkeypatch):
 
     assert resultado is not None
     assert reinicios == ["593999111299@s.whatsapp.net"]
+    assert resultado["response"]["messages"][0]["response"] == (
+        "No tuve respuesta y *reinicié la conversación* para ayudarte mejor."
+    )
+    assert any(
+        "Para poder conectarte con clientes" in mensaje.get("response", "")
+        for mensaje in resultado["response"]["messages"]
+    )

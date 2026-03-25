@@ -33,7 +33,7 @@ from infrastructure.storage import subir_medios_identidad
 from models import RecepcionMensajeWhatsApp, RespuestaSalud
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
-from services.disponibilidad_interceptacion import (
+from services.availability import (
     ESTADO_ESPERANDO_DISPONIBILIDAD,
     _hay_contexto_disponibilidad_activo as _hay_contexto_disponibilidad_activo_impl,
     _registrar_respuesta_disponibilidad_si_aplica as _registrar_respuesta_disponibilidad_si_aplica_impl,
@@ -45,8 +45,8 @@ from services.registro import limpiar_onboarding_proveedores
 from services.registro.eliminacion_proveedor import eliminar_registro_proveedor
 from services.registro.checkpoint_onboarding import (
     es_perfil_onboarding_completo,
-    inferir_checkpoint_onboarding_desde_perfil,
     persistir_checkpoint_onboarding,
+    resolver_checkpoint_onboarding_desde_perfil,
 )
 from services.sesion_proveedor import sincronizar_flujo_con_perfil
 from services.servicios_proveedor.actualizar_servicios import actualizar_servicios
@@ -65,6 +65,7 @@ from templates.onboarding import (
     payload_servicios_onboarding_con_imagen,
     solicitar_ciudad_registro,
 )
+from templates.onboarding.consentimiento import payload_consentimiento_proveedor
 from templates.sesion.manejo import (
     informar_reinicio_con_eliminacion,
     informar_reinicio_conversacion,
@@ -92,30 +93,37 @@ TIEMPO_AVISO_INACTIVIDAD_SEGUNDOS = 300
 STANDARD_ONBOARDING_STATES = {
     None,
     "pending_verification",
-    "awaiting_consent",
-    "awaiting_city",
-    "awaiting_dni_front_photo",
-    "awaiting_face_photo",
-    "awaiting_specialty",
-    "awaiting_add_another_service",
-    "awaiting_services_confirmation",
-    "awaiting_social_media_onboarding",
+    "onboarding_consent",
+    "onboarding_city",
+    "onboarding_dni_front_photo",
+    "onboarding_face_photo",
+    "onboarding_experience",
+    "onboarding_specialty",
+    "onboarding_add_another_service",
+    "onboarding_services_confirmation",
+    "onboarding_services_edit_action",
+    "onboarding_services_edit_replace_select",
+    "onboarding_services_edit_replace_input",
+    "onboarding_services_edit_delete_select",
+    "onboarding_services_edit_add",
+    "onboarding_social_media",
     "confirm",
 }
 
-MANUAL_PHONE_FALLBACK_STATES = {"awaiting_real_phone"}
+MANUAL_PHONE_FALLBACK_STATES = {"onboarding_real_phone"}
 
 ONBOARDING_STATES = STANDARD_ONBOARDING_STATES | MANUAL_PHONE_FALLBACK_STATES
 
 ONBOARDING_REANUDACION_STATES = {
     "awaiting_menu_option",
-    "awaiting_city",
-    "awaiting_dni_front_photo",
-    "awaiting_face_photo",
-    "awaiting_experience",
-    "awaiting_specialty",
-    "awaiting_services_confirmation",
-    "awaiting_social_media_onboarding",
+    "onboarding_consent",
+    "onboarding_city",
+    "onboarding_dni_front_photo",
+    "onboarding_face_photo",
+    "onboarding_experience",
+    "onboarding_specialty",
+    "onboarding_services_confirmation",
+    "onboarding_social_media",
 }
 
 # Estados de menú post-registro (deben ignorar flujo de disponibilidad)
@@ -124,13 +132,7 @@ MENU_STATES = {
     "awaiting_personal_info_action",
     "awaiting_professional_info_action",
     "awaiting_deletion_confirmation",
-    "awaiting_social_media_update",
-    "awaiting_social_facebook_username",
-    "awaiting_social_instagram_username",
-    "awaiting_service_action",
     "awaiting_active_service_action",
-    "awaiting_service_add",
-    "awaiting_service_add_confirmation",
     "awaiting_service_remove",
     "awaiting_face_photo_update",
     "awaiting_dni_front_photo_update",
@@ -150,28 +152,47 @@ MENU_STATES = {
     "viewing_professional_certificate",
 }
 PROFILE_COMPLETION_STATES = {
+    "maintenance_experience",
+    "maintenance_social_media",
+    "maintenance_social_facebook_username",
+    "maintenance_social_instagram_username",
+    "maintenance_certificate",
+    "maintenance_specialty",
+    "maintenance_profile_service_confirmation",
+    "maintenance_add_another_service",
+    "maintenance_services_confirmation",
+    "maintenance_profile_completion_confirmation",
+    "maintenance_profile_completion_edit_action",
+    "maintenance_services_edit_action",
+    "maintenance_services_edit_replace_select",
+    "maintenance_services_edit_replace_input",
+    "maintenance_services_edit_delete_select",
+    "maintenance_services_edit_add",
+    "maintenance_profile_completion_finalize",
+}
+
+PROFILE_COMPLETION_STATES |= {
+    "onboarding_social_facebook_username",
+    "onboarding_social_instagram_username",
+    "awaiting_certificate",
     "awaiting_experience",
     "awaiting_social_media",
     "awaiting_social_media_onboarding",
-    "awaiting_onboarding_social_facebook_username",
-    "awaiting_onboarding_social_instagram_username",
-    "awaiting_certificate",
+    "onboarding_social_media",
     "awaiting_specialty",
     "awaiting_profile_service_confirmation",
     "awaiting_add_another_service",
     "awaiting_services_confirmation",
-    "awaiting_profile_completion_confirmation",
-    "awaiting_profile_completion_edit_action",
     "awaiting_services_edit_action",
     "awaiting_services_edit_replace_select",
     "awaiting_services_edit_replace_input",
     "awaiting_services_edit_delete_select",
     "awaiting_services_edit_add",
-    "profile_completion_finalize",
+    "maintenance_profile_completion_finalize",
 }
 MEDIA_STATES = {
-    "awaiting_dni_front_photo",
-    "awaiting_face_photo",
+    "onboarding_dni_front_photo",
+    "onboarding_face_photo",
     "awaiting_dni_front_photo_update",
     "awaiting_dni_back_photo_update",
     "awaiting_face_photo_update",
@@ -218,10 +239,7 @@ def _rehidratar_estado_onboarding_desde_supabase(
     if flujo.get("state") or not perfil_proveedor:
         return False
 
-    checkpoint = (
-        perfil_proveedor.get("onboarding_step")
-        or inferir_checkpoint_onboarding_desde_perfil(perfil_proveedor)
-    )
+    checkpoint = resolver_checkpoint_onboarding_desde_perfil(perfil_proveedor)
     if not checkpoint:
         return False
 
@@ -244,23 +262,25 @@ def _construir_reanudacion_onboarding(
     flujo: Dict[str, Any],
 ) -> Dict[str, Any]:
     estado = str(flujo.get("state") or "").strip()
-    if estado == "awaiting_menu_option":
+    if estado == "onboarding_consent":
+        prompt = payload_consentimiento_proveedor()["messages"][0]
+    elif estado == "awaiting_menu_option":
         prompt = payload_menu_registro_proveedor()
-    elif estado == "awaiting_city":
+    elif estado == "onboarding_city":
         prompt = solicitar_ciudad_registro()
-    elif estado == "awaiting_dni_front_photo":
+    elif estado == "onboarding_dni_front_photo":
         prompt = payload_onboarding_dni_frontal()
-    elif estado == "awaiting_face_photo":
+    elif estado == "onboarding_face_photo":
         prompt = payload_onboarding_foto_perfil()
-    elif estado == "awaiting_real_phone":
+    elif estado == "onboarding_real_phone":
         from templates.onboarding.telefono import preguntar_real_phone
 
         prompt = {"response": preguntar_real_phone()}
-    elif estado == "awaiting_experience":
+    elif estado == "onboarding_experience":
         prompt = payload_experiencia_onboarding()
-    elif estado == "awaiting_specialty":
+    elif estado == "onboarding_specialty":
         prompt = payload_servicios_onboarding_con_imagen()
-    elif estado == "awaiting_services_confirmation":
+    elif estado == "onboarding_services_confirmation":
         prompt = payload_confirmacion_servicios_menu(list(flujo.get("services") or []))
     else:
         prompt = {

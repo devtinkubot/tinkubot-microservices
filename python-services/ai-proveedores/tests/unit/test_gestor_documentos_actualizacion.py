@@ -19,7 +19,7 @@ from flows.onboarding.handlers.documentos import (
 
 
 def test_dni_frontal_actualizacion_marca_persistencia():
-    flujo = {"menu_limitado": True}
+    flujo = {}
 
     respuesta = manejar_dni_frontal_actualizacion(
         flujo,
@@ -38,7 +38,6 @@ def test_dni_trasera_actualizacion_persiste_solo_frontal_y_vuelve_menu():
         llamadas.append((proveedor_id, payload))
 
     flujo = {
-        "menu_limitado": True,
         "provider_id": "prov-10",
         "dni_front_image": "front-image",
         "esta_registrado": True,
@@ -63,7 +62,7 @@ def test_dni_trasera_actualizacion_persiste_solo_frontal_y_vuelve_menu():
         )
     ]
     assert "cédula actualizada" in respuesta["messages"][0]["response"].lower()
-    assert "actualizar cédula" in respuesta["messages"][1]["response"].lower()
+    assert respuesta["messages"][1]["response"] == "Elige la opción de interés."
 
 
 def test_dni_trasera_actualizacion_ignora_reverso_y_persiste_frontal():
@@ -73,7 +72,6 @@ def test_dni_trasera_actualizacion_ignora_reverso_y_persiste_frontal():
         llamadas.append((proveedor_id, payload))
 
     flujo = {
-        "menu_limitado": False,
         "provider_id": "prov-10",
         "dni_front_image": "front-image",
         "profile_edit_mode": "personal_dni_front_update",
@@ -124,7 +122,7 @@ def test_dni_frontal_registro_persiste_de_inmediato_y_avanza():
         )
     )
 
-    assert flujo["state"] == "awaiting_face_photo"
+    assert flujo["state"] == "onboarding_face_photo"
     assert flujo["phone"] == "593969648465@s.whatsapp.net"
     assert flujo["dni_front_image"] == "front-image"
     assert llamadas == [(None, "593969648465@s.whatsapp.net", "front-image")]
@@ -148,7 +146,7 @@ def test_selfie_registro_persiste_de_inmediato_y_avanza():
         )
     )
 
-    assert flujo["state"] == "awaiting_experience"
+    assert flujo["state"] == "onboarding_experience"
     assert flujo["phone"] == "593995971988@s.whatsapp.net"
     assert flujo["face_image"] == "face-image"
     assert llamadas == [(None, "593995971988@s.whatsapp.net", "face-image")]

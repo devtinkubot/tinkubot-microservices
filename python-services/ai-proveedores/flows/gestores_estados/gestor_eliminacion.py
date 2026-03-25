@@ -31,7 +31,6 @@ async def manejar_confirmacion_eliminacion(
                 {"response": informar_eliminacion_cancelada()},
                 construir_payload_menu_principal(
                     esta_registrado=True,
-                    menu_limitado=bool(flujo.get("menu_limitado")),
                     approved_basic=bool(flujo.get("approved_basic")),
                 ),
             ],
@@ -59,7 +58,6 @@ async def manejar_confirmacion_eliminacion(
                 {"response": error_eliminacion_fallida(resultado.get("message", ""))},
                 construir_payload_menu_principal(
                     esta_registrado=True,
-                    menu_limitado=bool(flujo.get("menu_limitado")),
                     approved_basic=bool(flujo.get("approved_basic")),
                 ),
             ],

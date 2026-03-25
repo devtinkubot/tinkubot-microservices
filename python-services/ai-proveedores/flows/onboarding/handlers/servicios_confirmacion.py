@@ -8,9 +8,12 @@ from templates.registro import (
     mensaje_debes_registrar_al_menos_un_servicio,
     mensaje_menu_edicion_servicios_registro,
     payload_resumen_servicios_registro,
-    preguntar_siguiente_servicio_registro,
-    SERVICE_ADD_NO_ID,
-    SERVICE_ADD_YES_ID,
+)
+from templates.onboarding.servicios import (
+    SERVICIO_ONBOARDING_ADD_NO_ID,
+    SERVICIO_ONBOARDING_ADD_YES_ID,
+    payload_preguntar_otro_servicio_onboarding,
+    payload_servicios_onboarding_sin_imagen,
 )
 from templates.onboarding.redes_sociales import (
     payload_redes_sociales_onboarding_con_imagen,
@@ -52,7 +55,7 @@ def mostrar_confirmacion_servicios_onboarding(
     """Muestra el resumen final de servicios del onboarding."""
     maximo_visible = _maximo_visible(flujo)
     flujo["servicios_temporales"] = servicios_transformados
-    flujo["state"] = "awaiting_services_confirmation"
+    flujo["state"] = "onboarding_services_confirmation"
     return {
         "success": True,
         "messages": [
@@ -67,41 +70,61 @@ def mostrar_confirmacion_servicios_onboarding(
 async def manejar_decision_agregar_otro_servicio_onboarding(
     flujo: Dict[str, Any],
     texto_mensaje: Optional[str],
+    selected_option: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Decide si el proveedor agrega otro servicio o pasa al resumen."""
+    """Decide si el proveedor agrega otro servicio o pasa al siguiente paso."""
     texto = (texto_mensaje or "").strip().lower()
-    servicios = list(flujo.get("servicios_temporales") or [])
-    maximo_visible = _maximo_visible(flujo)
+    seleccionado = (selected_option or "").strip().lower()
 
-    if texto in {"1", "si", "sí", "agregar", "otro", "continuar", SERVICE_ADD_YES_ID}:
-        flujo["state"] = "awaiting_specialty"
+    if seleccionado in {
+        "1",
+        "si",
+        "sí",
+        "agregar",
+        "otro",
+        "continuar",
+        SERVICIO_ONBOARDING_ADD_YES_ID,
+    } or texto in {
+        "1",
+        "si",
+        "sí",
+        "agregar",
+        "otro",
+        "continuar",
+        SERVICIO_ONBOARDING_ADD_YES_ID,
+    }:
+        flujo["state"] = "onboarding_specialty"
         return {
             "success": True,
             "messages": [
-                {
-                    "response": preguntar_siguiente_servicio_registro(
-                        len(servicios) + 1,
-                        maximo_visible,
-                    )
-                }
+                payload_servicios_onboarding_sin_imagen(),
             ],
         }
 
-    if texto in {"2", "no", "terminar", "listo", SERVICE_ADD_NO_ID}:
-        flujo["state"] = "awaiting_services_confirmation"
+    if seleccionado in {
+        "2",
+        "no",
+        "terminar",
+        "listo",
+        SERVICIO_ONBOARDING_ADD_NO_ID,
+    } or texto in {
+        "2",
+        "no",
+        "terminar",
+        "listo",
+        SERVICIO_ONBOARDING_ADD_NO_ID,
+    }:
+        flujo["state"] = "onboarding_social_media"
         return {
             "success": True,
             "messages": [
-                payload_resumen_servicios_registro(
-                    servicios,
-                    maximo_visible,
-                )
+                payload_redes_sociales_onboarding_con_imagen(),
             ],
         }
 
     return {
         "success": True,
-        "messages": [{"response": "¿Deseas agregar otro servicio?"}],
+        "messages": [payload_preguntar_otro_servicio_onboarding()],
     }
 
 
@@ -113,17 +136,6 @@ async def manejar_confirmacion_servicios_onboarding(
 ) -> Dict[str, Any]:
     """Procesa la confirmación final de la lista de servicios del onboarding."""
     maximo_visible = _maximo_visible(flujo)
-    if not texto_mensaje and not selected_option:
-        return {
-            "success": True,
-            "messages": [
-                payload_resumen_servicios_registro(
-                    list(flujo.get("servicios_temporales") or []),
-                    maximo_visible,
-                )
-            ],
-        }
-
     opcion = _resolver_confirmacion_basica_onboarding(
         texto_mensaje,
         selected_option=selected_option,
@@ -139,14 +151,14 @@ async def manejar_confirmacion_servicios_onboarding(
                 ],
             }
         flujo["specialty"] = ", ".join(servicios_temporales)
-        flujo["state"] = "awaiting_social_media_onboarding"
+        flujo["state"] = "onboarding_social_media"
         return {
             "success": True,
             "messages": [payload_redes_sociales_onboarding_con_imagen()],
         }
 
     if opcion == "reject":
-        flujo["state"] = "awaiting_services_edit_action"
+        flujo["state"] = "onboarding_services_edit_action"
         return {
             "success": True,
             "messages": [
@@ -160,12 +172,12 @@ async def manejar_confirmacion_servicios_onboarding(
             ],
         }
 
-        return {
-            "success": True,
-            "messages": [
-                payload_resumen_servicios_registro(
-                    list(flujo.get("servicios_temporales") or []),
-                    maximo_visible,
-                )
-            ],
-        }
+    return {
+        "success": True,
+        "messages": [
+            payload_resumen_servicios_registro(
+                list(flujo.get("servicios_temporales") or []),
+                maximo_visible,
+            )
+        ],
+    }

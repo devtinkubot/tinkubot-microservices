@@ -1,10 +1,12 @@
-"""Mensajes y payloads para captura compacta de servicios en onboarding."""
+"""Mensajes y payloads para captura de servicios en onboarding."""
 
 import os
 from typing import Any, Dict
 
 SERVICIOS_ONBOARDING_HEADER_IMAGE_URL_ENV = "WA_PROVIDER_SERVICES_IMAGE_URL"
-SERVICIOS_ONBOARDING_MAXIMOS = 7
+SERVICIOS_ONBOARDING_MAXIMOS = 10
+SERVICIO_ONBOARDING_ADD_YES_ID = "onboarding_add_another_service_yes"
+SERVICIO_ONBOARDING_ADD_NO_ID = "onboarding_add_another_service_no"
 
 
 def _resolver_url_guide(env_name: str) -> str:
@@ -18,20 +20,54 @@ def _resolver_url_guide(env_name: str) -> str:
 
 
 def preguntar_servicios_onboarding() -> str:
-    """Solicita todos los servicios en una sola secuencia compacta."""
+    """Solicita un solo servicio por turno, con apoyo visual."""
     return (
-        "*Cuéntanos tus servicios en una sola línea*\n\n"
-        "Revisa la imagen de ejemplo y envíanos hasta 7 servicios en un solo mensaje. "
-        "Mientras más claro y detallado sea cada servicio, mejor podremos clasificarlos."
+        "*Describe el servicio que ofreces*\n\n"
+        "Escribe solo un servicio por mensaje. "
+        "Mientras más claro y detallado sea, mejor podremos clasificarlo."
     )
 
 
 def payload_servicios_onboarding_con_imagen() -> Dict[str, Any]:
-    """Solicita servicios con una imagen guía para el onboarding."""
+    """Solicita un servicio con una imagen guía para el onboarding."""
     return {
         "response": preguntar_servicios_onboarding(),
         "media_url": _resolver_url_guide(
             SERVICIOS_ONBOARDING_HEADER_IMAGE_URL_ENV
         ),
         "media_type": "image",
+    }
+
+
+def payload_servicios_onboarding_sin_imagen() -> Dict[str, Any]:
+    """Solicita un servicio sin apoyo visual, para reintentos o continuaciones."""
+    return {"response": preguntar_servicios_onboarding()}
+
+
+def preguntar_otro_servicio_onboarding() -> str:
+    return (
+        "Presiona *Sí* para agregarlo. "
+        "Presiona *No* para continuar con el registro."
+    )
+
+
+def payload_preguntar_otro_servicio_onboarding() -> Dict[str, Any]:
+    return {
+        "response": preguntar_otro_servicio_onboarding(),
+        "ui": {
+            "type": "buttons",
+            "id": "provider_onboarding_service_continue_v1",
+            "header_type": "text",
+            "header_text": "¿Quieres agregar otro servicio?",
+            "options": [
+                {
+                    "id": SERVICIO_ONBOARDING_ADD_YES_ID,
+                    "title": "Sí",
+                },
+                {
+                    "id": SERVICIO_ONBOARDING_ADD_NO_ID,
+                    "title": "No",
+                },
+            ],
+        },
     }

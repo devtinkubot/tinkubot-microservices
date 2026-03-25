@@ -35,11 +35,22 @@ from templates.registro import (
     SERVICE_ADD_NO_ID,
     SERVICE_ADD_YES_ID,
 )
-from flows.constructores import construir_respuesta_solicitud_consentimiento
+from flows.constructores import construir_respuesta_revision
 
 logger = logging.getLogger(__name__)
 
 _FLUJO_KEY_EDIT_INDEX = "service_edit_index"
+
+
+def _estado_contextual(
+    flujo: Dict[str, Any],
+    *,
+    onboarding: str,
+    maintenance: str,
+) -> str:
+    if flujo.get("profile_completion_mode") or flujo.get("profile_edit_mode"):
+        return maintenance
+    return onboarding
 
 
 def _maximo_servicios(flujo: Dict[str, Any]) -> int:
@@ -111,7 +122,11 @@ async def manejar_confirmacion_servicio_perfil(
         from .gestor_espera_especialidad import _mensajes_prompt_servicio_compartido
 
         if not candidato:
-            flujo["state"] = "awaiting_specialty"
+            flujo["state"] = _estado_contextual(
+                flujo,
+                onboarding="onboarding_specialty",
+                maintenance="maintenance_specialty",
+            )
             return {
                 "success": True,
                 "messages": await _mensajes_prompt_servicio_compartido(
@@ -122,7 +137,11 @@ async def manejar_confirmacion_servicio_perfil(
             }
 
         if opcion == "reject":
-            flujo["state"] = "awaiting_specialty"
+            flujo["state"] = _estado_contextual(
+                flujo,
+                onboarding="onboarding_specialty",
+                maintenance="maintenance_specialty",
+            )
             return {
                 "success": True,
                 "messages": await _mensajes_prompt_servicio_compartido(
@@ -145,16 +164,16 @@ async def manejar_confirmacion_servicio_perfil(
 
             cantidad = len(flujo.get("servicios_temporales") or [])
             if cantidad >= SERVICIOS_MINIMOS_PERFIL_PROFESIONAL:
-                flujo["state"] = "awaiting_consent"
-                flujo["post_consent_state"] = "pending_verification"
-                return {
-                    "success": True,
-                    "messages": construir_respuesta_solicitud_consentimiento()[
-                        "messages"
-                    ],
-                }
+                flujo["state"] = "pending_verification"
+                return construir_respuesta_revision(
+                    str(flujo.get("full_name") or "")
+                )
 
-            flujo["state"] = "awaiting_specialty"
+            flujo["state"] = _estado_contextual(
+                flujo,
+                onboarding="onboarding_specialty",
+                maintenance="maintenance_specialty",
+            )
             return {
                 "success": True,
                 "messages": await _mensajes_prompt_servicio_compartido(
@@ -176,7 +195,11 @@ async def manejar_confirmacion_servicio_perfil(
         }
 
     if not candidato:
-        flujo["state"] = "awaiting_specialty"
+        flujo["state"] = _estado_contextual(
+            flujo,
+            onboarding="onboarding_specialty",
+            maintenance="maintenance_specialty",
+        )
         from .gestor_espera_especialidad import _mensajes_prompt_servicio_compartido
 
         return {
@@ -189,7 +212,11 @@ async def manejar_confirmacion_servicio_perfil(
         }
 
     if opcion == "reject":
-        flujo["state"] = "awaiting_specialty"
+        flujo["state"] = _estado_contextual(
+            flujo,
+            onboarding="onboarding_specialty",
+            maintenance="maintenance_specialty",
+        )
         from .gestor_espera_especialidad import _mensajes_prompt_servicio_compartido
 
         return {
@@ -215,20 +242,19 @@ async def manejar_confirmacion_servicio_perfil(
         if flujo.get("profile_edit_mode") == "service":
             flujo.pop("profile_edit_mode", None)
             flujo.pop("profile_edit_service_index", None)
-            flujo["state"] = "awaiting_profile_completion_confirmation"
+            flujo["state"] = "maintenance_profile_completion_confirmation"
             return {"success": True, "messages": [_payload_resumen_perfil(flujo)]}
 
         cantidad = len(flujo.get("servicios_temporales") or [])
         if cantidad >= SERVICIOS_MINIMOS_PERFIL_PROFESIONAL:
-            flujo["state"] = "awaiting_consent"
-            return {
-                "success": True,
-                "messages": construir_respuesta_solicitud_consentimiento()[
-                    "messages"
-                ],
-            }
+            flujo["state"] = "pending_verification"
+            return construir_respuesta_revision(str(flujo.get("full_name") or ""))
 
-        flujo["state"] = "awaiting_specialty"
+        flujo["state"] = _estado_contextual(
+            flujo,
+            onboarding="onboarding_specialty",
+            maintenance="maintenance_specialty",
+        )
         from .gestor_espera_especialidad import _mensajes_prompt_servicio_compartido
 
         return {
@@ -260,13 +286,13 @@ async def manejar_confirmacion_perfil_profesional(
 ) -> Dict[str, Any]:
     opcion = _resolver_confirmacion_basica(texto_mensaje, selected_option)
     if opcion == "accept":
-        flujo["state"] = "profile_completion_finalize"
+        flujo["state"] = "maintenance_profile_completion_finalize"
         return {
             "success": True,
             "messages": [{"response": "✅ Perfecto. Voy a guardar tu perfil profesional."}],
         }
     if opcion == "reject":
-        flujo["state"] = "awaiting_profile_completion_edit_action"
+        flujo["state"] = "maintenance_profile_completion_edit_action"
         return {
             "success": True,
             "messages": [{"response": mensaje_menu_edicion_perfil_profesional()}],
@@ -284,14 +310,22 @@ async def manejar_edicion_perfil_profesional(
 
     if texto == "1":
         flujo["profile_edit_mode"] = "experience"
-        flujo["state"] = "awaiting_experience"
+        flujo["state"] = _estado_contextual(
+            flujo,
+            onboarding="onboarding_experience",
+            maintenance="maintenance_experience",
+        )
         return {
             "success": True,
             "messages": [{"response": preguntar_experiencia_general()}],
         }
     if texto == "2":
         flujo["profile_edit_mode"] = "social_media"
-        flujo["state"] = "awaiting_social_media"
+        flujo["state"] = _estado_contextual(
+            flujo,
+            onboarding="onboarding_social_media",
+            maintenance="maintenance_social_media",
+        )
         return {
             "success": True,
             "messages": [
@@ -301,13 +335,21 @@ async def manejar_edicion_perfil_profesional(
         }
     if texto == "3":
         flujo["profile_edit_mode"] = "certificate"
-        flujo["state"] = "awaiting_certificate"
+        flujo["state"] = _estado_contextual(
+            flujo,
+            onboarding="awaiting_certificate",
+            maintenance="maintenance_certificate",
+        )
         return {"success": True, "messages": [payload_certificado_opcional()]}
     if texto in {"4", "5", "6"}:
         indice = int(texto) - 4
         flujo["profile_edit_mode"] = "service"
         flujo["profile_edit_service_index"] = indice
-        flujo["state"] = "awaiting_specialty"
+        flujo["state"] = _estado_contextual(
+            flujo,
+            onboarding="onboarding_specialty",
+            maintenance="maintenance_specialty",
+        )
         return {
             "success": True,
             "messages": [
@@ -321,7 +363,7 @@ async def manejar_edicion_perfil_profesional(
             ],
         }
     if texto == "7":
-        flujo["state"] = "awaiting_profile_completion_confirmation"
+        flujo["state"] = "maintenance_profile_completion_confirmation"
         return {"success": True, "messages": [_payload_resumen_perfil(flujo)]}
 
     return {
@@ -336,7 +378,11 @@ def mostrar_confirmacion_servicios(
     """Muestra el resumen final de servicios del registro."""
     maximo_visible = _maximo_visible(flujo)
     flujo["servicios_temporales"] = servicios_transformados
-    flujo["state"] = "awaiting_services_confirmation"
+    flujo["state"] = _estado_contextual(
+        flujo,
+        onboarding="onboarding_services_confirmation",
+        maintenance="maintenance_services_confirmation",
+    )
     return {
         "success": True,
         "messages": [
@@ -361,7 +407,11 @@ async def manejar_decision_agregar_otro_servicio(
     maximo_visible = _maximo_visible(flujo)
 
     if texto in {"1", "si", "sí", "agregar", "otro", "continuar", SERVICE_ADD_YES_ID}:
-        flujo["state"] = "awaiting_specialty"
+        flujo["state"] = _estado_contextual(
+            flujo,
+            onboarding="onboarding_specialty",
+            maintenance="maintenance_specialty",
+        )
         return {
             "success": True,
             "messages": [
@@ -382,7 +432,11 @@ async def manejar_decision_agregar_otro_servicio(
             flujo.get("profile_completion_mode")
             and len(servicios) < SERVICIOS_MINIMOS_PERFIL_PROFESIONAL
         ):
-            flujo["state"] = "awaiting_specialty"
+            flujo["state"] = _estado_contextual(
+                flujo,
+                onboarding="onboarding_specialty",
+                maintenance="maintenance_specialty",
+            )
             return {
                 "success": True,
                 "messages": [
@@ -400,7 +454,11 @@ async def manejar_decision_agregar_otro_servicio(
                     },
                 ],
             }
-        flujo["state"] = "awaiting_services_confirmation"
+        flujo["state"] = _estado_contextual(
+            flujo,
+            onboarding="onboarding_services_confirmation",
+            maintenance="maintenance_services_confirmation",
+        )
         return {
             "success": True,
             "messages": [
@@ -473,7 +531,7 @@ async def manejar_confirmacion_servicios(
 
         flujo["specialty"] = ", ".join(servicios_temporales)
         if flujo.get("profile_completion_mode"):
-            flujo["state"] = "profile_completion_finalize"
+            flujo["state"] = "maintenance_profile_completion_finalize"
             return {
                 "success": True,
                 "messages": [
@@ -481,14 +539,15 @@ async def manejar_confirmacion_servicios(
                 ],
             }
 
-        flujo["state"] = "confirm"
-        return {
-            "success": True,
-            "messages": construir_respuesta_solicitud_consentimiento()["messages"],
-        }
+        flujo["state"] = "pending_verification"
+        return construir_respuesta_revision(str(flujo.get("full_name") or ""))
 
     if texto_limpio in {"2", "no", "corregir", "editar", "cambiar"}:
-        flujo["state"] = "awaiting_services_edit_action"
+        flujo["state"] = _estado_contextual(
+            flujo,
+            onboarding="onboarding_services_edit_action",
+            maintenance="maintenance_services_edit_action",
+        )
         return {
             "success": True,
             "messages": [
@@ -526,7 +585,11 @@ async def manejar_accion_edicion_servicios_registro(
     maximo_visible = _maximo_visible(flujo)
 
     if texto in {"1", "reemplazar"}:
-        flujo["state"] = "awaiting_services_edit_replace_select"
+        flujo["state"] = _estado_contextual(
+            flujo,
+            onboarding="onboarding_services_edit_replace_select",
+            maintenance="maintenance_services_edit_replace_select",
+        )
         return {
             "success": True,
             "messages": [
@@ -541,7 +604,11 @@ async def manejar_accion_edicion_servicios_registro(
         }
 
     if texto in {"2", "eliminar"}:
-        flujo["state"] = "awaiting_services_edit_delete_select"
+        flujo["state"] = _estado_contextual(
+            flujo,
+            onboarding="onboarding_services_edit_delete_select",
+            maintenance="maintenance_services_edit_delete_select",
+        )
         return {
             "success": True,
             "messages": [
@@ -575,7 +642,11 @@ async def manejar_accion_edicion_servicios_registro(
                     },
                 ],
             }
-        flujo["state"] = "awaiting_services_edit_add"
+        flujo["state"] = _estado_contextual(
+            flujo,
+            onboarding="onboarding_services_edit_add",
+            maintenance="maintenance_services_edit_add",
+        )
         return {
             "success": True,
             "messages": [
@@ -589,7 +660,11 @@ async def manejar_accion_edicion_servicios_registro(
         }
 
     if texto in {"4", "volver", "resumen"}:
-        flujo["state"] = "awaiting_services_confirmation"
+        flujo["state"] = _estado_contextual(
+            flujo,
+            onboarding="onboarding_services_confirmation",
+            maintenance="maintenance_services_confirmation",
+        )
         return {
             "success": True,
             "messages": [
@@ -646,7 +721,11 @@ async def manejar_seleccion_reemplazo_servicio_registro(
         }
 
     flujo[_FLUJO_KEY_EDIT_INDEX] = indice
-    flujo["state"] = "awaiting_services_edit_replace_input"
+    flujo["state"] = _estado_contextual(
+        flujo,
+        onboarding="onboarding_services_edit_replace_input",
+        maintenance="maintenance_services_edit_replace_input",
+    )
     return {
         "success": True,
         "messages": [
@@ -671,7 +750,11 @@ async def manejar_reemplazo_servicio_registro(
     maximo_visible = _maximo_visible(flujo)
     indice = flujo.get(_FLUJO_KEY_EDIT_INDEX)
     if not isinstance(indice, int) or not (0 <= indice < len(servicios)):
-        flujo["state"] = "awaiting_services_edit_action"
+        flujo["state"] = _estado_contextual(
+            flujo,
+            onboarding="onboarding_services_edit_action",
+            maintenance="maintenance_services_edit_action",
+        )
         return await manejar_accion_edicion_servicios_registro(flujo, "4")
 
     resultado = await normalizar_servicio_registro_individual(
@@ -692,7 +775,11 @@ async def manejar_reemplazo_servicio_registro(
     servicios[indice] = nuevo
     flujo["servicios_temporales"] = servicios
     flujo.pop(_FLUJO_KEY_EDIT_INDEX, None)
-    flujo["state"] = "awaiting_services_confirmation"
+    flujo["state"] = _estado_contextual(
+        flujo,
+        onboarding="onboarding_services_confirmation",
+        maintenance="maintenance_services_confirmation",
+    )
     return {
         "success": True,
         "messages": [
@@ -728,7 +815,11 @@ async def manejar_eliminacion_servicio_registro(
     flujo["servicios_temporales"] = servicios
 
     if not servicios:
-        flujo["state"] = "awaiting_specialty"
+        flujo["state"] = _estado_contextual(
+            flujo,
+            onboarding="onboarding_specialty",
+            maintenance="maintenance_specialty",
+        )
         return {
             "success": True,
             "messages": [
@@ -741,8 +832,11 @@ async def manejar_eliminacion_servicio_registro(
                 },
             ],
         }
-
-    flujo["state"] = "awaiting_services_confirmation"
+    flujo["state"] = _estado_contextual(
+        flujo,
+        onboarding="onboarding_services_confirmation",
+        maintenance="maintenance_services_confirmation",
+    )
     return {
         "success": True,
         "messages": [
@@ -782,7 +876,11 @@ async def manejar_agregar_servicio_desde_edicion_registro(
 
     servicios.append(nuevo)
     flujo["servicios_temporales"] = servicios
-    flujo["state"] = "awaiting_services_confirmation"
+    flujo["state"] = _estado_contextual(
+        flujo,
+        onboarding="onboarding_services_confirmation",
+        maintenance="maintenance_services_confirmation",
+    )
     return {
         "success": True,
         "messages": [
@@ -804,5 +902,9 @@ async def procesar_correccion_manual(
     cliente_openai: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Mantiene compatibilidad redirigiendo a edición guiada."""
-    flujo["state"] = "awaiting_services_edit_action"
+    flujo["state"] = _estado_contextual(
+        flujo,
+        onboarding="onboarding_services_edit_action",
+        maintenance="maintenance_services_edit_action",
+    )
     return await manejar_accion_edicion_servicios_registro(flujo, texto_mensaje)

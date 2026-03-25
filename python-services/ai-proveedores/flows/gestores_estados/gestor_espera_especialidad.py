@@ -40,7 +40,6 @@ from templates.interfaz import (
 )
 from templates.onboarding.servicios import (
     payload_servicios_onboarding_con_imagen,
-    preguntar_servicios_onboarding,
 )
 
 logger = logging.getLogger(__name__)
@@ -76,6 +75,17 @@ def _limite_visible_para_contexto(flujo: Dict[str, Any]) -> int:
     return SERVICIOS_MAXIMOS_ONBOARDING
 
 
+def _estado_servicio_contextual(
+    flujo: Dict[str, Any],
+    *,
+    onboarding: str,
+    maintenance: str,
+) -> str:
+    if flujo.get("profile_completion_mode") or flujo.get("profile_edit_mode"):
+        return maintenance
+    return onboarding
+
+
 async def _mensajes_prompt_servicio_compartido(
     *,
     flujo: Dict[str, Any],
@@ -88,12 +98,20 @@ async def _mensajes_prompt_servicio_compartido(
         return [respuesta]
 
     respuesta = {
-        "response": preguntar_servicios_onboarding(),
+        "response": _preguntar_servicio_legado_compartido(),
         "media_type": "image",
         "media_url": None,
         "service_examples_lookup": {},
     }
     return [respuesta]
+
+
+def _preguntar_servicio_legado_compartido() -> str:
+    return (
+        "*Escribe el servicio que estás registrando*\n\n"
+        "Envía un solo servicio por mensaje y agrega la especialidad o área "
+        "si aplica."
+    )
 
 
 async def normalizar_servicio_registro_individual(
@@ -239,8 +257,8 @@ async def normalizar_servicio_registro_individual(
 
 def _explicar_formato_servicios_compartido() -> str:
     return (
-        "Revisa la imagen de ejemplo y envíanos hasta 7 servicios en un solo mensaje. "
-        "Mientras más claro y detallado sea cada servicio, mejor podremos clasificarlos."
+        "Escribe el servicio con el mayor detalle posible. "
+        "Si necesitas, sepáralo por coma o en una línea distinta."
     )
 
 
@@ -365,13 +383,21 @@ async def manejar_espera_especialidad(
                 maximo_visible=maximo_visible,
             )
         )
-        flujo["state"] = "awaiting_specialty"
+        flujo["state"] = _estado_servicio_contextual(
+            flujo,
+            onboarding="onboarding_specialty",
+            maintenance="maintenance_specialty",
+        )
         return {"success": True, "messages": mensajes}
 
     if flujo.get("profile_completion_mode") and (
         selected == SERVICE_EXAMPLE_BACK_ID or texto_limpio == SERVICE_EXAMPLE_BACK_ID
     ):
-        flujo["state"] = "awaiting_specialty"
+        flujo["state"] = _estado_servicio_contextual(
+            flujo,
+            onboarding="onboarding_specialty",
+            maintenance="maintenance_specialty",
+        )
         return {
             "success": True,
             "messages": await _mensajes_prompt_servicio_compartido(
@@ -383,7 +409,11 @@ async def manejar_espera_especialidad(
 
     if flujo.get("profile_completion_mode"):
         if len(servicios_temporales) >= maximo_servicios:
-            flujo["state"] = "awaiting_services_confirmation"
+            flujo["state"] = _estado_servicio_contextual(
+                flujo,
+                onboarding="onboarding_services_confirmation",
+                maintenance="maintenance_services_confirmation",
+            )
             return {
                 "success": True,
                 "messages": [
@@ -397,6 +427,11 @@ async def manejar_espera_especialidad(
 
         if texto_limpio in PROFILE_CONTROL_IDS:
             if flujo.get("profile_completion_mode"):
+                flujo["state"] = _estado_servicio_contextual(
+                    flujo,
+                    onboarding="onboarding_specialty",
+                    maintenance="maintenance_specialty",
+                )
                 return {
                     "success": True,
                     "messages": await _mensajes_prompt_servicio_compartido(
@@ -425,7 +460,11 @@ async def manejar_espera_especialidad(
             review_source="provider_profile_completion",
         )
         if not resultado.get("ok"):
-            flujo["state"] = "awaiting_specialty"
+            flujo["state"] = _estado_servicio_contextual(
+                flujo,
+                onboarding="onboarding_specialty",
+                maintenance="maintenance_specialty",
+            )
             return {
                 "success": True,
                 "messages": [{"response": resultado["response"]}],
@@ -443,7 +482,7 @@ async def manejar_espera_especialidad(
         )
         flujo["pending_service_candidate"] = servicio
         flujo["pending_service_index"] = indice_servicio
-        flujo["state"] = "awaiting_profile_service_confirmation"
+        flujo["state"] = "maintenance_profile_service_confirmation"
         return {
             "success": True,
             "messages": [
@@ -462,7 +501,11 @@ async def manejar_espera_especialidad(
         max_servicios=SERVICIOS_MAXIMOS_ONBOARDING,
     )
     if not resultado.get("ok"):
-        flujo["state"] = "awaiting_specialty"
+        flujo["state"] = _estado_servicio_contextual(
+            flujo,
+            onboarding="onboarding_specialty",
+            maintenance="maintenance_specialty",
+        )
         return {
             "success": True,
             "messages": [{"response": resultado["response"]}],
@@ -470,7 +513,11 @@ async def manejar_espera_especialidad(
 
     servicios_capturados = resultado["services"]
     if not servicios_capturados:
-        flujo["state"] = "awaiting_specialty"
+        flujo["state"] = _estado_servicio_contextual(
+            flujo,
+            onboarding="onboarding_specialty",
+            maintenance="maintenance_specialty",
+        )
         return {
             "success": True,
             "messages": [{"response": _explicar_formato_servicios_compartido()}],
@@ -482,7 +529,11 @@ async def manejar_espera_especialidad(
         if servicio not in servicios_temporales
     ]
     if not nuevos_servicios:
-        flujo["state"] = "awaiting_specialty"
+        flujo["state"] = _estado_servicio_contextual(
+            flujo,
+            onboarding="onboarding_specialty",
+            maintenance="maintenance_specialty",
+        )
         return {
             "success": True,
             "messages": [
@@ -506,7 +557,11 @@ async def manejar_espera_especialidad(
     cantidad = len(flujo.get("servicios_temporales") or [])
     limit_reached = bool(resultado.get("limit_reached"))
     if cantidad < SERVICIOS_MINIMOS_PERFIL_PROFESIONAL:
-        flujo["state"] = "awaiting_specialty"
+        flujo["state"] = _estado_servicio_contextual(
+            flujo,
+            onboarding="onboarding_specialty",
+            maintenance="maintenance_specialty",
+        )
         mensaje_base = (
             f"Ya capturé {cantidad} servicio(s), pero necesitamos "
             f"al menos {SERVICIOS_MINIMOS_PERFIL_PROFESIONAL} para continuar.\n\n"
@@ -525,7 +580,11 @@ async def manejar_espera_especialidad(
         }
 
     flujo["specialty"] = ", ".join(flujo.get("servicios_temporales") or [])
-    flujo["state"] = "awaiting_services_confirmation"
+    flujo["state"] = _estado_servicio_contextual(
+        flujo,
+        onboarding="onboarding_services_confirmation",
+        maintenance="maintenance_services_confirmation",
+    )
     mensajes = [
         payload_resumen_servicios_registro(
             list(flujo.get("servicios_temporales") or []),

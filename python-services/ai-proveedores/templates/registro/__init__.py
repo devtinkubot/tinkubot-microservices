@@ -5,10 +5,6 @@ from .confirmacion import (
     CONFIRM_REJECT_ID,
     payload_confirmacion_resumen,
 )
-from .resumen_consentimiento import (
-    construir_resumen_consentimiento_registro,
-    payload_resumen_consentimiento_registro,
-)
 from .confirmacion_servicios import (
     mensaje_confirmacion_servicios,
     mensaje_correccion_servicios,
@@ -77,8 +73,6 @@ __all__ = [
     "preguntar_experiencia_general",
     # Confirmación
     "payload_confirmacion_resumen",
-    "construir_resumen_consentimiento_registro",
-    "payload_resumen_consentimiento_registro",
     "CONFIRM_ACCEPT_ID",
     "CONFIRM_REJECT_ID",
     # Confirmación de servicios

@@ -75,6 +75,11 @@ def validar_y_construir_proveedor(
             city=ciudad_canonica,
             # Fase 4: Eliminado campo profession - ya no existe en el modelo
             services_list=servicios_lista,
+            service_entries=list(
+                flujo.get("servicios_detallados")
+                or flujo.get("service_entries")
+                or []
+            ),
             experience_years=flujo.get("experience_years"),
             experience_range=flujo.get("experience_range"),
             has_consent=flujo.get("has_consent", False),

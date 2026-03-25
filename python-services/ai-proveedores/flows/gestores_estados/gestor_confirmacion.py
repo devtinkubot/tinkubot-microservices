@@ -3,7 +3,6 @@
 from typing import Any, Awaitable, Callable, Dict, Optional
 
 from models.proveedores import SolicitudCreacionProveedor
-from templates.verificacion.estados import mensaje_proveedor_en_revision
 from templates.registro import (
     CONFIRM_ACCEPT_ID,
     CONFIRM_REJECT_ID,
@@ -11,6 +10,7 @@ from templates.registro import (
 from flows.constructores import construir_respuesta_solicitud_consentimiento
 from flows.validadores.validador_entrada import parsear_cadena_servicios
 from services.registro import validar_y_construir_proveedor
+from templates.review.estados import mensaje_proveedor_en_revision
 
 
 def _resolver_opcion_confirmacion(carga: Dict[str, Any]) -> Optional[str]:

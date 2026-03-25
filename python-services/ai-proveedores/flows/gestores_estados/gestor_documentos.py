@@ -75,7 +75,6 @@ async def manejar_dni_trasera_actualizacion(
                 {
                     **construir_payload_menu_principal(
                         esta_registrado=True,
-                        menu_limitado=bool(flujo.get("menu_limitado")),
                         approved_basic=bool(flujo.get("approved_basic")),
                     )
                 },
@@ -100,7 +99,6 @@ async def manejar_dni_trasera_actualizacion(
                 {
                     **construir_payload_menu_principal(
                         esta_registrado=True,
-                        menu_limitado=bool(flujo.get("menu_limitado")),
                         approved_basic=bool(flujo.get("approved_basic")),
                     )
                 },
@@ -128,7 +126,6 @@ async def manejar_dni_trasera_actualizacion(
             {"response": confirmar_documentos_actualizados()},
             construir_payload_menu_principal(
                 esta_registrado=True,
-                menu_limitado=bool(flujo.get("menu_limitado")),
                 approved_basic=bool(flujo.get("approved_basic")),
             ),
         ],

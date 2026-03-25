@@ -74,7 +74,6 @@ def _resolver_supabase_runtime() -> Any:
 def _menu_principal_desde_flujo(flujo: Dict[str, Any]) -> Dict[str, Any]:
     return construir_payload_menu_principal(
         esta_registrado=True,
-        menu_limitado=bool(flujo.get("menu_limitado")),
         approved_basic=bool(flujo.get("approved_basic")),
     )
 
@@ -138,7 +137,7 @@ async def _retornar_desde_ejemplos(flujo: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     flujo.pop("profile_return_state", None)
-    flujo["state"] = "awaiting_service_action"
+    flujo["state"] = "maintenance_service_action"
     return {
         "success": True,
         "messages": [{"response": _menu_servicios_desde_flujo(flujo)}],
@@ -177,7 +176,7 @@ async def _persistir_servicios_agregados(
             proveedor_id, servicios_actualizados
         )
     except Exception:
-        flujo["state"] = "awaiting_service_action"
+        flujo["state"] = "maintenance_service_action"
         flujo.pop(_FLUJO_KEY_SERVICIOS_TEMP, None)
         return {
             "success": True,
@@ -194,7 +193,7 @@ async def _persistir_servicios_agregados(
     flujo["state"] = (
         "viewing_professional_services"
         if retorno_detalle
-        else "awaiting_service_action"
+        else "maintenance_service_action"
     )
     flujo.pop(_FLUJO_KEY_SERVICIOS_TEMP, None)
 
@@ -368,7 +367,7 @@ async def manejar_accion_servicios(
                 ],
             }
         flujo.pop("profile_return_state", None)
-        flujo["state"] = "awaiting_service_add"
+        flujo["state"] = "maintenance_service_add"
         return await _construir_prompt_servicio_con_ejemplos(
             flujo=flujo,
             indice=len(servicios_actuales) + 1,
@@ -377,7 +376,7 @@ async def manejar_accion_servicios(
 
     if opcion == "2" or "eliminar" in texto_minusculas:
         if not servicios_actuales:
-            flujo["state"] = "awaiting_service_action"
+            flujo["state"] = "maintenance_service_action"
             return {
                 "success": True,
                 "messages": [
@@ -421,7 +420,7 @@ async def manejar_accion_servicios_activos(
     opcion_menu: Optional[str],
 ) -> Dict[str, Any]:
     """Compatibilidad temporal para estados antiguos."""
-    flujo["state"] = "awaiting_service_action"
+    flujo["state"] = "maintenance_service_action"
     return await manejar_accion_servicios(
         flujo=flujo,
         texto_mensaje=texto_mensaje,
@@ -451,7 +450,7 @@ async def manejar_agregar_servicios(
         lookup_ejemplos = flujo.get("service_examples_lookup") or {}
         clave_ejemplo = opcion_seleccionada or texto_ingresado
         ejemplo = lookup_ejemplos.get(clave_ejemplo) or {}
-        flujo["state"] = "awaiting_service_add"
+        flujo["state"] = "maintenance_service_add"
         return {
             "success": True,
             "response": mensaje_ejemplo_servicio_seleccionado(
@@ -502,7 +501,7 @@ async def manejar_agregar_servicios(
         }
 
     if not cliente_openai:
-        flujo["state"] = "awaiting_service_action"
+        flujo["state"] = "maintenance_service_action"
         return {
             "success": True,
             "messages": [
@@ -522,9 +521,9 @@ async def manejar_agregar_servicios(
 
     if not resultado_normalizacion.get("ok"):
         if resultado_normalizacion.get("needs_clarification"):
-            flujo["state"] = "awaiting_service_add"
+            flujo["state"] = "maintenance_service_add"
         else:
-            flujo["state"] = "awaiting_service_action"
+            flujo["state"] = "maintenance_service_action"
         return {
             "success": True,
             "messages": (
@@ -544,7 +543,7 @@ async def manejar_agregar_servicios(
 
     nuevos_sanitizados = _normalizar_lista_resultante(servicios_transformados, servicios_base)
     if not nuevos_sanitizados:
-        flujo["state"] = "awaiting_service_action"
+        flujo["state"] = "maintenance_service_action"
         return {
             "success": True,
             "messages": [
@@ -555,7 +554,7 @@ async def manejar_agregar_servicios(
 
     nuevos_candidatos = nuevos_sanitizados[:espacio_restante]
     if not nuevos_candidatos:
-        flujo["state"] = "awaiting_service_action"
+        flujo["state"] = "maintenance_service_action"
         return {
             "success": True,
             "messages": [
@@ -566,7 +565,7 @@ async def manejar_agregar_servicios(
 
     flujo[_FLUJO_KEY_SERVICIOS_TEMP] = nuevos_candidatos
     flujo[_FLUJO_KEY_SERVICIOS_CONFIRMACION_NONCE] = uuid4().hex
-    flujo["state"] = "awaiting_service_add_confirmation"
+    flujo["state"] = "maintenance_service_add_confirmation"
     mensajes = [payload_confirmacion_servicios_menu(nuevos_candidatos)]
     if len(nuevos_candidatos) < len(nuevos_sanitizados):
         mensajes.append(
@@ -654,7 +653,7 @@ async def manejar_confirmacion_agregar_servicios(
             }
         flujo.pop(_FLUJO_KEY_SERVICIOS_TEMP, None)
         flujo.pop(_FLUJO_KEY_SERVICIOS_CONFIRMACION_NONCE, None)
-        flujo["state"] = "awaiting_service_add"
+        flujo["state"] = "maintenance_service_add"
         return await _construir_prompt_servicio_con_ejemplos(
             flujo=flujo,
             indice=(
@@ -674,7 +673,7 @@ async def manejar_confirmacion_agregar_servicios(
                     payload_confirmacion_servicios_menu(candidatos_pendientes)
                 ],
             }
-        flujo["state"] = "awaiting_service_action"
+        flujo["state"] = "maintenance_service_action"
         flujo.pop(_FLUJO_KEY_SERVICIOS_CONFIRMACION_NONCE, None)
         return {
             "success": True,
@@ -686,7 +685,7 @@ async def manejar_confirmacion_agregar_servicios(
 
     nuevos_confirmados = list(flujo.get(_FLUJO_KEY_SERVICIOS_TEMP) or [])
     if not nuevos_confirmados:
-        flujo["state"] = "awaiting_service_action"
+        flujo["state"] = "maintenance_service_action"
         flujo.pop(_FLUJO_KEY_SERVICIOS_CONFIRMACION_NONCE, None)
         return {
             "success": True,
@@ -700,7 +699,7 @@ async def manejar_confirmacion_agregar_servicios(
         1 if reemplazo_activo else (SERVICIOS_MAXIMOS - len(servicios_actuales))
     )
     if espacio_restante <= 0:
-        flujo["state"] = "awaiting_service_action"
+        flujo["state"] = "maintenance_service_action"
         flujo.pop(_FLUJO_KEY_SERVICIOS_TEMP, None)
         flujo.pop(_FLUJO_KEY_SERVICIOS_CONFIRMACION_NONCE, None)
         return {
@@ -745,7 +744,7 @@ async def manejar_confirmacion_agregar_servicios(
                 proveedor_id, nuevos_recortados
             )
     except Exception:
-        flujo["state"] = "awaiting_service_action"
+        flujo["state"] = "maintenance_service_action"
         flujo.pop(_FLUJO_KEY_SERVICIOS_TEMP, None)
         flujo.pop(_FLUJO_KEY_SERVICIOS_CONFIRMACION_NONCE, None)
         return {
@@ -763,7 +762,7 @@ async def manejar_confirmacion_agregar_servicios(
     flujo["state"] = (
         "viewing_professional_services"
         if retorno_detalle
-        else "awaiting_service_action"
+        else "maintenance_service_action"
     )
     flujo.pop(_FLUJO_KEY_SERVICIOS_TEMP, None)
     flujo.pop(_FLUJO_KEY_SERVICIOS_CONFIRMACION_NONCE, None)
@@ -859,7 +858,7 @@ async def manejar_eliminar_servicio(
             proveedor_id, indice_servicio
         )
     except Exception:
-        flujo["state"] = "awaiting_service_action"
+        flujo["state"] = "maintenance_service_action"
         return {
             "success": True,
             "messages": [

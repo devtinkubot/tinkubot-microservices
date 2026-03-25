@@ -6,7 +6,7 @@ from config import configuracion
 from fastapi import APIRouter, Header
 
 from infrastructure.redis import cliente_redis
-from services.disponibilidad_interceptacion import (
+from services.availability import (
     CLAVE_CICLO_SOLICITUD,
     CLAVE_CONTEXTO_DISPONIBILIDAD,
     CLAVE_PENDIENTES_DISPONIBILIDAD,

@@ -27,7 +27,7 @@ async def test_consentimiento_onboarding_aceptado_actualiza_flujo_y_registra(
 
     captured: Dict[str, Any] = {}
     flujo = {
-        "state": "awaiting_consent",
+        "state": "onboarding_consent",
         "id": "prov-123",
         "full_name": "Proveedor Demo",
         "has_consent": False,
@@ -77,10 +77,86 @@ async def test_consentimiento_onboarding_aceptado_actualiza_flujo_y_registra(
         perfil_proveedor={"id": "prov-123", "full_name": "Proveedor Demo"},
     )
 
-    assert captured["flow"]["state"] == "pending_verification"
+    assert captured["flow"]["state"] == "onboarding_city"
     assert captured["flow"]["has_consent"] is True
     assert captured["registro"]["respuesta"] == "accepted"
-    assert "revis" in respuesta["messages"][0]["response"].lower()
+    assert respuesta["messages"][0]["response"].startswith(
+        "Ahora comparte tu *ubicación*"
+    )
+
+
+@pytest.mark.asyncio
+async def test_consentimiento_onboarding_aceptado_crea_borrador_si_no_hay_provider_id(
+    monkeypatch,
+):
+    principal_stub = types.ModuleType("principal")
+    principal_stub.supabase = object()
+    monkeypatch.setitem(sys.modules, "principal", principal_stub)
+
+    captured: Dict[str, Any] = {}
+    flujo = {
+        "state": "onboarding_consent",
+        "has_consent": False,
+    }
+
+    async def _fake_asegurar_proveedor_borrador(_supabase, telefono: str):
+        captured["draft_phone"] = telefono
+        return {"id": "prov-draft-1", "phone": telefono}
+
+    async def _fake_establecer_flujo(_telefono: str, flujo_guardado: Dict[str, Any]):
+        captured["flow"] = dict(flujo_guardado)
+
+    async def _fake_run_supabase(*_args, **_kwargs):
+        return None
+
+    async def _fake_registrar_consentimiento(
+        proveedor_id: str | None,
+        telefono: str,
+        carga: Dict[str, Any],
+        respuesta: str,
+    ):
+        captured["registro"] = {
+            "proveedor_id": proveedor_id,
+            "telefono": telefono,
+            "respuesta": respuesta,
+        }
+
+    monkeypatch.setattr(
+        "services.onboarding.consentimiento.asegurar_proveedor_borrador",
+        _fake_asegurar_proveedor_borrador,
+    )
+    monkeypatch.setattr(
+        "services.onboarding.consentimiento.establecer_flujo",
+        _fake_establecer_flujo,
+    )
+    monkeypatch.setattr(
+        "services.onboarding.consentimiento.run_supabase",
+        _fake_run_supabase,
+    )
+    monkeypatch.setattr(
+        "services.onboarding.consentimiento.registrar_consentimiento",
+        _fake_registrar_consentimiento,
+    )
+
+    respuesta = await procesar_respuesta_consentimiento_onboarding(
+        telefono="593999111222@s.whatsapp.net",
+        flujo=flujo,
+        carga={
+            "selected_option": "1",
+            "message": "Acepto",
+            "content": "Acepto",
+            "timestamp": "2026-03-23T00:00:00Z",
+        },
+        perfil_proveedor=None,
+    )
+
+    assert captured["draft_phone"] == "593999111222@s.whatsapp.net"
+    assert captured["flow"]["state"] == "onboarding_city"
+    assert captured["flow"]["provider_id"] == "prov-draft-1"
+    assert captured["registro"]["proveedor_id"] == "prov-draft-1"
+    assert respuesta["messages"][0]["response"].startswith(
+        "Ahora comparte tu *ubicación*"
+    )
 
 
 @pytest.mark.asyncio
@@ -91,7 +167,7 @@ async def test_consentimiento_onboarding_rechazado_reinicia_flujo(monkeypatch):
 
     captured: Dict[str, Any] = {}
     flujo = {
-        "state": "awaiting_consent",
+        "state": "onboarding_consent",
         "id": "prov-123",
         "has_consent": False,
     }
@@ -140,7 +216,7 @@ async def test_consentimiento_onboarding_no_acepta_texto_largo_que_empieza_con_u
 
     called = {"registro": False}
     flujo = {
-        "state": "awaiting_consent",
+        "state": "onboarding_consent",
         "id": "prov-123",
         "has_consent": False,
     }
@@ -164,6 +240,6 @@ async def test_consentimiento_onboarding_no_acepta_texto_largo_que_empieza_con_u
     )
 
     assert called["registro"] is False
-    assert flujo["state"] == "awaiting_consent"
+    assert flujo["state"] == "onboarding_consent"
     assert "política de privacidad" in respuesta["messages"][0]["response"].lower()
     assert "aceptar" in respuesta["messages"][0]["response"].lower()

@@ -64,12 +64,12 @@ Este documento describe el onboarding actual de proveedores. El menú del provee
 
 - `awaiting_menu_option`
 - `awaiting_city`
-- `awaiting_name`
-- `awaiting_face_photo`
+- `maintenance_name`
+- `onboarding_face_photo`
 - `awaiting_experience`
 - `awaiting_specialty`
 - `awaiting_services_confirmation`
-- `awaiting_profile_completion_confirmation`
+- `maintenance_profile_completion_confirmation`
 - `awaiting_consent`
 - `pending_verification`
 

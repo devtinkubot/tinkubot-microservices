@@ -6,11 +6,12 @@ from typing import Any, Dict
 PROMPT_CONSENTIMIENTO = (
     "Para poder conectarte con clientes vamos a utilizar la siguiente información:\n\n"
     "- Nombres\n"
-    "- Telefono\n"
+    "- Teléfono\n"
     "- Ubicación\n"
     "- Foto de perfil\n\n"
     "Política de privacidad: https://www.tinku.bot/privacy\n"
-    "Al *Aceptar* autorizas el uso de tu información."
+    "Al tocar *Aceptar* autorizas el uso de tu información para crear y validar "
+    "tu perfil de proveedor."
 )
 
 OPCION_ACEPTAR = "Aceptar"
@@ -41,6 +42,7 @@ def payload_consentimiento_proveedor() -> Dict[str, Any]:
         "options": [{"id": "continue_provider_onboarding", "title": OPCION_ACEPTAR}],
         "header_type": "image",
         "header_media_url": image_url,
+        "footer_text": "Proceso de validación de proveedor",
     }
 
     return {

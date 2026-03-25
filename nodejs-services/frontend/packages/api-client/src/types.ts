@@ -18,6 +18,17 @@ export interface ProviderCertificate {
   updatedAt?: string | null;
 }
 
+export interface ProviderServiceAudit {
+  serviceName?: string | null;
+  serviceNameNormalized?: string | null;
+  rawServiceText?: string | null;
+  serviceSummary?: string | null;
+  domainCode?: string | null;
+  categoryName?: string | null;
+  classificationConfidence?: number | null;
+  requiresReview?: boolean | null;
+}
+
 export interface ProviderRecord {
   id: string;
   name: string;
@@ -38,6 +49,7 @@ export interface ProviderRecord {
   province?: string | null;
   servicesRaw?: string | null;
   servicesList?: string[];
+  servicesAudit?: ProviderServiceAudit[];
   experienceYears?: number | null;
   experienceRange?: string | null;
   socialMediaUrl?: string | null;

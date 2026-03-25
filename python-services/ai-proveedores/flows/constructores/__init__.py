@@ -17,7 +17,7 @@ from .construidor_servicios import construir_menu_servicios
 from .construidor_verificacion import (
     construir_respuesta_revision_perfil_profesional,
     construir_respuesta_revision,
-    construir_respuesta_revision_con_menu_limitado,
+    construir_respuesta_revision_con_menu,
     construir_respuesta_verificado,
 )
 
@@ -30,7 +30,7 @@ __all__ = [
     "construir_respuesta_verificado",
     "construir_respuesta_revision_perfil_profesional",
     "construir_respuesta_revision",
-    "construir_respuesta_revision_con_menu_limitado",
+    "construir_respuesta_revision_con_menu",
     "construir_respuesta_solicitud_consentimiento",
     "construir_respuesta_consentimiento_aceptado",
     "construir_respuesta_consentimiento_rechazado",

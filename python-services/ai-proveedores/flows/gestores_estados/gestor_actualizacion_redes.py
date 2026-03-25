@@ -1,4 +1,4 @@
-"""Manejador del estado awaiting_social_media_update."""
+"""Manejador de la actualización de redes sociales en maintenance."""
 
 from typing import Any, Dict, Optional
 
@@ -13,6 +13,14 @@ from templates.interfaz import (
     confirmar_actualizacion_redes_sociales,
     error_actualizar_redes_sociales,
 )
+
+FACEBOOK_USERNAME_STATES = {
+    "maintenance_social_facebook_username",
+}
+
+INSTAGRAM_USERNAME_STATES = {
+    "maintenance_social_instagram_username",
+}
 
 
 async def manejar_actualizacion_redes_sociales(
@@ -31,18 +39,20 @@ async def manejar_actualizacion_redes_sociales(
                 {
                     **construir_payload_menu_principal(
                         esta_registrado=True,
-                        menu_limitado=bool(flujo.get("menu_limitado")),
                         approved_basic=bool(flujo.get("approved_basic")),
                     )
                 }
             ],
         }
 
+    estado_actual = str(flujo.get("state") or "").strip()
     tipo_red = str(
         flujo.get("current_social_network")
         or (
             SOCIAL_NETWORK_FACEBOOK
-            if flujo.get("state") == "awaiting_social_facebook_username"
+            if estado_actual in FACEBOOK_USERNAME_STATES
+            else "instagram"
+            if estado_actual in INSTAGRAM_USERNAME_STATES
             else "instagram"
         )
     ).strip().lower()
@@ -87,7 +97,6 @@ async def manejar_actualizacion_redes_sociales(
                 {
                     **construir_payload_menu_principal(
                         esta_registrado=True,
-                        menu_limitado=bool(flujo.get("menu_limitado")),
                         approved_basic=bool(flujo.get("approved_basic")),
                     )
                 },
@@ -125,7 +134,6 @@ async def manejar_actualizacion_redes_sociales(
             },
             construir_payload_menu_principal(
                 esta_registrado=True,
-                menu_limitado=bool(flujo.get("menu_limitado")),
                 approved_basic=bool(flujo.get("approved_basic")),
             ),
         ],

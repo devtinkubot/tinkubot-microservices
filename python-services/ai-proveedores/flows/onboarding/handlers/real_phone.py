@@ -46,7 +46,7 @@ async def manejar_espera_real_phone_onboarding(
 
     flujo["real_phone"] = real_phone
     flujo["requires_real_phone"] = False
-    flujo["state"] = "awaiting_city"
+    flujo["state"] = "onboarding_city"
 
     return {
         "success": True,

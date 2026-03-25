@@ -9,15 +9,19 @@ CHECKPOINT_MENU_FINAL = "awaiting_menu_option"
 
 CHECKPOINT_STATES = {
     "awaiting_menu_option",
-    "awaiting_city",
-    "awaiting_dni_front_photo",
-    "awaiting_face_photo",
-    "awaiting_experience",
-    "awaiting_specialty",
-    "awaiting_add_another_service",
-    "awaiting_services_confirmation",
-    "awaiting_real_phone",
-    "awaiting_consent",
+    "onboarding_city",
+    "onboarding_dni_front_photo",
+    "onboarding_face_photo",
+    "onboarding_experience",
+    "onboarding_specialty",
+    "onboarding_add_another_service",
+    "onboarding_services_edit_action",
+    "onboarding_services_edit_replace_select",
+    "onboarding_services_edit_replace_input",
+    "onboarding_services_edit_delete_select",
+    "onboarding_services_edit_add",
+    "onboarding_real_phone",
+    "onboarding_consent",
     "pending_verification",
     "confirm",
 }
@@ -26,13 +30,7 @@ MENU_POST_REGISTRO_STATES = {
     "awaiting_personal_info_action",
     "awaiting_professional_info_action",
     "awaiting_deletion_confirmation",
-    "awaiting_social_media_update",
-    "awaiting_social_facebook_username",
-    "awaiting_social_instagram_username",
-    "awaiting_service_action",
     "awaiting_active_service_action",
-    "awaiting_service_add",
-    "awaiting_service_add_confirmation",
     "awaiting_service_remove",
     "awaiting_face_photo_update",
     "awaiting_dni_front_photo_update",
@@ -67,6 +65,28 @@ def _lista_servicios(perfil_proveedor: Optional[Dict[str, Any]]) -> list[str]:
         if texto and texto not in resultado:
             resultado.append(texto)
     return resultado
+
+
+def normalizar_checkpoint_onboarding(checkpoint: Optional[str]) -> Optional[str]:
+    texto = _texto_limpio(checkpoint)
+    if not texto:
+        return None
+    return texto
+
+
+def resolver_checkpoint_onboarding_desde_perfil(
+    perfil_proveedor: Optional[Dict[str, Any]],
+) -> Optional[str]:
+    """Obtiene un checkpoint canónico usando el perfil persistido como fuente de verdad."""
+    if not perfil_proveedor:
+        return None
+
+    checkpoint = normalizar_checkpoint_onboarding(
+        perfil_proveedor.get("onboarding_step")
+    )
+    if checkpoint in CHECKPOINT_STATES:
+        return checkpoint
+    return inferir_checkpoint_onboarding_desde_perfil(perfil_proveedor)
 
 
 def es_perfil_onboarding_completo(perfil_proveedor: Optional[Dict[str, Any]]) -> bool:
@@ -104,17 +124,17 @@ def inferir_checkpoint_onboarding_desde_perfil(
         return CHECKPOINT_MENU_FINAL
 
     if not _texto_limpio(perfil_proveedor.get("city")):
-        return "awaiting_city"
+        return "onboarding_city"
     if not _texto_limpio(perfil_proveedor.get("dni_front_photo_url")):
-        return "awaiting_dni_front_photo"
+        return "onboarding_dni_front_photo"
     if not _texto_limpio(perfil_proveedor.get("face_photo_url")):
-        return "awaiting_face_photo"
+        return "onboarding_face_photo"
     if not _texto_limpio(perfil_proveedor.get("experience_range")):
-        return "awaiting_experience"
+        return "onboarding_experience"
     if not _lista_servicios(perfil_proveedor):
-        return "awaiting_specialty"
+        return "onboarding_specialty"
     if not bool(perfil_proveedor.get("has_consent")):
-        return "awaiting_services_confirmation"
+        return "onboarding_add_another_service"
 
     estado = _texto_limpio(perfil_proveedor.get("status")).lower()
     if estado in {"pending", "approved_basic", "rejected"}:

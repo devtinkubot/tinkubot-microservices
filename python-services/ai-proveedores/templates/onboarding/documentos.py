@@ -33,8 +33,8 @@ def _resolver_url_guia(env_name: str, default: str) -> str:
 def solicitar_onboarding_dni_frontal() -> str:
     """Solicita la foto frontal de la cédula para el onboarding."""
     return (
-        "Ahora envía una foto frontal de tu *cédula*. "
-        "Asegúrate de que se vean bien tus datos y que la imagen esté nítida."
+        "*Envía una foto frontal de tu cédula.*\n\n"
+        "Asegúrate de que tus datos y la imagen sean claros."
     )
 
 
@@ -53,8 +53,8 @@ def payload_onboarding_dni_frontal() -> Dict[str, Any]:
 def solicitar_onboarding_foto_perfil() -> str:
     """Solicita la foto de perfil para el onboarding."""
     return (
-        "Ahora envía tu *foto de perfil*. "
-        "Procura que tu rostro se vea claro y que la imagen esté bien iluminada."
+        "*Envía tu foto de perfil.*\n\n"
+        "Que tu rostro se vea claro y que la imagen esté bien iluminada."
     )
 
 

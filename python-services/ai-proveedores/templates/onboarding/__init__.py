@@ -49,7 +49,10 @@ from .experiencia import (
 from .servicios import (
     SERVICIOS_ONBOARDING_HEADER_IMAGE_URL_ENV,
     SERVICIOS_ONBOARDING_MAXIMOS,
+    SERVICIO_ONBOARDING_ADD_NO_ID,
+    SERVICIO_ONBOARDING_ADD_YES_ID,
     payload_servicios_onboarding_con_imagen,
+    payload_preguntar_otro_servicio_onboarding,
     preguntar_servicios_onboarding,
 )
 from .redes_sociales import (
@@ -116,7 +119,10 @@ __all__ = [
     "preguntar_experiencia_onboarding",
     "SERVICIOS_ONBOARDING_HEADER_IMAGE_URL_ENV",
     "SERVICIOS_ONBOARDING_MAXIMOS",
+    "SERVICIO_ONBOARDING_ADD_NO_ID",
+    "SERVICIO_ONBOARDING_ADD_YES_ID",
     "payload_servicios_onboarding_con_imagen",
+    "payload_preguntar_otro_servicio_onboarding",
     "preguntar_servicios_onboarding",
     "REDES_SOCIALES_ONBOARDING_IMAGE_URL_ENV",
     "REDES_SOCIALES_SKIP_ID",

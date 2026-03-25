@@ -30,7 +30,7 @@ def test_respuesta_disponibilidad_sin_pendientes_no_intercepta(monkeypatch):
 
     resultado = asyncio.run(
         principal._registrar_respuesta_disponibilidad_si_aplica(
-            "593999111222@s.whatsapp.net", "1", "awaiting_consent"
+            "593999111222@s.whatsapp.net", "1", "onboarding_consent"
         )
     )
 
@@ -45,7 +45,7 @@ def test_respuesta_disponibilidad_con_lista_vacia_no_intercepta(monkeypatch):
 
     resultado = asyncio.run(
         principal._registrar_respuesta_disponibilidad_si_aplica(
-            telefono, "2", "awaiting_city"
+            telefono, "2", "onboarding_city"
         )
     )
 
@@ -222,7 +222,7 @@ def test_respuesta_disponibilidad_en_completar_perfil_no_intercepta(monkeypatch)
 
     resultado = asyncio.run(
         principal._registrar_respuesta_disponibilidad_si_aplica(
-            telefono, "1", "awaiting_add_another_service"
+            telefono, "1", "onboarding_add_another_service"
         )
     )
 
@@ -246,7 +246,7 @@ def test_respuesta_disponibilidad_en_flujo_activo_con_pendiente_valido_registra(
 
     resultado = asyncio.run(
         principal._registrar_respuesta_disponibilidad_si_aplica(
-            telefono, "1", "awaiting_city"
+            telefono, "1", "onboarding_city"
         )
     )
 

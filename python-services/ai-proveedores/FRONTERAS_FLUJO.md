@@ -20,6 +20,7 @@ Estos archivos forman parte del alta de proveedores y deben mantenerse juntos:
 - `flows/onboarding/handlers/real_phone.py`
 - `flows/onboarding/handlers/servicios.py`
 - `flows/onboarding/handlers/consentimiento.py`
+- `routes/onboarding/router.py`
 - `flows/router.py`
 - `services/sesion_proveedor.py`
 - `templates/verificacion/estados.py`
@@ -34,13 +35,12 @@ Estos archivos son del menú operativo ya registrado y deben evolucionar aparte:
 - `flows/gestores_estados/gestor_menu.py`
 - `flows/gestores_estados/gestor_servicios.py`
 - `tests/unit/test_servicios_submenus.py`
-- `tests/unit/test_menu_limitado_revision.py`
 
 ## 3. Disponibilidad
 
 La disponibilidad queda separada del onboarding y del menú del proveedor:
 
-- `services/disponibilidad_interceptacion.py`
+- `services/availability/processor.py`
 - `services/disponibilidad_admin.py`
 - `tests/unit/test_principal_disponibilidad.py`
 
@@ -61,7 +61,7 @@ Estos módulos siguen vivos porque aún existen rutas, fallbacks o tests que los
 
 ## 5. Candidatos a limpieza futura
 
-Cuando el menú del proveedor deje de depender de compatibilidad temporal, se puede revisar si ya no hace falta:
+Cuando el menú del proveedor deje de depender de la compatibilidad de estados de disponibilidad, se puede revisar si ya no hace falta:
 
 - mantener `templates/consentimiento/*` si ya no hay estados que entren a `awaiting_consent`
 - conservar `FLUJO_SISTEMA.md` solo si sirve como documentación complementaria

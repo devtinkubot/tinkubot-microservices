@@ -1,4 +1,4 @@
-"""Manejador del estado awaiting_name."""
+"""Manejador del estado maintenance_name."""
 
 from typing import Any, Dict, Optional
 
@@ -12,23 +12,23 @@ async def manejar_espera_nombre(
     supabase: Any = None,
     proveedor_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Compatibilidad para estados viejos de nombre.
+    """Resuelve la captura de nombre dentro de maintenance.
 
-    El proveedor ya no debe capturar este dato en el chat.
-    Si un flujo legado llega aquí, lo reenviamos al siguiente paso real.
+    El proveedor ya no debe capturar este dato en onboarding.
+    Si el flujo llega aquí, avanzamos al siguiente paso operativo real.
     """
     if flujo.get("profile_edit_mode") == "personal_name":
         flujo.pop("profile_edit_mode", None)
         flujo.pop("profile_return_state", None)
 
     if flujo.get("city"):
-        flujo["state"] = "awaiting_dni_front_photo"
+        flujo["state"] = "maintenance_dni_front_photo_update"
         return {
             "success": True,
             "messages": [payload_onboarding_dni_frontal()],
         }
 
-    flujo["state"] = "awaiting_city"
+    flujo["state"] = "maintenance_city"
     return {
         "success": True,
         "messages": [{"response": solicitar_ciudad_registro()}],

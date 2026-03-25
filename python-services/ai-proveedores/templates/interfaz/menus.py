@@ -78,21 +78,6 @@ MENU_POST_REGISTRO_PROVEEDOR = (
     "*Elige la opción de interés.*\n"
 )
 
-MENU_POST_REGISTRO_PROVEEDOR_LIMITADO = (
-    "*Menú de Proveedores*\n"
-    "\n"
-    "Tu perfil sigue en revisión. Puedes actualizar tu información "
-    "mientras termina la validación.\n"
-    "\n"
-    "*1.* Gestionar servicios\n"
-    "*2.* Actualizar foto de perfil\n"
-    "*3.* Actualizar redes sociales\n"
-    "*4.* Actualizar cédula\n"
-    "*5.* Salir\n"
-    "\n"
-    "*Responde con el número de opción para ver detalles.*\n"
-)
-
 # ==================== FUNCIONES ====================
 
 
@@ -102,12 +87,9 @@ def mensaje_menu_principal_proveedor() -> str:
 
 
 def mensaje_menu_post_registro_proveedor(
-    menu_limitado: bool = False,
     approved_basic: bool = False,
 ) -> str:
     """Genera el menú posterior al registro de proveedor."""
-    if menu_limitado:
-        return f"{MENU_POST_REGISTRO_PROVEEDOR_LIMITADO}"
     return f"{MENU_POST_REGISTRO_PROVEEDOR}"
 
 

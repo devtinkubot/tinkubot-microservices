@@ -46,7 +46,7 @@ async def test_manejar_espera_ciudad_acepta_ubicacion_y_resuelve_ciudad(monkeypa
         _resolver,
     )
 
-    flujo = {"state": "awaiting_city"}
+    flujo = {"state": "onboarding_city"}
     respuesta = await manejar_espera_ciudad(
         flujo,
         "",
@@ -59,7 +59,7 @@ async def test_manejar_espera_ciudad_acepta_ubicacion_y_resuelve_ciudad(monkeypa
     assert flujo["city"] == "cuenca"
     assert flujo["location_lat"] == -2.9039
     assert flujo["location_lng"] == -78.9838
-    assert flujo["state"] == "awaiting_dni_front_photo"
+    assert flujo["state"] == "onboarding_dni_front_photo"
     assert "cédula" in respuesta["messages"][0]["response"].lower()
     assert respuesta["messages"][0]["media_type"] == "image"
     assert "tinkubot_dni_photo.png" in respuesta["messages"][0]["media_url"]
@@ -76,7 +76,7 @@ async def test_manejar_espera_ciudad_si_no_resuelve_repregunta_manual(monkeypatc
         _resolver,
     )
 
-    flujo = {"state": "awaiting_city"}
+    flujo = {"state": "onboarding_city"}
     respuesta = await manejar_espera_ciudad(
         flujo,
         "",
@@ -85,7 +85,7 @@ async def test_manejar_espera_ciudad_si_no_resuelve_repregunta_manual(monkeypatc
         proveedor_id=None,
     )
 
-    assert flujo["state"] == "awaiting_city"
+    assert flujo["state"] == "onboarding_city"
     assert respuesta["messages"][1]["ui"]["type"] == "location_request"
     assert (
         "No pude identificar la ciudad exacta"
@@ -106,7 +106,7 @@ async def test_manejar_espera_ciudad_prioriza_ubicacion_estructurada_sobre_texto
         _resolver,
     )
 
-    flujo = {"state": "awaiting_city"}
+    flujo = {"state": "onboarding_city"}
     respuesta = await manejar_espera_ciudad(
         flujo,
         "Centrosur, Max Uhle y Pumapungo , Cuenca, 016, A, EC",
@@ -117,7 +117,7 @@ async def test_manejar_espera_ciudad_prioriza_ubicacion_estructurada_sobre_texto
 
     assert respuesta["success"] is True
     assert flujo["city"] == "cuenca"
-    assert flujo["state"] == "awaiting_dni_front_photo"
+    assert flujo["state"] == "onboarding_dni_front_photo"
     assert "cédula" in respuesta["messages"][0]["response"].lower()
 
 
@@ -132,7 +132,7 @@ async def test_manejar_espera_ciudad_acepta_referencia_cercana_en_texto(monkeypa
         _resolver_texto,
     )
 
-    flujo = {"state": "awaiting_city"}
+    flujo = {"state": "onboarding_city"}
     respuesta = await manejar_espera_ciudad(
         flujo,
         "Polideportivo de la ciudad",
@@ -143,7 +143,7 @@ async def test_manejar_espera_ciudad_acepta_referencia_cercana_en_texto(monkeypa
 
     assert respuesta["success"] is True
     assert flujo["city"] == "cuenca"
-    assert flujo["state"] == "awaiting_dni_front_photo"
+    assert flujo["state"] == "onboarding_dni_front_photo"
 
 
 def test_validacion_registro_proveedor_preserva_coordenadas():

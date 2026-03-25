@@ -15,6 +15,7 @@ import flows.gestores_estados.gestor_servicios as modulo_gestor_servicios  # noq
 from flows.gestores_estados import (  # noqa: E402
     gestor_vistas_perfil as modulo_gestor_vistas_perfil,
 )
+from infrastructure.openai import transformador_servicios as modulo_transformador  # noqa: E402
 from flows.gestores_estados.gestor_confirmacion_servicios import (  # noqa: E402
     manejar_confirmacion_perfil_profesional,
     manejar_confirmacion_servicio_perfil,
@@ -52,13 +53,18 @@ from flows.gestores_estados.gestor_espera_red_social import (  # noqa: E402
 from flows.onboarding.handlers.redes_sociales import (  # noqa: E402
     manejar_espera_red_social_onboarding,
 )
+from flows.onboarding.handlers.servicios import (  # noqa: E402
+    manejar_espera_servicios_onboarding,
+)
 from flows.onboarding.handlers.servicios_confirmacion import (  # noqa: E402
     manejar_confirmacion_servicios_onboarding,
+    manejar_decision_agregar_otro_servicio_onboarding,
 )
 from flows.validadores.validador_entrada import (  # noqa: E402
     parsear_entrada_red_social,
 )
 from flows.router import enrutar_estado  # noqa: E402
+from routes.maintenance import manejar_informacion_personal_mantenimiento  # noqa: E402
 from principal import normalizar_respuesta_whatsapp  # noqa: E402
 from services.shared import interpretar_respuesta  # noqa: E402
 from services.servicios_proveedor.ejemplos_servicios_top import (  # noqa: E402
@@ -275,7 +281,7 @@ def test_selector_servicios_abre_agregado_directo():
     finally:
         monkeypatch.undo()
 
-    assert flujo["state"] == "awaiting_service_add"
+    assert flujo["state"] == "maintenance_service_add"
     assert respuesta["response"] == (
         "Escribe el servicio que quieres agregar.\n"
         "¿Necesitas ideas? Toca Ver ejemplos."
@@ -448,7 +454,7 @@ def test_selector_servicios_abre_agregado_con_numeracion_contextual():
     finally:
         monkeypatch.undo()
 
-    assert flujo["state"] == "awaiting_service_add"
+    assert flujo["state"] == "maintenance_service_add"
     assert respuesta["response"] == (
         "Escribe el servicio que quieres agregar.\n"
         "¿Necesitas ideas? Toca Ver ejemplos."
@@ -509,7 +515,7 @@ def test_submenu_profesional_servicios_agregar_muestra_secuencia_contextual():
     finally:
         monkeypatch.undo()
 
-    assert flujo["state"] == "awaiting_service_add"
+    assert flujo["state"] == "maintenance_service_add"
     assert respuesta["response"] == (
         "Escribe el servicio que quieres agregar.\n"
         "¿Necesitas ideas? Toca Ver ejemplos."
@@ -539,7 +545,7 @@ def test_selector_servicios_reconoce_ejemplo_de_mecanica():
         )
     )
 
-    assert flujo["state"] == "awaiting_service_add"
+    assert flujo["state"] == "maintenance_service_add"
     assert "sugerencia" in respuesta["response"].lower()
     assert "instalación y mantenimiento de tuberías" in respuesta["response"].lower()
 
@@ -547,7 +553,7 @@ def test_selector_servicios_reconoce_ejemplo_de_mecanica():
 def test_selector_servicios_regresa_al_menu_desde_lista():
     flujo = {
         "services": ["plomeria"],
-        "state": "awaiting_service_add",
+        "state": "maintenance_service_add",
     }
 
     respuesta = asyncio.run(
@@ -560,7 +566,7 @@ def test_selector_servicios_regresa_al_menu_desde_lista():
         )
     )
 
-    assert flujo["state"] == "awaiting_service_action"
+    assert flujo["state"] == "maintenance_service_action"
     assert "Gestión de Servicios" in respuesta["messages"][0]["response"]
 
 
@@ -589,7 +595,7 @@ def test_slot_vacio_de_servicio_abre_captura(monkeypatch):
         )
     )
 
-    assert flujo["state"] == "awaiting_service_add"
+    assert flujo["state"] == "maintenance_service_add"
     assert flujo["selected_service_index"] == 4
     assert flujo["profile_edit_mode"] == "provider_service_add"
     assert respuesta["response"] == "Prompt servicio"
@@ -643,7 +649,7 @@ def test_detalle_servicio_permite_reemplazo(monkeypatch):
         )
     )
 
-    assert flujo["state"] == "awaiting_service_add"
+    assert flujo["state"] == "maintenance_service_add"
     assert flujo["profile_edit_mode"] == "provider_service_replace"
     assert respuesta["response"] == "Prompt reemplazo"
 
@@ -723,7 +729,7 @@ def test_confirmacion_agregar_servicios_persiste_y_regresa_a_menu(monkeypatch):
         )
     )
 
-    assert flujo["state"] == "awaiting_service_action"
+    assert flujo["state"] == "maintenance_service_action"
     assert flujo["services"] == [
         "desarrollo de software",
         "transporte terrestre nacional de carga",
@@ -757,7 +763,7 @@ def test_agregar_servicios_entra_en_confirmacion_antes_de_guardar(monkeypatch):
         )
     )
 
-    assert flujo["state"] == "awaiting_service_add_confirmation"
+    assert flujo["state"] == "maintenance_service_add_confirmation"
     assert flujo["service_add_temporales"] == ["transporte terrestre nacional de carga"]
     assert "¿Los agrego a tu perfil?" in respuesta["messages"][0]["response"]
     assert respuesta["messages"][0]["ui"]["type"] == "buttons"
@@ -813,7 +819,7 @@ def test_agregar_servicios_valido_sin_aclaracion_por_domino(monkeypatch):
         )
     )
 
-    assert flujo["state"] == "awaiting_service_add_confirmation"
+    assert flujo["state"] == "maintenance_service_add_confirmation"
     assert flujo["service_add_temporales"] == [
         "diseño y gestión de proyectos tecnológicos para empresas públicas"
     ]
@@ -830,7 +836,7 @@ def test_confirmacion_agregar_servicios_acepta_selected_option_button(monkeypatc
     )
 
     flujo = {
-        "state": "awaiting_service_add_confirmation",
+        "state": "maintenance_service_add_confirmation",
         "services": ["Pintura interior"],
         "service_add_temporales": ["plomería"],
     }
@@ -845,7 +851,7 @@ def test_confirmacion_agregar_servicios_acepta_selected_option_button(monkeypatc
         )
     )
 
-    assert flujo["state"] == "awaiting_service_action"
+    assert flujo["state"] == "maintenance_service_action"
     assert flujo["services"] == ["Pintura interior", "plomería"]
     assert "Gestión de Servicios" in respuesta["messages"][0]["response"]
     assert "plomería" in respuesta["messages"][0]["response"]
@@ -861,7 +867,7 @@ def test_confirmacion_agregar_servicios_reemplaza_slot_desde_menu(monkeypatch):
     )
 
     flujo = {
-        "state": "awaiting_service_add_confirmation",
+        "state": "maintenance_service_add_confirmation",
         "services": ["Pintura interior", "Electricidad"],
         "service_add_temporales": ["Plomería"],
         "profile_edit_mode": "provider_service_replace",
@@ -896,7 +902,7 @@ def test_confirmacion_agregar_servicios_acepta_texto_agregar(monkeypatch):
     )
 
     flujo = {
-        "state": "awaiting_service_add_confirmation",
+        "state": "maintenance_service_add_confirmation",
         "services": ["Pintura interior"],
         "service_add_temporales": ["plomería"],
     }
@@ -911,7 +917,7 @@ def test_confirmacion_agregar_servicios_acepta_texto_agregar(monkeypatch):
         )
     )
 
-    assert flujo["state"] == "awaiting_service_action"
+    assert flujo["state"] == "maintenance_service_action"
     assert flujo["services"] == ["Pintura interior", "plomería"]
     assert "Gestión de Servicios" in respuesta["messages"][0]["response"]
     assert "plomería" in respuesta["messages"][0]["response"]
@@ -950,7 +956,7 @@ def test_confirmacion_agregar_servicios_reintento_consumido_por_nonce(
     )
 
     flujo = {
-        "state": "awaiting_service_add_confirmation",
+        "state": "maintenance_service_add_confirmation",
         "services": ["Pintura interior"],
         "service_add_temporales": ["plomería"],
         "service_add_confirmation_nonce": "nonce-x",
@@ -972,7 +978,7 @@ def test_confirmacion_agregar_servicios_reintento_consumido_por_nonce(
 
 def test_confirmacion_agregar_servicios_con_siete_registrados_informa_limite():
     flujo = {
-        "services": [f"servicio {idx}" for idx in range(1, 8)],
+        "services": [f"servicio {idx}" for idx in range(1, 11)],
         "service_add_temporales": ["transporte terrestre nacional de carga"],
     }
 
@@ -985,9 +991,9 @@ def test_confirmacion_agregar_servicios_con_siete_registrados_informa_limite():
         )
     )
 
-    assert flujo["state"] == "awaiting_service_action"
+    assert flujo["state"] == "maintenance_service_action"
     assert (
-        "ya tienes 7 servicios registrados"
+        "ya tienes 10 servicios registrados"
         in respuesta["messages"][0]["response"].lower()
     )
     assert "Gestión de Servicios" in respuesta["messages"][1]["response"]
@@ -1002,12 +1008,11 @@ def test_menu_completar_perfil_abre_flujo_profesional_desde_cero():
             texto_mensaje="completar perfil",
             opcion_menu=None,
             esta_registrado=True,
-            menu_limitado=False,
         )
     )
 
     assert flujo["profile_completion_mode"] is True
-    assert flujo["state"] == "awaiting_experience"
+    assert flujo["state"] == "maintenance_experience"
     assert "años de experiencia" in respuesta["messages"][0]["response"].lower()
 
 
@@ -1020,12 +1025,11 @@ def test_menu_completar_perfil_reusa_servicios_existentes():
             texto_mensaje="completar perfil",
             opcion_menu=None,
             esta_registrado=True,
-            menu_limitado=False,
         )
     )
 
     assert flujo["profile_completion_mode"] is True
-    assert flujo["state"] == "awaiting_experience"
+    assert flujo["state"] == "maintenance_experience"
     assert flujo["servicios_temporales"] == ["plomeria"]
     assert "años de experiencia" in respuesta["messages"][0]["response"].lower()
 
@@ -1043,7 +1047,6 @@ def test_menu_approved_basic_mantiene_menu_operativo():
             texto_mensaje="2",
             opcion_menu="2",
             esta_registrado=True,
-            menu_limitado=False,
         )
     )
 
@@ -1063,7 +1066,6 @@ def test_menu_aprobado_abre_submenu_informacion_personal():
             texto_mensaje="provider_menu_info_personal",
             opcion_menu=None,
             esta_registrado=True,
-            menu_limitado=False,
         )
     )
 
@@ -1103,33 +1105,22 @@ def test_submenu_personal_foto_no_se_interpreta_como_opcion_dos():
     }
 
     respuesta = asyncio.run(
-        enrutar_estado(
-            estado=flujo["state"],
+        manejar_informacion_personal_mantenimiento(
             flujo=flujo,
             texto_mensaje=texto,
-            carga={"selected_option": texto},
-            telefono="593999111200@s.whatsapp.net",
             opcion_menu=interpretar_respuesta(texto, "menu"),
-            tiene_consentimiento=True,
-            esta_registrado=True,
-            perfil_proveedor=None,
-            supabase=None,
-            servicio_embeddings=None,
-            cliente_openai=None,
-            subir_medios_identidad=None,
-            logger=SimpleNamespace(info=lambda *a, **k: None),
         )
     )
 
     assert flujo["state"] == "viewing_personal_photo"
-    assert respuesta["response"]["messages"][0]["ui"]["type"] == "buttons"
-    assert respuesta["response"]["messages"][0]["ui"]["header_type"] == "image"
+    assert respuesta["messages"][0]["ui"]["type"] == "buttons"
+    assert respuesta["messages"][0]["ui"]["header_type"] == "image"
     assert (
-        respuesta["response"]["messages"][0]["ui"]["header_media_url"]
+        respuesta["messages"][0]["ui"]["header_media_url"]
         == "https://example.com/photo.jpg"
     )
     assert (
-        respuesta["response"]["messages"][0]["ui"]["options"][0]["id"]
+        respuesta["messages"][0]["ui"]["options"][0]["id"]
         == "provider_detail_photo_change"
     )
 
@@ -1147,7 +1138,7 @@ def test_vista_dni_reverso_cambia_solo_reverso():
     )
 
     assert flujo["profile_edit_mode"] == "personal_dni_back_update"
-    assert flujo["state"] == "awaiting_dni_back_photo_update"
+    assert flujo["state"] == "maintenance_dni_back_photo_update"
     assert "parte posterior" in respuesta["messages"][0]["response"].lower()
 
 
@@ -1209,14 +1200,14 @@ def test_eliminar_servicio_acepta_selected_option_interactivo(monkeypatch):
     )
 
     flujo = {
-        "state": "awaiting_service_remove",
+        "state": "maintenance_service_remove",
         "provider_id": "prov-1",
         "services": ["Plomeria", "Electricidad"],
     }
 
     respuesta = asyncio.run(
         enrutar_estado(
-            estado="awaiting_service_remove",
+            estado="maintenance_service_remove",
             flujo=flujo,
             texto_mensaje="",
             carga={"selected_option": "provider_service_delete:1"},
@@ -1246,14 +1237,14 @@ def test_eliminar_servicio_acepta_selected_option_interactivo(monkeypatch):
 
 def test_eliminar_servicio_regresar_vuelve_a_detalle():
     flujo = {
-        "state": "awaiting_service_remove",
+        "state": "maintenance_service_remove",
         "provider_id": "prov-1",
         "services": ["Plomeria", "Electricidad"],
     }
 
     respuesta = asyncio.run(
         enrutar_estado(
-            estado="awaiting_service_remove",
+            estado="maintenance_service_remove",
             flujo=flujo,
             texto_mensaje="",
             carga={"selected_option": "provider_service_delete_back"},
@@ -1473,7 +1464,7 @@ def test_slot_vacio_de_certificado_abre_carga(monkeypatch):
         )
     )
 
-    assert flujo["state"] == "awaiting_certificate"
+    assert flujo["state"] == "maintenance_certificate"
     assert flujo["profile_edit_mode"] == "provider_certificate_add"
     assert flujo["profile_return_state"] == "viewing_professional_certificates"
     assert "certificado profesional" in respuesta["messages"][0]["response"].lower()
@@ -1526,7 +1517,7 @@ def test_submenu_profesional_experiencia_abre_detalle():
 
 def test_actualizacion_experiencia_desde_menu_regresa_detalle():
     flujo = {
-        "state": "awaiting_experience",
+        "state": "onboarding_experience",
         "profile_edit_mode": "experience",
         "profile_return_state": "viewing_professional_experience",
         "experience_years": 3,
@@ -1596,13 +1587,12 @@ def test_actualizacion_red_facebook_desde_router(monkeypatch):
 
     respuesta = asyncio.run(
         enrutar_estado(
-            estado="awaiting_social_facebook_username",
+            estado="maintenance_social_facebook_username",
             flujo={
-                "state": "awaiting_social_facebook_username",
+                "state": "maintenance_social_facebook_username",
                 "provider_id": "prov-1",
                 "profile_return_state": "viewing_professional_social_facebook",
                 "current_social_network": "facebook",
-                "menu_limitado": False,
                 "approved_basic": False,
             },
             texto_mensaje="diego.unkuch",
@@ -1641,6 +1631,13 @@ def test_extraer_redes_sociales_desde_texto_en_una_sola_linea():
     assert resultado["instagram_username"] == "diegou"
 
 
+def test_extraer_redes_sociales_desde_texto_rechaza_texto_ambiguo():
+    resultado = extraer_redes_sociales_desde_texto("Qué dices no entiendo")
+
+    assert resultado["facebook_username"] is None
+    assert resultado["instagram_username"] is None
+
+
 def test_payload_redes_sociales_onboarding_usa_env_override(monkeypatch):
     monkeypatch.setenv(
         "WA_PROVIDER_SOCIAL_NETWORK_IMAGE_URL",
@@ -1664,7 +1661,7 @@ async def test_onboarding_servicios_confirmados_abren_redes_onboarding(monkeypat
         "https://example.com/social-image.png",
     )
     flujo = {
-        "state": "awaiting_services_confirmation",
+        "state": "onboarding_services_confirmation",
         "servicios_temporales": ["desarrollo de software", "soporte técnico"],
     }
 
@@ -1675,7 +1672,7 @@ async def test_onboarding_servicios_confirmados_abren_redes_onboarding(monkeypat
         cliente_openai=None,
     )
 
-    assert flujo["state"] == "awaiting_social_media_onboarding"
+    assert flujo["state"] == "onboarding_social_media"
     assert respuesta["messages"][0]["ui"]["header_type"] == "image"
     assert (
         respuesta["messages"][0]["ui"]["header_media_url"]
@@ -1684,12 +1681,101 @@ async def test_onboarding_servicios_confirmados_abren_redes_onboarding(monkeypat
 
 
 @pytest.mark.asyncio
+async def test_onboarding_agregar_otro_servicio_no_repite_imagen(monkeypatch):
+    monkeypatch.setenv(
+        "WA_PROVIDER_SERVICES_IMAGE_URL",
+        "https://example.com/services-image.png",
+    )
+    flujo = {
+        "state": "onboarding_add_another_service",
+        "services_guide_shown": True,
+        "servicios_temporales": ["desarrollo de software", "soporte técnico"],
+    }
+
+    respuesta = await manejar_decision_agregar_otro_servicio_onboarding(
+        flujo=flujo,
+        texto_mensaje="si",
+        selected_option=None,
+    )
+
+    assert flujo["state"] == "onboarding_specialty"
+    assert respuesta["messages"][0]["response"].startswith(
+        "*Describe el servicio que ofreces*"
+    )
+    assert "media_type" not in respuesta["messages"][0]
+    assert "media_url" not in respuesta["messages"][0]
+
+
+@pytest.mark.asyncio
+async def test_onboarding_servicios_uno_a_uno_guarda_detalle_y_pregunta_otro(
+    monkeypatch,
+):
+    class _TransformadorLinea:
+        def __init__(self, cliente_openai, modelo=None):
+            self.cliente_openai = cliente_openai
+            self.modelo = modelo
+
+        async def transformar_a_servicios(self, entrada_usuario, max_servicios=1):
+            return ["instalaciones eléctricas domiciliarias"]
+
+    async def _fake_validar_servicio_semanticamente(**kwargs):
+        return {
+            "is_valid_service": True,
+            "needs_clarification": False,
+            "normalized_service": kwargs["service_name"],
+            "domain_resolution_status": "matched",
+            "domain_code": "construccion_hogar",
+            "resolved_domain_code": "construccion_hogar",
+            "proposed_category_name": "Electricidad domiciliaria",
+            "proposed_service_summary": (
+                "Realizo trabajos de instalaciones eléctricas domiciliarias."
+            ),
+            "confidence": 0.91,
+            "classification_confidence": 0.91,
+            "reason": "heuristic_accept",
+            "clarification_question": None,
+        }
+
+    monkeypatch.setattr(
+        modulo_transformador,
+        "TransformadorServicios",
+        _TransformadorLinea,
+    )
+    monkeypatch.setattr(
+        "flows.onboarding.handlers.servicios.validar_servicio_semanticamente",
+        _fake_validar_servicio_semanticamente,
+    )
+
+    flujo = {"state": "onboarding_specialty"}
+
+    respuesta = await manejar_espera_servicios_onboarding(
+        flujo=flujo,
+        texto_mensaje="instalaciones electricas",
+        cliente_openai=object(),
+    )
+
+    assert flujo["state"] == "onboarding_add_another_service"
+    assert flujo["servicios_temporales"] == [
+        "instalaciones eléctricas domiciliarias"
+    ]
+    assert flujo["servicios_detallados"][0]["raw_service_text"] == (
+        "instalaciones electricas"
+    )
+    assert flujo["servicios_detallados"][0]["service_name"] == (
+        "instalaciones eléctricas domiciliarias"
+    )
+    assert respuesta["messages"][0]["ui"]["type"] == "buttons"
+    assert respuesta["messages"][0]["ui"]["options"][0]["title"] == "Sí"
+    assert respuesta["messages"][0]["ui"]["options"][1]["title"] == "No"
+
+
+@pytest.mark.asyncio
 async def test_onboarding_redes_sociales_omite_y_va_a_consentimiento(monkeypatch):
     monkeypatch.setenv(
         "WA_PROVIDER_SOCIAL_NETWORK_IMAGE_URL",
         "https://example.com/social-image.png",
     )
-    flujo = {"state": "awaiting_social_media_onboarding"}
+    flujo = {"state": "onboarding_social_media", "provider_id": "prov-1"}
 
     respuesta = await manejar_espera_red_social_onboarding(
         flujo=flujo,
@@ -1697,9 +1783,8 @@ async def test_onboarding_redes_sociales_omite_y_va_a_consentimiento(monkeypatch
         selected_option=REDES_SOCIALES_SKIP_ID,
     )
 
-    assert flujo["state"] == "awaiting_consent"
-    assert respuesta["messages"][0]["ui"]["header_type"] == "image"
-    assert respuesta["messages"][0]["ui"]["options"][0]["title"] == "Aceptar"
+    assert flujo["state"] == "pending_verification"
+    assert "registramos tu información" in respuesta["messages"][0]["response"].lower()
 
 
 @pytest.mark.asyncio
@@ -1708,18 +1793,103 @@ async def test_onboarding_redes_sociales_parsea_ambas_en_una_linea(monkeypatch):
         "WA_PROVIDER_SOCIAL_NETWORK_IMAGE_URL",
         "https://example.com/social-image.png",
     )
-    flujo = {"state": "awaiting_social_media_onboarding"}
+    updates = {}
+
+    class _FakeQuery:
+        def update(self, payload):
+            updates.update(payload)
+            return self
+
+        def eq(self, *_args, **_kwargs):
+            return self
+
+        async def execute(self):
+            return SimpleNamespace(data=[{"id": "prov-1"}])
+
+    class _FakeSupabase:
+        def table(self, _table_name):
+            return _FakeQuery()
+
+    async def _fake_run_supabase(func, **_kwargs):
+        return await func()
+
+    monkeypatch.setattr(
+        "flows.onboarding.handlers.redes_sociales.run_supabase",
+        _fake_run_supabase,
+    )
+    flujo = {
+        "state": "onboarding_social_media",
+        "provider_id": "prov-1",
+    }
 
     respuesta = await manejar_espera_red_social_onboarding(
         flujo=flujo,
         texto_mensaje="1 facebook:diego.unkuch 2 instagram:@diegou",
+        supabase=_FakeSupabase(),
     )
 
-    assert flujo["state"] == "awaiting_consent"
+    assert flujo["state"] == "pending_verification"
     assert flujo["facebook_username"] == "diego.unkuch"
     assert flujo["instagram_username"] == "diegou"
     assert flujo["social_media_type"] == "instagram"
-    assert respuesta["messages"][0]["ui"]["header_type"] == "image"
+    assert updates["facebook_username"] == "diego.unkuch"
+    assert updates["instagram_username"] == "diegou"
+    assert "registramos tu información" in respuesta["messages"][0]["response"].lower()
+
+
+@pytest.mark.asyncio
+async def test_onboarding_redes_sociales_persiste_en_supabase(monkeypatch):
+    monkeypatch.setenv(
+        "WA_PROVIDER_SOCIAL_NETWORK_IMAGE_URL",
+        "https://example.com/social-image.png",
+    )
+
+    updates = {}
+
+    class _FakeQuery:
+        def __init__(self, table_name: str):
+            self.table_name = table_name
+
+        def update(self, payload):
+            updates.update(payload)
+            return self
+
+        def eq(self, *_args, **_kwargs):
+            return self
+
+        async def execute(self):
+            return SimpleNamespace(data=[{"id": "prov-1"}])
+
+    class _FakeSupabase:
+        def table(self, table_name: str):
+            assert table_name == "providers"
+            return _FakeQuery(table_name)
+
+    async def _fake_run_supabase(func, **_kwargs):
+        return await func()
+
+    monkeypatch.setattr(
+        "flows.onboarding.handlers.redes_sociales.run_supabase",
+        _fake_run_supabase,
+    )
+
+    flujo = {
+        "state": "onboarding_social_media",
+        "provider_id": "prov-1",
+    }
+
+    respuesta = await manejar_espera_red_social_onboarding(
+        flujo=flujo,
+        texto_mensaje="Facebook: diego.unkuch",
+        supabase=_FakeSupabase(),
+    )
+
+    assert flujo["state"] == "pending_verification"
+    assert updates["facebook_username"] == "diego.unkuch"
+    assert updates["social_media_url"] == "https://facebook.com/diego.unkuch"
+    assert updates["social_media_type"] == "facebook"
+    assert "updated_at" in updates
+    assert "registramos tu información" in respuesta["messages"][0]["response"].lower()
 
 
 def test_onboarding_redes_sociales_abre_sublista():
@@ -1743,14 +1913,14 @@ def test_onboarding_redes_sociales_pide_usuario_de_facebook():
         selected_option=SOCIAL_FACEBOOK_ID,
     )
 
-    assert flujo["state"] == "awaiting_onboarding_social_facebook_username"
+    assert flujo["state"] == "onboarding_social_facebook_username"
     assert "facebook" in respuesta["messages"][0]["response"].lower()
 
 
 def test_onboarding_redes_sociales_registra_usuario_y_vuelve_a_lista():
     flujo = {
         "profile_completion_mode": True,
-        "state": "awaiting_onboarding_social_facebook_username",
+        "state": "onboarding_social_facebook_username",
     }
 
     respuesta = manejar_espera_red_social(flujo, "@diego.unkuch")
@@ -1807,9 +1977,9 @@ def test_onboarding_servicio_prompt_muestra_lista_de_ejemplos(monkeypatch):
     assert respuesta["messages"][0]["media_type"] == "image"
     assert "tinkubot_add_services.png" in respuesta["messages"][0]["media_url"]
     assert respuesta["messages"][0]["response"] == (
-        "*Cuéntanos tus servicios en una sola línea*\n\n"
-        "Revisa la imagen de ejemplo y envíanos hasta 7 servicios en un solo mensaje. "
-        "Mientras más claro y detallado sea cada servicio, mejor podremos clasificarlos."
+        "*Describe el servicio que ofreces*\n\n"
+        "Escribe solo un servicio por mensaje. "
+        "Mientras más claro y detallado sea, mejor podremos clasificarlo."
     )
 
 
@@ -1818,7 +1988,7 @@ def test_onboarding_servicio_ejemplo_devuelve_sugerencia_y_mantiene_lista(monkey
         manejar_espera_especialidad(
             flujo={
                 "profile_completion_mode": True,
-                "state": "awaiting_specialty",
+                "state": "onboarding_specialty",
                 "servicios_temporales": [],
                 "service_examples_lookup": {
                     "provider_service_example_mechanics": {
@@ -1837,11 +2007,10 @@ def test_onboarding_servicio_ejemplo_devuelve_sugerencia_y_mantiene_lista(monkey
     assert "tinkubot_add_services.png" in respuesta["messages"][1]["media_url"]
 
 
-def test_espera_nombre_legado_salta_a_cedula_frontal():
+def test_espera_nombre_mantenimiento_salta_a_cedula_frontal():
     flujo = {
-        "state": "awaiting_name",
+        "state": "maintenance_name",
         "profile_edit_mode": "personal_name",
-        "menu_limitado": False,
         "approved_basic": False,
         "full_name": "Maria Lopez",
         "city": "cuenca",
@@ -1856,7 +2025,7 @@ def test_espera_nombre_legado_salta_a_cedula_frontal():
         )
     )
 
-    assert flujo["state"] == "awaiting_dni_front_photo"
+    assert flujo["state"] == "maintenance_dni_front_photo_update"
     assert respuesta["messages"][0]["media_type"] == "image"
     assert (
         "cédula" in respuesta["messages"][0]["response"].lower()
@@ -1876,10 +2045,9 @@ def test_completar_perfil_envia_a_revision_humana(monkeypatch):
     )
 
     flujo = {
-        "state": "awaiting_profile_completion_confirmation",
+        "state": "maintenance_profile_completion_confirmation",
         "approved_basic": True,
         "profile_completion_mode": True,
-        "menu_limitado": False,
         "provider_id": "prov-basic",
         "experience_years": 5,
         "social_media_url": None,
@@ -1928,7 +2096,7 @@ def test_confirmacion_servicios_exige_minimo_tres_en_perfil():
     flujo = {
         "profile_completion_mode": True,
         "servicios_temporales": ["plomeria residencial", "deteccion de fugas"],
-        "state": "awaiting_services_confirmation",
+        "state": "onboarding_services_confirmation",
     }
 
     respuesta = asyncio.run(
@@ -1939,7 +2107,7 @@ def test_confirmacion_servicios_exige_minimo_tres_en_perfil():
         )
     )
 
-    assert flujo["state"] == "awaiting_services_confirmation"
+    assert flujo["state"] == "onboarding_services_confirmation"
     assert "al menos *3 servicios*" in respuesta["messages"][0]["response"].lower()
 
 
@@ -1947,7 +2115,7 @@ def test_decision_no_continuar_exige_minimo_tres_en_perfil():
     flujo = {
         "profile_completion_mode": True,
         "servicios_temporales": ["plomeria residencial", "deteccion de fugas"],
-        "state": "awaiting_add_another_service",
+        "state": "onboarding_add_another_service",
     }
 
     respuesta = asyncio.run(
@@ -1957,7 +2125,7 @@ def test_decision_no_continuar_exige_minimo_tres_en_perfil():
         )
     )
 
-    assert flujo["state"] == "awaiting_specialty"
+    assert flujo["state"] == "maintenance_specialty"
     assert "al menos *3 servicios*" in respuesta["messages"][0]["response"].lower()
     assert "3/3" in respuesta["messages"][1]["response"].lower()
 
@@ -1967,7 +2135,7 @@ def test_certificado_omitido_avanza_a_servicios():
         "profile_completion_mode": True,
         "servicios_temporales": ["plomeria residencial"],
         "provider_id": "prov-1",
-        "state": "awaiting_certificate",
+        "state": "maintenance_certificate",
     }
 
     respuesta = asyncio.run(
@@ -1977,20 +2145,20 @@ def test_certificado_omitido_avanza_a_servicios():
         )
     )
 
-    assert flujo["state"] == "awaiting_specialty"
+    assert flujo["state"] == "maintenance_specialty"
     assert respuesta["messages"][0]["media_type"] == "image"
     assert "tinkubot_add_services.png" in respuesta["messages"][0]["media_url"]
     assert respuesta["messages"][0]["response"].startswith(
-        "*Cuéntanos tus servicios en una sola línea*"
+        "*Describe el servicio que ofreces*"
     )
-    assert "Revisa la imagen de ejemplo" in respuesta["messages"][0]["response"]
+    assert "Escribe solo un servicio por mensaje" in respuesta["messages"][0]["response"]
 
 
 def test_control_viejo_no_se_interpreta_como_servicio():
     flujo = {
         "profile_completion_mode": True,
         "servicios_temporales": ["plomeria residencial"],
-        "state": "awaiting_specialty",
+        "state": "onboarding_specialty",
     }
 
     respuesta = asyncio.run(
@@ -2001,7 +2169,7 @@ def test_control_viejo_no_se_interpreta_como_servicio():
         )
     )
 
-    assert flujo["state"] == "awaiting_specialty"
+    assert flujo["state"] == "maintenance_specialty"
     assert respuesta["messages"][0]["media_type"] == "image"
     assert "tinkubot_add_services.png" in respuesta["messages"][0]["media_url"]
 
@@ -2045,7 +2213,7 @@ def test_servicio_perfil_pide_confirmacion_individual(monkeypatch):
     flujo = {
         "profile_completion_mode": True,
         "servicios_temporales": [],
-        "state": "awaiting_specialty",
+        "state": "onboarding_specialty",
     }
 
     respuesta = asyncio.run(
@@ -2056,7 +2224,7 @@ def test_servicio_perfil_pide_confirmacion_individual(monkeypatch):
         )
     )
 
-    assert flujo["state"] == "awaiting_profile_service_confirmation"
+    assert flujo["state"] == "maintenance_profile_service_confirmation"
     assert flujo["pending_service_candidate"] == (
         "desarrollo aplicaciones moviles " "inteligencia artificial"
     )
@@ -2115,7 +2283,7 @@ def test_espera_especialidad_no_interrumpe_si_el_servicio_es_valido_y_domino_no_
     flujo = {
         "profile_completion_mode": True,
         "servicios_temporales": [],
-        "state": "awaiting_specialty",
+        "state": "onboarding_specialty",
     }
 
     respuesta = asyncio.run(
@@ -2128,7 +2296,7 @@ def test_espera_especialidad_no_interrumpe_si_el_servicio_es_valido_y_domino_no_
         )
     )
 
-    assert flujo["state"] == "awaiting_profile_service_confirmation"
+    assert flujo["state"] == "maintenance_profile_service_confirmation"
     assert flujo["pending_service_candidate"] == (
         "diseño y gestión de proyectos tecnológicos para empresas públicas"
     )
@@ -2154,7 +2322,7 @@ def test_confirmar_servicio_perfil_avanza_al_siguiente_paso(monkeypatch):
             "desarrollo aplicaciones moviles inteligencia artificial"
         ),
         "pending_service_index": 0,
-        "state": "awaiting_profile_service_confirmation",
+        "state": "maintenance_profile_service_confirmation",
     }
 
     respuesta = asyncio.run(
@@ -2165,14 +2333,14 @@ def test_confirmar_servicio_perfil_avanza_al_siguiente_paso(monkeypatch):
         )
     )
 
-    assert flujo["state"] == "awaiting_specialty"
+    assert flujo["state"] == "maintenance_specialty"
     assert flujo["servicios_temporales"] == [
         "desarrollo aplicaciones moviles inteligencia artificial"
     ]
     assert respuesta["messages"][0]["media_type"] == "image"
     assert "tinkubot_add_services.png" in respuesta["messages"][0]["media_url"]
     assert respuesta["messages"][0]["response"].startswith(
-        "*Cuéntanos tus servicios en una sola línea*"
+        "*Describe el servicio que ofreces*"
     )
 
 
@@ -2188,7 +2356,7 @@ def test_tercer_servicio_confirmado_muestra_resumen_final_de_perfil():
         ],
         "pending_service_candidate": "servicio 3",
         "pending_service_index": 2,
-        "state": "awaiting_profile_service_confirmation",
+        "state": "maintenance_profile_service_confirmation",
     }
 
     respuesta = asyncio.run(
@@ -2199,13 +2367,8 @@ def test_tercer_servicio_confirmado_muestra_resumen_final_de_perfil():
         )
     )
 
-    assert flujo["state"] == "awaiting_consent"
-    assert (
-        respuesta["messages"][0]["ui"]["id"] == "provider_onboarding_continue_v1"
-    )
-    assert "vamos a utilizar la siguiente información" in (
-        respuesta["messages"][0]["response"].lower()
-    )
+    assert flujo["state"] == "pending_verification"
+    assert "en revisión" in respuesta["messages"][0]["response"].lower()
     assert "servicio 1" not in respuesta["messages"][0]["response"].lower()
 
 
@@ -2216,7 +2379,7 @@ def test_no_acepto_abre_menu_edicion_integral():
         "social_media_url": None,
         "certificate_uploaded": False,
         "servicios_temporales": ["servicio 1", "servicio 2", "servicio 3"],
-        "state": "awaiting_profile_completion_confirmation",
+        "state": "maintenance_profile_completion_confirmation",
     }
 
     respuesta = asyncio.run(
@@ -2227,5 +2390,5 @@ def test_no_acepto_abre_menu_edicion_integral():
         )
     )
 
-    assert flujo["state"] == "awaiting_profile_completion_edit_action"
+    assert flujo["state"] == "maintenance_profile_completion_edit_action"
     assert "qué deseas corregir" in respuesta["messages"][0]["response"].lower()

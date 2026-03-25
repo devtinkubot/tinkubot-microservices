@@ -20,6 +20,52 @@ from templates.registro import (
     payload_red_social_opcional_estado,
 )
 
+ONBOARDING_FACEBOOK_USERNAME_STATE = "onboarding_social_facebook_username"
+ONBOARDING_INSTAGRAM_USERNAME_STATE = "onboarding_social_instagram_username"
+MAINTENANCE_FACEBOOK_USERNAME_STATE = "maintenance_social_facebook_username"
+MAINTENANCE_INSTAGRAM_USERNAME_STATE = "maintenance_social_instagram_username"
+
+
+def _es_contexto_mantenimiento(flujo: Dict[str, Any]) -> bool:
+    estado = str(flujo.get("state") or "").strip()
+    return bool(
+        flujo.get("approved_basic")
+        or flujo.get("maintenance_mode")
+        or flujo.get("profile_edit_mode")
+        or estado.startswith("maintenance_")
+    )
+
+
+def _estado_usuario_red_social(
+    flujo: Dict[str, Any],
+    tipo_red: str,
+) -> str:
+    if _es_contexto_mantenimiento(flujo):
+        return (
+            MAINTENANCE_FACEBOOK_USERNAME_STATE
+            if tipo_red == SOCIAL_NETWORK_FACEBOOK
+            else MAINTENANCE_INSTAGRAM_USERNAME_STATE
+        )
+    return (
+        ONBOARDING_FACEBOOK_USERNAME_STATE
+        if tipo_red == SOCIAL_NETWORK_FACEBOOK
+        else ONBOARDING_INSTAGRAM_USERNAME_STATE
+    )
+
+
+def _tipo_red_desde_estado(estado: str) -> Optional[str]:
+    if estado in {
+        ONBOARDING_FACEBOOK_USERNAME_STATE,
+        MAINTENANCE_FACEBOOK_USERNAME_STATE,
+    }:
+        return SOCIAL_NETWORK_FACEBOOK
+    if estado in {
+        ONBOARDING_INSTAGRAM_USERNAME_STATE,
+        MAINTENANCE_INSTAGRAM_USERNAME_STATE,
+    }:
+        return SOCIAL_NETWORK_INSTAGRAM
+    return None
+
 
 def manejar_espera_red_social(
     flujo: Dict[str, Any],
@@ -39,15 +85,8 @@ def manejar_espera_red_social(
     seleccion = str(selected_option or "").strip().lower()
     estado_actual = str(flujo.get("state") or "").strip().lower()
 
-    if estado_actual in {
-        "awaiting_onboarding_social_facebook_username",
-        "awaiting_onboarding_social_instagram_username",
-    }:
-        tipo_red = (
-            SOCIAL_NETWORK_FACEBOOK
-            if estado_actual == "awaiting_onboarding_social_facebook_username"
-            else SOCIAL_NETWORK_INSTAGRAM
-        )
+    tipo_red = _tipo_red_desde_estado(estado_actual)
+    if tipo_red:
         red_social_parseada = parsear_username_red_social(texto_normalizado, tipo_red)
         if not red_social_parseada["url"]:
             return {
@@ -76,7 +115,7 @@ def manejar_espera_red_social(
 
         if flujo.get("profile_edit_mode") == "social_media":
             flujo.pop("profile_edit_mode", None)
-            flujo["state"] = "awaiting_profile_completion_confirmation"
+            flujo["state"] = "maintenance_profile_completion_confirmation"
             return {
                 "success": True,
                 "messages": [
@@ -136,7 +175,7 @@ def manejar_espera_red_social(
             flujo["social_media_type"] = payload_legacy["social_media_type"]
             if flujo.get("profile_edit_mode") == "social_media":
                 flujo.pop("profile_edit_mode", None)
-                flujo["state"] = "awaiting_profile_completion_confirmation"
+                flujo["state"] = "maintenance_profile_completion_confirmation"
                 return {
                     "success": True,
                     "messages": [
@@ -160,7 +199,10 @@ def manejar_espera_red_social(
                 return {"success": True, "messages": [payload_certificado_opcional()]}
         texto_normalizado = "omitir"
     if seleccion == SOCIAL_FACEBOOK_ID:
-        flujo["state"] = "awaiting_onboarding_social_facebook_username"
+        flujo["state"] = _estado_usuario_red_social(
+            flujo,
+            SOCIAL_NETWORK_FACEBOOK,
+        )
         return {
             "success": True,
             "messages": [
@@ -172,7 +214,10 @@ def manejar_espera_red_social(
             ],
         }
     if seleccion == SOCIAL_INSTAGRAM_ID:
-        flujo["state"] = "awaiting_onboarding_social_instagram_username"
+        flujo["state"] = _estado_usuario_red_social(
+            flujo,
+            SOCIAL_NETWORK_INSTAGRAM,
+        )
         return {
             "success": True,
             "messages": [
@@ -185,7 +230,10 @@ def manejar_espera_red_social(
         }
 
     if "facebook.com" in texto_normalizado.lower() or "fb.com" in texto_normalizado.lower():
-        flujo["state"] = "awaiting_onboarding_social_facebook_username"
+        flujo["state"] = _estado_usuario_red_social(
+            flujo,
+            SOCIAL_NETWORK_FACEBOOK,
+        )
         return manejar_espera_red_social(
             flujo,
             texto_normalizado,
@@ -195,7 +243,10 @@ def manejar_espera_red_social(
         "instagram.com" in texto_normalizado.lower()
         or "instagr.am" in texto_normalizado.lower()
     ):
-        flujo["state"] = "awaiting_onboarding_social_instagram_username"
+        flujo["state"] = _estado_usuario_red_social(
+            flujo,
+            SOCIAL_NETWORK_INSTAGRAM,
+        )
         return manejar_espera_red_social(
             flujo,
             texto_normalizado,
@@ -227,7 +278,7 @@ def manejar_espera_red_social(
 
     if flujo.get("profile_edit_mode") == "social_media":
         flujo.pop("profile_edit_mode", None)
-        flujo["state"] = "awaiting_profile_completion_confirmation"
+        flujo["state"] = "maintenance_profile_completion_confirmation"
         return {
             "success": True,
             "messages": [

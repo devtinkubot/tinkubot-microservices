@@ -27,7 +27,7 @@ def _resolver_display_order(idx: int) -> int:
     return idx if idx <= DISPLAY_ORDER_MAX_DB else DISPLAY_ORDER_MAX_DB
 
 
-def _normalizar_entradas_servicio(servicios: List[Any]) -> List[Dict[str, str]]:
+def _normalizar_entradas_servicio(servicios: List[Any]) -> List[Dict[str, Any]]:
     """Convierte la entrada de servicios en un payload uniforme para persistencia."""
     entradas: List[Dict[str, str]] = []
     for servicio in servicios:
@@ -37,10 +37,20 @@ def _normalizar_entradas_servicio(servicios: List[Any]) -> List[Dict[str, str]]:
                 servicio.get("raw_service_text") or nombre_visible
             ).strip()
             service_summary = str(servicio.get("service_summary") or "").strip()
+            domain_code = str(servicio.get("domain_code") or "").strip() or None
+            category_name = str(servicio.get("category_name") or "").strip() or None
+            classification_confidence = servicio.get("classification_confidence")
+            requires_review = servicio.get("requires_review")
+            review_reason = servicio.get("review_reason")
         else:
             nombre_visible = str(servicio or "").strip()
             texto_original = nombre_visible
             service_summary = ""
+            domain_code = None
+            category_name = None
+            classification_confidence = None
+            requires_review = None
+            review_reason = None
 
         if not nombre_visible:
             continue
@@ -50,6 +60,11 @@ def _normalizar_entradas_servicio(servicios: List[Any]) -> List[Dict[str, str]]:
                 "service_name": nombre_visible,
                 "raw_service_text": texto_original or nombre_visible,
                 "service_summary": service_summary,
+                "domain_code": domain_code,
+                "category_name": category_name,
+                "classification_confidence": classification_confidence,
+                "requires_review": requires_review,
+                "review_reason": review_reason,
             }
         )
     return entradas
@@ -166,6 +181,10 @@ async def insertar_servicios_proveedor(
     failed_services: List[Dict[str, str]] = []
     service_entries = _normalizar_entradas_servicio(servicios)
     requested_count = len(service_entries)
+    tiene_embeddings = bool(
+        servicio_embeddings
+        and hasattr(servicio_embeddings, "generar_embedding")
+    )
     clasificaciones_semanticas = await clasificar_servicios_livianos(
         cliente_openai=getattr(servicio_embeddings, "client", None),
         supabase=supabase,
@@ -180,7 +199,7 @@ async def insertar_servicios_proveedor(
             "failed_services": failed_services,
         }
 
-    if not servicio_embeddings:
+    if not tiene_embeddings:
         logger.warning(
             "⚠️ Servicio de embeddings no disponible, no se generarán embeddings"
         )
@@ -188,11 +207,12 @@ async def insertar_servicios_proveedor(
         for idx, entry in enumerate(service_entries):
             servicio = entry["service_name"]
             servicio_normalizado = normalizar_texto_para_busqueda(servicio)
-            metadata = (
+            metadata_base = (
                 clasificaciones_semanticas[idx]
                 if idx < len(clasificaciones_semanticas)
                 else {}
             )
+            metadata = {**metadata_base, **entry}
             # ✅ Usar dominio sugerido si no hay match exacto
             # El servicio se inserta aunque requiera revisión de catálogo
             domain_code_to_use = metadata.get("resolved_domain_code") or metadata.get(
@@ -227,8 +247,8 @@ async def insertar_servicios_proveedor(
                             # Usar dominio sugerido.
                             "domain_code": domain_code_to_use,
                             "category_name": metadata.get("category_name"),
-                            "classification_confidence": metadata.get(
-                                "classification_confidence", 0.0
+                            "classification_confidence": (
+                                metadata.get("classification_confidence") or 0.0
                             ),
                         }
                     )
@@ -265,11 +285,12 @@ async def insertar_servicios_proveedor(
     for idx, entry in enumerate(service_entries):
         try:
             servicio = entry["service_name"]
-            metadata = (
+            metadata_base = (
                 clasificaciones_semanticas[idx]
                 if idx < len(clasificaciones_semanticas)
                 else {}
             )
+            metadata = {**metadata_base, **entry}
             # ✅ Usar dominio sugerido si no hay match exacto
             # El servicio se inserta aunque requiera revisión de catálogo
             domain_code_to_use = metadata.get("resolved_domain_code") or metadata.get(
@@ -318,8 +339,8 @@ async def insertar_servicios_proveedor(
                         ),
                         "domain_code": domain_code_to_use,  # ✅ Usar dominio sugerido
                         "category_name": metadata.get("category_name"),
-                        "classification_confidence": metadata.get(
-                            "classification_confidence", 0.0
+                        "classification_confidence": (
+                            metadata.get("classification_confidence") or 0.0
                         ),
                     }
                 )

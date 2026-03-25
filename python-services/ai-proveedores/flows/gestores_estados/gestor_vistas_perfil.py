@@ -79,6 +79,12 @@ def _cantidad_servicios_para_nuevo_ingreso(flujo: Dict[str, Any]) -> int:
     return len(list(flujo.get("services") or []))
 
 
+def _estado_compatibilidad_mantenimiento(
+    estado_mantenimiento: str,
+) -> str:
+    return estado_mantenimiento
+
+
 def _valor_visible(valor: Any, predeterminado: str = "No registrado") -> str:
     texto = str(valor or "").strip()
     return texto or predeterminado
@@ -271,7 +277,9 @@ async def manejar_vista_perfil(  # noqa: C901
         if texto == DETAIL_ACTION_NAME_CHANGE:
             flujo["profile_edit_mode"] = "personal_name"
             flujo["profile_return_state"] = "viewing_personal_name"
-            flujo["state"] = "awaiting_name"
+            flujo["state"] = _estado_compatibilidad_mantenimiento(
+                "maintenance_name"
+            )
             return {"success": True, "messages": [{"response": preguntar_nombre()}]}
         if texto == DETAIL_ACTION_BACK:
             flujo["state"] = PERSONAL_PARENT_STATE
@@ -284,7 +292,9 @@ async def manejar_vista_perfil(  # noqa: C901
         if texto == DETAIL_ACTION_CITY_CHANGE:
             flujo["profile_edit_mode"] = "personal_city"
             flujo["profile_return_state"] = "viewing_personal_city"
-            flujo["state"] = "awaiting_city"
+            flujo["state"] = _estado_compatibilidad_mantenimiento(
+                "maintenance_city"
+            )
             return {"success": True, "messages": [solicitar_ciudad_actualizacion()]}
         if texto == DETAIL_ACTION_BACK:
             flujo["state"] = PERSONAL_PARENT_STATE
@@ -297,7 +307,9 @@ async def manejar_vista_perfil(  # noqa: C901
         if texto == DETAIL_ACTION_EXPERIENCE_CHANGE:
             flujo["profile_edit_mode"] = "experience"
             flujo["profile_return_state"] = "viewing_professional_experience"
-            flujo["state"] = "awaiting_experience"
+            flujo["state"] = _estado_compatibilidad_mantenimiento(
+                "maintenance_experience"
+            )
             return {
                 "success": True,
                 "messages": [{"response": preguntar_experiencia_general()}],
@@ -312,7 +324,9 @@ async def manejar_vista_perfil(  # noqa: C901
     if estado == "viewing_personal_photo":
         if texto == DETAIL_ACTION_PHOTO_CHANGE:
             flujo["profile_return_state"] = "viewing_personal_photo"
-            flujo["state"] = "awaiting_face_photo_update"
+            flujo["state"] = _estado_compatibilidad_mantenimiento(
+                "maintenance_face_photo_update"
+            )
             return {
                 "success": True,
                 "messages": [{"response": solicitar_selfie_actualizacion()}],
@@ -328,7 +342,9 @@ async def manejar_vista_perfil(  # noqa: C901
         if texto == DETAIL_ACTION_DNI_FRONT_CHANGE:
             flujo["profile_edit_mode"] = "personal_dni_front_update"
             flujo["profile_return_state"] = estado
-            flujo["state"] = "awaiting_dni_front_photo_update"
+            flujo["state"] = _estado_compatibilidad_mantenimiento(
+                "maintenance_dni_front_photo_update"
+            )
             return {
                 "success": True,
                 "messages": [{"response": solicitar_dni_frontal_actualizacion()}],
@@ -336,7 +352,9 @@ async def manejar_vista_perfil(  # noqa: C901
         if texto == DETAIL_ACTION_DNI_BACK_CHANGE:
             flujo["profile_edit_mode"] = "personal_dni_back_update"
             flujo["profile_return_state"] = estado
-            flujo["state"] = "awaiting_dni_back_photo_update"
+            flujo["state"] = _estado_compatibilidad_mantenimiento(
+                "maintenance_dni_back_photo_update"
+            )
             return {
                 "success": True,
                 "messages": [{"response": solicitar_dni_reverso_actualizacion()}],
@@ -373,7 +391,7 @@ async def manejar_vista_perfil(  # noqa: C901
                 flujo["selected_service_index"] = posicion
                 flujo["profile_edit_mode"] = "provider_service_add"
                 flujo["profile_return_state"] = "viewing_professional_services"
-                flujo["state"] = "awaiting_service_add"
+                flujo["state"] = "maintenance_service_add"
                 respuesta = await preguntar_nuevo_servicio_con_ejemplos_dinamicos(
                     indice=posicion + 1,
                     maximo=SERVICIOS_MAXIMOS,
@@ -389,7 +407,7 @@ async def manejar_vista_perfil(  # noqa: C901
         if texto == DETAIL_ACTION_SERVICES_ADD:
             cantidad_actual = _cantidad_servicios_para_nuevo_ingreso(flujo)
             flujo["profile_return_state"] = "viewing_professional_services"
-            flujo["state"] = "awaiting_service_add"
+            flujo["state"] = "maintenance_service_add"
             respuesta = await preguntar_nuevo_servicio_con_ejemplos_dinamicos(
                 indice=cantidad_actual + 1,
                 maximo=SERVICIOS_MAXIMOS,
@@ -403,7 +421,9 @@ async def manejar_vista_perfil(  # noqa: C901
                 "ui": respuesta["ui"],
             }
         if texto == DETAIL_ACTION_SERVICES_REMOVE:
-            flujo["state"] = "awaiting_service_remove"
+            flujo["state"] = _estado_compatibilidad_mantenimiento(
+                "maintenance_service_remove"
+            )
             return {
                 "success": True,
                 "messages": [
@@ -444,7 +464,7 @@ async def manejar_vista_perfil(  # noqa: C901
         if texto == DETAIL_ACTION_SERVICE_CHANGE:
             flujo["profile_edit_mode"] = "provider_service_replace"
             flujo["profile_return_state"] = "viewing_professional_services"
-            flujo["state"] = "awaiting_service_add"
+            flujo["state"] = "maintenance_service_add"
             respuesta = await preguntar_nuevo_servicio_con_ejemplos_dinamicos(
                 indice=indice + 1,
                 maximo=SERVICIOS_MAXIMOS,
@@ -505,7 +525,7 @@ async def manejar_vista_perfil(  # noqa: C901
                 }
             flujo["profile_return_state"] = "viewing_professional_social"
             flujo["current_social_network"] = SOCIAL_NETWORK_FACEBOOK
-            flujo["state"] = "awaiting_social_facebook_username"
+            flujo["state"] = "maintenance_social_facebook_username"
             return {
                 "success": True,
                 "messages": [
@@ -529,7 +549,7 @@ async def manejar_vista_perfil(  # noqa: C901
                 }
             flujo["profile_return_state"] = "viewing_professional_social"
             flujo["current_social_network"] = SOCIAL_NETWORK_INSTAGRAM
-            flujo["state"] = "awaiting_social_instagram_username"
+            flujo["state"] = "maintenance_social_instagram_username"
             return {
                 "success": True,
                 "messages": [
@@ -576,9 +596,9 @@ async def manejar_vista_perfil(  # noqa: C901
             flujo["profile_return_state"] = estado
             flujo["current_social_network"] = red_social
             flujo["state"] = (
-                "awaiting_social_facebook_username"
+                "maintenance_social_facebook_username"
                 if red_social == SOCIAL_NETWORK_FACEBOOK
-                else "awaiting_social_instagram_username"
+                else "maintenance_social_instagram_username"
             )
             return {
                 "success": True,
@@ -611,7 +631,9 @@ async def manejar_vista_perfil(  # noqa: C901
         if texto == CERTIFICATE_ADD_ID:
             flujo["profile_edit_mode"] = "provider_certificate_add"
             flujo["profile_return_state"] = "viewing_professional_certificates"
-            flujo["state"] = "awaiting_certificate"
+            flujo["state"] = _estado_compatibilidad_mantenimiento(
+                "maintenance_certificate"
+            )
             return {"success": True, "messages": [payload_certificado_opcional()]}
         if texto == CERTIFICATE_BACK_ID:
             flujo["state"] = PROFESSIONAL_PARENT_STATE
@@ -642,7 +664,9 @@ async def manejar_vista_perfil(  # noqa: C901
                 }
             flujo["profile_edit_mode"] = "provider_certificate_add"
             flujo["profile_return_state"] = "viewing_professional_certificates"
-            flujo["state"] = "awaiting_certificate"
+            flujo["state"] = _estado_compatibilidad_mantenimiento(
+                "maintenance_certificate"
+            )
             flujo.pop("selected_certificate_id", None)
             return {"success": True, "messages": [payload_certificado_opcional()]}
         if texto.startswith(CERTIFICATE_SELECT_PREFIX):
@@ -665,7 +689,9 @@ async def manejar_vista_perfil(  # noqa: C901
         if texto == DETAIL_ACTION_CERTIFICATES_ADD:
             flujo["profile_edit_mode"] = "provider_certificate_replace"
             flujo["profile_return_state"] = "viewing_professional_certificate"
-            flujo["state"] = "awaiting_certificate"
+            flujo["state"] = _estado_compatibilidad_mantenimiento(
+                "maintenance_certificate"
+            )
             return {"success": True, "messages": [payload_certificado_opcional()]}
         if texto in {DETAIL_ACTION_BACK, CERTIFICATE_BACK_ID}:
             flujo.pop("selected_certificate_id", None)

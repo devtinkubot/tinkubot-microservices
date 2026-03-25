@@ -125,23 +125,58 @@ def normalizar_datos_proveedor(
     if len(servicios) > SERVICIOS_MAXIMOS:
         raise ValueError(f"Máximo {SERVICIOS_MAXIMOS} servicios permitidos")
 
-    # Fase 5: Normalizar servicios preservando una variante legible y el texto original.
-    servicios_limpios = sanitizar_servicios(servicios)
-    servicios_normalizados = [
-        _formatear_servicio_para_visualizacion(servicio)
-        for servicio in servicios_limpios
-        if servicio.strip()
-    ]
+    service_entries_crudos = list(datos_crudos.service_entries or [])
     service_entries = []
-    for idx, servicio_normalizado in enumerate(servicios_normalizados):
-        raw_text = servicios_limpios[idx].strip() if idx < len(servicios_limpios) else ""
-        service_entries.append(
-            {
-                "raw_service_text": raw_text or servicio_normalizado,
-                "service_name": servicio_normalizado,
-                "service_summary": "",
-            }
-        )
+    if service_entries_crudos:
+        for entry in service_entries_crudos[:SERVICIOS_MAXIMOS]:
+            if not isinstance(entry, dict):
+                continue
+            service_name = _formatear_servicio_para_visualizacion(
+                str(entry.get("service_name") or "")
+            )
+            if not service_name:
+                continue
+            service_entries.append(
+                {
+                    "raw_service_text": str(
+                        entry.get("raw_service_text") or service_name
+                    ).strip()
+                    or service_name,
+                    "service_name": service_name,
+                    "service_summary": str(entry.get("service_summary") or "").strip(),
+                    "domain_code": entry.get("domain_code"),
+                    "category_name": entry.get("category_name"),
+                    "classification_confidence": entry.get(
+                        "classification_confidence"
+                    ),
+                    "requires_review": entry.get("requires_review"),
+                    "review_reason": entry.get("review_reason"),
+                }
+            )
+        servicios_normalizados = [
+            entry["service_name"]
+            for entry in service_entries
+            if entry.get("service_name")
+        ]
+    else:
+        # Fase 5: Normalizar servicios preservando una variante legible y el texto original.
+        servicios_limpios = sanitizar_servicios(servicios)
+        servicios_normalizados = [
+            _formatear_servicio_para_visualizacion(servicio)
+            for servicio in servicios_limpios
+            if servicio.strip()
+        ]
+        for idx, servicio_normalizado in enumerate(servicios_normalizados):
+            raw_text = (
+                servicios_limpios[idx].strip() if idx < len(servicios_limpios) else ""
+            )
+            service_entries.append(
+                {
+                    "raw_service_text": raw_text or servicio_normalizado,
+                    "service_name": servicio_normalizado,
+                    "service_summary": "",
+                }
+            )
 
     telefono = _normalizar_jid_whatsapp(datos_crudos.phone.strip())
     real_phone = (
