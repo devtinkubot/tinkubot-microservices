@@ -4,13 +4,11 @@ from typing import Any, Dict, Optional
 
 from flows.constructors import construir_payload_menu_principal
 from flows.maintenance.views import manejar_vista_perfil
+from services.shared import es_salida_menu
 
 
 def _es_salida_a_menu(texto_mensaje: str, opcion_menu: Optional[str]) -> bool:
-    texto = (texto_mensaje or "").strip().lower()
-    return bool(
-        opcion_menu == "5" or "menu" in texto or "volver" in texto or "salir" in texto
-    )
+    return es_salida_menu(texto_mensaje, opcion_menu)
 
 
 async def manejar_vistas_mantenimiento(

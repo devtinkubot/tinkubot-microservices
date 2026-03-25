@@ -3,6 +3,21 @@
 from typing import Any, Dict, Optional
 
 from services.maintenance.constantes import SERVICIOS_MAXIMOS_ONBOARDING
+from services.shared import (
+    RESPUESTAS_AGREGAR_SERVICIO_AFIRMATIVAS,
+    RESPUESTAS_AGREGAR_SERVICIO_NEGATIVAS,
+    RESPUESTAS_CONFIRMACION_SERVICIOS_AFIRMATIVAS,
+    RESPUESTAS_CONFIRMACION_SERVICIOS_NEGATIVAS,
+    SELECCION_AGREGAR_SERVICIO_AFIRMATIVA,
+    SELECCION_AGREGAR_SERVICIO_NEGATIVA,
+    SELECCION_CONFIRMACION_SERVICIOS_AFIRMATIVA,
+    SELECCION_CONFIRMACION_SERVICIOS_NEGATIVA,
+    normalizar_respuesta_binaria,
+    normalizar_texto_interaccion,
+)
+from templates.onboarding.redes_sociales import (
+    payload_redes_sociales_onboarding_con_imagen,
+)
 from templates.onboarding.registration import (
     mensaje_correccion_servicios,
     mensaje_debes_registrar_al_menos_un_servicio,
@@ -15,9 +30,6 @@ from templates.onboarding.servicios import (
     payload_preguntar_otro_servicio_onboarding,
     payload_servicios_onboarding_sin_imagen,
 )
-from templates.onboarding.redes_sociales import (
-    payload_redes_sociales_onboarding_con_imagen,
-)
 
 
 def _maximo_visible(_flujo: Dict[str, Any]) -> int:
@@ -28,43 +40,30 @@ def _resolver_confirmacion_basica_onboarding(
     texto_mensaje: Optional[str],
     selected_option: Optional[str] = None,
 ) -> Optional[str]:
-    texto = (texto_mensaje or "").strip().lower()
+    texto = normalizar_texto_interaccion(texto_mensaje)
     seleccionado = (selected_option or "").strip().lower()
 
-    if seleccionado in {"1", "profile_service_confirm", "accept"} or texto in {
+    if seleccionado in SELECCION_CONFIRMACION_SERVICIOS_AFIRMATIVA or texto in {
         "profile_service_confirm",
         "accept",
     }:
         return "accept"
-    if seleccionado in {"2", "profile_service_correct", "reject"} or texto in {
+    if seleccionado in SELECCION_CONFIRMACION_SERVICIOS_NEGATIVA or texto in {
         "profile_service_correct",
         "reject",
     }:
         return "reject"
 
-    if texto in {"1", "si", "sí", "aceptar", "acepto", "ok", "confirmar"}:
+    decision = normalizar_respuesta_binaria(
+        texto,
+        RESPUESTAS_CONFIRMACION_SERVICIOS_AFIRMATIVAS,
+        RESPUESTAS_CONFIRMACION_SERVICIOS_NEGATIVAS,
+    )
+    if decision is True:
         return "accept"
-    if texto in {"2", "no", "corregir", "editar", "cambiar", "no acepto"}:
+    if decision is False:
         return "reject"
     return None
-
-
-def mostrar_confirmacion_servicios_onboarding(
-    flujo: Dict[str, Any], servicios_transformados: list[str]
-) -> Dict[str, Any]:
-    """Muestra el resumen final de servicios del onboarding."""
-    maximo_visible = _maximo_visible(flujo)
-    flujo["servicios_temporales"] = servicios_transformados
-    flujo["state"] = "onboarding_services_confirmation"
-    return {
-        "success": True,
-        "messages": [
-            payload_resumen_servicios_registro(
-                servicios_transformados,
-                maximo_visible,
-            )
-        ],
-    }
 
 
 async def manejar_decision_agregar_otro_servicio_onboarding(
@@ -73,26 +72,22 @@ async def manejar_decision_agregar_otro_servicio_onboarding(
     selected_option: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Decide si el proveedor agrega otro servicio o pasa al siguiente paso."""
-    texto = (texto_mensaje or "").strip().lower()
+    texto = normalizar_texto_interaccion(texto_mensaje)
     seleccionado = (selected_option or "").strip().lower()
 
-    if seleccionado in {
-        "1",
-        "si",
-        "sí",
-        "agregar",
-        "otro",
-        "continuar",
-        SERVICIO_ONBOARDING_ADD_YES_ID,
-    } or texto in {
-        "1",
-        "si",
-        "sí",
-        "agregar",
-        "otro",
-        "continuar",
-        SERVICIO_ONBOARDING_ADD_YES_ID,
-    }:
+    decision = normalizar_respuesta_binaria(
+        texto,
+        RESPUESTAS_AGREGAR_SERVICIO_AFIRMATIVAS | {SERVICIO_ONBOARDING_ADD_YES_ID},
+        RESPUESTAS_AGREGAR_SERVICIO_NEGATIVAS | {SERVICIO_ONBOARDING_ADD_NO_ID},
+    )
+    if (
+        seleccionado in SELECCION_AGREGAR_SERVICIO_AFIRMATIVA
+        or seleccionado
+        in {
+            SERVICIO_ONBOARDING_ADD_YES_ID,
+        }
+        or decision is True
+    ):
         flujo["state"] = "onboarding_specialty"
         return {
             "success": True,
@@ -101,19 +96,14 @@ async def manejar_decision_agregar_otro_servicio_onboarding(
             ],
         }
 
-    if seleccionado in {
-        "2",
-        "no",
-        "terminar",
-        "listo",
-        SERVICIO_ONBOARDING_ADD_NO_ID,
-    } or texto in {
-        "2",
-        "no",
-        "terminar",
-        "listo",
-        SERVICIO_ONBOARDING_ADD_NO_ID,
-    }:
+    if (
+        seleccionado in SELECCION_AGREGAR_SERVICIO_NEGATIVA
+        or seleccionado
+        in {
+            SERVICIO_ONBOARDING_ADD_NO_ID,
+        }
+        or decision is False
+    ):
         flujo["state"] = "onboarding_social_media"
         return {
             "success": True,
@@ -132,7 +122,6 @@ async def manejar_confirmacion_servicios_onboarding(
     flujo: Dict[str, Any],
     texto_mensaje: Optional[str],
     selected_option: Optional[str] = None,
-    cliente_openai: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Procesa la confirmación final de la lista de servicios del onboarding."""
     maximo_visible = _maximo_visible(flujo)

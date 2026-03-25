@@ -8,9 +8,12 @@ from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, Iterable, Optional
 
 import httpx
+from config.configuracion import configuracion
 from infrastructure.database import run_supabase
 from infrastructure.redis import cliente_redis
-from services.onboarding.registration.eliminacion_proveedor import eliminar_registro_proveedor
+from services.onboarding.registration.eliminacion_proveedor import (
+    eliminar_registro_proveedor,
+)
 from templates.onboarding import (
     payload_baja_onboarding_72h,
     payload_recordatorio_onboarding_48h,
@@ -103,7 +106,9 @@ async def _enviar_whatsapp(
         body["metadata"] = metadata
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(
+            timeout=configuracion.whatsapp_http_timeout_seconds
+        ) as client:
             respuesta = await client.post(url, json=body)
     except Exception as exc:
         logger.warning("No se pudo enviar WhatsApp a %s: %s", telefono, exc)

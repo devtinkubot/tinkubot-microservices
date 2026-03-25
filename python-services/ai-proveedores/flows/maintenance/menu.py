@@ -3,26 +3,15 @@
 import logging
 from typing import Any, Dict, Optional
 
-from flows.constructors import (
-    construir_menu_servicios,
-    construir_payload_menu_principal,
-)
+from flows.constructors import construir_payload_menu_principal
 from services import listar_certificados_proveedor
-from services.maintenance.constantes import SERVICIOS_MAXIMOS
-from .views import render_profile_view
-from templates.onboarding.registration import (
-    mensaje_inicio_perfil_profesional,
-    payload_certificado_opcional,
-)
+from services.shared import es_salida_menu
 from templates.maintenance import solicitar_confirmacion_eliminacion
 from templates.maintenance.menus import (
     MENU_ID_ELIMINAR_REGISTRO,
     MENU_ID_INFO_PERSONAL,
     MENU_ID_INFO_PROFESIONAL,
     MENU_ID_SALIR,
-    payload_submenu_informacion_personal,
-    payload_submenu_informacion_profesional,
-    SUBMENU_ID_PERSONAL_DOCUMENTOS,
     SUBMENU_ID_PERSONAL_DNI_FRONTAL,
     SUBMENU_ID_PERSONAL_DNI_REVERSO,
     SUBMENU_ID_PERSONAL_FOTO,
@@ -31,11 +20,22 @@ from templates.maintenance.menus import (
     SUBMENU_ID_PERSONAL_UBICACION,
     SUBMENU_ID_PROF_CERTIFICADOS,
     SUBMENU_ID_PROF_EXPERIENCIA,
-    SUBMENU_ID_PROF_REGRESAR,
     SUBMENU_ID_PROF_REDES,
+    SUBMENU_ID_PROF_REGRESAR,
     SUBMENU_ID_PROF_SERVICIOS,
+    payload_submenu_informacion_personal,
+    payload_submenu_informacion_profesional,
+)
+from templates.onboarding.registration import (
+    mensaje_inicio_perfil_profesional,
 )
 from templates.shared import error_opcion_no_reconocida, informar_cierre_sesion
+
+from .views import render_profile_view
+
+# Compatibilidad para tests y monkeypatches existentes.
+LISTAR_CERTIFICADOS_PROVEEDOR = listar_certificados_proveedor
+
 logger = logging.getLogger(__name__)
 
 
@@ -88,11 +88,7 @@ async def manejar_submenu_informacion_personal(
     """Procesa el submenú de información personal."""
     texto = (texto_mensaje or "").strip().lower()
 
-    if (
-        opcion_menu == "1"
-        or texto == SUBMENU_ID_PERSONAL_NOMBRE
-        or "nombre" in texto
-    ):
+    if opcion_menu == "1" or texto == SUBMENU_ID_PERSONAL_NOMBRE or "nombre" in texto:
         flujo["state"] = "viewing_personal_name"
         return {
             "success": True,
@@ -177,7 +173,7 @@ async def manejar_submenu_informacion_personal(
             ],
         }
 
-    if texto == SUBMENU_ID_PERSONAL_REGRESAR or "menu" in texto or "volver" in texto or "salir" in texto:
+    if texto == SUBMENU_ID_PERSONAL_REGRESAR or es_salida_menu(texto):
         flujo["state"] = "awaiting_menu_option"
         return {
             "success": True,
@@ -219,11 +215,7 @@ async def manejar_submenu_informacion_profesional(
             ],
         }
 
-    if (
-        opcion_menu == "2"
-        or texto == SUBMENU_ID_PROF_SERVICIOS
-        or "servicio" in texto
-    ):
+    if opcion_menu == "2" or texto == SUBMENU_ID_PROF_SERVICIOS or "servicio" in texto:
         flujo["state"] = "viewing_professional_services"
         return {
             "success": True,
@@ -272,7 +264,7 @@ async def manejar_submenu_informacion_profesional(
             ],
         }
 
-    if texto == SUBMENU_ID_PROF_REGRESAR or "menu" in texto or "volver" in texto or "salir" in texto:
+    if texto == SUBMENU_ID_PROF_REGRESAR or es_salida_menu(texto):
         flujo["state"] = "awaiting_menu_option"
         return {
             "success": True,
@@ -311,7 +303,10 @@ async def manejar_estado_menu(
     max_opcion_menu = 4
 
     servicios_actuales = flujo.get("services") or []
-    if "completar perfil" in texto_minusculas or "perfil profesional" in texto_minusculas:
+    if (
+        "completar perfil" in texto_minusculas
+        or "perfil profesional" in texto_minusculas
+    ):
         return iniciar_flujo_completar_perfil_profesional(flujo)
     if _es_opcion_info_personal(texto_minusculas, opcion):
         flujo["state"] = "awaiting_personal_info_action"
@@ -339,12 +334,8 @@ async def manejar_estado_menu(
             "success": True,
             "messages": [{"response": solicitar_confirmacion_eliminacion()}],
         }
-    if (
-        opcion == "4"
-        or texto_minusculas == MENU_ID_SALIR
-        or opcion == str(max_opcion_menu)
-        or "salir" in texto_minusculas
-        or "volver" in texto_minusculas
+    if texto_minusculas == MENU_ID_SALIR or es_salida_menu(
+        texto_minusculas, opcion, opcion_salida=str(max_opcion_menu)
     ):
         flujo_base = {
             "has_consent": True,

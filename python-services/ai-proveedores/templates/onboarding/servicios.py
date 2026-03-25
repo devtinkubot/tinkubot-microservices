@@ -32,9 +32,7 @@ def payload_servicios_onboarding_con_imagen() -> Dict[str, Any]:
     """Solicita un servicio con una imagen guía para el onboarding."""
     return {
         "response": preguntar_servicios_onboarding(),
-        "media_url": _resolver_url_guide(
-            SERVICIOS_ONBOARDING_HEADER_IMAGE_URL_ENV
-        ),
+        "media_url": _resolver_url_guide(SERVICIOS_ONBOARDING_HEADER_IMAGE_URL_ENV),
         "media_type": "image",
     }
 
@@ -46,8 +44,52 @@ def payload_servicios_onboarding_sin_imagen() -> Dict[str, Any]:
 
 def preguntar_otro_servicio_onboarding() -> str:
     return (
-        "Presiona *Sí* para agregarlo. "
-        "Presiona *No* para continuar con el registro."
+        "Presiona *Sí* para agregarlo. " "Presiona *No* para continuar con el registro."
+    )
+
+
+def mensaje_servicio_muy_corto() -> str:
+    return "Escribe un servicio con un poco más de detalle."
+
+
+def mensaje_servicio_muy_largo() -> str:
+    return "El texto es muy largo. Resume tu servicio en una sola idea."
+
+
+def mensaje_no_pude_procesar_servicios() -> str:
+    return (
+        "*No pude procesar tus servicios en este momento.* "
+        "Por favor intenta nuevamente en unos minutos."
+    )
+
+
+def mensaje_no_pude_normalizar_servicio() -> str:
+    return "*Tuvimos un problema al normalizar tu servicio.*"
+
+
+def mensaje_no_pude_interpretar_servicio() -> str:
+    return "No pude interpretar ese servicio. Escribe solo uno, pero más claro."
+
+
+def mensaje_servicio_no_reconocido() -> str:
+    return (
+        "No pude reconocer ese texto como un servicio. "
+        "Escribe un servicio real, por ejemplo: instalaciones eléctricas."
+    )
+
+
+def mensaje_no_pude_guardar_servicio() -> str:
+    return "No pude guardar ese servicio. Intenta con otro texto."
+
+
+def mensaje_servicio_duplicado() -> str:
+    return "Ese servicio ya está registrado. Escribe otro distinto."
+
+
+def mensaje_maximo_servicios_onboarding(maximo: int) -> str:
+    return (
+        f"Ya registraste tus {maximo} servicios máximos. "
+        "Continuemos con redes sociales."
     )
 
 

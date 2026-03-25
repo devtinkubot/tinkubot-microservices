@@ -8,7 +8,13 @@ import re
 import unicodedata
 from typing import Any, Dict, List, Optional
 
+from config.configuracion import configuracion
 from infrastructure.database import run_supabase
+from services.shared import (
+    PROMPT_CATALOGO_SIN_DOMINIO,
+    construir_prompt_sistema_clasificacion_servicios,
+    construir_prompt_usuario_clasificacion_servicios,
+)
 from utils import (
     normalizar_texto_visible_con_ia,
 )
@@ -308,36 +314,22 @@ async def clasificar_servicios_livianos(
         for item in catalogo_dominios[:40]
     )
     if not dominios_prompt:
-        dominios_prompt = "- sin_catalogo: usar null si no hay dominio claro"
+        dominios_prompt = PROMPT_CATALOGO_SIN_DOMINIO
     codigos_catalogo = {item["code"] for item in catalogo_dominios if item.get("code")}
 
     try:
         respuesta = await cliente_openai.chat.completions.create(
-            model="gpt-4o-mini",
+            model=configuracion.openai_chat_model,
             messages=[
                 {
                     "role": "system",
-                    "content": (
-                        "Clasifica servicios ya normalizados en un dominio "
-                        "liviano y una categoría corta. Además genera un resumen "
-                        "breve, claro y operativo de una sola frase. No inventes "
-                        "detalles innecesarios."
-                    ),
+                    "content": construir_prompt_sistema_clasificacion_servicios(),
                 },
                 {
                     "role": "user",
-                    "content": (
-                        "Servicios a clasificar:\n"
-                        + "\n".join(f"- {servicio}" for servicio in servicios_limpios)
-                        + "\n\nDominios disponibles:\n"
-                        + dominios_prompt
-                        + "\n\n"
-                        + "Responde JSON con la forma "
-                        + '{"services":[{"normalized_service":"...",'
-                        + '"domain_code":"... o null",'
-                        + '"category_name":"... o null",'
-                        + '"service_summary":"...",'
-                        + '"classification_confidence":0.0}]}'
+                    "content": construir_prompt_usuario_clasificacion_servicios(
+                        servicios_limpios,
+                        dominios_prompt,
                     ),
                 },
             ],
@@ -382,7 +374,7 @@ async def clasificar_servicios_livianos(
                     },
                 },
             },
-            temperature=0.1,
+            temperature=configuracion.openai_temperature_consistente,
             timeout=timeout,
         )
         contenido = (respuesta.choices[0].message.content or "").strip()

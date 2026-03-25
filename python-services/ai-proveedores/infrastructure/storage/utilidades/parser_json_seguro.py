@@ -33,3 +33,4 @@ def analizar_json_seguro(cadena: str) -> Optional[Any]:
                 return json.loads(match.group(0))
             except json.JSONDecodeError:
                 return None
+        return None

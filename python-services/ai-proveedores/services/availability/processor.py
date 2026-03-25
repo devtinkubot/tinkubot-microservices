@@ -6,6 +6,12 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
+from services.shared import (
+    RESPUESTAS_DISPONIBILIDAD_AFIRMATIVAS,
+    RESPUESTAS_DISPONIBILIDAD_NEGATIVAS,
+    normalizar_texto_interaccion,
+)
+
 logger = logging.getLogger(__name__)
 
 AVAILABILITY_RESULT_TTL_SECONDS = int(
@@ -106,9 +112,9 @@ def _parsear_respuesta_disponibilidad(texto: str) -> Optional[str]:
 
     if normalizado in {"availability_accept", "availability_reject"}:
         return "accepted" if normalizado == "availability_accept" else "rejected"
-    if normalizado in {"1", "si", "s", "ok", "dale", "disponible", "acepto"}:
+    if normalizado in RESPUESTAS_DISPONIBILIDAD_AFIRMATIVAS:
         return "accepted"
-    if normalizado in {"2", "no", "n", "ocupado", "no disponible"}:
+    if normalizado in RESPUESTAS_DISPONIBILIDAD_NEGATIVAS:
         return "rejected"
 
     tokens = set(normalizado.split())
@@ -124,18 +130,7 @@ def _parsear_respuesta_disponibilidad(texto: str) -> Optional[str]:
 
 
 def _normalizar_texto_simple(texto: str) -> str:
-    base = (texto or "").strip().lower()
-    return "".join(
-        ch for ch in _normalizar_unicode(base) if ch != "\n"
-    ).strip()
-
-
-def _normalizar_unicode(texto: str) -> str:
-    import unicodedata
-
-    normalizado = unicodedata.normalize("NFD", texto)
-    sin_acentos = "".join(ch for ch in normalizado if unicodedata.category(ch) != "Mn")
-    return " ".join(sin_acentos.split())
+    return normalizar_texto_interaccion(texto)
 
 
 def _decodificar_payload_redis(valor: Any) -> Any:

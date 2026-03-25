@@ -10,12 +10,10 @@ from collections import Counter
 from typing import Any, List, Optional
 
 from infrastructure.database import run_supabase
-from utils import (
-    sanitizar_lista_servicios as sanitizar_servicios,
-)
 from services.maintenance.estado_operativo import (
     perfil_profesional_completo,
 )
+from utils import sanitizar_lista_servicios as sanitizar_servicios
 
 logger = logging.getLogger(__name__)
 
@@ -334,6 +332,7 @@ async def _obtener_telefono_proveedor(
                 return telefono.strip()
     except Exception:
         return None
+
     return None
 
 

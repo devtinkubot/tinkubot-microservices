@@ -5,6 +5,11 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, Optional
 
+from templates.shared import (
+    mensaje_nombre_caracteres_validos,
+    mensaje_nombre_completo_requerido,
+    mensaje_nombre_completo_solicitado,
+)
 from utils import limpiar_espacios
 
 _VALORES_BLOQUEADOS = {
@@ -90,13 +95,10 @@ def _normalizar_nombre_completo(nombre: str) -> str:
 
 def _mensaje_error(causa: str) -> str:
     if causa in {"empty", "blocked", "too_short"}:
-        return "*Necesito tu nombre y apellido completos.* " "Ejemplo: Juan Pérez."
+        return mensaje_nombre_completo_requerido()
     if causa == "invalid_chars":
-        return (
-            "*El nombre solo debe contener letras, espacios y guiones.* "
-            "Ejemplo: Juan Pérez."
-        )
-    return "*Por favor, escribe tu nombre completo.* Ejemplo: Juan Pérez."
+        return mensaje_nombre_caracteres_validos()
+    return mensaje_nombre_completo_solicitado()
 
 
 def validar_nombre_completo(texto_mensaje: Optional[str]) -> Dict[str, Any]:

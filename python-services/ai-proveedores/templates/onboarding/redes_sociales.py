@@ -25,6 +25,17 @@ def preguntar_redes_sociales_onboarding() -> str:
     )
 
 
+def mensaje_final_redes_sociales_onboarding() -> str:
+    return (
+        "✅ Gracias. Registramos tu información y la revisaremos antes de "
+        "activar tu perfil."
+    )
+
+
+def mensaje_no_pude_guardar_redes_sociales_onboarding() -> str:
+    return "No pude guardar tus redes todavía. " "Intenta nuevamente o toca Omitir."
+
+
 def payload_redes_sociales_onboarding_con_imagen() -> Dict[str, Any]:
     """Solicita redes sociales con una imagen guía para onboarding."""
     image_url = os.getenv(REDES_SOCIALES_ONBOARDING_IMAGE_URL_ENV, "").strip()

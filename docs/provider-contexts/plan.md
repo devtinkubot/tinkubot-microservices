@@ -1,23 +1,24 @@
 # Provider Context Split Plan
 
 ## Goal
-Separate the provider journey into three explicit bounded contexts:
+Finish the provider journey split into explicit bounded contexts while keeping the current runtime layout stable:
 
 - `onboarding`: initial provider signup and data capture
 - `review`: approval state, retry handling, and silence policy
 - `maintenance`: post-approval menu and profile operations
+- `availability`: provider-facing response to availability requests
 
 ## Why this exists
 The current codebase mixes onboarding, review, and menu behavior in the same routing and service layers. That makes the provider journey harder to understand, test, and evolve safely.
 
 ## Scope
-This migration is gradual. We will not rewrite the whole service.
+This migration is gradual. The codebase is already partially split, so the remaining work is mostly boundary cleanup and documentation alignment.
 
 ### In scope
-- Create new folders for `review` and `maintenance`
-- Move review decision logic out of the shared router
-- Move menu and post-approval operations out of onboarding paths
+- Keep review decision logic out of the shared router
+- Keep menu and post-approval operations out of onboarding paths
 - Keep onboarding focused on the initial registration flow
+- Keep `availability` independent from onboarding and maintenance
 - Keep `models`, `config`, and `infrastructure` in place
 
 ### Out of scope
@@ -61,12 +62,19 @@ Handles:
 
 Starts only after approval.
 
+### Availability
+Handles:
+- provider wait state for incoming availability requests
+- Redis-backed response processing
+- resume to menu or exit
+
 ## Migration order
 1. Extract review policy and review responses.
 2. Move the central review decision out of the shared router.
 3. Introduce a maintenance context for the menu and profile operations.
-4. Clean onboarding so it only covers the registration journey.
-5. Reduce the role of `services/registration` to persistence and validation support.
+4. Keep availability isolated behind its own route and processor.
+5. Clean onboarding so it only covers the registration journey.
+6. Reduce the role of shared bridges to the minimum required for compatibility.
 
 ## Success criteria
 - Onboarding no longer leaks menu behavior
@@ -79,3 +87,6 @@ Starts only after approval.
 
 ## Compatibility rule
 During migration, old modules can remain as facades or delegators if needed. We prefer gradual extraction over breaking imports.
+
+## Documentation rule
+The `runtime` split is documented as a conceptual boundary, not as a required physical folder move. The repo should keep reflecting the actual package layout that production imports use.

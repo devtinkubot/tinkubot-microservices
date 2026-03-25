@@ -10,17 +10,17 @@ import logging
 from typing import Any, Optional
 
 import redis.asyncio as redis
-
 from config import configuracion
 
 logger = logging.getLogger(__name__)
+
 
 class ClienteRedis:
     def __init__(self):
         self.redis_client: Optional[redis.Redis] = None
         self._connected = False
         self._retry_count = 0
-        self._max_retries = 3
+        self._max_retries = configuracion.redis_max_retries
 
     async def connect(self):
         """Conectar a Redis con reintentos"""
@@ -29,8 +29,10 @@ class ClienteRedis:
                 self.redis_client = redis.from_url(
                     configuracion.url_redis,
                     decode_responses=True,
-                    socket_timeout=10,  # Aumentado timeout
-                    socket_connect_timeout=10,
+                    socket_timeout=configuracion.redis_socket_timeout_seconds,
+                    socket_connect_timeout=(
+                        configuracion.redis_connect_timeout_seconds
+                    ),
                 )
                 # Test connection
                 await self.redis_client.ping()
@@ -40,11 +42,22 @@ class ClienteRedis:
                 return
             except Exception as e:
                 self._retry_count += 1
-                logger.warning(f"⚠️ Intento {attempt + 1}/{self._max_retries} - Error conectando a Redis: {e}")
+                logger.warning(
+                    (
+                        "⚠️ Intento "
+                        f"{attempt + 1}/{self._max_retries} - "
+                        f"Error conectando a Redis: {e}"
+                    )
+                )
                 if attempt < self._max_retries - 1:
                     await asyncio.sleep(1 * (attempt + 1))  # Backoff exponencial simple
                 else:
-                    logger.error(f"❌ No se pudo conectar a Redis después de {self._max_retries} intentos")
+                    logger.error(
+                        (
+                            "❌ No se pudo conectar a Redis después de "
+                            f"{self._max_retries} intentos"
+                        )
+                    )
                     self._connected = False
                     raise
 
@@ -120,6 +133,8 @@ class ClienteRedis:
                 logger.error(f"❌ Error obteniendo de Redis: {e}")
                 raise
 
+        return None
+
     async def delete(self, key: str) -> int:
         """Eliminar clave de Redis y retornar cuántas claves fueron eliminadas."""
         if not self._connected and not self.redis_client:
@@ -146,7 +161,9 @@ class ClienteRedis:
 
         if self._connected and self.redis_client:
             try:
-                claves = [clave async for clave in self.redis_client.scan_iter(match=pattern)]
+                claves = [
+                    clave async for clave in self.redis_client.scan_iter(match=pattern)
+                ]
                 if not claves:
                     return 0
                 eliminadas = await self.redis_client.delete(*claves)

@@ -4,13 +4,34 @@ import logging
 import re
 from typing import Any, Dict, List, Optional
 
-from templates.onboarding.registration.confirmacion import CONFIRM_ACCEPT_ID, CONFIRM_REJECT_ID
+from flows.constructors import construir_respuesta_revision
 from services.maintenance.constantes import (
     SERVICIOS_MAXIMOS,
     SERVICIOS_MAXIMOS_ONBOARDING,
     SERVICIOS_MINIMOS_PERFIL_PROFESIONAL,
 )
+from services.shared import (
+    OPCIONES_EDICION_SERVICIOS_AGREGAR,
+    OPCIONES_EDICION_SERVICIOS_ELIMINAR,
+    OPCIONES_EDICION_SERVICIOS_REEMPLAZAR,
+    OPCIONES_EDICION_SERVICIOS_RESUMEN,
+    RESPUESTAS_AGREGAR_SERVICIO_AFIRMATIVAS,
+    RESPUESTAS_AGREGAR_SERVICIO_NEGATIVAS,
+    RESPUESTAS_CONFIRMACION_SERVICIOS_AFIRMATIVAS,
+    RESPUESTAS_CONFIRMACION_SERVICIOS_NEGATIVAS,
+    normalizar_respuesta_binaria,
+    normalizar_texto_interaccion,
+)
+from templates.maintenance.mensajes_servicios import (
+    mensaje_confirmar_o_corregir_servicio,
+    mensaje_limite_servicios_temporales,
+    mensaje_numero_valido_eliminar_servicio,
+    mensaje_numero_valido_reemplazo_servicio,
+    mensaje_servicio_ya_existe_en_lista,
+)
 from templates.onboarding.registration import (
+    SERVICE_ADD_NO_ID,
+    SERVICE_ADD_YES_ID,
     SERVICE_CONFIRM_ID,
     SERVICE_CORRECT_ID,
     construir_resumen_confirmacion_perfil_profesional,
@@ -32,10 +53,12 @@ from templates.onboarding.registration import (
     preguntar_numero_servicio_eliminar,
     preguntar_numero_servicio_reemplazar,
     preguntar_siguiente_servicio_registro,
-    SERVICE_ADD_NO_ID,
-    SERVICE_ADD_YES_ID,
 )
-from flows.constructors import construir_respuesta_revision
+from templates.onboarding.registration.confirmacion import (
+    CONFIRM_ACCEPT_ID,
+    CONFIRM_REJECT_ID,
+)
+from templates.shared import mensaje_perfecto_guardar_perfil_profesional
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +109,7 @@ def _resolver_confirmacion_basica(
     texto_mensaje: Optional[str],
     selected_option: Optional[str] = None,
 ) -> Optional[str]:
-    texto = (texto_mensaje or "").strip().lower()
+    texto = normalizar_texto_interaccion(texto_mensaje)
     seleccionado = (selected_option or "").strip().lower()
 
     if seleccionado in {CONFIRM_ACCEPT_ID, "confirm_accept", "accept"}:
@@ -98,9 +121,14 @@ def _resolver_confirmacion_basica(
     if seleccionado in {SERVICE_CORRECT_ID}:
         return "reject"
 
-    if texto in {"1", "si", "sí", "aceptar", "acepto", "ok", "confirmar"}:
+    decision = normalizar_respuesta_binaria(
+        texto,
+        RESPUESTAS_CONFIRMACION_SERVICIOS_AFIRMATIVAS,
+        RESPUESTAS_CONFIRMACION_SERVICIOS_NEGATIVAS,
+    )
+    if decision is True:
         return "accept"
-    if texto in {"2", "no", "corregir", "editar", "cambiar", "no acepto"}:
+    if decision is False:
         return "reject"
     return None
 
@@ -115,7 +143,6 @@ async def manejar_confirmacion_servicio_perfil(
     servicios = list(flujo.get("servicios_temporales") or [])
     indice = int(flujo.get("pending_service_index", len(servicios)))
     candidato = str(flujo.get("pending_service_candidate") or "").strip()
-    maximo_servicios = _maximo_servicios(flujo)
     maximo_visible = _maximo_visible(flujo)
 
     if not flujo.get("profile_completion_mode") and not flujo.get("profile_edit_mode"):
@@ -158,16 +185,16 @@ async def manejar_confirmacion_servicio_perfil(
                 servicios[indice] = candidato
             else:
                 servicios.append(candidato)
-            flujo["servicios_temporales"] = [servicio for servicio in servicios if servicio]
+            flujo["servicios_temporales"] = [
+                servicio for servicio in servicios if servicio
+            ]
             flujo.pop("pending_service_candidate", None)
             flujo.pop("pending_service_index", None)
 
             cantidad = len(flujo.get("servicios_temporales") or [])
             if cantidad >= SERVICIOS_MINIMOS_PERFIL_PROFESIONAL:
                 flujo["state"] = "pending_verification"
-                return construir_respuesta_revision(
-                    str(flujo.get("full_name") or "")
-                )
+                return construir_respuesta_revision(str(flujo.get("full_name") or ""))
 
             flujo["state"] = _estado_contextual(
                 flujo,
@@ -185,13 +212,7 @@ async def manejar_confirmacion_servicio_perfil(
 
         return {
             "success": True,
-            "messages": [
-                {
-                    "response": (
-                        "Usa *Confirmar* si el servicio está bien o *Corregir* si deseas cambiarlo."
-                    )
-                }
-            ],
+            "messages": [{"response": mensaje_confirmar_o_corregir_servicio()}],
         }
 
     if not candidato:
@@ -268,13 +289,7 @@ async def manejar_confirmacion_servicio_perfil(
 
     return {
         "success": True,
-        "messages": [
-            {
-                "response": (
-                    "Usa *Confirmar* si el servicio está bien o *Corregir* si deseas cambiarlo."
-                )
-            }
-        ],
+        "messages": [{"response": mensaje_confirmar_o_corregir_servicio()}],
     }
 
 
@@ -289,7 +304,7 @@ async def manejar_confirmacion_perfil_profesional(
         flujo["state"] = "maintenance_profile_completion_finalize"
         return {
             "success": True,
-            "messages": [{"response": "✅ Perfecto. Voy a guardar tu perfil profesional."}],
+            "messages": [{"response": mensaje_perfecto_guardar_perfil_profesional()}],
         }
     if opcion == "reject":
         flujo["state"] = "maintenance_profile_completion_edit_action"
@@ -328,10 +343,7 @@ async def manejar_edicion_perfil_profesional(
         )
         return {
             "success": True,
-            "messages": [
-                payload_red_social_opcional(
-                )
-            ],
+            "messages": [payload_red_social_opcional()],
         }
     if texto == "3":
         flujo["profile_edit_mode"] = "certificate"
@@ -401,12 +413,17 @@ async def manejar_decision_agregar_otro_servicio(
     texto_mensaje: Optional[str],
 ) -> Dict[str, Any]:
     """Decide si el proveedor agrega otro servicio o pasa al resumen."""
-    texto = (texto_mensaje or "").strip().lower()
+    texto = normalizar_texto_interaccion(texto_mensaje)
     servicios = list(flujo.get("servicios_temporales") or [])
-    maximo_servicios = _maximo_servicios(flujo)
     maximo_visible = _maximo_visible(flujo)
 
-    if texto in {"1", "si", "sí", "agregar", "otro", "continuar", SERVICE_ADD_YES_ID}:
+    decision = normalizar_respuesta_binaria(
+        texto,
+        RESPUESTAS_AGREGAR_SERVICIO_AFIRMATIVAS | {SERVICE_ADD_YES_ID},
+        RESPUESTAS_AGREGAR_SERVICIO_NEGATIVAS | {SERVICE_ADD_NO_ID},
+    )
+
+    if decision is True:
         flujo["state"] = _estado_contextual(
             flujo,
             onboarding="onboarding_specialty",
@@ -419,15 +436,17 @@ async def manejar_decision_agregar_otro_servicio(
                     "response": preguntar_siguiente_servicio_registro(
                         len(servicios) + 1,
                         maximo_visible,
-                        SERVICIOS_MINIMOS_PERFIL_PROFESIONAL
-                        if flujo.get("profile_completion_mode")
-                        else None,
+                        (
+                            SERVICIOS_MINIMOS_PERFIL_PROFESIONAL
+                            if flujo.get("profile_completion_mode")
+                            else None
+                        ),
                     )
                 }
             ],
         }
 
-    if texto in {"2", "no", "terminar", "listo", SERVICE_ADD_NO_ID}:
+    if decision is False:
         if (
             flujo.get("profile_completion_mode")
             and len(servicios) < SERVICIOS_MINIMOS_PERFIL_PROFESIONAL
@@ -497,9 +516,15 @@ async def manejar_confirmacion_servicios(
             ],
         }
 
-    texto_limpio = texto_mensaje.strip().lower()
+    texto_limpio = normalizar_texto_interaccion(texto_mensaje)
 
-    if texto_limpio in {"1", "si", "sí", "aceptar", "acepto", "ok"}:
+    decision = normalizar_respuesta_binaria(
+        texto_limpio,
+        RESPUESTAS_CONFIRMACION_SERVICIOS_AFIRMATIVAS,
+        RESPUESTAS_CONFIRMACION_SERVICIOS_NEGATIVAS,
+    )
+
+    if decision is True:
         servicios_temporales = list(flujo.get("servicios_temporales") or [])
         if not servicios_temporales:
             return {
@@ -535,14 +560,14 @@ async def manejar_confirmacion_servicios(
             return {
                 "success": True,
                 "messages": [
-                    {"response": "✅ Perfecto. Voy a guardar tu perfil profesional."}
+                    {"response": mensaje_perfecto_guardar_perfil_profesional()}
                 ],
             }
 
         flujo["state"] = "pending_verification"
         return construir_respuesta_revision(str(flujo.get("full_name") or ""))
 
-    if texto_limpio in {"2", "no", "corregir", "editar", "cambiar"}:
+    if decision is False:
         flujo["state"] = _estado_contextual(
             flujo,
             onboarding="onboarding_services_edit_action",
@@ -584,7 +609,7 @@ async def manejar_accion_edicion_servicios_registro(
     maximo_servicios = _maximo_servicios(flujo)
     maximo_visible = _maximo_visible(flujo)
 
-    if texto in {"1", "reemplazar"}:
+    if texto in OPCIONES_EDICION_SERVICIOS_REEMPLAZAR:
         flujo["state"] = _estado_contextual(
             flujo,
             onboarding="onboarding_services_edit_replace_select",
@@ -603,7 +628,7 @@ async def manejar_accion_edicion_servicios_registro(
             ],
         }
 
-    if texto in {"2", "eliminar"}:
+    if texto in OPCIONES_EDICION_SERVICIOS_ELIMINAR:
         flujo["state"] = _estado_contextual(
             flujo,
             onboarding="onboarding_services_edit_delete_select",
@@ -622,16 +647,15 @@ async def manejar_accion_edicion_servicios_registro(
             ],
         }
 
-    if texto in {"3", "agregar"}:
+    if texto in OPCIONES_EDICION_SERVICIOS_AGREGAR:
         if len(servicios) >= maximo_servicios:
             return {
                 "success": True,
                 "messages": [
                     {
-                        "response": (
-                            f"Ya tienes {maximo_visible} servicios principales en tu lista temporal."
-                            if flujo.get("profile_completion_mode")
-                            else f"Ya tienes {maximo_visible} servicios en tu lista temporal."
+                        "response": mensaje_limite_servicios_temporales(
+                            maximo_visible,
+                            bool(flujo.get("profile_completion_mode")),
                         )
                     },
                     {
@@ -659,7 +683,7 @@ async def manejar_accion_edicion_servicios_registro(
             ],
         }
 
-    if texto in {"4", "volver", "resumen"}:
+    if texto in OPCIONES_EDICION_SERVICIOS_RESUMEN:
         flujo["state"] = _estado_contextual(
             flujo,
             onboarding="onboarding_services_confirmation",
@@ -708,16 +732,11 @@ async def manejar_seleccion_reemplazo_servicio_registro(
     texto_mensaje: Optional[str],
 ) -> Dict[str, Any]:
     servicios = list(flujo.get("servicios_temporales") or [])
-    maximo_visible = _maximo_visible(flujo)
     indice = _extraer_indice(texto_mensaje, len(servicios))
     if indice is None:
         return {
             "success": True,
-            "messages": [
-                {
-                    "response": "Escribe el número válido del servicio que deseas reemplazar."
-                }
-            ],
+            "messages": [{"response": mensaje_numero_valido_reemplazo_servicio()}],
         }
 
     flujo[_FLUJO_KEY_EDIT_INDEX] = indice
@@ -769,7 +788,7 @@ async def manejar_reemplazo_servicio_registro(
     if nuevo in servicios_sin_actual:
         return {
             "success": True,
-            "messages": [{"response": f"El servicio *{nuevo}* ya existe en tu lista."}],
+            "messages": [{"response": mensaje_servicio_ya_existe_en_lista(nuevo)}],
         }
 
     servicios[indice] = nuevo
@@ -804,11 +823,7 @@ async def manejar_eliminacion_servicio_registro(
     if indice is None:
         return {
             "success": True,
-            "messages": [
-                {
-                    "response": "Escribe el número válido del servicio que deseas eliminar."
-                }
-            ],
+            "messages": [{"response": mensaje_numero_valido_eliminar_servicio()}],
         }
 
     eliminado = servicios.pop(indice)
@@ -825,11 +840,7 @@ async def manejar_eliminacion_servicio_registro(
             "messages": [
                 {"response": mensaje_servicio_eliminado_registro(eliminado)},
                 {"response": mensaje_debes_registrar_al_menos_un_servicio()},
-                {
-                    "response": preguntar_siguiente_servicio_registro(
-                        1, maximo_visible
-                    )
-                },
+                {"response": preguntar_siguiente_servicio_registro(1, maximo_visible)},
             ],
         }
     flujo["state"] = _estado_contextual(
@@ -871,7 +882,7 @@ async def manejar_agregar_servicio_desde_edicion_registro(
     if nuevo in servicios:
         return {
             "success": True,
-            "messages": [{"response": f"El servicio *{nuevo}* ya existe en tu lista."}],
+            "messages": [{"response": mensaje_servicio_ya_existe_en_lista(nuevo)}],
         }
 
     servicios.append(nuevo)

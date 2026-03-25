@@ -3,6 +3,7 @@
 from typing import Any, Dict, Optional
 
 from flows.constructors import construir_payload_menu_principal
+from services.shared import es_salida_menu
 
 
 async def manejar_estado_disponibilidad(
@@ -17,8 +18,7 @@ async def manejar_estado_disponibilidad(
     if estado != "awaiting_availability_response":
         return None
 
-    texto = (texto_mensaje or "").strip().lower()
-    if opcion_menu == "5" or "menu" in texto or "volver" in texto or "salir" in texto:
+    if es_salida_menu(texto_mensaje, opcion_menu):
         flujo["state"] = "awaiting_menu_option"
         return {
             "response": {

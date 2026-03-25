@@ -218,7 +218,13 @@ The onboarding entry, consent, and confirmation flow now lives behind `routes/on
 ### Why
 Onboarding is a full context, not a fallback branch of the shared router. Moving it behind its own route boundary makes the shared router thinner and keeps registration logic owned by the onboarding context itself.
 
-## Decision 31: Onboarding is alta-only
+## Decision 31: Treat `runtime` as a conceptual boundary
+We will document `runtime` as the set of production layers that execute the service, but we will not force a physical `runtime/` folder if the current top-level package layout is already stable.
+
+### Why
+The current import graph and deployment shape already work with `config`, `models`, `flows`, `routes`, `services`, `templates`, `infrastructure`, `utils`, `tools`, and `tests` as separate concerns. A folder move would add churn without improving ownership.
+
+## Decision 32: Onboarding is alta-only
 Onboarding only owns the new-provider journey. If Supabase says the provider already exists, the shared router must restore the canonical operational context instead of sending the user back into onboarding.
 
 ### Why

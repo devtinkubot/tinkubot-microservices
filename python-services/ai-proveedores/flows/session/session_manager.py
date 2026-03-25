@@ -10,35 +10,18 @@ from typing import Any, Dict
 
 from config import configuracion
 from infrastructure.redis import cliente_redis
+from services.shared import PALABRAS_DISPARO_REGISTRO as _PALABRAS_DISPARO_REGISTRO
+from services.shared import PALABRAS_REINICIO as _PALABRAS_REINICIO
+from services.shared import es_comando_reinicio as _es_comando_reinicio
+from services.shared import es_disparador_registro as _es_disparador_registro
 
 logger = logging.getLogger(__name__)
 
 # Claves y constantes para Redis
 CLAVE_FLUJO = "prov_flow:{}"  # telefono
 
-PALABRAS_DISPARO = [
-    "registro",
-    "registrarme",
-    "registrarse",
-    "registrar",
-    "soy proveedor",
-    "quiero ofrecer",
-    "ofrecer servicios",
-    "unirme",
-    "alta proveedor",
-    "crear perfil",
-]
-
-PALABRAS_REINICIO = {
-    "reset",
-    "reiniciar",
-    "reinicio",
-    "empezar",
-    "inicio",
-    "comenzar",
-    "start",
-    "nuevo",
-}
+PALABRAS_DISPARO = list(_PALABRAS_DISPARO_REGISTRO)
+PALABRAS_REINICIO = list(_PALABRAS_REINICIO)
 
 
 async def obtener_flujo(telefono: str) -> Dict[str, Any]:
@@ -112,28 +95,10 @@ async def limpiar_claves_proveedor(telefono: str) -> int:
 
 
 def es_disparador_registro(texto: str) -> bool:
-    """
-    Determinar si el texto indica una intención de registro.
-
-    Args:
-        texto: Texto del mensaje a evaluar
-
-    Returns:
-        True si el texto contiene palabras clave de registro
-    """
-    texto_min = (texto or "").lower()
-    return any(t in texto_min for t in PALABRAS_DISPARO)
+    """Determinar si el texto indica una intención de registro."""
+    return bool(_es_disparador_registro(texto))
 
 
 def es_comando_reinicio(texto: str) -> bool:
-    """
-    Determinar si el texto es un comando de reinicio.
-
-    Args:
-        texto: Texto del mensaje a evaluar
-
-    Returns:
-        True si el texto contiene palabras clave de reinicio
-    """
-    texto_min = (texto or "").lower()
-    return any(t in texto_min for t in PALABRAS_REINICIO)
+    """Determinar si el texto es un comando de reinicio."""
+    return bool(_es_comando_reinicio(texto))

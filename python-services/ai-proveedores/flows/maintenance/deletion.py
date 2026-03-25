@@ -4,12 +4,19 @@ from typing import Any, Dict
 
 from flows.constructors import construir_payload_menu_principal
 from services import eliminar_registro_proveedor
+from services.shared import (
+    RESPUESTAS_ELIMINACION_AFIRMATIVAS,
+    RESPUESTAS_ELIMINACION_NEGATIVAS,
+    normalizar_respuesta_binaria,
+    normalizar_texto_interaccion,
+)
 from templates.maintenance import (
     confirmar_eliminacion_exitosa,
     error_eliminacion_fallida,
     informar_eliminacion_cancelada,
     solicitar_confirmacion_eliminacion,
 )
+from templates.shared import mensaje_no_entendi_respuesta
 
 
 async def manejar_confirmacion_eliminacion(
@@ -21,9 +28,16 @@ async def manejar_confirmacion_eliminacion(
 ) -> Dict[str, Any]:
     """Procesa la confirmación de eliminación del registro."""
     texto_crudo = (texto_mensaje or "").strip()
-    texto = texto_crudo.lower()
+    texto = normalizar_texto_interaccion(texto_crudo)
+    tokens = set(texto.split())
 
-    if texto.startswith("2") or "cancelar" in texto or "no" in texto:
+    decision = normalizar_respuesta_binaria(
+        texto,
+        RESPUESTAS_ELIMINACION_AFIRMATIVAS,
+        RESPUESTAS_ELIMINACION_NEGATIVAS,
+    )
+
+    if decision is False or "cancelar" in tokens or "no" in tokens:
         flujo["state"] = "awaiting_menu_option"
         return {
             "success": True,
@@ -37,9 +51,12 @@ async def manejar_confirmacion_eliminacion(
         }
 
     if (
-        texto.startswith("1")
+        decision is True
         or texto.startswith("confirm")
-        or texto in {"si", "ok", "listo", "confirmar", "eliminar"}
+        or "si" in tokens
+        or "ok" in tokens
+        or "listo" in tokens
+        or "eliminar" in tokens
     ):
         resultado = await eliminar_registro_proveedor(supabase, telefono)
 
@@ -66,7 +83,7 @@ async def manejar_confirmacion_eliminacion(
     return {
         "success": True,
         "messages": [
-            {"response": "*No entendí tu respuesta.*"},
+            {"response": mensaje_no_entendi_respuesta()},
             {"response": solicitar_confirmacion_eliminacion()},
         ],
     }

@@ -6,7 +6,6 @@ de datos recibidos y resumen del registro del proveedor.
 
 from typing import Any, Dict
 
-
 # IDs para botones interactivos
 CONFIRM_ACCEPT_ID = "confirm_accept"
 CONFIRM_REJECT_ID = "confirm_reject"
@@ -35,3 +34,7 @@ def payload_confirmacion_resumen(resumen: str) -> Dict[str, Any]:
         "response": resumen,
         "ui": ui,
     }
+
+
+def mensaje_resumen_confirmacion_registro() -> str:
+    return "✅ *Por favor confirma tus datos:*"

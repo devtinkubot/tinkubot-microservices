@@ -3,25 +3,26 @@
 Scope: `python-services/ai-proveedores`
 
 ## Why this exists
-We are moving `ai-proveedores` from a shared-state router toward four independent flows:
+This matrix documents the live ownership boundaries for `ai-proveedores`:
 
 - `onboarding`
 - `review`
 - `maintenance`
 - `availability`
 
-This matrix records who owns each state, who reads it, who writes it, and whether it is still a bridge.
+It records who owns each state, who reads it, who writes it, and whether it is still a bridge.
 
 ## Current Folder Model
 
-The repo is moving toward the target folder model. Some folders already exist, and others are the planned destination for the remaining split:
+The repo already uses the following layout in production:
 
 ```text
 python-services/ai-proveedores/
+├── config/
+├── models/
 ├── flows/
 │   ├── onboarding/
-│   ├── review/
-│   └── ...
+│   └── maintenance/
 ├── routes/
 │   ├── onboarding/
 │   ├── availability/
@@ -32,15 +33,12 @@ python-services/ai-proveedores/
 │   ├── onboarding/
 │   ├── review/
 │   ├── maintenance/
-│   ├── registration/
-│   ├── provider/
 │   └── shared/
 └── templates/
     ├── onboarding/
     ├── review/
-    ├── registration/
-    ├── session/
-    └── interface/
+    ├── maintenance/
+    └── shared/
 ```
 
 ## Ownership Rules
@@ -132,7 +130,7 @@ If a state still appears as a bridge, it means we still need compatibility for:
 
 ## Folder Guidance
 
-The folder plan is already heading in the right direction:
+The folder guidance is now a live map of the existing structure:
 
 - `flows/onboarding` should own onboarding decisions
 - `routes/onboarding` should own onboarding entry, consent, and confirmation
@@ -147,4 +145,4 @@ The folder plan is already heading in the right direction:
 
 ## Next Step
 
-The next cleanup should focus on moving any remaining business decision from the shared router into the context that owns the state.
+The next cleanup should focus on removing old compatibility notes only after no live reader or writer remains.

@@ -105,8 +105,7 @@ async def preguntar_nuevo_servicio_con_ejemplos_dinamicos(
                     "id": SERVICE_EXAMPLE_ADMIN_ID,
                     "title": "Administrativo",
                     "description": (
-                        "Facturación, cobranza y gestión documental para "
-                        "negocios"
+                        "Facturación, cobranza y gestión documental para " "negocios"
                     ),
                 },
                 *(
@@ -225,6 +224,10 @@ def mensaje_correccion_servicios_menu() -> str:
     return "Escribe nuevamente el servicio que deseas agregar."
 
 
+def mensaje_confirmar_o_corregir_servicio() -> str:
+    return "Usa *Confirmar* si el servicio está bien o *Corregir* si deseas cambiarlo."
+
+
 def confirmar_servicios_agregados(servicios: List[str]) -> str:
     """Confirma que los servicios fueron agregados exitosamente."""
     if len(servicios) == 1:
@@ -240,6 +243,24 @@ def informar_limite_servicios_alcanzado(agregados: int, maximo: int) -> str:
         f"Solo se agregaron {agregados} servicio(s) "
         f"por alcanzar el máximo de {maximo}."
     )
+
+
+def mensaje_numero_valido_reemplazo_servicio() -> str:
+    return "Escribe el número válido del servicio que deseas reemplazar."
+
+
+def mensaje_numero_valido_eliminar_servicio() -> str:
+    return "Escribe el número válido del servicio que deseas eliminar."
+
+
+def mensaje_servicio_ya_existe_en_lista(servicio: str) -> str:
+    return f"El servicio *{servicio}* ya existe en tu lista."
+
+
+def mensaje_limite_servicios_temporales(maximo: int, profile_completion: bool) -> str:
+    if profile_completion:
+        return f"Ya tienes {maximo} servicios principales en tu lista temporal."
+    return f"Ya tienes {maximo} servicios en tu lista temporal."
 
 
 # ==================== ELIMINAR SERVICIOS ====================

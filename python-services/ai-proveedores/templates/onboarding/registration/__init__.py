@@ -1,5 +1,18 @@
 """Mensajes relacionados con el flujo de registro de proveedores."""
 
+from templates.onboarding.caducidad import (
+    TEMPLATE_EXPIRY_72H_ID,
+    TEMPLATE_EXPIRY_72H_LANGUAGE,
+    TEMPLATE_WARNING_48H_ID,
+    TEMPLATE_WARNING_48H_LANGUAGE,
+    payload_baja_onboarding_72h,
+    payload_recordatorio_onboarding_48h,
+)
+from templates.onboarding.telefono import (
+    error_real_phone_invalido,
+    preguntar_real_phone,
+)
+
 from .confirmacion import (
     CONFIRM_ACCEPT_ID,
     CONFIRM_REJECT_ID,
@@ -13,8 +26,6 @@ from .confirmacion_servicios import (
 )
 from .perfil_profesional import (
     CERTIFICATE_SKIP_ID,
-    construir_resumen_confirmacion_perfil_profesional,
-    mensaje_menu_edicion_perfil_profesional,
     PROFILE_CONTROL_IDS,
     PROFILE_SINGLE_USE_CONTROL_IDS,
     SERVICE_ADD_NO_ID,
@@ -24,25 +35,21 @@ from .perfil_profesional import (
     SOCIAL_FACEBOOK_ID,
     SOCIAL_INSTAGRAM_ID,
     SOCIAL_SKIP_ID,
+    construir_resumen_confirmacion_perfil_profesional,
     mensaje_error_certificado_invalido,
     mensaje_inicio_perfil_profesional,
+    mensaje_menu_edicion_perfil_profesional,
     mensaje_minimo_servicios_pendiente,
+    mensaje_minimo_servicios_perfil_profesional,
     payload_agregar_otro_servicio,
-    payload_confirmacion_servicio_perfil,
     payload_certificado_opcional,
+    payload_confirmacion_servicio_perfil,
     payload_red_social_opcional,
     payload_red_social_opcional_estado,
     preguntar_experiencia_general,
     preguntar_nombre,
 )
-from templates.onboarding.caducidad import (
-    TEMPLATE_EXPIRY_72H_ID,
-    TEMPLATE_EXPIRY_72H_LANGUAGE,
-    TEMPLATE_WARNING_48H_ID,
-    TEMPLATE_WARNING_48H_LANGUAGE,
-    payload_baja_onboarding_72h,
-    payload_recordatorio_onboarding_48h,
-)
+from .resumen import construir_resumen_confirmacion_registro
 from .servicios import (
     confirmar_servicio_y_preguntar_otro,
     mensaje_debes_registrar_al_menos_un_servicio,
@@ -61,10 +68,7 @@ from .servicios import (
     preguntar_numero_servicio_reemplazar,
     preguntar_siguiente_servicio_registro,
 )
-from templates.onboarding.telefono import (
-    error_real_phone_invalido,
-    preguntar_real_phone,
-)
+
 __all__ = [
     # Pasos de registro
     "preguntar_real_phone",
@@ -73,6 +77,7 @@ __all__ = [
     "preguntar_experiencia_general",
     # Confirmación
     "payload_confirmacion_resumen",
+    "construir_resumen_confirmacion_registro",
     "CONFIRM_ACCEPT_ID",
     "CONFIRM_REJECT_ID",
     # Confirmación de servicios
@@ -103,6 +108,7 @@ __all__ = [
     "payload_certificado_opcional",
     "mensaje_error_certificado_invalido",
     "mensaje_minimo_servicios_pendiente",
+    "mensaje_minimo_servicios_perfil_profesional",
     "construir_resumen_confirmacion_perfil_profesional",
     "preguntar_nombre",
     "mensaje_menu_edicion_perfil_profesional",

@@ -19,25 +19,22 @@ from services.maintenance.asistente_clarificacion import (
     construir_mensaje_clarificacion_servicio,
 )
 from services.maintenance.constantes import SERVICIOS_MAXIMOS
-from utils import (
-    construir_listado_servicios,
-    dividir_cadena_servicios,
-    limpiar_texto_servicio,
-)
 from services.maintenance.validacion_semantica import (
     validar_servicio_semanticamente,
 )
-from templates.maintenance.menus import (
-    SERVICE_DELETE_BACK_ID,
-    SERVICE_DELETE_PREFIX,
-    SERVICE_EXAMPLE_ADMIN_ID,
-    SERVICE_EXAMPLE_BACK_ID,
-    SERVICE_EXAMPLE_LEGAL_ID,
-    SERVICE_EXAMPLE_MECHANICS_ID,
-    SERVICE_EXAMPLE_PREFIX,
-    payload_lista_eliminar_servicios,
+from services.shared import (
+    OPCIONES_MENU_SERVICIOS_AGREGAR,
+    OPCIONES_MENU_SERVICIOS_ELIMINAR,
+    OPCIONES_MENU_SERVICIOS_VOLVER,
+    RESPUESTAS_AGREGAR_SERVICIO_AFIRMATIVAS,
+    RESPUESTAS_AGREGAR_SERVICIO_NEGATIVAS,
+    RESPUESTAS_CONFIRMACION_SERVICIOS_AFIRMATIVAS,
+    RESPUESTAS_CONFIRMACION_SERVICIOS_NEGATIVAS,
+    es_salida_menu,
+    normalizar_respuesta_binaria,
+    normalizar_texto_interaccion,
 )
-from templates.maintenance import (
+from templates.maintenance.mensajes_servicios import (
     error_eliminar_servicio,
     error_guardar_servicio,
     error_limite_servicios_alcanzado,
@@ -50,8 +47,27 @@ from templates.maintenance import (
     preguntar_nuevo_servicio_con_ejemplos_dinamicos,
     preguntar_servicio_eliminar,
 )
-from templates.shared import error_opcion_no_reconocida
+from templates.maintenance.menus import (
+    SERVICE_DELETE_BACK_ID,
+    SERVICE_DELETE_PREFIX,
+    SERVICE_EXAMPLE_ADMIN_ID,
+    SERVICE_EXAMPLE_BACK_ID,
+    SERVICE_EXAMPLE_LEGAL_ID,
+    SERVICE_EXAMPLE_MECHANICS_ID,
+    SERVICE_EXAMPLE_PREFIX,
+    payload_lista_eliminar_servicios,
+)
 from templates.onboarding.registration import SERVICE_CONFIRM_ID, SERVICE_CORRECT_ID
+from templates.shared import (
+    error_opcion_no_reconocida,
+    mensaje_indica_servicio_exacto,
+    mensaje_no_pude_interpretar_servicio_especifico,
+)
+from utils import (
+    construir_listado_servicios,
+    dividir_cadena_servicios,
+    limpiar_texto_servicio,
+)
 
 _FLUJO_KEY_SERVICIOS_TEMP = "service_add_temporales"
 _FLUJO_KEY_SERVICIOS_CONFIRMACION_NONCE = "service_add_confirmation_nonce"
@@ -272,7 +288,7 @@ async def _normalizar_servicios_ingresados(
                 or str(servicio or "").strip(),
                 clarification_question=str(
                     validacion.get("clarification_question")
-                    or "Indica el servicio o especialidad exacta que ofreces."
+                    or mensaje_indica_servicio_exacto()
                 ),
                 service_summary=str(
                     validacion.get("proposed_service_summary")
@@ -291,16 +307,13 @@ async def _normalizar_servicios_ingresados(
                 "response": contexto.get("message")
                 or str(
                     validacion.get("clarification_question")
-                    or "Indica el servicio o especialidad exacta que ofreces."
+                    or mensaje_indica_servicio_exacto()
                 ),
             }
         if not validacion.get("is_valid_service"):
             return {
                 "ok": False,
-                "response": (
-                    "No pude interpretar ese servicio. "
-                    "Escribe una versión más específica."
-                ),
+                "response": mensaje_no_pude_interpretar_servicio_especifico(),
             }
         servicio_validado = str(
             validacion.get("normalized_service") or servicio
@@ -355,7 +368,7 @@ async def manejar_accion_servicios(
     texto_minusculas = (texto_mensaje or "").strip().lower()
     servicios_actuales = flujo.get("services") or []
 
-    if opcion == "1" or "agregar" in texto_minusculas:
+    if opcion in OPCIONES_MENU_SERVICIOS_AGREGAR or "agregar" in texto_minusculas:
         if len(servicios_actuales) >= SERVICIOS_MAXIMOS:
             return {
                 "success": True,
@@ -376,7 +389,7 @@ async def manejar_accion_servicios(
             maximo=SERVICIOS_MAXIMOS,
         )
 
-    if opcion == "2" or "eliminar" in texto_minusculas:
+    if opcion in OPCIONES_MENU_SERVICIOS_ELIMINAR or "eliminar" in texto_minusculas:
         if not servicios_actuales:
             flujo["state"] = "maintenance_service_action"
             return {
@@ -399,7 +412,7 @@ async def manejar_accion_servicios(
             ],
         }
 
-    if opcion == "3" or "volver" in texto_minusculas or "salir" in texto_minusculas:
+    if opcion in OPCIONES_MENU_SERVICIOS_VOLVER or es_salida_menu(texto_minusculas):
         flujo["state"] = "awaiting_menu_option"
         return {
             "success": True,
@@ -482,7 +495,9 @@ async def manejar_agregar_servicios(
             for idx, servicio in enumerate(servicios_actuales)
             if idx != indice_reemplazo
         ]
-    espacio_restante = 1 if reemplazo_activo else (SERVICIOS_MAXIMOS - len(servicios_actuales))
+    espacio_restante = (
+        1 if reemplazo_activo else (SERVICIOS_MAXIMOS - len(servicios_actuales))
+    )
     if espacio_restante <= 0:
         return {
             "success": True,
@@ -543,7 +558,9 @@ async def manejar_agregar_servicios(
         }
     servicios_transformados = resultado_normalizacion.get("services") or []
 
-    nuevos_sanitizados = _normalizar_lista_resultante(servicios_transformados, servicios_base)
+    nuevos_sanitizados = _normalizar_lista_resultante(
+        servicios_transformados, servicios_base
+    )
     if not nuevos_sanitizados:
         flujo["state"] = "maintenance_service_action"
         return {
@@ -601,30 +618,30 @@ async def manejar_confirmacion_agregar_servicios(
             "messages": [_menu_principal_desde_flujo(flujo)],
         }
 
-    texto_limpio = (texto_mensaje or "").strip().lower()
+    texto_limpio = normalizar_texto_interaccion(texto_mensaje)
     opcion_limpia = (selected_option or "").strip().lower()
-    aceptar = texto_limpio.startswith("1") or texto_limpio in {
-        "si",
-        "sí",
-        "agregar",
-        "sí, agregar",
-        "si, agregar",
-        "aceptar",
-        "acepto",
-        "ok",
-    }
+    decision_aceptar = normalizar_respuesta_binaria(
+        texto_limpio,
+        RESPUESTAS_CONFIRMACION_SERVICIOS_AFIRMATIVAS
+        | RESPUESTAS_AGREGAR_SERVICIO_AFIRMATIVAS,
+        RESPUESTAS_CONFIRMACION_SERVICIOS_NEGATIVAS
+        | RESPUESTAS_AGREGAR_SERVICIO_NEGATIVAS,
+    )
+    aceptar = decision_aceptar is True
     if opcion_limpia in {
         SERVICE_CONFIRM_ID,
         "confirm_accept",
         "accept",
     }:
         aceptar = True
-    corregir = texto_limpio.startswith("2") or texto_limpio in {
-        "no",
-        "corregir",
-        "editar",
-        "cambiar",
-    }
+    decision_corregir = normalizar_respuesta_binaria(
+        texto_limpio,
+        RESPUESTAS_CONFIRMACION_SERVICIOS_NEGATIVAS
+        | RESPUESTAS_AGREGAR_SERVICIO_NEGATIVAS,
+        RESPUESTAS_CONFIRMACION_SERVICIOS_AFIRMATIVAS
+        | RESPUESTAS_AGREGAR_SERVICIO_AFIRMATIVAS,
+    )
+    corregir = decision_corregir is True
     if opcion_limpia in {
         SERVICE_CORRECT_ID,
         "confirm_reject",

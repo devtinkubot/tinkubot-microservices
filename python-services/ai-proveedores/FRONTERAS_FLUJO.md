@@ -1,61 +1,99 @@
 # Fronteras de `ai-proveedores`
 
-Este documento separa el flujo de onboarding del menú operativo del proveedor para poder limpiar código con seguridad.
+Este documento separa los contextos de ejecución del servicio para poder refactorizar sin romper los flujos ya estabilizados.
 
-## 1. Onboarding activo
+## 1. Mapa actual
 
-Estos archivos forman parte del alta de proveedores y deben mantenerse juntos:
+La arquitectura del servicio ya está separada por capas:
 
-- `templates/onboarding/inicio.py`
-- `templates/onboarding/ciudad.py`
-- `templates/onboarding/documentos.py`
-- `templates/onboarding/experiencia.py`
-- `templates/onboarding/consentimiento.py`
-- `templates/onboarding/caducidad.py`
-- `templates/onboarding/telefono.py`
-- `flows/onboarding/router.py`
-- `flows/onboarding/handlers/ciudad.py`
-- `flows/onboarding/handlers/documentos.py`
-- `flows/onboarding/handlers/experiencia.py`
-- `flows/onboarding/handlers/real_phone.py`
-- `flows/onboarding/handlers/servicios.py`
-- `flows/onboarding/handlers/consentimiento.py`
-- `routes/onboarding/router.py`
-- `flows/router.py`
-- `services/sesion_proveedor.py`
-- `templates/review/estados.py`
+- `config/`: configuración y parámetros operativos.
+- `models/`: contratos y modelos de dominio.
+- `flows/`: orquestación y transiciones.
+- `routes/`: fronteras explícitas por contexto.
+- `services/`: lógica de negocio.
+- `templates/`: copys y payloads visibles.
+- `infrastructure/`: integraciones técnicas.
+- `utils/`: helpers puros.
+- `tools/`: operaciones manuales y batch.
+- `tests/`: verificación automatizada.
 
-## 2. Menú del proveedor
+`runtime` es una frontera conceptual, no una carpeta física obligatoria.
 
-Estos archivos son del menú operativo ya registrado y deben evolucionar aparte:
+## 2. Onboarding
 
-- `templates/maintenance/menus.py`
-- `templates/maintenance/actualizacion_perfil.py`
-- `templates/maintenance/eliminacion_registro.py`
-- `flows/constructors/menu.py`
-- `flows/constructors/verification.py`
-- `flows/maintenance/menu.py`
-- `flows/maintenance/services.py`
-- `tests/unit/test_servicios_submenus.py`
+El alta inicial del proveedor vive en:
 
-## 3. Disponibilidad
+- `routes/onboarding/`
+- `flows/onboarding/`
+- `services/onboarding/`
+- `templates/onboarding/`
+- `templates/onboarding/registration/`
 
-La disponibilidad queda separada del onboarding y del menú del proveedor:
+Este contexto cubre:
 
-- `services/availability/processor.py`
-- `services/availability/disponibilidad_admin.py`
-- `tests/unit/test_principal_disponibilidad.py`
+- captura de ciudad
+- documentos
+- experiencia
+- servicios iniciales
+- consentimiento final
+- envío a revisión
 
-## 4. Sesión y reanudación
+## 3. Review
 
-La sesión ya no tiene carpeta propia en `templates/`; sus mensajes son compartidos:
+La revisión es la frontera entre alta y operación:
+
+- `routes/review/`
+- `services/review/`
+- `templates/review/`
+
+Este contexto cubre:
+
+- estado `pending_verification`
+- policy de silencio o reanudación
+- entrada al menú limitado cuando aplica
+
+## 4. Maintenance
+
+El menú operativo del proveedor ya registrado vive en:
+
+- `routes/maintenance/`
+- `flows/maintenance/`
+- `services/maintenance/`
+- `templates/maintenance/`
+
+Este contexto cubre:
+
+- edición de perfil
+- actualización de documentos
+- redes sociales
+- certificados
+- eliminación de registro
+- edición de servicios
+
+## 5. Availability
+
+La disponibilidad es un contexto separado y no forma parte del onboarding:
+
+- `routes/availability/`
+- `services/availability/`
+
+Este contexto cubre:
+
+- respuesta del proveedor a una solicitud entrante
+- procesamiento Redis de la respuesta
+- reanudación a menú o salida
+
+## 6. Sesión y mensajes compartidos
+
+Los mensajes comunes ya no viven aislados por flujo:
 
 - `templates/shared/mensajes_sesion.py`
-- `flows/router.py`
+- `templates/shared/mensajes_interaccion.py`
+- `services/shared/normalizacion_respuestas.py`
 
-## 5. Compatibilidad y legado
+## 7. Compatibilidad y legado
 
-Estos módulos siguen vivos porque aún existen rutas, fallbacks o tests que los usan. No se deben borrar todavía:
+Estos módulos siguen vivos porque todavía hay rutas o tests que los referencian. No se deben borrar sin una pasada de compatibilidad:
 
 - `flows/maintenance/document_update.py`
 - `flows/maintenance/wait_experience.py`
@@ -66,11 +104,19 @@ Estos módulos siguen vivos porque aún existen rutas, fallbacks o tests que los
 - `tests/unit/test_document_update.py`
 - `tests/unit/test_consentimiento_interactive.py`
 
-`wait_social.py` sigue vivo como flujo de perfil y completado post-alta, no como onboarding.
+`wait_social.py` sigue siendo un puente de perfil y completado post-alta, no un paso de onboarding puro.
 
-## 6. Candidatos a limpieza futura
+## 8. Qué no debe volver a mezclarse
 
-Cuando el menú del proveedor deje de depender de la compatibilidad de estados de disponibilidad, se puede revisar si ya no hace falta:
+- `flows/` no debe recuperar copys inline de usuario.
+- `templates/` no debe depender de lógica de orquestación.
+- `services/shared/` debe ser la fuente única de reglas comunes de interacción.
+- `infrastructure/` no debe volver a pedir prestadas reglas del dominio.
 
-- mantener `templates/consentimiento/*` si ya no hay estados que entren a `awaiting_consent`
-- conservar `FLUJO_SISTEMA.md` solo si sirve como documentación complementaria
+## 9. Candidatos a limpieza futura
+
+Cuando no queden consumidores legacy, se puede revisar:
+
+- si `templates/consentimiento/*` todavía aporta valor
+- si `FLUJO_SISTEMA.md` sigue siendo necesario o basta este mapa
+- si los puentes de compatibilidad restantes pueden retirarse sin afectar sesiones activas

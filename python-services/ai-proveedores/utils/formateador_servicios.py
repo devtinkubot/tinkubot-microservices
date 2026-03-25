@@ -1,5 +1,7 @@
-"""
-Utilidad para formateo de servicios a cadena persistible.
+"""Compatibilidad para formateo de servicios a cadena persistible.
+
+Este helper quedó como legado. Si necesitas el texto formateado para
+persistencia, usa la lógica específica del flujo que lo consume.
 """
 
 from typing import List

@@ -3,6 +3,7 @@
 from typing import Any, Dict
 
 from templates.onboarding.consentimiento import (
+    mensaje_consentimiento_aceptado_revision,
     mensaje_consentimiento_rechazado,
     payload_consentimiento_proveedor,
 )
@@ -32,13 +33,7 @@ def construir_respuesta_consentimiento_aceptado(
     """
     return {
         "success": True,
-        "messages": [
-            {
-                "response": (
-                    "✅ Gracias. Estamos revisando tu información y te avisaremos cuando quede listo."
-                )
-            }
-        ],
+        "messages": [{"response": mensaje_consentimiento_aceptado_revision()}],
     }
 
 

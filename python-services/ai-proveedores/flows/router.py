@@ -8,18 +8,18 @@ from flows.constructors import (
     construir_payload_menu_principal,
     construir_respuesta_solicitud_consentimiento,
 )
-from routes.onboarding import manejar_contexto_onboarding
 from flows.session import reiniciar_flujo
 from routes.availability import manejar_estado_disponibilidad
 from routes.maintenance import manejar_contexto_mantenimiento
+from routes.onboarding import manejar_contexto_onboarding
 from routes.review.router import manejar_revision_proveedor
 from services import (
     actualizar_perfil_profesional,
     agregar_certificado_proveedor,
-    asegurar_proveedor_borrador,
     eliminar_registro_proveedor,
 )
 from services.review.state import resolver_estado_registro, sincronizar_flujo_con_perfil
+from services.shared import es_comando_reinicio
 from templates.maintenance import payload_confirmacion_servicios_menu
 from templates.onboarding import (
     payload_consentimiento_proveedor,
@@ -34,25 +34,16 @@ from templates.onboarding import (
     solicitar_ciudad_registro,
 )
 from templates.shared import (
+    informar_reanudacion_inactividad,
     informar_reinicio_con_eliminacion,
     informar_reinicio_conversacion,
-    informar_reanudacion_inactividad,
     informar_timeout_inactividad,
+    mensaje_no_ubicar_paso_actual,
+    mensaje_proceso_registro_activo,
 )
 
-RESET_KEYWORDS = {
-    "reset",
-    "reiniciar",
-    "reinicio",
-    "empezar",
-    "inicio",
-    "comenzar",
-    "start",
-    "nuevo",
-}
-
 TIEMPO_INACTIVIDAD_SESION_SEGUNDOS = configuracion.ttl_flujo_segundos
-TIEMPO_AVISO_INACTIVIDAD_SEGUNDOS = 300
+TIEMPO_AVISO_INACTIVIDAD_SEGUNDOS = configuracion.provider_inactivity_warning_seconds
 
 ONBOARDING_REANUDACION_STATES = {
     "awaiting_menu_option",
@@ -120,12 +111,7 @@ def _construir_reanudacion_onboarding(flujo: Dict[str, Any]) -> Dict[str, Any]:
     elif estado == "onboarding_social_media":
         prompt = payload_redes_sociales_onboarding_con_imagen()
     else:
-        prompt = {
-            "response": (
-                "Tu proceso de registro sigue activo. "
-                "Responde para continuar donde te quedaste."
-            )
-        }
+        prompt = {"response": mensaje_proceso_registro_activo()}
 
     return {
         "success": True,
@@ -274,14 +260,7 @@ async def _manejar_flujo_sin_estado(
     return {
         "response": {
             "success": True,
-            "messages": [
-                {
-                    "response": (
-                        "No pude ubicar tu paso actual. Escribe *menu* para seguir "
-                        "o *registro* si deseas reiniciar."
-                    )
-                }
-            ],
+            "messages": [{"response": mensaje_no_ubicar_paso_actual()}],
         },
         "persist_flow": False,
     }
@@ -312,7 +291,7 @@ async def manejar_mensaje(
         opcion_menu,
         texto_mensaje,
     )
-    if texto_normalizado in RESET_KEYWORDS:
+    if es_comando_reinicio(texto_normalizado):
         resultado_eliminacion = None
         if supabase:
             resultado_eliminacion = await eliminar_registro_proveedor(
@@ -416,7 +395,8 @@ async def manejar_mensaje(
     )
     if resultado_enrutado is not None:
         logger.info(
-            "🧭 router.enrutado telefono=%s state=%s persist=%s registered=%s verified=%s pending=%s",
+            "🧭 router.enrutado telefono=%s state=%s persist=%s registered=%s "
+            "verified=%s pending=%s",
             telefono,
             flujo.get("state"),
             resultado_enrutado.get("persist_flow", True),

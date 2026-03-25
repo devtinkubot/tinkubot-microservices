@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 import httpx
-
+from config.configuracion import configuracion
 from infrastructure.database import run_supabase
 from services.onboarding.registration.parser_ubicacion import (
     VALIDATION_ERROR_INVALID_CHARS,
@@ -13,7 +13,6 @@ from services.onboarding.registration.parser_ubicacion import (
     VALIDATION_ERROR_TOO_SHORT,
     validar_y_normalizar_ubicacion,
 )
-from utils import limpiar_espacios
 from templates.onboarding.ciudad import (
     error_ciudad_caracteres_invalidos,
     error_ciudad_corta,
@@ -24,9 +23,8 @@ from templates.onboarding.ciudad import (
     solicitar_ciudad_registro,
 )
 from templates.onboarding.documentos import payload_onboarding_dni_frontal
+from utils import limpiar_espacios
 
-NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse"
-NOMINATIM_SEARCH_URL = "https://nominatim.openstreetmap.org/search"
 NOMINATIM_USER_AGENT = "tinkubot-ai-proveedores/1.0 (support@tinkubot.com)"
 
 
@@ -61,21 +59,23 @@ def _extraer_ciudad_desde_payload_ubicacion(
 async def _resolver_ciudad_desde_coordenadas(
     latitud: float, longitud: float
 ) -> Optional[str]:
-    params = {
-        "format": "jsonv2",
-        "lat": latitud,
-        "lon": longitud,
-        "zoom": 10,
-        "addressdetails": 1,
-        "accept-language": "es",
-    }
+    params = httpx.QueryParams(
+        {
+            "format": "jsonv2",
+            "lat": latitud,
+            "lon": longitud,
+            "zoom": 10,
+            "addressdetails": 1,
+            "accept-language": "es",
+        }
+    )
     headers = {"User-Agent": NOMINATIM_USER_AGENT}
-    timeout = httpx.Timeout(2.5)
+    timeout = httpx.Timeout(configuracion.nominatim_timeout_seconds)
 
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             respuesta = await client.get(
-                NOMINATIM_REVERSE_URL,
+                configuracion.nominatim_reverse_url,
                 params=params,
                 headers=headers,
             )
@@ -97,21 +97,23 @@ async def _resolver_ciudad_desde_texto(texto: str) -> Optional[str]:
     if not consulta:
         return None
 
-    params = {
-        "format": "jsonv2",
-        "q": consulta,
-        "countrycodes": "ec",
-        "limit": 5,
-        "addressdetails": 1,
-        "accept-language": "es",
-    }
+    params = httpx.QueryParams(
+        {
+            "format": "jsonv2",
+            "q": consulta,
+            "countrycodes": "ec",
+            "limit": 5,
+            "addressdetails": 1,
+            "accept-language": "es",
+        }
+    )
     headers = {"User-Agent": NOMINATIM_USER_AGENT}
-    timeout = httpx.Timeout(2.5)
+    timeout = httpx.Timeout(configuracion.nominatim_timeout_seconds)
 
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             respuesta = await client.get(
-                NOMINATIM_SEARCH_URL,
+                configuracion.nominatim_search_url,
                 params=params,
                 headers=headers,
             )
@@ -149,7 +151,9 @@ async def _persistir_ubicacion_proveedor(
     datos_actualizacion: Dict[str, Any] = {}
     if ciudad:
         datos_actualizacion["city"] = ciudad
-        datos_actualizacion["city_confirmed_at"] = datetime.now(timezone.utc).isoformat()
+        datos_actualizacion["city_confirmed_at"] = datetime.now(
+            timezone.utc
+        ).isoformat()
     if latitud is not None:
         datos_actualizacion["location_lat"] = latitud
     if longitud is not None:
@@ -169,7 +173,7 @@ async def _persistir_ubicacion_proveedor(
     )
 
 
-async def manejar_espera_ciudad_onboarding(
+async def manejar_espera_ciudad_onboarding(  # noqa: C901
     flujo: Dict[str, Any],
     texto_mensaje: Optional[str],
     carga: Optional[Dict[str, Any]] = None,
@@ -185,11 +189,7 @@ async def manejar_espera_ciudad_onboarding(
     ciudad_resuelta = ciudad_desde_payload
     ciudad_resuelta_texto = None
 
-    if (
-        not ciudad_resuelta
-        and latitud is not None
-        and longitud is not None
-    ):
+    if not ciudad_resuelta and latitud is not None and longitud is not None:
         ciudad_resuelta = await _resolver_ciudad_desde_coordenadas(latitud, longitud)
     if not ciudad_resuelta and ciudad:
         ciudad_resuelta_texto = await _resolver_ciudad_desde_texto(ciudad)
@@ -216,7 +216,7 @@ async def manejar_espera_ciudad_onboarding(
                 longitud=longitud,
             )
         except Exception:
-            pass
+            return None
 
     if not ciudad and ciudad_resuelta:
         ciudad = ciudad_resuelta
@@ -280,7 +280,7 @@ async def manejar_espera_ciudad_onboarding(
                 longitud=longitud,
             )
         except Exception:
-            pass
+            return None
 
     flujo["state"] = "onboarding_dni_front_photo"
     return {

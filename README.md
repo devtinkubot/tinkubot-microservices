@@ -17,6 +17,12 @@ tinkubot-microservices/
 └── docker-compose.yml        # Orquestación de contenedores
 ```
 
+## Documentación Principal
+
+- [Índice de `ai-proveedores`](docs/ai-proveedores.md)
+- [Contextos de `ai-proveedores`](docs/provider-contexts/plan.md)
+- [Fronteras de `ai-proveedores`](docs/ai-proveedores-boundaries.md)
+
 ## Servicios Implementados
 
 1. **AI Search** (Puerto 8000)
@@ -37,6 +43,8 @@ tinkubot-microservices/
    - Búsqueda geolocalizada con PostGIS
    - Gestión de disponibilidad y perfiles
    - Hasta 7 servicios por proveedor con embeddings individuales
+   - Arquitectura interna por capas: `config/`, `models/`, `flows/`, `routes/`, `services/`, `templates/`, `infrastructure/`
+   - Helpers puros en `utils/`, operaciones manuales en `tools/` y verificación en `tests/`
 
 4. **WhatsApp Gateway** (Node.js)
    - Integración con WhatsApp Business API

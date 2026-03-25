@@ -2,6 +2,7 @@
 
 from typing import Any, Dict, Optional
 
+from flows.maintenance.context import es_contexto_mantenimiento
 from flows.validators.input import parsear_entrada_red_social
 from services.maintenance.redes_sociales_slots import (
     SOCIAL_NETWORK_FACEBOOK,
@@ -10,6 +11,7 @@ from services.maintenance.redes_sociales_slots import (
     parsear_username_red_social,
     resolver_redes_sociales,
 )
+from services.shared import es_skip_value
 from templates.onboarding.registration import (
     SOCIAL_FACEBOOK_ID,
     SOCIAL_INSTAGRAM_ID,
@@ -19,6 +21,13 @@ from templates.onboarding.registration import (
     payload_confirmacion_resumen,
     payload_red_social_opcional_estado,
 )
+from templates.shared import (
+    mensaje_elige_red_social,
+    mensaje_formato_usuario_facebook,
+    mensaje_formato_usuario_instagram,
+    mensaje_formato_usuario_red_social,
+    mensaje_validacion_identidad_cedula,
+)
 
 ONBOARDING_FACEBOOK_USERNAME_STATE = "onboarding_social_facebook_username"
 ONBOARDING_INSTAGRAM_USERNAME_STATE = "onboarding_social_instagram_username"
@@ -26,21 +35,11 @@ MAINTENANCE_FACEBOOK_USERNAME_STATE = "maintenance_social_facebook_username"
 MAINTENANCE_INSTAGRAM_USERNAME_STATE = "maintenance_social_instagram_username"
 
 
-def _es_contexto_mantenimiento(flujo: Dict[str, Any]) -> bool:
-    estado = str(flujo.get("state") or "").strip()
-    return bool(
-        flujo.get("approved_basic")
-        or flujo.get("maintenance_mode")
-        or flujo.get("profile_edit_mode")
-        or estado.startswith("maintenance_")
-    )
-
-
 def _estado_usuario_red_social(
     flujo: Dict[str, Any],
     tipo_red: str,
 ) -> str:
-    if _es_contexto_mantenimiento(flujo):
+    if es_contexto_mantenimiento(flujo):
         return (
             MAINTENANCE_FACEBOOK_USERNAME_STATE
             if tipo_red == SOCIAL_NETWORK_FACEBOOK
@@ -91,13 +90,7 @@ def manejar_espera_red_social(
         if not red_social_parseada["url"]:
             return {
                 "success": True,
-                "messages": [
-                    {
-                        "response": (
-                            "Envíame el usuario como *usuario*, *@usuario* o URL completa."
-                        )
-                    }
-                ],
+                "messages": [{"response": mensaje_formato_usuario_red_social()}],
             }
 
         if tipo_red == SOCIAL_NETWORK_FACEBOOK:
@@ -150,18 +143,10 @@ def manejar_espera_red_social(
         flujo["state"] = "awaiting_dni_front_photo"
         return {
             "success": True,
-            "messages": [
-                {
-                    "response": (
-                        "*Para validar tu identidad y mantener la confianza en la "
-                        "plataforma*, necesito una foto clara de la parte frontal de "
-                        "tu cédula. *Envíala como imagen adjunta.*"
-                    )
-                }
-            ],
+            "messages": [{"response": mensaje_validacion_identidad_cedula()}],
         }
 
-    if seleccion == SOCIAL_SKIP_ID or texto_normalizado.lower() == SOCIAL_SKIP_ID:
+    if es_skip_value(texto_normalizado, seleccion) or seleccion == SOCIAL_SKIP_ID:
         redes_actuales = resolver_redes_sociales(flujo)
         if redes_actuales["facebook_username"] or redes_actuales["instagram_username"]:
             payload_legacy = construir_payload_legacy_red_social(
@@ -205,13 +190,7 @@ def manejar_espera_red_social(
         )
         return {
             "success": True,
-            "messages": [
-                {
-                    "response": (
-                        "Envíame tu usuario de *Facebook* como *usuario*, *@usuario* o URL completa."
-                    )
-                }
-            ],
+            "messages": [{"response": mensaje_formato_usuario_facebook()}],
         }
     if seleccion == SOCIAL_INSTAGRAM_ID:
         flujo["state"] = _estado_usuario_red_social(
@@ -220,16 +199,13 @@ def manejar_espera_red_social(
         )
         return {
             "success": True,
-            "messages": [
-                {
-                    "response": (
-                        "Envíame tu usuario de *Instagram* como *usuario*, *@usuario* o URL completa."
-                    )
-                }
-            ],
+            "messages": [{"response": mensaje_formato_usuario_instagram()}],
         }
 
-    if "facebook.com" in texto_normalizado.lower() or "fb.com" in texto_normalizado.lower():
+    if (
+        "facebook.com" in texto_normalizado.lower()
+        or "fb.com" in texto_normalizado.lower()
+    ):
         flujo["state"] = _estado_usuario_red_social(
             flujo,
             SOCIAL_NETWORK_FACEBOOK,
@@ -253,18 +229,11 @@ def manejar_espera_red_social(
             selected_option=None,
         )
 
-    if (
-        texto_normalizado
-        and texto_normalizado.lower() not in {"omitir", "na", "n/a", "ninguno"}
-    ):
+    if texto_normalizado and not es_skip_value(texto_normalizado):
         return {
             "success": True,
             "messages": [
-                {
-                    "response": (
-                        "Primero elige si deseas agregar *Facebook* o *Instagram*."
-                    )
-                },
+                {"response": mensaje_elige_red_social()},
                 payload_red_social_opcional_estado(
                     facebook_username=flujo.get("facebook_username"),
                     instagram_username=flujo.get("instagram_username"),
@@ -303,13 +272,5 @@ def manejar_espera_red_social(
     flujo["state"] = "awaiting_dni_front_photo"
     return {
         "success": True,
-        "messages": [
-            {
-                "response": (
-                    "*Para validar tu identidad y mantener la confianza en la "
-                    "plataforma*, necesito una foto clara de la parte frontal de "
-                    "tu cédula. *Envíala como imagen adjunta.*"
-                )
-            }
-        ],
+        "messages": [{"response": mensaje_validacion_identidad_cedula()}],
     }

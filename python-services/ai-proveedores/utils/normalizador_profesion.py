@@ -1,4 +1,8 @@
-"""Utilidad para normalización de profesiones para almacenamiento."""
+"""Compatibilidad para normalización de profesiones para almacenamiento.
+
+Este helper quedó como legado. Si el consumo es interno, conviene usar la
+normalización específica del dominio que corresponda.
+"""
 
 from .normalizador_texto_busqueda import normalizar_texto_para_busqueda
 

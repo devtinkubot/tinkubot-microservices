@@ -9,17 +9,18 @@ from services.maintenance.redes_sociales_slots import (
     construir_payload_legacy_red_social,
     extraer_redes_sociales_desde_texto,
 )
+from services.shared import es_skip_value
 from templates.onboarding.redes_sociales import (
     REDES_SOCIALES_SKIP_ID,
+    mensaje_final_redes_sociales_onboarding,
+    mensaje_no_pude_guardar_redes_sociales_onboarding,
     payload_redes_sociales_onboarding_con_imagen,
 )
 
 
 def _mensaje_final_onboarding() -> str:
-    return (
-        "✅ Gracias. Registramos tu información y la revisaremos antes de "
-        "activar tu perfil."
-    )
+    return mensaje_final_redes_sociales_onboarding()
+
 
 logger = logging.getLogger(__name__)
 
@@ -28,15 +29,11 @@ def _debe_omitir_redes(
     texto_mensaje: Optional[str],
     selected_option: Optional[str],
 ) -> bool:
-    texto = (texto_mensaje or "").strip().lower()
-    seleccion = (selected_option or "").strip().lower()
-    return seleccion == REDES_SOCIALES_SKIP_ID or texto in {
-        REDES_SOCIALES_SKIP_ID,
-        "omitir",
-        "na",
-        "n/a",
-        "ninguno",
-    }
+    return bool(
+        selected_option == REDES_SOCIALES_SKIP_ID
+        or es_skip_value(texto_mensaje, selected_option)
+        or (texto_mensaje or "").strip().lower() == REDES_SOCIALES_SKIP_ID
+    )
 
 
 async def _persistir_redes_sociales_onboarding(
@@ -124,12 +121,7 @@ async def manejar_espera_red_social_onboarding(
         return {
             "success": True,
             "messages": [
-                {
-                    "response": (
-                        "No pude guardar tus redes todavía. "
-                        "Intenta nuevamente o toca Omitir."
-                    )
-                },
+                {"response": mensaje_no_pude_guardar_redes_sociales_onboarding()},
                 payload_redes_sociales_onboarding_con_imagen(),
             ],
         }

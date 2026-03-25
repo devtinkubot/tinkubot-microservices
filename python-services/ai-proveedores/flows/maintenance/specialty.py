@@ -12,34 +12,47 @@ from services.maintenance.constantes import (
     SERVICIOS_MAXIMOS_ONBOARDING,
     SERVICIOS_MINIMOS_PERFIL_PROFESIONAL,
 )
-from utils import (
-    limpiar_espacios,
-    parsear_servicios_con_limite,
-    parsear_servicios_numerados_con_limite,
-    sanitizar_lista_servicios,
-)
 from services.maintenance.validacion_semantica import (
     validar_servicio_semanticamente,
 )
-from flows.constructors import construir_respuesta_solicitud_consentimiento
-from templates.onboarding.registration import (
-    PROFILE_CONTROL_IDS,
-    mensaje_maximo_servicios_registro,
-    mensaje_resumen_servicios_registro,
-    mensaje_servicio_duplicado_registro,
-    payload_confirmacion_servicio_perfil,
-    payload_resumen_servicios_registro,
-    preguntar_siguiente_servicio_registro,
-)
+from templates.maintenance import mensaje_ejemplo_servicio_seleccionado
 from templates.maintenance.menus import (
     SERVICE_EXAMPLE_ADMIN_ID,
     SERVICE_EXAMPLE_BACK_ID,
     SERVICE_EXAMPLE_LEGAL_ID,
     SERVICE_EXAMPLE_MECHANICS_ID,
 )
-from templates.maintenance import mensaje_ejemplo_servicio_seleccionado
+from templates.onboarding.registration import (
+    PROFILE_CONTROL_IDS,
+    mensaje_maximo_servicios_registro,
+    mensaje_minimo_servicios_perfil_profesional,
+    mensaje_servicio_duplicado_registro,
+    payload_confirmacion_servicio_perfil,
+    payload_resumen_servicios_registro,
+    preguntar_siguiente_servicio_registro,
+)
 from templates.onboarding.servicios import (
     payload_servicios_onboarding_con_imagen,
+)
+from templates.shared import (
+    mensaje_formato_servicios_compartido,
+    mensaje_indica_servicio_exacto,
+    mensaje_no_pude_interpretar_servicio,
+    mensaje_no_pude_interpretar_servicio_especifico,
+    mensaje_no_pude_procesar_servicios,
+    mensaje_preguntar_servicio_registrado,
+    mensaje_servicio_maximo_caracteres,
+    mensaje_servicio_minimo_caracteres,
+    mensaje_servicio_obligatorio,
+    mensaje_tomamos_solo_primeros_servicios,
+    mensaje_tuvimos_problema_normalizar_servicio,
+    mensaje_ya_tenias_esos_servicios,
+)
+from utils import (
+    limpiar_espacios,
+    parsear_servicios_con_limite,
+    parsear_servicios_numerados_con_limite,
+    sanitizar_lista_servicios,
 )
 
 logger = logging.getLogger(__name__)
@@ -107,11 +120,7 @@ async def _mensajes_prompt_servicio_compartido(
 
 
 def _preguntar_servicio_legado_compartido() -> str:
-    return (
-        "*Escribe el servicio que estás registrando*\n\n"
-        "Envía un solo servicio por mensaje y agrega la especialidad o área "
-        "si aplica."
-    )
+    return mensaje_preguntar_servicio_registrado()
 
 
 async def normalizar_servicio_registro_individual(
@@ -128,39 +137,26 @@ async def normalizar_servicio_registro_individual(
     if texto_minusculas in {"omitir", "ninguna", "na", "n/a"}:
         return {
             "ok": False,
-            "response": (
-                "*Los servicios son obligatorios.* "
-                "Escribe un servicio indicando el servicio y la especialidad o "
-                "área exacta."
-            ),
+            "response": mensaje_servicio_obligatorio(),
         }
 
     if len(especialidad_texto) < 2:
         return {
             "ok": False,
-            "response": (
-                "*El servicio debe tener al menos 2 caracteres.* "
-                "Escríbelo con más detalle."
-            ),
+            "response": mensaje_servicio_minimo_caracteres(),
         }
 
     if len(especialidad_texto) > 300:
         return {
             "ok": False,
-            "response": (
-                "*El texto es muy largo (máx. 300 caracteres).* "
-                "Envía una versión más corta del servicio."
-            ),
+            "response": mensaje_servicio_maximo_caracteres(),
         }
 
     if not cliente_openai:
         logger.error("❌ OpenAI no configurado; no se puede normalizar servicios")
         return {
             "ok": False,
-            "response": (
-                "*No pude procesar tus servicios en este momento.* "
-                "Por favor intenta nuevamente en unos minutos."
-            ),
+            "response": mensaje_no_pude_procesar_servicios(),
         }
 
     try:
@@ -175,29 +171,20 @@ async def normalizar_servicio_registro_individual(
         logger.error("❌ Error en transformación OpenAI: %s", exc)
         return {
             "ok": False,
-            "response": (
-                "*Tuvimos un problema al normalizar tu servicio.* "
-                "Por favor intenta nuevamente."
-            ),
+            "response": mensaje_tuvimos_problema_normalizar_servicio(),
         }
 
     if not servicios_transformados:
         return {
             "ok": False,
-            "response": (
-                "*No pude interpretar ese servicio.* "
-                "Por favor reescríbelo de forma más simple y específica."
-            ),
+            "response": mensaje_no_pude_interpretar_servicio(),
         }
 
     servicios_transformados = sanitizar_lista_servicios(servicios_transformados)
     if not servicios_transformados:
         return {
             "ok": False,
-            "response": (
-                "*No pude interpretar ese servicio.* "
-                "Por favor reescríbelo de forma más simple y específica."
-            ),
+            "response": mensaje_no_pude_interpretar_servicio(),
         }
 
     servicio = servicios_transformados[0]
@@ -217,7 +204,7 @@ async def normalizar_servicio_registro_individual(
             or servicio,
             clarification_question=str(
                 validacion.get("clarification_question")
-                or "Indica el servicio o especialidad exacta que ofreces."
+                or mensaje_indica_servicio_exacto()
             ),
             service_summary=str(
                 validacion.get("proposed_service_summary")
@@ -236,16 +223,13 @@ async def normalizar_servicio_registro_individual(
             "response": contexto.get("message")
             or str(
                 validacion.get("clarification_question")
-                or "Indica el servicio o especialidad exacta que ofreces."
+                or mensaje_indica_servicio_exacto()
             ),
         }
     if not validacion.get("is_valid_service"):
         return {
             "ok": False,
-            "response": (
-                "No pude interpretar ese servicio. "
-                "Escribe una versión más específica."
-            ),
+            "response": mensaje_no_pude_interpretar_servicio_especifico(),
         }
     return {
         "ok": True,
@@ -256,10 +240,7 @@ async def normalizar_servicio_registro_individual(
 
 
 def _explicar_formato_servicios_compartido() -> str:
-    return (
-        "Escribe el servicio con el mayor detalle posible. "
-        "Si necesitas, sepáralo por coma o en una línea distinta."
-    )
+    return mensaje_formato_servicios_compartido()
 
 
 async def normalizar_servicios_registro_compartido(
@@ -274,9 +255,7 @@ async def normalizar_servicios_registro_compartido(
     if not texto_limpio:
         return {"ok": False, "response": _explicar_formato_servicios_compartido()}
 
-    total_numeros_detectados = len(
-        re.findall(r"(?<!\d)(\d{1,2})\.\s*", texto_limpio)
-    )
+    total_numeros_detectados = len(re.findall(r"(?<!\d)(\d{1,2})\.\s*", texto_limpio))
 
     servicios_numerados = parsear_servicios_numerados_con_limite(
         texto_limpio,
@@ -309,10 +288,7 @@ async def normalizar_servicios_registro_compartido(
     if not cliente_openai:
         return {
             "ok": False,
-            "response": (
-                "*No pude procesar tus servicios en este momento.* "
-                "Por favor intenta nuevamente en unos minutos."
-            ),
+            "response": mensaje_no_pude_procesar_servicios(),
         }
 
     servicios_validados: List[str] = []
@@ -474,7 +450,9 @@ async def manejar_espera_especialidad(
         if servicio in servicios_temporales:
             return {
                 "success": True,
-                "messages": [{"response": mensaje_servicio_duplicado_registro(servicio)}],
+                "messages": [
+                    {"response": mensaje_servicio_duplicado_registro(servicio)}
+                ],
             }
 
         indice_servicio = int(
@@ -538,10 +516,7 @@ async def manejar_espera_especialidad(
             "success": True,
             "messages": [
                 {
-                    "response": (
-                        "Ya tenías esos servicios en tu lista. "
-                        "Escribe otros distintos en la misma línea."
-                    )
+                    "response": mensaje_ya_tenias_esos_servicios(),
                 }
             ],
         }
@@ -562,18 +537,15 @@ async def manejar_espera_especialidad(
             onboarding="onboarding_specialty",
             maintenance="maintenance_specialty",
         )
-        mensaje_base = (
-            f"Ya capturé {cantidad} servicio(s), pero necesitamos "
-            f"al menos {SERVICIOS_MINIMOS_PERFIL_PROFESIONAL} para continuar.\n\n"
-            "Escribe los que faltan en la misma línea, por ejemplo:\n"
-            "1 Albañilería general 2 Plomería y fontanería 3 Jardinería"
+        mensaje_base = mensaje_minimo_servicios_perfil_profesional(
+            cantidad,
+            SERVICIOS_MINIMOS_PERFIL_PROFESIONAL,
         )
         if limit_reached:
-            mensaje_base = (
-                f"Tomé solo los primeros {SERVICIOS_MAXIMOS_ONBOARDING} servicios "
-                "porque ese es el máximo permitido.\n\n"
-                f"{mensaje_base}"
+            aviso_limite = mensaje_tomamos_solo_primeros_servicios(
+                SERVICIOS_MAXIMOS_ONBOARDING
             )
+            mensaje_base = f"{aviso_limite}\n\n" f"{mensaje_base}"
         return {
             "success": True,
             "messages": [{"response": mensaje_base}],
@@ -594,9 +566,8 @@ async def manejar_espera_especialidad(
     if limit_reached:
         mensajes = [
             {
-                "response": (
-                    f"Tomé solo los primeros {SERVICIOS_MAXIMOS_ONBOARDING} servicios "
-                    "porque ese es el máximo permitido."
+                "response": mensaje_tomamos_solo_primeros_servicios(
+                    SERVICIOS_MAXIMOS_ONBOARDING
                 )
             }
         ] + mensajes

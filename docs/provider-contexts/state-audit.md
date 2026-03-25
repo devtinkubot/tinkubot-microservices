@@ -10,11 +10,11 @@ Separate current runtime states into:
 - maintenance
 - review
 - availability
-- legacy awaiting aliases
+- legacy awaiting aliases kept only for compatibility
 - current runtime state names that must stay
 
 ## Summary
-The service no longer needs the legacy service aliases:
+The service no longer needs the old service aliases:
 
 - `awaiting_service_add`
 - `awaiting_service_action`
@@ -238,3 +238,7 @@ Preferred order:
 2. move more maintenance branches behind `routes/maintenance`
 3. keep onboarding-only aliases until the persisted state window expires
 4. retire any alias only after a repo-wide search shows no live reader or writer remains
+
+## Documentation note
+
+This audit is now a historical compatibility map, not a migration plan. The live code already uses `config`, `models`, `flows`, `routes`, `services`, `templates`, `infrastructure`, `utils`, `tools`, and `tests` as the actual package layout.

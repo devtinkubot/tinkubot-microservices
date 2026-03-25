@@ -5,20 +5,29 @@ from typing import Any, Dict, List, Optional
 
 from infrastructure.database import get_supabase_client
 from services.maintenance.constantes import SERVICIOS_MAXIMOS_ONBOARDING
-from utils import (
-    limpiar_espacios,
-    sanitizar_lista_servicios,
-)
 from services.maintenance.validacion_semantica import (
     validar_servicio_semanticamente,
 )
+from templates.onboarding.redes_sociales import (
+    payload_redes_sociales_onboarding_con_imagen,
+)
 from templates.onboarding.servicios import (
+    mensaje_maximo_servicios_onboarding,
+    mensaje_no_pude_guardar_servicio,
+    mensaje_no_pude_interpretar_servicio,
+    mensaje_no_pude_normalizar_servicio,
+    mensaje_no_pude_procesar_servicios,
+    mensaje_servicio_duplicado,
+    mensaje_servicio_muy_corto,
+    mensaje_servicio_muy_largo,
+    mensaje_servicio_no_reconocido,
     payload_preguntar_otro_servicio_onboarding,
     payload_servicios_onboarding_con_imagen,
     payload_servicios_onboarding_sin_imagen,
 )
-from templates.onboarding.redes_sociales import (
-    payload_redes_sociales_onboarding_con_imagen,
+from utils import (
+    limpiar_espacios,
+    sanitizar_lista_servicios,
 )
 
 logger = logging.getLogger(__name__)
@@ -32,7 +41,9 @@ def _resolver_supabase_runtime() -> Any:
 def _lista_servicios_temporales(flujo: Dict[str, Any]) -> List[str]:
     servicios = list(flujo.get("servicios_temporales") or [])
     if servicios:
-        return [str(servicio).strip() for servicio in servicios if str(servicio).strip()]
+        return [
+            str(servicio).strip() for servicio in servicios if str(servicio).strip()
+        ]
     servicios_desde_detail = []
     for item in flujo.get("servicios_detallados") or []:
         if isinstance(item, dict):
@@ -47,16 +58,19 @@ def _normalizar_meta_servicio(
     servicio_normalizado: str,
     texto_crudo: str,
 ) -> Dict[str, Any]:
-    service_summary = str(
-        validacion.get("proposed_service_summary")
-        or validacion.get("service_summary")
-        or ""
-    ).strip() or servicio_normalizado
-    domain_code = (
-        validacion.get("resolved_domain_code") or validacion.get("domain_code")
+    service_summary = (
+        str(
+            validacion.get("proposed_service_summary")
+            or validacion.get("service_summary")
+            or ""
+        ).strip()
+        or servicio_normalizado
     )
-    category_name = (
-        validacion.get("proposed_category_name") or validacion.get("category_name")
+    domain_code = validacion.get("resolved_domain_code") or validacion.get(
+        "domain_code"
+    )
+    category_name = validacion.get("proposed_category_name") or validacion.get(
+        "category_name"
     )
     confidence = float(validacion.get("confidence") or 0.0)
     requiere_revision = bool(
@@ -95,20 +109,17 @@ async def normalizar_servicio_onboarding_individual(
     if len(texto) < 2:
         return {
             "ok": False,
-            "response": "Escribe un servicio con un poco más de detalle.",
+            "response": mensaje_servicio_muy_corto(),
         }
     if len(texto) > 300:
         return {
             "ok": False,
-            "response": "El texto es muy largo. Resume tu servicio en una sola idea.",
+            "response": mensaje_servicio_muy_largo(),
         }
     if not cliente_openai:
         return {
             "ok": False,
-            "response": (
-                "*No pude procesar tus servicios en este momento.* "
-                "Por favor intenta nuevamente en unos minutos."
-            ),
+            "response": mensaje_no_pude_procesar_servicios(),
         }
 
     try:
@@ -123,14 +134,14 @@ async def normalizar_servicio_onboarding_individual(
         logger.error("❌ Error en transformación OpenAI: %s", exc)
         return {
             "ok": False,
-            "response": "*Tuvimos un problema al normalizar tu servicio.*",
+            "response": mensaje_no_pude_normalizar_servicio(),
         }
 
     servicios_transformados = sanitizar_lista_servicios(servicios_transformados or [])
     if not servicios_transformados:
         return {
             "ok": False,
-            "response": "No pude interpretar ese servicio. Escribe solo uno, pero más claro.",
+            "response": mensaje_no_pude_interpretar_servicio(),
         }
 
     servicio = servicios_transformados[0]
@@ -145,10 +156,7 @@ async def normalizar_servicio_onboarding_individual(
         if reason in {"empty_service", "non_service_text", "placeholder_service"}:
             return {
                 "ok": False,
-                "response": (
-                    "No pude reconocer ese texto como un servicio. "
-                    "Escribe un servicio real, por ejemplo: instalaciones eléctricas."
-                ),
+                "response": mensaje_servicio_no_reconocido(),
             }
         return {
             "ok": True,
@@ -156,7 +164,8 @@ async def normalizar_servicio_onboarding_individual(
             or servicio,
             "service_detail": _normalizar_meta_servicio(
                 validacion,
-                str(validacion.get("normalized_service") or servicio).strip() or servicio,
+                str(validacion.get("normalized_service") or servicio).strip()
+                or servicio,
                 texto,
             ),
         }
@@ -222,13 +231,7 @@ async def manejar_espera_servicios_onboarding(
         flujo["state"] = "onboarding_specialty"
         return {
             "success": True,
-            "messages": [
-                {
-                    "response": (
-                        "No pude guardar ese servicio. Intenta con otro texto."
-                    )
-                }
-            ],
+            "messages": [{"response": mensaje_no_pude_guardar_servicio()}],
         }
 
     llaves_existentes = {serv.lower() for serv in servicios_temporales}
@@ -237,12 +240,7 @@ async def manejar_espera_servicios_onboarding(
         return {
             "success": True,
             "messages": [
-                {
-                    "response": (
-                        "Ese servicio ya está registrado. "
-                        "Escribe otro distinto."
-                    )
-                },
+                {"response": mensaje_servicio_duplicado()},
                 _payload_prompt_servicio_onboarding(flujo),
             ],
         }
@@ -267,9 +265,8 @@ async def manejar_espera_servicios_onboarding(
             "success": True,
             "messages": [
                 {
-                    "response": (
-                        f"Ya registraste tus {SERVICIOS_MAXIMOS_ONBOARDING} "
-                        "servicios máximos. Continuemos con redes sociales."
+                    "response": mensaje_maximo_servicios_onboarding(
+                        SERVICIOS_MAXIMOS_ONBOARDING
                     )
                 },
                 payload_redes_sociales_onboarding_con_imagen(),

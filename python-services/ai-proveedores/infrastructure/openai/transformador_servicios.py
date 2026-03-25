@@ -20,6 +20,10 @@ from typing import List, Optional
 
 from config.configuracion import configuracion
 from openai import AsyncOpenAI
+from services.shared import (
+    construir_prompt_sistema_transformacion_servicios,
+    construir_prompt_usuario_transformacion_servicios,
+)
 
 MAX_SERVICES = 10
 
@@ -47,9 +51,7 @@ class TransformadorServicios:
 
     # Modelo configurable vía env para transformación (NO embeddings)
     MODELO_TRANSFORMACION = (
-        os.getenv("MODELO_TRANSFORMACION_IA")
-        or configuracion.openai_chat_model
-        or "gpt-4o-mini"
+        os.getenv("MODELO_TRANSFORMACION_IA") or configuracion.openai_chat_model
     )
 
     def __init__(self, cliente_openai: AsyncOpenAI, modelo: Optional[str] = None):
@@ -58,7 +60,7 @@ class TransformadorServicios:
 
         Args:
             cliente_openai: Cliente asíncrono de OpenAI
-            modelo: Modelo a usar (default: desde env o gpt-4o-mini)
+            modelo: Modelo a usar (default: desde env o configuración)
         """
         self.client = cliente_openai
         self.model = modelo or self.MODELO_TRANSFORMACION
@@ -100,11 +102,13 @@ class TransformadorServicios:
                 messages=[
                     {
                         "role": "system",
-                        "content": _crear_prompt_sistema(),
+                        "content": construir_prompt_sistema_transformacion_servicios(
+                            configuracion.pais_operativo
+                        ),
                     },
                     {
                         "role": "user",
-                        "content": _crear_prompt_usuario(
+                        "content": construir_prompt_usuario_transformacion_servicios(
                             entrada_usuario,
                             max_servicios,
                         ),
@@ -131,8 +135,8 @@ class TransformadorServicios:
                         },
                     },
                 },
-                temperature=0.1,  # Baja temperatura para consistencia
-                timeout=10.0,
+                temperature=configuracion.openai_temperature_consistente,
+                timeout=configuracion.openai_transform_timeout_seconds,
             )
 
             # Extraer JSON de la respuesta
@@ -175,128 +179,18 @@ class TransformadorServicios:
 
 
 def _crear_prompt_sistema() -> str:
-    """
-    Crea el prompt del sistema para optimizar transformación de servicios.
-
-    Este prompt está diseñado para funcionar con CUALQUIER tipo de proveedor
-    de servicios, no solo técnicos. Es agnóstico a la industria.
-
-    Returns:
-        Prompt del sistema optimizado
-    """
-    lineas = [
-        "Eres un experto en convertir lo que escribe un proveedor en servicios claros,",
-        "específicos y buscables en Ecuador.",
-        "",
-        "TU OBJETIVO:",
-        "Transformar profesiones, especialidades o descripciones libres en servicios",
-        "concretos que un cliente realmente buscaría y que se vean naturales en la",
-        "interfaz.",
-        "",
-        "PRIORIDAD SEMÁNTICA:",
-        "- Si el proveedor dio detalle suficiente, conserva ese detalle.",
-        "- Prefiere subservicios concretos sobre categorías paraguas.",
-        "- Solo usa una categoría general cuando el texto sea ambiguo.",
-        "",
-        "REGLAS DE TRANSFORMACIÓN:",
-        "",
-        "1. DEVUELVE SERVICIOS, NO OFICIOS NI TÍTULOS:",
-        '   - "abogado" → "asesoría legal"',
-        '   - "plomero" → "reparación de fugas", "destape de cañerías"',
-        '   - "carpintero" → "fabricación de muebles a medida",',
-        '     "reparación de muebles de madera"',
-        '   - "ingeniero de sistemas" → "desarrollo de software"',
-        '   - "contador" → "declaración de impuestos", "contabilidad para negocios"',
-        '   - "psicólogo" → "terapia psicológica", "acompañamiento emocional"',
-        "",
-        "2. SI HAY DETALLE, NO LO GENERALICES:",
-        '   - "abogado para rebaja de pensión alimenticia" → "asesoría para rebaja',
-        '     de pensión alimenticia"',
-        '   - "abogado en contratación pública" → "asesoría en contratación pública"',
-        '   - "plomero para destapar lavamanos" → "destape de cañerías en lavamanos"',
-        '   - "carpintero para arreglar muebles" → "restauración de muebles"',
-        '   - "contador para declaración de renta" → "declaración de impuestos"',
-        "",
-        "3. USA LENGUAJE DE BÚSQUEDA DEL CLIENTE:",
-        "   Piensa en cómo buscaría el servicio una persona común.",
-        '   - mejor "reparación de fugas" que "plomería"',
-        '   - mejor "asesoría para pensión alimenticia" que "abogado"',
-        '   - mejor "gestión de redes sociales" que "community manager"',
-        '   - mejor "declaración de impuestos" que "contador"',
-        '   - mejor "terapia psicológica para ansiedad" que "psicólogo clínico"',
-        "",
-        "4. ESPAÑOL NEUTRO, SIN INGLÉS:",
-        '   - "community manager" → "gestión de redes sociales"',
-        '   - "seo" → "posicionamiento web"',
-        '   - "ads" → "publicidad digital"',
-        "",
-        "5. NO INVENTES NI EXPANDAS ALCANCE:",
-        "- No agregues especialidades que el proveedor no insinuó.",
-        "- No conviertas un servicio puntual en una lista amplia sin base.",
-        "- Si el texto es genérico, propone servicios típicos y buscables.",
-        "- No cambies el verbo principal si el proveedor ya fue específico.",
-        '  Ejemplo: "configuración" no se convierte en "instalación".',
-        '  No conviertas "desarrollo de software" en "desarrollo software".',
-        '  No elimines conectores útiles como "de", "a", "para", "en".',
-        "",
-        "6. RESPETA LA CANTIDAD DECLARADA:",
-        "- No excedas la cantidad de servicios que el proveedor escribió.",
-        "- Solo separa cuando el texto incluya servicios distintos de forma clara.",
-        "- Si escribió una sola ocupación, devuelve entre 1 y 3 servicios.",
-        "- Si una frase describe un solo bloque de servicio, mantenla así.",
-        "",
-        "FORMATO DE SALIDA:",
-        "Devuelve SOLO una lista JSON de strings en español.",
-        "",
-        "IMPORTANTE:",
-        "- Cada servicio debe ser corto, claro y entendible.",
-        "- La salida debe poder mostrarse tal cual en frontend.",
-        "- Prefiere frases naturales completas sobre etiquetas comprimidas.",
-        "- Usa español claro y cotidiano que una persona en Ecuador entienda rápido.",
-        "- Evita categorías demasiado amplias si el texto permite algo más específico.",
-        "- Conserva términos de dominio relevantes.",
-        "- Prefiere conservar frases ya buscables casi textuales.",
-        '- "configuración de redes e internet" puede mantenerse igual o separarse',
-        '  en "configuración de redes" y "configuración de internet".',
-        '- "configuración de redes e internet" NO debe convertirse en',
-        '  "instalación de internet".',
-        "- No uses la coma como separador si el texto describe un solo bloque.",
-    ]
-    return "\n".join(lineas)
+    """Compatibilidad con tests y consumidores internos."""
+    return construir_prompt_sistema_transformacion_servicios(
+        configuracion.pais_operativo
+    )
 
 
 def _crear_prompt_usuario(entrada: str, max_servicios: int) -> str:
-    """
-    Crea el prompt del usuario con la entrada a transformar.
-
-    Args:
-        entrada: Texto del usuario a transformar
-        max_servicios: Máximo número de servicios a extraer
-
-    Returns:
-        Prompt del usuario
-    """
-    lineas = [
-        "Transforma la siguiente entrada en servicios específicos y optimizados",
-        "para búsqueda.",
-        "",
-        "ENTRADA DEL USUARIO:",
-        f'"{entrada}"',
-        "",
-        f"EXTRAE MÁXIMO {max_servicios} servicios específicos.",
-        "",
-        "Recuerda:",
-        "- No devuelvas profesiones ni oficios como salida final.",
-        "- Conserva el detalle cuando el proveedor ya lo escribió.",
-        "- Piensa en qué buscaría un cliente con un problema real.",
-        "- Usa lenguaje sencillo que cualquiera entienda.",
-        "- Solo separa servicios distintos que estén claramente mencionados.",
-        "- No cambies el verbo principal si ya es claro en la entrada.",
-        "- No uses la coma como separador cuando el texto es una sola descripción.",
-        "",
-        "Responde SOLO con el JSON de la lista de servicios.",
-    ]
-    return "\n".join(lineas)
+    """Compatibilidad con tests y consumidores internos."""
+    return construir_prompt_usuario_transformacion_servicios(
+        entrada,
+        max_servicios,
+    )
 
 
 def _tokenizar_texto(texto: str) -> set[str]:
@@ -441,7 +335,7 @@ async def transformar_texto_a_servicios(
     Args:
         entrada: Texto del usuario
         cliente_openai: Cliente de OpenAI
-        modelo: Modelo a usar (default: desde env o gpt-4o-mini)
+        modelo: Modelo a usar (default: desde env o configuración)
         max_servicios: Máximo de servicios
 
     Returns:

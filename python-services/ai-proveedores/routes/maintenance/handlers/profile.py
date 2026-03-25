@@ -2,13 +2,14 @@
 
 from typing import Any, Dict, Optional
 
-from flows.maintenance.selfie_update import (
-    manejar_actualizacion_selfie,
-)
+from flows.maintenance.context import es_contexto_mantenimiento
 from flows.maintenance.document_update import (
     manejar_dni_frontal_actualizacion,
     manejar_dni_trasera_actualizacion,
     manejar_inicio_documentos,
+)
+from flows.maintenance.selfie_update import (
+    manejar_actualizacion_selfie,
 )
 from flows.maintenance.wait_certificate import (
     manejar_espera_certificado,
@@ -62,16 +63,6 @@ ONBOARDING_TO_MAINTENANCE_STATES = {
 }
 
 
-def _es_contexto_mantenimiento(flujo: Dict[str, Any]) -> bool:
-    return bool(
-        flujo.get("approved_basic")
-        or flujo.get("profile_completion_mode")
-        or flujo.get("profile_edit_mode")
-        or flujo.get("maintenance_mode")
-        or str(flujo.get("state") or "").startswith("maintenance_")
-    )
-
-
 def _normalizar_estado(flujo: Dict[str, Any]) -> None:
     estado = str(flujo.get("state") or "").strip()
     if estado in ONBOARDING_TO_MAINTENANCE_STATES:
@@ -98,7 +89,10 @@ async def manejar_perfil_mantenimiento(
         estado_original,
         STATE_ALIAS_TO_MAINTENANCE.get(estado_original, estado_original),
     )
-    if not _es_contexto_mantenimiento(flujo) and estado_normalizado not in MAINTENANCE_PROFILE_STATES:
+    if (
+        not es_contexto_mantenimiento(flujo)
+        and estado_normalizado not in MAINTENANCE_PROFILE_STATES
+    ):
         return None
 
     if estado_normalizado == "maintenance_experience":
@@ -197,7 +191,7 @@ async def manejar_perfil_mantenimiento(
         _normalizar_estado(flujo)
         return {"response": respuesta, "persist_flow": True}
 
-    if not _es_contexto_mantenimiento(flujo):
+    if not es_contexto_mantenimiento(flujo):
         return None
 
     return None

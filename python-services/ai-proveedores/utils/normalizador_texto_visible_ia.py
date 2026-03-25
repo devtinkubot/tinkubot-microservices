@@ -7,6 +7,12 @@ import logging
 import re
 from typing import Any, Optional
 
+from config.configuracion import configuracion
+from services.shared import (
+    construir_prompt_sistema_normalizacion_visible,
+    construir_prompt_usuario_normalizacion_visible,
+)
+
 from .normalizador_texto_visible import normalizar_texto_visible_corto
 
 logger = logging.getLogger(__name__)
@@ -36,25 +42,20 @@ async def normalizar_texto_visible_con_ia(
     for intento in range(2):
         try:
             respuesta = await cliente_openai.chat.completions.create(
-                model="gpt-4o-mini",
+                model=configuracion.openai_chat_model,
                 messages=[
                     {
                         "role": "system",
-                        "content": (
-                            "Eres un editor de textos muy estricto. "
-                            f"Devuelve un solo servicio natural de máximo {maximo} "
-                            "caracteres. No uses puntos suspensivos, no dejes "
-                            "comas finales y no inventes detalles nuevos."
+                        "content": construir_prompt_sistema_normalizacion_visible(
+                            maximo
                         ),
                     },
                     {
                         "role": "user",
-                        "content": (
-                            f"Texto original: {texto_base}\n"
-                            f"Máximo permitido: {maximo} caracteres.\n"
-                            f"{nota_reintento}"
-                            "Devuelve SOLO JSON con la forma "
-                            '{"normalized_service":"..."}'
+                        "content": construir_prompt_usuario_normalizacion_visible(
+                            texto_base,
+                            maximo,
+                            nota_reintento=nota_reintento,
                         ),
                     },
                 ],
@@ -71,7 +72,7 @@ async def normalizar_texto_visible_con_ia(
                         },
                     },
                 },
-                temperature=0.0,
+                temperature=configuracion.openai_temperature_precisa,
                 timeout=timeout,
             )
             contenido = (respuesta.choices[0].message.content or "").strip()

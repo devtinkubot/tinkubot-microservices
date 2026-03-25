@@ -2,6 +2,8 @@
 
 from typing import Any, Dict, List, Optional
 
+from templates.shared import mensaje_elige_opcion_interes
+
 MENU_ID_INFO_PERSONAL = "provider_menu_info_personal"
 MENU_ID_INFO_PROFESIONAL = "provider_menu_info_profesional"
 MENU_ID_ELIMINAR_REGISTRO = "provider_menu_eliminar_registro"
@@ -57,15 +59,11 @@ LIST_OPTION_DESCRIPTION_MAX = 72
 LIST_OPTION_TITLE_MAX = 24
 
 MENU_PRINCIPAL_PROVEEDOR = (
-    "*Menú de Proveedores*\n"
-    "\n"
-    "Elige la opción de interés.\n"
+    "*Menú de Proveedores*\n" "\n" "Elige la opción de interés.\n"
 )
 
 MENU_POST_REGISTRO_PROVEEDOR = (
-    "*Menú del Proveedor*\n"
-    "\n"
-    "Elige la opción de interés.\n"
+    "*Menú del Proveedor*\n" "\n" "Elige la opción de interés.\n"
 )
 
 # ==================== FUNCIONES ====================
@@ -86,7 +84,7 @@ def mensaje_menu_post_registro_proveedor(
 def payload_menu_post_registro_proveedor() -> Dict[str, Any]:
     """Genera el menú principal operativo como lista interactiva."""
     return {
-        "response": "Elige la opción de interés.",
+        "response": mensaje_elige_opcion_interes(),
         "ui": {
             "type": "list",
             "id": "provider_main_menu_v1",
@@ -168,6 +166,7 @@ def payload_submenu_informacion_personal() -> Dict[str, Any]:
         },
     }
 
+
 def payload_submenu_informacion_profesional() -> Dict[str, Any]:
     """Genera el submenú de información profesional."""
     return {
@@ -210,11 +209,6 @@ def payload_submenu_informacion_profesional() -> Dict[str, Any]:
     }
 
 
-def payload_ejemplos_servicios() -> Dict[str, Any]:
-    """Genera una lista breve de ejemplos de servicios bien redactados."""
-    return payload_ejemplos_servicios_personalizados(None)
-
-
 def _formatear_header_ejemplos_servicios(
     indice: Optional[int] = None,
     maximo: Optional[int] = None,
@@ -232,13 +226,13 @@ def payload_ejemplos_servicios_personalizados(
 ) -> Dict[str, Any]:
     """Genera una lista de ejemplos de servicios con fallback fijo."""
     ejemplos_base = ejemplos or [
-                {
-                    "id": SERVICE_EXAMPLE_MECHANICS_ID,
-                    "title": "Gasfitería",
-                    "description": (
-                        "Instalación y mantenimiento de tuberías para casas o edificios"
-                    ),
-                },
+        {
+            "id": SERVICE_EXAMPLE_MECHANICS_ID,
+            "title": "Gasfitería",
+            "description": (
+                "Instalación y mantenimiento de tuberías para casas o edificios"
+            ),
+        },
         {
             "id": SERVICE_EXAMPLE_LEGAL_ID,
             "title": "Legal",
@@ -389,9 +383,7 @@ def payload_detalle_experiencia(experiencia: Any) -> Dict[str, Any]:
     if isinstance(experiencia, str) and experiencia.strip():
         experiencia_visible = experiencia.strip()
     elif isinstance(experiencia, int) and experiencia >= 0:
-        experiencia_visible = (
-            f"{experiencia} año{'s' if experiencia != 1 else ''}"
-        )
+        experiencia_visible = f"{experiencia} año{'s' if experiencia != 1 else ''}"
     else:
         experiencia_visible = "No registrada"
     return _payload_botones_detalle(

@@ -4,18 +4,15 @@ Módulo de almacenamiento de imágenes en Supabase Storage para proveedores.
 Este módulo gestiona la subida, actualización y recuperación de medios de identidad.
 """
 
+import base64
 import logging
 import os
-import base64
-import imghdr
 import re
 from datetime import datetime
 from typing import Any, Dict, Optional
 
 from ..database import get_supabase_client, run_supabase
-from .utilidades import (
-    normalizar_respuesta_storage as _coerce_storage_string,
-)
+from .utilidades import normalizar_respuesta_storage as _coerce_storage_string
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +22,35 @@ SUPABASE_PROVIDERS_BUCKET = (
     or os.getenv("SUPABASE_BUCKET_NAME")
     or "tinkubot-providers"
 )
+
+
+def _detectar_extension_desde_bytes(
+    bytes_imagen: bytes,
+) -> tuple[Optional[str], Optional[str]]:
+    """Detecta la extension y el mimetype usando firmas binarias comunes."""
+    if not bytes_imagen:
+        return None, None
+
+    if bytes_imagen.startswith(b"\xff\xd8\xff"):
+        return "jpg", "image/jpeg"
+
+    if bytes_imagen.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png", "image/png"
+
+    if bytes_imagen.startswith((b"GIF87a", b"GIF89a")):
+        return "gif", "image/gif"
+
+    if bytes_imagen.startswith(b"RIFF") and bytes_imagen[8:12] == b"WEBP":
+        return "webp", "image/webp"
+
+    if bytes_imagen.startswith(b"BM"):
+        return "bmp", "image/bmp"
+
+    if bytes_imagen.startswith((b"II*\x00", b"MM\x00*")):
+        return "tiff", "image/tiff"
+
+    return None, None
+
 
 async def subir_imagen_proveedor(
     proveedor_id: str,
@@ -115,9 +141,9 @@ async def subir_imagen_proveedor(
                 )
                 return None
 
-            url_publica_cruda = supabase.storage.from_(SUPABASE_PROVIDERS_BUCKET).get_public_url(
-                ruta_archivo
-            )
+            url_publica_cruda = supabase.storage.from_(
+                SUPABASE_PROVIDERS_BUCKET
+            ).get_public_url(ruta_archivo)
             return url_publica_cruda
 
         raw_public_url = await run_supabase(_upload, label="storage.upload")
@@ -217,8 +243,6 @@ async def procesar_imagen_base64(
         Bytes de la imagen o None si hay error
     """
     try:
-        import base64
-
         # Limpiar datos base64 (eliminar header si existe)
         if datos_base64.startswith("data:image/"):
             datos_base64 = datos_base64.split(",")[1]
@@ -248,15 +272,11 @@ def _inferir_extension_y_mimetype(
             mimetype = f"image/{extension}"
 
     if not extension:
-        detected = imghdr.what(None, h=bytes_imagen)
-        if detected:
-            extension = detected.lower()
-            mimetype = f"image/{extension}"
+        extension, mimetype = _detectar_extension_desde_bytes(bytes_imagen)
 
     if not extension:
-        if bytes_imagen[:4] == b"RIFF" and bytes_imagen[8:12] == b"WEBP":
-            extension = "webp"
-            mimetype = "image/webp"
+        extension = None
+        mimetype = None
 
     if extension == "jpeg":
         extension = "jpg"
@@ -458,7 +478,8 @@ async def subir_medios_identidad(
                         await refrescar_cache_perfil_proveedor(telefono)
                     except Exception as exc:
                         logger.warning(
-                            "⚠️ No se pudo refrescar cache del perfil %s tras subir imágenes: %s",
+                            "⚠️ No se pudo refrescar cache del perfil %s tras "
+                            "subir imágenes: %s",
                             telefono,
                             exc,
                         )

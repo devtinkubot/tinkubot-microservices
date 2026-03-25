@@ -3,17 +3,41 @@ import sys
 import types
 from pathlib import Path
 
-imghdr_stub = types.ModuleType("imghdr")
-imghdr_stub.what = lambda *args, **kwargs: None
-sys.modules.setdefault("imghdr", imghdr_stub)
+from pytest import mark
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-import infrastructure.storage.almacenamiento_imagenes as modulo_almacenamiento  # noqa: E402
+from infrastructure.storage import (  # noqa: E402
+    almacenamiento_imagenes as modulo_almacenamiento,
+)
 
 
 class _SupabaseStub:
     def __init__(self):
         self.storage = types.SimpleNamespace(from_=lambda *_args, **_kwargs: None)
+
+
+@mark.parametrize(
+    "datos_base64,bytes_imagen,extension,mimetype",
+    [
+        ("", b"\xff\xd8\xff\xdb\x00\x00", "jpg", "image/jpeg"),
+        ("", b"\x89PNG\r\n\x1a\n\x00\x00", "png", "image/png"),
+        ("", b"RIFF\x00\x00\x00\x00WEBPVP8 ", "webp", "image/webp"),
+    ],
+)
+def test_inferir_extension_y_mimetype_detecta_firmas_conocidas(
+    datos_base64,
+    bytes_imagen,
+    extension,
+    mimetype,
+):
+    metadata = modulo_almacenamiento._inferir_extension_y_mimetype(
+        datos_base64,
+        bytes_imagen,
+    )
+
+    assert metadata["extension"] == extension
+    assert metadata["mimetype"] == mimetype
 
 
 def test_subir_medios_identidad_refresca_cache_del_perfil(monkeypatch):
@@ -54,7 +78,9 @@ def test_subir_medios_identidad_refresca_cache_del_perfil(monkeypatch):
     )
     sys.modules["flows.session"] = flows_sesion_stub
 
-    monkeypatch.setattr(modulo_almacenamiento, "get_supabase_client", lambda: _SupabaseStub())
+    monkeypatch.setattr(
+        modulo_almacenamiento, "get_supabase_client", lambda: _SupabaseStub()
+    )
     monkeypatch.setattr(
         modulo_almacenamiento,
         "procesar_imagen_base64_con_metadata",
@@ -88,7 +114,11 @@ def test_subir_medios_identidad_refresca_cache_del_perfil(monkeypatch):
         ("prov-1", b"img", "face", "jpg", "image/jpeg", "prov-1"),
     ]
     assert llamadas["update"] == [
-        ("prov-1", "https://files.example/dni-front.jpg", "https://files.example/face.jpg"),
+        (
+            "prov-1",
+            "https://files.example/dni-front.jpg",
+            "https://files.example/face.jpg",
+        ),
     ]
     assert llamadas["invalidate"] == ["593959091325@s.whatsapp.net"]
     assert llamadas["refresh"] == ["593959091325@s.whatsapp.net"]
@@ -113,7 +143,9 @@ def test_subir_medios_identidad_usa_identificador_estable_cuando_no_hay_provider
         llamadas["update"].append(args)
         return True
 
-    monkeypatch.setattr(modulo_almacenamiento, "get_supabase_client", lambda: _SupabaseStub())
+    monkeypatch.setattr(
+        modulo_almacenamiento, "get_supabase_client", lambda: _SupabaseStub()
+    )
     monkeypatch.setattr(
         modulo_almacenamiento,
         "procesar_imagen_base64_con_metadata",
@@ -148,7 +180,10 @@ def test_subir_medios_identidad_usa_identificador_estable_cuando_no_hay_provider
         ("593969648465", b"img", "face", "jpg", "image/jpeg", "593969648465"),
     ]
     assert llamadas["update"] == []
-    assert flujo["dni_front_photo_url"] == "https://files.example/593969648465/dni-front.jpg"
+    assert (
+        flujo["dni_front_photo_url"]
+        == "https://files.example/593969648465/dni-front.jpg"
+    )
     assert flujo["face_photo_url"] == "https://files.example/593969648465/face.jpg"
     assert "dni_front_image" not in flujo
     assert "face_image" not in flujo

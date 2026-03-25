@@ -7,13 +7,12 @@ from .documentos import (
     manejar_foto_perfil_onboarding,
 )
 from .experiencia import manejar_espera_experiencia_onboarding
-from .redes_sociales import manejar_espera_red_social_onboarding
 from .real_phone import manejar_espera_real_phone_onboarding
+from .redes_sociales import manejar_espera_red_social_onboarding
 from .servicios import manejar_espera_servicios_onboarding
 from .servicios_confirmacion import (
     manejar_confirmacion_servicios_onboarding,
     manejar_decision_agregar_otro_servicio_onboarding,
-    mostrar_confirmacion_servicios_onboarding,
 )
 
 __all__ = [
@@ -27,5 +26,4 @@ __all__ = [
     "manejar_espera_servicios_onboarding",
     "manejar_confirmacion_servicios_onboarding",
     "manejar_decision_agregar_otro_servicio_onboarding",
-    "mostrar_confirmacion_servicios_onboarding",
 ]

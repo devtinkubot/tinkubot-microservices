@@ -6,10 +6,16 @@ import json
 import logging
 from typing import Any, Dict, Optional
 
+from config.configuracion import configuracion
 from services.maintenance.clasificacion_semantica import (
     construir_service_summary,
     normalizar_domain_code_operativo,
     obtener_catalogo_dominios_liviano,
+)
+from services.shared import (
+    PROMPT_CATALOGO_SIN_DOMINIO,
+    construir_prompt_sistema_validacion_servicio,
+    construir_prompt_usuario_validacion_servicio,
 )
 from utils import (
     limpiar_texto_servicio,
@@ -253,44 +259,25 @@ async def validar_servicio_semanticamente(
         for item in catalogo_dominios[:40]
     )
     if not dominios_prompt:
-        dominios_prompt = "- sin_catalogo: usar null si no hay dominio claro"
+        dominios_prompt = PROMPT_CATALOGO_SIN_DOMINIO
 
     try:
         respuesta = await cliente_openai.chat.completions.create(
-            model="gpt-4o-mini",
+            model=configuracion.openai_chat_model,
             messages=[
                 {
                     "role": "system",
-                    "content": (
-                        "Valida si un texto corresponde a un servicio real "
-                        "ofrecido por un proveedor. "
-                        "Debes distinguir entre servicio válido, servicio "
-                        "demasiado genérico y texto basura. "
-                        "No inventes especialidades. "
-                        "El campo normalized_service debe quedar natural, "
-                        "visible y con máximo 68 caracteres."
+                    "content": construir_prompt_sistema_validacion_servicio(
+                        configuracion.maximo_servicio_visible
                     ),
                 },
                 {
                     "role": "user",
-                    "content": (
-                        f"Texto original: {raw_service_text}\n"
-                        f"Servicio normalizado visible: {service_name}\n\n"
-                        "Regla de salida: normalized_service <= 68 caracteres, "
-                        "sin puntos suspensivos y sin coma final.\n\n"
-                        f"Dominios disponibles:\n{dominios_prompt}\n\n"
-                        "Responde JSON con:\n"
-                        "{"
-                        '"status":"accepted|clarification_required|'
-                        'catalog_review_required|rejected",'
-                        '"normalized_service":"...",'
-                        '"domain_code":"... o null",'
-                        '"category_name":"... o null",'
-                        '"service_summary":"...",'
-                        '"confidence":0.0,'
-                        '"reason":"...",'
-                        '"clarification_question":"... o null"'
-                        "}"
+                    "content": construir_prompt_usuario_validacion_servicio(
+                        raw_service_text,
+                        service_name,
+                        dominios_prompt,
+                        maximo=configuracion.maximo_servicio_visible,
                     ),
                 },
             ],
@@ -333,7 +320,7 @@ async def validar_servicio_semanticamente(
                     },
                 },
             },
-            temperature=0.0,
+            temperature=configuracion.openai_temperature_precisa,
             timeout=timeout,
         )
         contenido = (respuesta.choices[0].message.content or "").strip()

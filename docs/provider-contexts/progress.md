@@ -1,7 +1,7 @@
 # Provider Context Split Progress
 
 ## Current status
-Audit complete, review is now owned by a single boundary, availability is now fully owned by its route and processor boundaries, onboarding now has its own route boundary and is limited to the alta journey, and maintenance routing is being sliced by concern while the shared router owns the remaining entry bridges.
+Audit complete, the shared runtime now has explicit route boundaries for onboarding, review, maintenance, and availability, the shared router is thinner, `services/shared/` owns the common interaction rules and IA prompts, and the documentation is being aligned to the actual package layout (`config`, `models`, `flows`, `routes`, `services`, `templates`, `infrastructure`, `utils`, `tools`, `tests`).
 
 ## Completed
 - Identified the need to separate onboarding, review, and maintenance
@@ -74,6 +74,7 @@ Audit complete, review is now owned by a single boundary, availability is now fu
 - Split the rest of maintenance/menu responsibilities into `routes/maintenance` and `services/maintenance`
 - Update imports and tests gradually
 - Retire compatibility facades after the new context consumers are fully switched
+- Refresh the remaining context docs that still describe the migration as if the split were only planned
 
 ## Risks
 - Shared router still coordinates too many branches
@@ -85,3 +86,4 @@ Audit complete, review is now owned by a single boundary, availability is now fu
 - `models`, `config`, and `infrastructure` are not being removed
 - The migration is intentionally gradual
 - Review is the first context because it is the clearest boundary between registration and operations
+- `runtime` remains a conceptual boundary, not a required physical directory

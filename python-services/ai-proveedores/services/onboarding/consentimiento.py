@@ -1,7 +1,6 @@
 """Lógica de negocio del consentimiento de onboarding."""
 
 import logging
-import re
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any, Dict, Optional
@@ -12,9 +11,20 @@ from flows.constructors import (
 )
 from flows.session import establecer_flujo, reiniciar_flujo
 from infrastructure.database import run_supabase
-from services.onboarding.registration import asegurar_proveedor_borrador
 from services.onboarding.registrador import registrar_consentimiento
+from services.onboarding.registration import asegurar_proveedor_borrador
+from services.shared import (
+    RESPUESTAS_CONSENTIMIENTO_AFIRMATIVAS,
+    RESPUESTAS_CONSENTIMIENTO_NEGATIVAS,
+    SELECCION_CONSENTIMIENTO_AFIRMATIVA,
+    SELECCION_CONSENTIMIENTO_NEGATIVA,
+    VALOR_OPCION_AFIRMATIVA,
+    VALOR_OPCION_NEGATIVA,
+    normalizar_respuesta_binaria,
+    normalizar_texto_interaccion,
+)
 from templates.onboarding.ciudad import solicitar_ciudad_registro
+
 logger = logging.getLogger(__name__)
 
 
@@ -55,7 +65,8 @@ async def asegurar_proveedor_persistido_tras_consentimiento_onboarding(
                 await subir_medios_fn(str(proveedor_id), flujo)
             except Exception as exc:
                 logger.warning(
-                    "No se pudieron persistir los medios de identidad para proveedor existente tras consentimiento para %s: %s",
+                    "No se pudieron persistir los medios de identidad para "
+                    "proveedor existente tras consentimiento para %s: %s",
                     telefono,
                     exc,
                 )
@@ -71,7 +82,8 @@ async def asegurar_proveedor_persistido_tras_consentimiento_onboarding(
         )
         if not proveedor_registrado or not proveedor_registrado.get("id"):
             logger.warning(
-                "No se pudo asegurar el borrador del proveedor tras consentimiento para %s",
+                "No se pudo asegurar el borrador del proveedor tras "
+                "consentimiento para %s",
                 telefono,
             )
             return perfil_proveedor, None
@@ -85,7 +97,8 @@ async def asegurar_proveedor_persistido_tras_consentimiento_onboarding(
                 await subir_medios_fn(provider_id, flujo)
             except Exception as exc:
                 logger.warning(
-                    "No se pudieron persistir los medios de identidad tras consentimiento para %s: %s",
+                    "No se pudieron persistir los medios de identidad tras "
+                    "consentimiento para %s: %s",
                     telefono,
                     exc,
                 )
@@ -93,7 +106,8 @@ async def asegurar_proveedor_persistido_tras_consentimiento_onboarding(
         return perfil_proveedor, provider_id
     except Exception as exc:
         logger.warning(
-            "Error completando el alta del proveedor tras consentimiento para %s: %s",
+            "Error completando el alta del proveedor tras consentimiento "
+            "para %s: %s",
             telefono,
             exc,
         )
@@ -104,23 +118,22 @@ def _resolver_opcion_consentimiento(carga: Dict[str, Any]) -> Optional[str]:
     """Mapea respuesta interactiva o textual a 1/2 para consentimiento."""
     seleccionado = str(carga.get("selected_option") or "").strip().lower()
     texto_mensaje = str(carga.get("message") or carga.get("content") or "").strip()
-    texto_min = texto_mensaje.lower()
-    texto_normalizado = re.sub(r"[\s\.,;:!¡¿\?]+", " ", texto_min).strip()
+    texto_normalizado = normalizar_texto_interaccion(texto_mensaje)
 
-    if seleccionado in {
-        "continue_provider_onboarding",
-        "continuar",
-        "continue",
-        "1",
-    }:
-        return "1"
-    if seleccionado in {"2", "rechazar", "decline", "cancelar"}:
-        return "2"
+    if seleccionado in SELECCION_CONSENTIMIENTO_AFIRMATIVA:
+        return VALOR_OPCION_AFIRMATIVA
+    if seleccionado in SELECCION_CONSENTIMIENTO_NEGATIVA:
+        return VALOR_OPCION_NEGATIVA
 
-    if texto_normalizado in {"1", "si", "sí", "aceptar", "acepto", "ok", "continuar"}:
-        return "1"
-    if texto_normalizado in {"2", "no", "rechazar", "declinar", "declino", "cancelar"}:
-        return "2"
+    decision = normalizar_respuesta_binaria(
+        texto_normalizado,
+        RESPUESTAS_CONSENTIMIENTO_AFIRMATIVAS | {"continuar"},
+        RESPUESTAS_CONSENTIMIENTO_NEGATIVAS | {"declinar"},
+    )
+    if decision is True:
+        return VALOR_OPCION_AFIRMATIVA
+    if decision is False:
+        return VALOR_OPCION_NEGATIVA
     return None
 
 
@@ -144,7 +157,10 @@ async def procesar_respuesta_consentimiento_onboarding(
     opcion = _resolver_opcion_consentimiento(carga)
 
     logger.info(
-        "📝 Procesando respuesta consentimiento onboarding. Texto: '%s', selected_option='%s', Carga keys: %s",
+        (
+            "📝 Procesando respuesta consentimiento onboarding. Texto: '%s', "
+            "selected_option='%s', Carga keys: %s"
+        ),
         texto_mensaje,
         carga.get("selected_option"),
         list(carga.keys()),
@@ -202,10 +218,10 @@ async def procesar_respuesta_consentimiento_onboarding(
                     )
             except Exception as exc:
                 logger.error(
-                "No se pudo actualizar flag de consentimiento para %s: %s",
-                telefono,
-                exc,
-            )
+                    "No se pudo actualizar flag de consentimiento para %s: %s",
+                    telefono,
+                    exc,
+                )
 
         flujo.update(
             {

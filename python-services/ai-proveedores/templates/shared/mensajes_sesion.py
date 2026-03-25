@@ -18,9 +18,7 @@ def informar_timeout_inactividad() -> str:
 
 def informar_reanudacion_inactividad() -> str:
     """Informa que hubo inactividad, pero el flujo sigue en el mismo paso."""
-    return "⌛ He detectado un momento de inactividad. *Retomamos el último paso para continuar.*"
-
-
-def informar_reinicio_completo() -> str:
-    """Informa que se reinició completamente y sugiere empezar registro."""
-    return "Empecemos de nuevo. Escribe 'registro' para crear tu perfil de proveedor."
+    return (
+        "⌛ He detectado un momento de inactividad. *Retomamos el último "
+        "paso para continuar.*"
+    )

@@ -7,34 +7,27 @@ from infrastructure.database import get_supabase_client
 from infrastructure.storage import construir_url_media_publica
 from infrastructure.storage.almacenamiento_imagenes import SUPABASE_PROVIDERS_BUCKET
 from services import eliminar_servicio_proveedor, listar_certificados_proveedor
+from services.maintenance.constantes import (
+    CERTIFICADOS_MAXIMOS,
+    SERVICIOS_MAXIMOS,
+)
 from services.maintenance.redes_sociales_slots import (
     SOCIAL_NETWORK_FACEBOOK,
     SOCIAL_NETWORK_INSTAGRAM,
     resolver_redes_sociales,
 )
-from services.maintenance.constantes import (
-    CERTIFICADOS_MAXIMOS,
-    SERVICIOS_MAXIMOS,
-)
 from templates.maintenance import (
-    confirmar_actualizacion_redes_sociales,
-    confirmar_documentos_actualizados,
-    confirmar_selfie_actualizada,
-    error_actualizar_documentos,
-    error_actualizar_redes_sociales,
-    error_actualizar_selfie,
-    solicitar_dni_actualizacion,
+    preguntar_nuevo_servicio_con_ejemplos_dinamicos,
     solicitar_dni_frontal_actualizacion,
     solicitar_dni_reverso_actualizacion,
     solicitar_red_social_actualizacion,
     solicitar_selfie_actualizacion,
-    solicitar_selfie_requerida,
 )
 from templates.maintenance.menus import (
     CERTIFICATE_ADD_ID,
     CERTIFICATE_BACK_ID,
-    CERTIFICATE_SLOT_PREFIX,
     CERTIFICATE_SELECT_PREFIX,
+    CERTIFICATE_SLOT_PREFIX,
     DETAIL_ACTION_BACK,
     DETAIL_ACTION_CERTIFICATES_ADD,
     DETAIL_ACTION_CITY_CHANGE,
@@ -62,12 +55,24 @@ from templates.maintenance.menus import (
     payload_detalle_servicios,
     payload_detalle_ubicacion,
     payload_lista_certificados,
-    payload_lista_redes_sociales,
     payload_lista_eliminar_servicios,
+    payload_lista_redes_sociales,
     payload_submenu_informacion_personal,
     payload_submenu_informacion_profesional,
 )
-from templates.maintenance import preguntar_nuevo_servicio_con_ejemplos_dinamicos
+from templates.maintenance.views_labels import (
+    etiqueta_apellidos_documento,
+    etiqueta_cedula_documento,
+    etiqueta_nombres_documento,
+    titulo_cedula_frontal,
+    titulo_cedula_reverso,
+    titulo_facebook,
+    titulo_foto_perfil,
+    titulo_instagram,
+    titulo_nombre_actual,
+    valor_no_registrada,
+    valor_no_registrado,
+)
 from templates.onboarding.ciudad import (
     solicitar_ciudad_actualizacion,
 )
@@ -75,6 +80,12 @@ from templates.onboarding.registration import (
     payload_certificado_opcional,
     preguntar_experiencia_general,
     preguntar_nombre,
+)
+from templates.shared import (
+    descripcion_cedula_frontal_actual,
+    descripcion_cedula_reverso_actual,
+    descripcion_foto_perfil_actual,
+    mensaje_datos_registro,
 )
 
 PERSONAL_PARENT_STATE = "awaiting_personal_info_action"
@@ -95,37 +106,33 @@ def _estado_compatibilidad_mantenimiento(
     return estado_mantenimiento
 
 
-def _valor_visible(valor: Any, predeterminado: str = "No registrado") -> str:
+def _valor_visible(valor: Any, predeterminado: Optional[str] = None) -> str:
     texto = str(valor or "").strip()
-    return texto or predeterminado
+    return texto or (predeterminado or valor_no_registrado())
 
 
 def _formatear_datos_identidad(flujo: Dict[str, Any]) -> str:
-    nombre_visible = _valor_visible(flujo.get("full_name"))
+    nombre_visible = _valor_visible(flujo.get("full_name"), valor_no_registrado())
     nombres_documento = _valor_visible(
         flujo.get("document_first_names"),
-        "",
+        valor_no_registrado(),
     )
     apellidos_documento = _valor_visible(
         flujo.get("document_last_names"),
-        "",
+        valor_no_registrado(),
     )
     cedula_documento = _valor_visible(
         flujo.get("document_id_number"),
-        "",
+        valor_no_registrado(),
     )
 
-    partes = [f"*Nombre actual*\n{nombre_visible}"]
-    if (
-        nombres_documento
-        or apellidos_documento
-        or cedula_documento
-    ):
+    partes = [f"{titulo_nombre_actual()}\n{nombre_visible}"]
+    if nombres_documento or apellidos_documento or cedula_documento:
         partes.append(
-            "*Datos de registro*\n"
-            f"Nombres: {nombres_documento or 'No registrado'}\n"
-            f"Apellidos: {apellidos_documento or 'No registrado'}\n"
-            f"Cédula: {cedula_documento or 'No registrada'}"
+            f"{mensaje_datos_registro()}\n"
+            f"{etiqueta_nombres_documento()}{nombres_documento}\n"
+            f"{etiqueta_apellidos_documento()}{apellidos_documento}\n"
+            f"{etiqueta_cedula_documento()}{cedula_documento}"
         )
 
     return "\n\n".join(partes)
@@ -159,29 +166,29 @@ async def render_profile_view(
 
     if estado == "viewing_personal_city":
         return payload_detalle_ubicacion(
-            _valor_visible(flujo.get("city"), "No registrada")
+            _valor_visible(flujo.get("city"), valor_no_registrada())
         )
 
     if estado == "viewing_personal_photo":
         return payload_detalle_foto(
-            titulo="Foto de perfil",
-            descripcion="Esta es tu foto de perfil actual.",
+            titulo=titulo_foto_perfil(),
+            descripcion=descripcion_foto_perfil_actual(),
             media_url=_resolver_media_url(flujo.get("face_photo_url")),
             change_id=DETAIL_ACTION_PHOTO_CHANGE,
         )
 
     if estado == "viewing_personal_dni_front":
         return payload_detalle_foto(
-            titulo="Cédula frontal",
-            descripcion="Esta es la foto frontal de tu cédula.",
+            titulo=titulo_cedula_frontal(),
+            descripcion=descripcion_cedula_frontal_actual(),
             media_url=_resolver_media_url(flujo.get("dni_front_photo_url")),
             change_id=DETAIL_ACTION_DNI_FRONT_CHANGE,
         )
 
     if estado == "viewing_personal_dni_back":
         return payload_detalle_foto(
-            titulo="Cédula reverso",
-            descripcion="Esta es la foto reverso de tu cédula.",
+            titulo=titulo_cedula_reverso(),
+            descripcion=descripcion_cedula_reverso_actual(),
             media_url=_resolver_media_url(flujo.get("dni_back_photo_url")),
             change_id=DETAIL_ACTION_DNI_BACK_CHANGE,
         )
@@ -218,7 +225,7 @@ async def render_profile_view(
     if estado == "viewing_professional_social_facebook":
         redes = _resolver_redes_desde_flujo(flujo)
         return payload_detalle_red_social_canal(
-            titulo="Facebook",
+            titulo=titulo_facebook(),
             username=redes["facebook_username"],
             url=redes["facebook_url"],
         )
@@ -226,7 +233,7 @@ async def render_profile_view(
     if estado == "viewing_professional_social_instagram":
         redes = _resolver_redes_desde_flujo(flujo)
         return payload_detalle_red_social_canal(
-            titulo="Instagram",
+            titulo=titulo_instagram(),
             username=redes["instagram_username"],
             url=redes["instagram_url"],
         )
@@ -287,9 +294,7 @@ async def manejar_vista_perfil(  # noqa: C901
         if texto == DETAIL_ACTION_NAME_CHANGE:
             flujo["profile_edit_mode"] = "personal_name"
             flujo["profile_return_state"] = "viewing_personal_name"
-            flujo["state"] = _estado_compatibilidad_mantenimiento(
-                "maintenance_name"
-            )
+            flujo["state"] = _estado_compatibilidad_mantenimiento("maintenance_name")
             return {"success": True, "messages": [{"response": preguntar_nombre()}]}
         if texto == DETAIL_ACTION_BACK:
             flujo["state"] = PERSONAL_PARENT_STATE
@@ -302,9 +307,7 @@ async def manejar_vista_perfil(  # noqa: C901
         if texto == DETAIL_ACTION_CITY_CHANGE:
             flujo["profile_edit_mode"] = "personal_city"
             flujo["profile_return_state"] = "viewing_personal_city"
-            flujo["state"] = _estado_compatibilidad_mantenimiento(
-                "maintenance_city"
-            )
+            flujo["state"] = _estado_compatibilidad_mantenimiento("maintenance_city")
             return {"success": True, "messages": [solicitar_ciudad_actualizacion()]}
         if texto == DETAIL_ACTION_BACK:
             flujo["state"] = PERSONAL_PARENT_STATE
@@ -379,9 +382,9 @@ async def manejar_vista_perfil(  # noqa: C901
     if estado == "viewing_professional_services":
         servicios_actuales = list(flujo.get("services") or [])
         if texto.startswith(SERVICE_SLOT_PREFIX):
-            indice = texto.removeprefix(SERVICE_SLOT_PREFIX)
+            indice_texto = texto.removeprefix(SERVICE_SLOT_PREFIX)
             try:
-                posicion = int(indice)
+                posicion = int(indice_texto)
             except ValueError:
                 posicion = -1
             if 0 <= posicion < len(servicios_actuales):
@@ -540,7 +543,9 @@ async def manejar_vista_perfil(  # noqa: C901
                 "success": True,
                 "messages": [
                     {
-                        "response": solicitar_red_social_actualizacion("Facebook"),
+                        "response": solicitar_red_social_actualizacion(
+                            titulo_facebook()
+                        ),
                     }
                 ],
             }
@@ -564,7 +569,9 @@ async def manejar_vista_perfil(  # noqa: C901
                 "success": True,
                 "messages": [
                     {
-                        "response": solicitar_red_social_actualizacion("Instagram"),
+                        "response": solicitar_red_social_actualizacion(
+                            titulo_instagram()
+                        ),
                     }
                 ],
             }
@@ -615,9 +622,9 @@ async def manejar_vista_perfil(  # noqa: C901
                 "messages": [
                     {
                         "response": solicitar_red_social_actualizacion(
-                            "Facebook"
+                            titulo_facebook()
                             if red_social == SOCIAL_NETWORK_FACEBOOK
-                            else "Instagram"
+                            else titulo_instagram()
                         ),
                     }
                 ],
@@ -652,9 +659,9 @@ async def manejar_vista_perfil(  # noqa: C901
                 "messages": [payload_submenu_informacion_profesional()],
             }
         if texto.startswith(CERTIFICATE_SLOT_PREFIX):
-            indice = texto.removeprefix(CERTIFICATE_SLOT_PREFIX)
+            indice_texto = texto.removeprefix(CERTIFICATE_SLOT_PREFIX)
             try:
-                posicion = int(indice)
+                posicion = int(indice_texto)
             except ValueError:
                 posicion = -1
             if 0 <= posicion < len(certificados):

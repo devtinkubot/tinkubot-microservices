@@ -3,6 +3,12 @@
 from typing import Any, Dict
 
 from services.maintenance.redes_sociales_slots import resolver_redes_sociales
+from templates.shared.estados import (
+    estado_no_cargado,
+    estado_no_registrada,
+    estado_no_registrado,
+    estado_recibida,
+)
 
 SOCIAL_SKIP_ID = "skip_profile_social_media"
 SOCIAL_FACEBOOK_ID = "profile_social_facebook"
@@ -72,12 +78,16 @@ def payload_red_social_opcional_estado(
                 {
                     "id": SOCIAL_FACEBOOK_ID,
                     "title": "Facebook",
-                    "description": "Registrada" if facebook_username else "No registrada",
+                    "description": (
+                        "Registrada" if facebook_username else estado_no_registrada()
+                    ),
                 },
                 {
                     "id": SOCIAL_INSTAGRAM_ID,
                     "title": "Instagram",
-                    "description": "Registrada" if instagram_username else "No registrada",
+                    "description": (
+                        "Registrada" if instagram_username else estado_no_registrada()
+                    ),
                 },
                 {
                     "id": SOCIAL_SKIP_ID,
@@ -93,7 +103,8 @@ def payload_certificado_opcional() -> Dict[str, Any]:
     return {
         "response": (
             "Envía una foto clara de un certificado profesional.\n"
-            "*Las certificaciones generan seguridad y confianza en los clientes que ven tu perfil.*"
+            "*Las certificaciones generan seguridad y confianza en los "
+            "clientes que ven tu perfil.*"
         ),
         "ui": {
             "type": "buttons",
@@ -174,7 +185,7 @@ def construir_resumen_confirmacion_perfil_profesional(
         experiencia = (
             f"{experience_years} año{'s' if int(experience_years) != 1 else ''}"
             if isinstance(experience_years, int) and experience_years >= 0
-            else "No registrada"
+            else estado_no_registrada()
         )
     redes = resolver_redes_sociales(
         {
@@ -184,10 +195,10 @@ def construir_resumen_confirmacion_perfil_profesional(
             "instagram_username": instagram_username,
         }
     )
-    red_facebook = redes["facebook_url"] or "No registrada"
-    red_instagram = redes["instagram_url"] or "No registrada"
-    certificado = "Recibida" if certificate_uploaded else "No cargado"
-    servicios_completos = list(services[:3]) + ["No registrado"] * max(
+    red_facebook = redes["facebook_url"] or estado_no_registrada()
+    red_instagram = redes["instagram_url"] or estado_no_registrada()
+    certificado = estado_recibida() if certificate_uploaded else estado_no_cargado()
+    servicios_completos = list(services[:3]) + [estado_no_registrado()] * max(
         0, 3 - len(services)
     )
     return (
@@ -228,4 +239,17 @@ def mensaje_minimo_servicios_pendiente(
         f"Necesitas al menos *{minimo_requerido} servicios* para completar tu perfil. "
         f"Por ahora llevas *{cantidad_actual}*. "
         f"Agrega {faltan} servicio{'s' if faltan != 1 else ''} más."
+    )
+
+
+def mensaje_minimo_servicios_perfil_profesional(
+    cantidad_actual: int,
+    minimo_requerido: int,
+) -> str:
+    """Pide completar la cantidad mínima de servicios para el perfil."""
+    return (
+        f"Ya capturé {cantidad_actual} servicio(s), pero necesitamos "
+        f"al menos {minimo_requerido} para continuar.\n\n"
+        "Escribe los que faltan en la misma línea, por ejemplo:\n"
+        "1 Albañilería general 2 Plomería y fontanería 3 Jardinería"
     )

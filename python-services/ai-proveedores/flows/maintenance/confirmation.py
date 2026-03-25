@@ -2,15 +2,28 @@
 
 from typing import Any, Awaitable, Callable, Dict, Optional
 
+from flows.constructors import construir_respuesta_solicitud_consentimiento
+from flows.validators.input import parsear_cadena_servicios
 from models.proveedores import SolicitudCreacionProveedor
+from services.onboarding.registration import validar_y_construir_proveedor
+from services.shared import (
+    RESPUESTAS_CONFIRMACION_REGISTRO_AFIRMATIVAS,
+    RESPUESTAS_CONFIRMACION_REGISTRO_NEGATIVAS,
+    SELECCION_CONFIRMACION_REGISTRO_AFIRMATIVA,
+    SELECCION_CONFIRMACION_REGISTRO_NEGATIVA,
+    normalizar_respuesta_binaria,
+    normalizar_texto_interaccion,
+)
 from templates.onboarding.registration import (
     CONFIRM_ACCEPT_ID,
     CONFIRM_REJECT_ID,
 )
-from flows.constructors import construir_respuesta_solicitud_consentimiento
-from flows.validators.input import parsear_cadena_servicios
-from services.onboarding.registration import validar_y_construir_proveedor
 from templates.review.estados import mensaje_proveedor_en_revision
+from templates.shared import (
+    mensaje_no_pude_guardar_informacion_registro,
+    mensaje_no_pude_validar_datos_registro,
+    mensaje_reiniciar_ciudad_principal,
+)
 
 
 def _resolver_opcion_confirmacion(carga: Dict[str, Any]) -> Optional[str]:
@@ -24,12 +37,18 @@ def _resolver_opcion_confirmacion(carga: Dict[str, Any]) -> Optional[str]:
     """
     seleccionado = str(carga.get("selected_option") or "").strip().lower()
     texto_mensaje = str(carga.get("message") or carga.get("content") or "").strip()
-    texto_min = texto_mensaje.lower()
+    texto_min = normalizar_texto_interaccion(texto_mensaje)
 
     # Botones interactivos
-    if seleccionado in {CONFIRM_ACCEPT_ID, "confirm_accept", "accept", "1"}:
+    if seleccionado in {
+        *SELECCION_CONFIRMACION_REGISTRO_AFIRMATIVA,
+        CONFIRM_ACCEPT_ID,
+    }:
         return "accept"
-    if seleccionado in {CONFIRM_REJECT_ID, "confirm_reject", "reject", "2"}:
+    if seleccionado in {
+        *SELECCION_CONFIRMACION_REGISTRO_NEGATIVA,
+        CONFIRM_REJECT_ID,
+    }:
         return "reject"
 
     # Fallback a texto
@@ -37,9 +56,14 @@ def _resolver_opcion_confirmacion(carga: Dict[str, Any]) -> Optional[str]:
         return "accept"
     if texto_min.startswith("2") or "editar" in texto_min or "no acepto" in texto_min:
         return "reject"
-    if texto_min in {"si", "ok", "listo", "confirmar", "acepto", "sí"}:
+    decision = normalizar_respuesta_binaria(
+        texto_min,
+        RESPUESTAS_CONFIRMACION_REGISTRO_AFIRMATIVAS,
+        RESPUESTAS_CONFIRMACION_REGISTRO_NEGATIVAS,
+    )
+    if decision is True:
         return "accept"
-    if texto_min in {"no", "cancelar", "rechazo"}:
+    if decision is False:
         return "reject"
 
     return None
@@ -92,9 +116,7 @@ async def manejar_confirmacion(
             flujo["requires_real_phone"] = True
         return {
             "success": True,
-            "messages": [
-                {"response": "Reiniciemos. *En que ciudad trabajas principalmente?*"}
-            ],
+            "messages": [{"response": mensaje_reiniciar_ciudad_principal()}],
         }
 
     if opcion == "accept":
@@ -108,12 +130,7 @@ async def manejar_confirmacion(
             return {
                 "success": True,
                 "messages": [
-                    {
-                        "response": (
-                            f"*No pude validar tus datos:* {mensaje_error}. "
-                            "Revisá que nombre y ciudad cumplan con el formato."
-                        )
-                    }
+                    {"response": mensaje_no_pude_validar_datos_registro(mensaje_error)}
                 ],
             }
 
@@ -162,13 +179,7 @@ async def manejar_confirmacion(
         logger.error("No se pudo registrar el proveedor")
         return {
             "success": True,
-            "messages": [
-                {
-                    "response": (
-                        "*Hubo un error al guardar tu informacion. Por favor intenta de nuevo.*"
-                    )
-                }
-            ],
+            "messages": [{"response": mensaje_no_pude_guardar_informacion_registro()}],
         }
 
     # Opción no reconocida - reenviar solicitud con botones
