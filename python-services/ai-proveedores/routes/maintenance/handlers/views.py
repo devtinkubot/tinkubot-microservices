@@ -2,8 +2,8 @@
 
 from typing import Any, Dict, Optional
 
-from flows.constructores import construir_payload_menu_principal
-from flows.gestores_estados.gestor_vistas_perfil import manejar_vista_perfil
+from flows.constructors import construir_payload_menu_principal
+from flows.maintenance.views import manejar_vista_perfil
 
 
 def _es_salida_a_menu(texto_mensaje: str, opcion_menu: Optional[str]) -> bool:
@@ -13,7 +13,7 @@ def _es_salida_a_menu(texto_mensaje: str, opcion_menu: Optional[str]) -> bool:
     )
 
 
-async def manejar_mantenimiento_vistas(
+async def manejar_vistas_mantenimiento(
     *,
     flujo: Dict[str, Any],
     estado: Optional[str],

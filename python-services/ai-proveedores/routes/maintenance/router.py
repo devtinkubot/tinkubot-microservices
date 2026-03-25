@@ -2,18 +2,18 @@
 
 from typing import Any, Dict, Optional
 
-from flows.gestores_estados.gestor_menu import manejar_estado_menu
+from flows.maintenance.menu import manejar_estado_menu
 
-from .deletion import manejar_eliminacion_registro_proveedor
+from .deletion import manejar_eliminacion_proveedor
 from .info import (
     manejar_informacion_personal_mantenimiento,
     manejar_informacion_profesional_mantenimiento,
 )
 from .handlers import (
-    manejar_mantenimiento_perfil,
-    manejar_mantenimiento_redes,
-    manejar_mantenimiento_servicios,
-    manejar_mantenimiento_vistas,
+    manejar_perfil_mantenimiento,
+    manejar_redes_mantenimiento,
+    manejar_servicios_mantenimiento,
+    manejar_vistas_mantenimiento,
 )
 
 
@@ -79,7 +79,7 @@ async def manejar_contexto_mantenimiento(
         return {"response": respuesta, "persist_flow": True}
 
     if estado == "awaiting_deletion_confirmation":
-        respuesta = await manejar_eliminacion_registro_proveedor(
+        respuesta = await manejar_eliminacion_proveedor(
             flujo=flujo,
             texto_mensaje=texto_mensaje,
             supabase=supabase,
@@ -88,7 +88,7 @@ async def manejar_contexto_mantenimiento(
         persistir_flujo = respuesta.pop("persist_flow", True)
         return {"response": respuesta, "persist_flow": persistir_flujo}
 
-    respuesta = await manejar_mantenimiento_redes(
+    respuesta = await manejar_redes_mantenimiento(
         flujo=flujo,
         estado=estado,
         texto_mensaje=texto_mensaje,
@@ -98,7 +98,7 @@ async def manejar_contexto_mantenimiento(
     if respuesta is not None:
         return respuesta
 
-    respuesta = await manejar_mantenimiento_servicios(
+    respuesta = await manejar_servicios_mantenimiento(
         flujo=flujo,
         estado=estado,
         texto_mensaje=texto_mensaje,
@@ -112,7 +112,7 @@ async def manejar_contexto_mantenimiento(
     if respuesta is not None:
         return respuesta
 
-    respuesta = await manejar_mantenimiento_perfil(
+    respuesta = await manejar_perfil_mantenimiento(
         flujo=flujo,
         estado=estado,
         texto_mensaje=texto_mensaje,
@@ -125,7 +125,7 @@ async def manejar_contexto_mantenimiento(
     if respuesta is not None:
         return respuesta
 
-    respuesta = await manejar_mantenimiento_vistas(
+    respuesta = await manejar_vistas_mantenimiento(
         flujo=flujo,
         estado=estado,
         texto_mensaje=texto_mensaje,

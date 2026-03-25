@@ -11,43 +11,40 @@ setattr(imghdr_stub, "what", lambda *args, **kwargs: None)
 sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-import flows.gestores_estados.gestor_servicios as modulo_gestor_servicios  # noqa: E402
-from flows.gestores_estados import (  # noqa: E402
-    gestor_vistas_perfil as modulo_gestor_vistas_perfil,
+import flows.maintenance.services as modulo_services  # noqa: E402
+from flows.maintenance import (  # noqa: E402
+    views as modulo_views,
 )
 from infrastructure.openai import transformador_servicios as modulo_transformador  # noqa: E402
-from flows.gestores_estados.gestor_confirmacion_servicios import (  # noqa: E402
+from flows.maintenance.services_confirmation import (  # noqa: E402
     manejar_confirmacion_perfil_profesional,
     manejar_confirmacion_servicio_perfil,
     manejar_confirmacion_servicios,
     manejar_decision_agregar_otro_servicio,
 )
-from flows.gestores_estados.gestor_espera_certificado import (  # noqa: E402
+from flows.maintenance.wait_certificate import (  # noqa: E402
     manejar_espera_certificado,
 )
-from flows.gestores_estados.gestor_espera_experiencia import (  # noqa: E402
+from flows.maintenance.wait_experience import (  # noqa: E402
     manejar_espera_experiencia,
 )
-from flows.gestores_estados.gestor_espera_especialidad import (  # noqa: E402
+from flows.maintenance.specialty import (  # noqa: E402
     manejar_espera_especialidad,
 )
-from flows.gestores_estados.gestor_espera_especialidad import (  # noqa: E402
-    manejar_espera_especialidad,
-)
-from flows.gestores_estados.gestor_espera_nombre import (  # noqa: E402
+from flows.maintenance.wait_name import (  # noqa: E402
     manejar_espera_nombre,
 )
-from flows.gestores_estados.gestor_menu import manejar_estado_menu  # noqa: E402
-from flows.gestores_estados.gestor_menu import (  # noqa: E402
+from flows.maintenance.menu import manejar_estado_menu  # noqa: E402
+from flows.maintenance.menu import (  # noqa: E402
     manejar_submenu_informacion_personal,
     manejar_submenu_informacion_profesional,
 )
-from flows.gestores_estados.gestor_servicios import (  # noqa: E402
+from flows.maintenance.services import (  # noqa: E402
     manejar_accion_servicios,
     manejar_agregar_servicios,
     manejar_confirmacion_agregar_servicios,
 )
-from flows.gestores_estados.gestor_espera_red_social import (  # noqa: E402
+from flows.maintenance.wait_social import (  # noqa: E402
     manejar_espera_red_social,
 )
 from flows.onboarding.handlers.redes_sociales import (  # noqa: E402
@@ -60,21 +57,26 @@ from flows.onboarding.handlers.servicios_confirmacion import (  # noqa: E402
     manejar_confirmacion_servicios_onboarding,
     manejar_decision_agregar_otro_servicio_onboarding,
 )
-from flows.validadores.validador_entrada import (  # noqa: E402
+from flows.validators.input import (  # noqa: E402
     parsear_entrada_red_social,
 )
 from flows.router import enrutar_estado  # noqa: E402
 from routes.maintenance import manejar_informacion_personal_mantenimiento  # noqa: E402
 from principal import normalizar_respuesta_whatsapp  # noqa: E402
 from services.shared import interpretar_respuesta  # noqa: E402
-from services.servicios_proveedor.ejemplos_servicios_top import (  # noqa: E402
+from templates.maintenance import (  # noqa: E402
+    mensaje_ejemplo_servicio_seleccionado,
+    payload_confirmacion_servicios_menu,
+    preguntar_nuevo_servicio_con_ejemplos_dinamicos,
+)
+from services.maintenance.ejemplos_servicios_top import (  # noqa: E402
     obtener_ejemplos_servicios_top,
 )
-from services.servicios_proveedor.redes_sociales_slots import (  # noqa: E402
+from services.maintenance.redes_sociales_slots import (  # noqa: E402
     extraer_redes_sociales_desde_texto,
 )
-from templates.interfaz import DETAIL_ACTION_SERVICES_ADD  # noqa: E402
-from templates.interfaz import (  # noqa: E402
+from templates.maintenance.menus import DETAIL_ACTION_SERVICES_ADD  # noqa: E402
+from templates.maintenance.menus import (  # noqa: E402
     DETAIL_ACTION_BACK,
     DETAIL_ACTION_SERVICE_CHANGE,
     DETAIL_ACTION_SERVICE_DELETE,
@@ -88,7 +90,7 @@ from templates.interfaz import (  # noqa: E402
     SOCIAL_NETWORK_FACEBOOK_ID,
     SOCIAL_NETWORK_INSTAGRAM_ID,
 )
-from templates.registro import (  # noqa: E402
+from templates.onboarding.registration import (  # noqa: E402
     SOCIAL_FACEBOOK_ID,
     SOCIAL_INSTAGRAM_ID,
     SOCIAL_SKIP_ID,
@@ -97,9 +99,7 @@ from templates.onboarding import (  # noqa: E402
     REDES_SOCIALES_SKIP_ID,
     payload_redes_sociales_onboarding_con_imagen,
 )
-from templates.interfaz.menus import (  # noqa: E402
-    payload_ejemplos_servicios_personalizados,
-)
+from templates.maintenance.menus import payload_ejemplos_servicios_personalizados  # noqa: E402
 
 
 def test_render_profile_view_normaliza_url_dni_reverso_desde_storage(monkeypatch):
@@ -117,12 +117,12 @@ def test_render_profile_view_normaliza_url_dni_reverso_desde_storage(monkeypatch
     supabase = SimpleNamespace(storage=_Storage())
 
     monkeypatch.setattr(
-        modulo_gestor_vistas_perfil,
+        modulo_views,
         "get_supabase_client",
         lambda: supabase,
     )
     monkeypatch.setattr(
-        modulo_gestor_vistas_perfil,
+        modulo_views,
         "SUPABASE_PROVIDERS_BUCKET",
         "tinkubot-providers",
     )
@@ -135,7 +135,7 @@ def test_render_profile_view_normaliza_url_dni_reverso_desde_storage(monkeypatch
     }
 
     respuesta = asyncio.run(
-        modulo_gestor_vistas_perfil.render_profile_view(
+        modulo_views.render_profile_view(
             flujo=flujo,
             estado="viewing_personal_dni_back",
             proveedor_id="prov-1",
@@ -152,12 +152,12 @@ def test_render_profile_view_normaliza_url_dni_reverso_desde_storage(monkeypatch
 
 def test_render_profile_view_limpia_query_string_en_foto_perfil(monkeypatch):
     monkeypatch.setattr(
-        modulo_gestor_vistas_perfil,
+        modulo_views,
         "get_supabase_client",
         lambda: None,
     )
     monkeypatch.setattr(
-        modulo_gestor_vistas_perfil,
+        modulo_views,
         "SUPABASE_PROVIDERS_BUCKET",
         "tinkubot-providers",
     )
@@ -165,7 +165,7 @@ def test_render_profile_view_limpia_query_string_en_foto_perfil(monkeypatch):
     flujo = {"face_photo_url": "https://broken.example/photo.jpg?"}
 
     respuesta = asyncio.run(
-        modulo_gestor_vistas_perfil.render_profile_view(
+        modulo_views.render_profile_view(
             flujo=flujo,
             estado="viewing_personal_photo",
             proveedor_id="prov-1",
@@ -189,18 +189,18 @@ def test_render_profile_view_certificado_usa_url_resuelta(monkeypatch):
         ]
 
     monkeypatch.setattr(
-        modulo_gestor_vistas_perfil,
+        modulo_views,
         "listar_certificados_proveedor",
         _listar_certificados,
     )
     monkeypatch.setattr(
-        modulo_gestor_vistas_perfil,
+        modulo_views,
         "_resolver_media_url",
         lambda _url: "https://signed.example/certificates/cert-1.jpg",
     )
 
     respuesta = asyncio.run(
-        modulo_gestor_vistas_perfil.render_profile_view(
+        modulo_views.render_profile_view(
             flujo={"selected_certificate_id": "cert-1"},
             estado="viewing_professional_certificate",
             proveedor_id="prov-1",
@@ -228,14 +228,14 @@ def test_render_profile_view_certificado_muestra_fallback_si_no_hay_media(monkey
         ]
 
     monkeypatch.setattr(
-        modulo_gestor_vistas_perfil,
+        modulo_views,
         "listar_certificados_proveedor",
         _listar_certificados,
     )
-    monkeypatch.setattr(modulo_gestor_vistas_perfil, "_resolver_media_url", lambda _url: "")
+    monkeypatch.setattr(modulo_views, "_resolver_media_url", lambda _url: "")
 
     respuesta = asyncio.run(
-        modulo_gestor_vistas_perfil.render_profile_view(
+        modulo_views.render_profile_view(
             flujo={"selected_certificate_id": "cert-1"},
             estado="viewing_professional_certificate",
             proveedor_id="prov-1",
@@ -264,7 +264,7 @@ def test_selector_servicios_abre_agregado_directo():
 
     monkeypatch = __import__("pytest").MonkeyPatch()
     monkeypatch.setattr(
-        modulo_gestor_servicios,
+        modulo_services,
         "preguntar_nuevo_servicio_con_ejemplos_dinamicos",
         _fake_prompt,
     )
@@ -404,7 +404,7 @@ def test_obtener_ejemplos_servicios_top_prioriza_el_dominio_mas_usado(monkeypatc
         return _Respuesta([])
 
     monkeypatch.setattr(
-        "services.servicios_proveedor.ejemplos_servicios_top.run_supabase",
+        "services.maintenance.ejemplos_servicios_top.run_supabase",
         _fake_run_supabase,
     )
 
@@ -437,7 +437,7 @@ def test_selector_servicios_abre_agregado_con_numeracion_contextual():
 
     monkeypatch = __import__("pytest").MonkeyPatch()
     monkeypatch.setattr(
-        modulo_gestor_servicios,
+        modulo_services,
         "preguntar_nuevo_servicio_con_ejemplos_dinamicos",
         _fake_prompt,
     )
@@ -473,8 +473,8 @@ def test_selector_servicios_muestra_menu_unificado():
     )
 
     assert "Gestión de Servicios" in respuesta["messages"][1]["response"]
-    assert "Agregar servicio" in respuesta["messages"][1]["response"]
-    assert "Eliminar servicio" in respuesta["messages"][1]["response"]
+    assert "Servicios registrados" in respuesta["messages"][1]["response"]
+    assert "plomeria" in respuesta["messages"][1]["response"]
 
 
 def test_submenu_profesional_servicios_agregar_muestra_secuencia_contextual():
@@ -494,7 +494,7 @@ def test_submenu_profesional_servicios_agregar_muestra_secuencia_contextual():
 
     monkeypatch = __import__("pytest").MonkeyPatch()
     monkeypatch.setattr(
-        modulo_gestor_vistas_perfil,
+        modulo_views,
         "preguntar_nuevo_servicio_con_ejemplos_dinamicos",
         _fake_prompt,
     )
@@ -505,7 +505,7 @@ def test_submenu_profesional_servicios_agregar_muestra_secuencia_contextual():
 
     try:
         respuesta = asyncio.run(
-            modulo_gestor_vistas_perfil.manejar_vista_perfil(
+            modulo_views.manejar_vista_perfil(
                 flujo=flujo,
                 estado="viewing_professional_services",
                 texto_mensaje=DETAIL_ACTION_SERVICES_ADD,
@@ -579,7 +579,7 @@ def test_slot_vacio_de_servicio_abre_captura(monkeypatch):
         }
 
     monkeypatch.setattr(
-        modulo_gestor_vistas_perfil,
+        modulo_views,
         "preguntar_nuevo_servicio_con_ejemplos_dinamicos",
         _fake_prompt,
     )
@@ -587,7 +587,7 @@ def test_slot_vacio_de_servicio_abre_captura(monkeypatch):
     flujo = {"services": ["Plomeria"], "provider_id": "prov-1"}
 
     respuesta = asyncio.run(
-        modulo_gestor_vistas_perfil.manejar_vista_perfil(
+        modulo_views.manejar_vista_perfil(
             flujo=flujo,
             estado="viewing_professional_services",
             texto_mensaje=f"{SERVICE_SLOT_PREFIX}4",
@@ -605,7 +605,7 @@ def test_slot_registrado_de_servicio_abre_detalle():
     flujo = {"services": ["Plomeria", "Electricidad"], "provider_id": "prov-1"}
 
     respuesta = asyncio.run(
-        modulo_gestor_vistas_perfil.manejar_vista_perfil(
+        modulo_views.manejar_vista_perfil(
             flujo=flujo,
             estado="viewing_professional_services",
             texto_mensaje=f"{SERVICE_SLOT_PREFIX}1",
@@ -628,7 +628,7 @@ def test_detalle_servicio_permite_reemplazo(monkeypatch):
         }
 
     monkeypatch.setattr(
-        modulo_gestor_vistas_perfil,
+        modulo_views,
         "preguntar_nuevo_servicio_con_ejemplos_dinamicos",
         _fake_prompt,
     )
@@ -641,7 +641,7 @@ def test_detalle_servicio_permite_reemplazo(monkeypatch):
     }
 
     respuesta = asyncio.run(
-        modulo_gestor_vistas_perfil.manejar_vista_perfil(
+        modulo_views.manejar_vista_perfil(
             flujo=flujo,
             estado="viewing_professional_service",
             texto_mensaje=DETAIL_ACTION_SERVICE_CHANGE,
@@ -659,7 +659,7 @@ def test_detalle_servicio_elimina_y_vuelve_a_slots(monkeypatch):
         return ["Plomeria"]
 
     monkeypatch.setattr(
-        "flows.gestores_estados.gestor_vistas_perfil.eliminar_servicio_proveedor",
+        "flows.maintenance.views.eliminar_servicio_proveedor",
         _eliminar_servicio,
     )
 
@@ -671,7 +671,7 @@ def test_detalle_servicio_elimina_y_vuelve_a_slots(monkeypatch):
     }
 
     respuesta = asyncio.run(
-        modulo_gestor_vistas_perfil.manejar_vista_perfil(
+        modulo_views.manejar_vista_perfil(
             flujo=flujo,
             estado="viewing_professional_service",
             texto_mensaje=DETAIL_ACTION_SERVICE_DELETE,
@@ -693,7 +693,7 @@ def test_detalle_servicio_regresar_vuelve_a_slots():
     }
 
     respuesta = asyncio.run(
-        modulo_gestor_vistas_perfil.manejar_vista_perfil(
+        modulo_views.manejar_vista_perfil(
             flujo=flujo,
             estado="viewing_professional_service",
             texto_mensaje=DETAIL_ACTION_BACK,
@@ -710,7 +710,7 @@ def test_confirmacion_agregar_servicios_persiste_y_regresa_a_menu(monkeypatch):
         return ["desarrollo de software", *servicios]
 
     monkeypatch.setattr(
-        modulo_gestor_servicios,
+        modulo_services,
         "agregar_servicios_proveedor",
         _agregar_servicios,
     )
@@ -747,7 +747,7 @@ def test_agregar_servicios_entra_en_confirmacion_antes_de_guardar(monkeypatch):
         }
 
     monkeypatch.setattr(
-        modulo_gestor_servicios,
+        modulo_services,
         "_normalizar_servicios_ingresados",
         _fake_normalizar,
     )
@@ -797,12 +797,12 @@ def test_agregar_servicios_valido_sin_aclaracion_por_domino(monkeypatch):
         }
 
     monkeypatch.setattr(
-        modulo_gestor_servicios,
+        modulo_services,
         "TransformadorServicios",
         _TransformadorOK,
     )
     monkeypatch.setattr(
-        "flows.gestores_estados.gestor_servicios.validar_servicio_semanticamente",
+        "flows.maintenance.services.validar_servicio_semanticamente",
         _validar_servicio_semanticamente,
     )
 
@@ -831,7 +831,7 @@ def test_confirmacion_agregar_servicios_acepta_selected_option_button(monkeypatc
         return ["Pintura interior", *servicios]
 
     monkeypatch.setattr(
-        "flows.gestores_estados.gestor_servicios.agregar_servicios_proveedor",
+        "flows.maintenance.services.agregar_servicios_proveedor",
         _agregar_servicios,
     )
 
@@ -862,7 +862,7 @@ def test_confirmacion_agregar_servicios_reemplaza_slot_desde_menu(monkeypatch):
         return servicios
 
     monkeypatch.setattr(
-        "flows.gestores_estados.gestor_servicios.actualizar_servicios",
+        "flows.maintenance.services.actualizar_servicios",
         _actualizar_servicios,
     )
 
@@ -897,7 +897,7 @@ def test_confirmacion_agregar_servicios_acepta_texto_agregar(monkeypatch):
         return ["Pintura interior", *servicios]
 
     monkeypatch.setattr(
-        "flows.gestores_estados.gestor_servicios.agregar_servicios_proveedor",
+        "flows.maintenance.services.agregar_servicios_proveedor",
         _agregar_servicios,
     )
 
@@ -943,15 +943,15 @@ def test_confirmacion_agregar_servicios_reintento_consumido_por_nonce(
         raise AssertionError("No debe volver a persistir un reintento duplicado")
 
     monkeypatch.setattr(
-        "flows.gestores_estados.gestor_servicios.cliente_redis",
+        "flows.maintenance.services.cliente_redis",
         _RedisStub(),
     )
     monkeypatch.setattr(
-        "flows.gestores_estados.gestor_servicios.agregar_servicios_proveedor",
+        "flows.maintenance.services.agregar_servicios_proveedor",
         _agregar_servicios,
     )
     monkeypatch.setattr(
-        "flows.gestores_estados.gestor_vistas_perfil.render_profile_view",
+        "flows.maintenance.views.render_profile_view",
         _render_profile_view,
     )
 
@@ -1129,7 +1129,7 @@ def test_vista_dni_reverso_cambia_solo_reverso():
     flujo = {"approved_basic": False}
 
     respuesta = asyncio.run(
-        modulo_gestor_vistas_perfil.manejar_vista_perfil(
+        modulo_views.manejar_vista_perfil(
             flujo=flujo,
             estado="viewing_personal_dni_back",
             texto_mensaje="provider_detail_dni_back_change",
@@ -1143,7 +1143,7 @@ def test_vista_dni_reverso_cambia_solo_reverso():
 
 
 def test_headers_menus_interactivos_son_consistentes():
-    from templates.interfaz import (
+    from templates.maintenance.menus import (
         SERVICE_BACK_ID,
         SERVICE_DELETE_BACK_ID,
         payload_detalle_servicios,
@@ -1195,7 +1195,7 @@ def test_eliminar_servicio_acepta_selected_option_interactivo(monkeypatch):
         return ["Plomeria"]
 
     monkeypatch.setattr(
-        "flows.gestores_estados.gestor_servicios.eliminar_servicio_proveedor",
+        "flows.maintenance.services.eliminar_servicio_proveedor",
         _eliminar_servicio_proveedor,
     )
 
@@ -1273,19 +1273,19 @@ def test_submenu_profesional_certificado_inicia_reemplazo():
 
     monkeypatch = __import__("pytest").MonkeyPatch()
     monkeypatch.setattr(
-        "flows.gestores_estados.gestor_menu.listar_certificados_proveedor",
+        "flows.maintenance.menu.listar_certificados_proveedor",
         _listar_certificados,
     )
     monkeypatch.setattr(
-        "flows.gestores_estados.gestor_vistas_perfil.listar_certificados_proveedor",
+        "flows.maintenance.views.listar_certificados_proveedor",
         _listar_certificados,
     )
     monkeypatch.setattr(
-        "flows.gestores_estados.gestor_vistas_perfil.listar_certificados_proveedor",
+        "flows.maintenance.views.listar_certificados_proveedor",
         _listar_certificados,
     )
     monkeypatch.setattr(
-        "flows.gestores_estados.gestor_vistas_perfil.listar_certificados_proveedor",
+        "flows.maintenance.views.listar_certificados_proveedor",
         _listar_certificados,
     )
 
@@ -1317,11 +1317,11 @@ def test_submenu_profesional_certificados_varios_muestra_lista():
 
     monkeypatch = __import__("pytest").MonkeyPatch()
     monkeypatch.setattr(
-        "flows.gestores_estados.gestor_menu.listar_certificados_proveedor",
+        "flows.maintenance.menu.listar_certificados_proveedor",
         _listar_certificados,
     )
     monkeypatch.setattr(
-        "flows.gestores_estados.gestor_vistas_perfil.listar_certificados_proveedor",
+        "flows.maintenance.views.listar_certificados_proveedor",
         _listar_certificados,
     )
 
@@ -1415,11 +1415,11 @@ def test_submenu_profesional_certificados_sin_items_muestra_slots(monkeypatch):
         return []
 
     monkeypatch.setattr(
-        "flows.gestores_estados.gestor_menu.listar_certificados_proveedor",
+        "flows.maintenance.menu.listar_certificados_proveedor",
         _listar_certificados,
     )
     monkeypatch.setattr(
-        "flows.gestores_estados.gestor_vistas_perfil.listar_certificados_proveedor",
+        "flows.maintenance.views.listar_certificados_proveedor",
         _listar_certificados,
     )
 
@@ -1445,7 +1445,7 @@ def test_slot_vacio_de_certificado_abre_carga(monkeypatch):
         return []
 
     monkeypatch.setattr(
-        "flows.gestores_estados.gestor_vistas_perfil.listar_certificados_proveedor",
+        "flows.maintenance.views.listar_certificados_proveedor",
         _listar_certificados,
     )
 
@@ -1456,7 +1456,7 @@ def test_slot_vacio_de_certificado_abre_carga(monkeypatch):
     }
 
     respuesta = asyncio.run(
-        modulo_gestor_vistas_perfil.manejar_vista_perfil(
+        modulo_views.manejar_vista_perfil(
             flujo=flujo,
             estado="viewing_professional_certificates",
             texto_mensaje="provider_certificate_slot:0",
@@ -1533,7 +1533,7 @@ def test_actualizacion_experiencia_desde_menu_regresa_detalle():
 
 def test_redes_sociales_sin_datos_muestra_sublista_vacia():
     respuesta = asyncio.run(
-        modulo_gestor_vistas_perfil.render_profile_view(
+        modulo_views.render_profile_view(
             flujo={"facebook_username": None, "instagram_username": None},
             estado="viewing_professional_social",
             proveedor_id="prov-1",
@@ -1547,7 +1547,7 @@ def test_redes_sociales_sin_datos_muestra_sublista_vacia():
 
 def test_render_profile_view_detalle_facebook():
     respuesta = asyncio.run(
-        modulo_gestor_vistas_perfil.render_profile_view(
+        modulo_views.render_profile_view(
             flujo={"facebook_username": "diego.unkuch"},
             estado="viewing_professional_social_facebook",
             proveedor_id="prov-1",
@@ -1581,7 +1581,7 @@ def test_actualizacion_red_facebook_desde_router(monkeypatch):
         }
 
     monkeypatch.setattr(
-        "flows.gestores_estados.gestor_actualizacion_redes.actualizar_redes_sociales",
+        "flows.maintenance.social_update.actualizar_redes_sociales",
         _actualizar_redes_sociales,
     )
 
@@ -2205,8 +2205,8 @@ def test_servicio_perfil_pide_confirmacion_individual(monkeypatch):
         }
 
     monkeypatch.setattr(
-        "flows.gestores_estados."
-        "gestor_espera_especialidad.validar_servicio_semanticamente",
+        "flows.maintenance."
+        "specialty.validar_servicio_semanticamente",
         _validar_servicio_semanticamente,
     )
 
@@ -2275,8 +2275,8 @@ def test_espera_especialidad_no_interrumpe_si_el_servicio_es_valido_y_domino_no_
         }
 
     monkeypatch.setattr(
-        "flows.gestores_estados."
-        "gestor_espera_especialidad.validar_servicio_semanticamente",
+        "flows.maintenance."
+        "specialty.validar_servicio_semanticamente",
         _validar_servicio_semanticamente,
     )
 

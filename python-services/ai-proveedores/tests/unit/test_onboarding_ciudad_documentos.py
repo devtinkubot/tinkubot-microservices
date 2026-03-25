@@ -157,6 +157,35 @@ async def test_router_onboarding_nuevo_enruta_ciudad_y_documentos(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_router_onboarding_add_another_service_enruta_decision(monkeypatch):
+    async def _fake_decision(*, flujo, texto_mensaje, selected_option=None):
+        assert flujo["state"] == "onboarding_add_another_service"
+        assert texto_mensaje == "sí"
+        assert selected_option == "onboarding_add_another_service_yes"
+        flujo["state"] = "onboarding_specialty"
+        return {"success": True, "messages": [{"response": "ok add another"}]}
+
+    monkeypatch.setattr(
+        modulo_onboarding_router,
+        "manejar_decision_agregar_otro_servicio_onboarding",
+        _fake_decision,
+    )
+
+    flujo = {"state": "onboarding_add_another_service"}
+    respuesta = await manejar_estado_onboarding(
+        estado="onboarding_add_another_service",
+        flujo=flujo,
+        telefono="593999111299@s.whatsapp.net",
+        texto_mensaje="sí",
+        carga={"selected_option": "onboarding_add_another_service_yes"},
+        supabase=None,
+    )
+
+    assert flujo["state"] == "onboarding_specialty"
+    assert respuesta["messages"][0]["response"] == "ok add another"
+
+
+@pytest.mark.asyncio
 async def test_boundary_onboarding_sin_consentimiento_pide_consentimiento():
     flujo = {}
 

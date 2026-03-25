@@ -18,7 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from flows.router import manejar_mensaje
 
 # Gestores de sesión y perfil
-from flows.sesion import (
+from flows.session import (
     establecer_flujo,
     invalidar_cache_perfil_proveedor,
     obtener_flujo,
@@ -39,40 +39,23 @@ from services.availability import (
     _registrar_respuesta_disponibilidad_si_aplica as _registrar_respuesta_disponibilidad_si_aplica_impl,
     _resolver_alias_disponibilidad as _resolver_alias_disponibilidad_impl,
 )
-from services.disponibilidad_admin import router as router_disponibilidad_admin
+from services.availability.disponibilidad_admin import router as router_disponibilidad_admin
 from services.shared import interpretar_respuesta
-from services.registro import limpiar_onboarding_proveedores
-from services.registro.eliminacion_proveedor import eliminar_registro_proveedor
-from services.registro.checkpoint_onboarding import (
+from services.onboarding.registration import limpiar_onboarding_proveedores
+from services.onboarding.progress import (
     es_perfil_onboarding_completo,
     persistir_checkpoint_onboarding,
     resolver_checkpoint_onboarding_desde_perfil,
 )
 from services.sesion_proveedor import sincronizar_flujo_con_perfil
-from services.servicios_proveedor.actualizar_servicios import actualizar_servicios
+from services.maintenance.actualizar_servicios import actualizar_servicios
 from supabase import Client, create_client
-from templates.registro import (
+from templates.onboarding.registration import (
     PROFILE_SINGLE_USE_CONTROL_IDS,
     SERVICE_CONFIRM_ID,
     SERVICE_CORRECT_ID,
 )
-from templates.interfaz import payload_confirmacion_servicios_menu
-from templates.onboarding import (
-    payload_experiencia_onboarding,
-    payload_onboarding_dni_frontal,
-    payload_onboarding_foto_perfil,
-    payload_menu_registro_proveedor,
-    payload_servicios_onboarding_con_imagen,
-    solicitar_ciudad_registro,
-)
-from templates.onboarding.consentimiento import payload_consentimiento_proveedor
-from templates.sesion.manejo import (
-    informar_reinicio_con_eliminacion,
-    informar_reinicio_conversacion,
-    informar_reanudacion_inactividad,
-    informar_timeout_inactividad,
-)
-
+from templates.maintenance import payload_confirmacion_servicios_menu
 # Configuración desde variables de entorno
 URL_SUPABASE = configuracion.supabase_url or os.getenv("SUPABASE_URL", "")
 # settings expone la clave JWT de servicio para Supabase
@@ -89,7 +72,6 @@ TTL_DEDUPE_INTERACTIVE_SEGUNDOS = int(
     os.getenv("PROVIDER_INTERACTIVE_DEDUPE_TTL_SECONDS", "900")
 )
 TIEMPO_INACTIVIDAD_SESION_SEGUNDOS = configuracion.ttl_flujo_segundos
-TIEMPO_AVISO_INACTIVIDAD_SEGUNDOS = 300
 STANDARD_ONBOARDING_STATES = {
     None,
     "pending_verification",
@@ -113,18 +95,6 @@ STANDARD_ONBOARDING_STATES = {
 MANUAL_PHONE_FALLBACK_STATES = {"onboarding_real_phone"}
 
 ONBOARDING_STATES = STANDARD_ONBOARDING_STATES | MANUAL_PHONE_FALLBACK_STATES
-
-ONBOARDING_REANUDACION_STATES = {
-    "awaiting_menu_option",
-    "onboarding_consent",
-    "onboarding_city",
-    "onboarding_dni_front_photo",
-    "onboarding_face_photo",
-    "onboarding_experience",
-    "onboarding_specialty",
-    "onboarding_services_confirmation",
-    "onboarding_social_media",
-}
 
 # Estados de menú post-registro (deben ignorar flujo de disponibilidad)
 MENU_STATES = {
@@ -199,36 +169,16 @@ MEDIA_STATES = {
 }
 
 
-def _normalizar_datetime_utc(valor: str) -> Optional[datetime]:
-    if not valor:
-        return None
-    try:
-        instante = datetime.fromisoformat(valor)
-    except ValueError:
-        return None
-    if instante.tzinfo is None:
-        return instante.replace(tzinfo=timezone.utc)
-    return instante.astimezone(timezone.utc)
-
-
-def _sesion_expirada_por_inactividad(
-    flujo: Dict[str, Any],
-    ahora_utc: datetime,
-    *,
-    umbral_segundos: int = TIEMPO_INACTIVIDAD_SESION_SEGUNDOS,
-) -> bool:
-    ultima_vista = (
-        flujo.get("last_seen_at")
-        or flujo.get("last_seen_at_prev")
-        or flujo.get("onboarding_step_updated_at")
-        or flujo.get("updated_at")
-    )
-    if not isinstance(ultima_vista, str):
-        return False
-    ultima_vista_dt = _normalizar_datetime_utc(ultima_vista)
-    if ultima_vista_dt is None:
-        return False
-    return (ahora_utc - ultima_vista_dt).total_seconds() > umbral_segundos
+def _normalizar_lista_servicios_flujo(flujo: Dict[str, Any]) -> list[str]:
+    servicios = flujo.get("servicios_temporales")
+    if servicios is None:
+        servicios = flujo.get("services")
+    resultado: list[str] = []
+    for servicio in list(servicios or []):
+        texto = str(servicio or "").strip()
+        if texto and texto not in resultado:
+            resultado.append(texto)
+    return resultado
 
 
 def _rehidratar_estado_onboarding_desde_supabase(
@@ -256,59 +206,6 @@ def _rehidratar_estado_onboarding_desde_supabase(
     elif checkpoint == "awaiting_menu_option":
         flujo.pop("mode", None)
     return True
-
-
-def _construir_reanudacion_onboarding(
-    flujo: Dict[str, Any],
-) -> Dict[str, Any]:
-    estado = str(flujo.get("state") or "").strip()
-    if estado == "onboarding_consent":
-        prompt = payload_consentimiento_proveedor()["messages"][0]
-    elif estado == "awaiting_menu_option":
-        prompt = payload_menu_registro_proveedor()
-    elif estado == "onboarding_city":
-        prompt = solicitar_ciudad_registro()
-    elif estado == "onboarding_dni_front_photo":
-        prompt = payload_onboarding_dni_frontal()
-    elif estado == "onboarding_face_photo":
-        prompt = payload_onboarding_foto_perfil()
-    elif estado == "onboarding_real_phone":
-        from templates.onboarding.telefono import preguntar_real_phone
-
-        prompt = {"response": preguntar_real_phone()}
-    elif estado == "onboarding_experience":
-        prompt = payload_experiencia_onboarding()
-    elif estado == "onboarding_specialty":
-        prompt = payload_servicios_onboarding_con_imagen()
-    elif estado == "onboarding_services_confirmation":
-        prompt = payload_confirmacion_servicios_menu(list(flujo.get("services") or []))
-    else:
-        prompt = {
-            "response": (
-                "Tu proceso de registro sigue activo. "
-                "Responde para continuar donde te quedaste."
-            )
-        }
-
-    return {
-        "success": True,
-        "messages": [
-            {"response": informar_reanudacion_inactividad()},
-            prompt,
-        ],
-    }
-
-
-def _normalizar_lista_servicios_flujo(flujo: Dict[str, Any]) -> list[str]:
-    servicios = flujo.get("servicios_temporales")
-    if servicios is None:
-        servicios = flujo.get("services")
-    resultado: list[str] = []
-    for servicio in list(servicios or []):
-        texto = str(servicio or "").strip()
-        if texto and texto not in resultado:
-            resultado.append(texto)
-    return resultado
 
 
 async def _sincronizar_servicios_si_cambiaron(
@@ -759,7 +656,7 @@ async def aprobar_review_gobernanza(
         return {"success": False, "message": "Supabase no configurado"}
 
     try:
-        from services.servicios_proveedor.gobernanza_admin import (
+        from services.maintenance.gobernanza_admin import (
             aprobar_review_catalogo_servicio,
         )
 
@@ -795,7 +692,7 @@ async def rechazar_review_gobernanza(
         return {"success": False, "message": "Supabase no configurado"}
 
     try:
-        from services.servicios_proveedor.gobernanza_admin import (
+        from services.maintenance.gobernanza_admin import (
             rechazar_review_catalogo_servicio,
         )
 
@@ -824,7 +721,7 @@ async def auto_asignar_reviews_gobernanza_endpoint(
         return {"success": False, "message": "Supabase no configurado"}
 
     try:
-        from services.servicios_proveedor.gobernanza_autoasignacion import (
+        from services.maintenance.gobernanza_autoasignacion import (
             auto_asignar_reviews_gobernanza_pendientes,
         )
 
@@ -857,7 +754,7 @@ async def planificar_mantenimiento_taxonomia_endpoint(
         return {"success": False, "message": "Supabase no configurado"}
 
     try:
-        from services.servicios_proveedor.mantenimiento_taxonomia import (
+        from services.maintenance.mantenimiento_taxonomia import (
             planificar_mantenimiento_taxonomia,
         )
 
@@ -949,42 +846,6 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
         flujo = sincronizar_flujo_con_perfil(flujo, perfil_proveedor)
         _rehidratar_estado_onboarding_desde_supabase(flujo, perfil_proveedor)
 
-        ahora_utc = datetime.now(timezone.utc)
-        estado_actual = str(flujo.get("state") or "").strip()
-        inactividad_critica = _sesion_expirada_por_inactividad(
-            flujo,
-            ahora_utc,
-            umbral_segundos=TIEMPO_INACTIVIDAD_SESION_SEGUNDOS,
-        )
-        if inactividad_critica and estado_actual in ONBOARDING_STATES:
-            resultado_eliminacion = None
-            if supabase:
-                resultado_eliminacion = await eliminar_registro_proveedor(
-                    supabase, telefono
-                )
-            await reiniciar_flujo(telefono)
-            flujo.clear()
-            flujo.update({"state": None, "mode": "registration"})
-            mensajes = (
-                [{"response": informar_reinicio_con_eliminacion()}]
-                if resultado_eliminacion and resultado_eliminacion.get("success")
-                else [{"response": informar_reinicio_conversacion()}]
-            )
-            return {"success": True, "messages": mensajes}
-
-        inactividad_reanudable = _sesion_expirada_por_inactividad(
-            flujo,
-            ahora_utc,
-            umbral_segundos=TIEMPO_AVISO_INACTIVIDAD_SEGUNDOS,
-        )
-        if inactividad_reanudable and estado_actual in ONBOARDING_REANUDACION_STATES:
-            flujo["last_seen_at_prev"] = flujo.get("last_seen_at") or ahora_utc.isoformat()
-            flujo["last_seen_at"] = ahora_utc.isoformat()
-            await establecer_flujo(telefono, flujo)
-            return normalizar_respuesta_whatsapp(
-                _construir_reanudacion_onboarding(flujo)
-            )
-
         hay_contexto_disponibilidad = await _hay_contexto_disponibilidad_activo(
             telefono_disponibilidad
         )
@@ -1013,17 +874,6 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                 await establecer_flujo(telefono, flujo)
             return normalizar_respuesta_whatsapp(respuesta_disponibilidad)
 
-        ahora_utc = datetime.now(timezone.utc)
-        if _sesion_expirada_por_inactividad(flujo, ahora_utc):
-            await establecer_flujo(
-                telefono,
-                {
-                    "last_seen_at": ahora_utc.isoformat(),
-                    "last_seen_at_prev": ahora_utc.isoformat(),
-                },
-            )
-            flujo = await obtener_flujo(telefono)
-
         tiene_real_phone = bool(
             flujo.get("real_phone") or (perfil_proveedor or {}).get("real_phone")
         )
@@ -1034,9 +884,6 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
         flujo["requires_real_phone"] = bool(is_lid and not tiene_real_phone)
         if not is_lid and phone_user and not flujo.get("real_phone"):
             flujo["real_phone"] = phone_user
-        last_seen_previo = flujo.get("last_seen_at") or ahora_utc.isoformat()
-        flujo["last_seen_at_prev"] = last_seen_previo
-        flujo["last_seen_at"] = ahora_utc.isoformat()
         servicios_previos = _normalizar_lista_servicios_flujo(flujo)
         resultado_manejo = await manejar_mensaje(
             flujo=flujo,

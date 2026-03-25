@@ -20,7 +20,8 @@ from typing import List, Optional
 
 from config.configuracion import configuracion
 from openai import AsyncOpenAI
-from services.servicios_proveedor.constantes import SERVICIOS_MAXIMOS
+
+MAX_SERVICES = 10
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +66,7 @@ class TransformadorServicios:
     async def transformar_a_servicios(
         self,
         entrada_usuario: str,
-        max_servicios: int = SERVICIOS_MAXIMOS,
+        max_servicios: int = MAX_SERVICES,
     ) -> Optional[List[str]]:
         """
         Transforma entrada de usuario en lista de servicios optimizados.
@@ -432,7 +433,7 @@ async def transformar_texto_a_servicios(
     entrada: str,
     cliente_openai: AsyncOpenAI,
     modelo: Optional[str] = None,
-    max_servicios: int = SERVICIOS_MAXIMOS,
+    max_servicios: int = MAX_SERVICES,
 ) -> Optional[List[str]]:
     """
     Función de conveniencia para transformar texto a servicios.

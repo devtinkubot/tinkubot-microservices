@@ -8,10 +8,16 @@ Este documento describe el onboarding actual de proveedores. El menú del provee
 - `principal.py`: recibe el webhook de WhatsApp y delega al router.
 - `flows/router.py`: decide el estado actual y enruta cada mensaje.
 - `services/sesion_proveedor.py`: sincroniza estado de Redis con el perfil guardado.
-- `flows/gestores_estados/`: contiene los handlers por estado.
+- `flows/constructors/`: construye payloads y respuestas reutilizables.
+- `flows/session/`: gestiona la sesión conversacional y el perfil.
+- `flows/validators/`: valida y normaliza entrada.
+- `flows/maintenance/`: contiene los handlers operativos del menú y mantenimiento del proveedor.
 - `templates/onboarding/`: contiene la tarjeta inicial, la solicitud de ciudad, los documentos y la experiencia del onboarding.
-- `templates/registro/`: contiene copies y payloads de actualización y compatibilidad.
-- `templates/verificacion/`: mensajes cuando el registro queda en revisión.
+- `templates/onboarding/registration/`: contiene copies y payloads del cierre de onboarding y compatibilidad de alta.
+- `templates/review/`: mensajes cuando el registro queda en revisión.
+- `templates/maintenance/`: menús y copys de mantenimiento del proveedor.
+- `templates/shared/`: componentes y mensajes transversales del proveedor.
+- `templates/shared/mensajes_sesion.py`: mensajes de timeout, reinicio y reanudación de sesión.
 
 ## Flujo Actual de Onboarding
 
@@ -78,3 +84,4 @@ Este documento describe el onboarding actual de proveedores. El menú del provee
 - El consentimiento ya no se usa como primer paso del onboarding.
 - El menú del proveedor queda fuera de este flujo para poder evolucionarlo de forma independiente.
 - Los flujos de actualización de perfil siguen existiendo, pero no forman parte del onboarding nuevo.
+- Los menús operativos y los copys de mantenimiento viven en `templates/maintenance/`.

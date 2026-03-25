@@ -2,8 +2,8 @@ import asyncio
 import sys
 import types
 
-import services.registro.eliminacion_proveedor as eliminacion_module
-from services.registro.eliminacion_proveedor import eliminar_registro_proveedor
+import services.onboarding.registration.eliminacion_proveedor as eliminacion_module
+from services.onboarding.registration.eliminacion_proveedor import eliminar_registro_proveedor
 
 
 class _Resultado:
@@ -97,18 +97,18 @@ def test_eliminacion_proveedor_limpia_marca_redis(monkeypatch):
 
     monkeypatch.setattr(eliminacion_module, "run_supabase", _fake_run_supabase)
 
-    flows_sesion_stub = types.ModuleType("flows.sesion")
+    flows_sesion_stub = types.ModuleType("flows.session")
     flows_sesion_stub.marcar_perfil_eliminado = _fake_marcar_perfil_eliminado
     flows_sesion_stub.limpiar_marca_perfil_eliminado = (
         _fake_limpiar_marca_perfil_eliminado
     )
     flows_sesion_stub.limpiar_claves_proveedor = _fake_limpiar_claves_proveedor
-    monkeypatch.setitem(sys.modules, "flows.sesion", flows_sesion_stub)
+    monkeypatch.setitem(sys.modules, "flows.session", flows_sesion_stub)
 
-    flows_sesion_gestor_stub = types.ModuleType("flows.sesion.gestor_flujo")
-    flows_sesion_gestor_stub.reiniciar_flujo = _fake_reiniciar_flujo
+    flows_session_manager_stub = types.ModuleType("flows.session.session_manager")
+    flows_session_manager_stub.reiniciar_flujo = _fake_reiniciar_flujo
     monkeypatch.setitem(
-        sys.modules, "flows.sesion.gestor_flujo", flows_sesion_gestor_stub
+        sys.modules, "flows.session.session_manager", flows_session_manager_stub
     )
 
     resultado = asyncio.run(

@@ -2,8 +2,8 @@
 
 from typing import Any, Dict, Optional
 
-from flows.constructores import construir_payload_menu_principal
-from flows.gestores_estados.gestor_confirmacion_servicios import (
+from flows.constructors import construir_payload_menu_principal
+from flows.maintenance.services_confirmation import (
     manejar_accion_edicion_servicios_registro,
     manejar_agregar_servicio_desde_edicion_registro,
     manejar_confirmacion_perfil_profesional,
@@ -15,10 +15,10 @@ from flows.gestores_estados.gestor_confirmacion_servicios import (
     manejar_reemplazo_servicio_registro,
     manejar_seleccion_reemplazo_servicio_registro,
 )
-from flows.gestores_estados.gestor_espera_especialidad import (
+from flows.maintenance.specialty import (
     manejar_espera_especialidad,
 )
-from flows.gestores_estados.gestor_servicios import (
+from flows.maintenance.services import (
     manejar_accion_servicios,
     manejar_accion_servicios_activos,
     manejar_agregar_servicios,
@@ -129,7 +129,7 @@ async def _finalizar_perfil_completado(
     }
 
 
-async def manejar_mantenimiento_servicios(
+async def manejar_servicios_mantenimiento(
     *,
     flujo: Dict[str, Any],
     estado: Optional[str],

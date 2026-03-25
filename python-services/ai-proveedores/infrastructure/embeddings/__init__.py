@@ -5,6 +5,6 @@ Este módulo proporciona servicios para generar embeddings de texto
 utilizando modelos de OpenAI para búsqueda semántica.
 """
 
-from infrastructure.embeddings.servicio_embeddings import ServicioEmbeddings
+from .servicio_embeddings import ServicioEmbeddings
 
 __all__ = ["ServicioEmbeddings"]

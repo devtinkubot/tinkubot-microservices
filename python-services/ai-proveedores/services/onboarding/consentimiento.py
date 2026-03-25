@@ -6,13 +6,13 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from flows.constructores import (
+from flows.constructors import (
     construir_respuesta_consentimiento_rechazado,
     construir_respuesta_solicitud_consentimiento,
 )
-from flows.sesion import establecer_flujo, reiniciar_flujo
+from flows.session import establecer_flujo, reiniciar_flujo
 from infrastructure.database import run_supabase
-from services.registro import asegurar_proveedor_borrador
+from services.onboarding.registration import asegurar_proveedor_borrador
 from services.onboarding.registrador import registrar_consentimiento
 from templates.onboarding.ciudad import solicitar_ciudad_registro
 logger = logging.getLogger(__name__)

@@ -12,10 +12,10 @@ import pytest
 from flows.onboarding.handlers.ciudad import (  # noqa: E402
     manejar_espera_ciudad_onboarding as manejar_espera_ciudad,
 )
-from services.registro.normalizacion import (  # noqa: E402
+from services.onboarding.registration.normalizacion import (  # noqa: E402
     normalizar_datos_proveedor,
 )
-from services.registro.validacion_registro import (  # noqa: E402
+from services.onboarding.registration.validacion_registro import (  # noqa: E402
     validar_y_construir_proveedor,
 )
 from templates.onboarding.ciudad import solicitar_ciudad_registro  # noqa: E402

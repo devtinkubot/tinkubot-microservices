@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 from infrastructure.database import run_supabase
-from services.servicios_proveedor.redes_sociales_slots import (
+from services.maintenance.redes_sociales_slots import (
     construir_payload_legacy_red_social,
     extraer_redes_sociales_desde_texto,
 )

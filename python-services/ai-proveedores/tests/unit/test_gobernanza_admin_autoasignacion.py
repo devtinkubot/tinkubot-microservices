@@ -2,8 +2,8 @@ import asyncio
 import sys
 import types
 
-import services.servicios_proveedor.gobernanza_autoasignacion as autoasignacion
-from services.servicios_proveedor.gobernanza_autoasignacion import (
+import services.maintenance.gobernanza_autoasignacion as autoasignacion
+from services.maintenance.gobernanza_autoasignacion import (
     auto_asignar_reviews_gobernanza_pendientes,
 )
 
@@ -226,7 +226,7 @@ def test_auto_asignar_reviews_gobernanza_pendientes_aprueba_claros_y_salta_ambig
             "clarification_question": None,
         }
 
-    flows_sesion_stub = types.ModuleType("flows.sesion")
+    flows_sesion_stub = types.ModuleType("flows.session")
 
     async def _fake_invalidar_cache_perfil_proveedor(_telefono):
         return None
@@ -234,7 +234,7 @@ def test_auto_asignar_reviews_gobernanza_pendientes_aprueba_claros_y_salta_ambig
     flows_sesion_stub.invalidar_cache_perfil_proveedor = (
         _fake_invalidar_cache_perfil_proveedor
     )
-    sys.modules["flows.sesion"] = flows_sesion_stub
+    sys.modules["flows.session"] = flows_sesion_stub
 
     monkeypatch.setattr(
         autoasignacion,
@@ -347,7 +347,7 @@ def test_auto_asignar_reviews_gobernanza_pendientes_infiere_dominio_desde_texto(
             "clarification_question": None,
         }
 
-    flows_sesion_stub = types.ModuleType("flows.sesion")
+    flows_sesion_stub = types.ModuleType("flows.session")
 
     async def _fake_invalidar_cache_perfil_proveedor(_telefono):
         return None
@@ -355,7 +355,7 @@ def test_auto_asignar_reviews_gobernanza_pendientes_infiere_dominio_desde_texto(
     flows_sesion_stub.invalidar_cache_perfil_proveedor = (
         _fake_invalidar_cache_perfil_proveedor
     )
-    sys.modules["flows.sesion"] = flows_sesion_stub
+    sys.modules["flows.session"] = flows_sesion_stub
 
     monkeypatch.setattr(
         autoasignacion,

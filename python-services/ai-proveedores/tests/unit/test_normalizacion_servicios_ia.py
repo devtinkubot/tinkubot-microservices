@@ -11,8 +11,8 @@ setattr(imghdr_stub, "what", lambda *args, **kwargs: None)
 sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-import flows.gestores_estados.gestor_servicios as modulo_gestor_servicios  # noqa: E402
-from flows.gestores_estados.gestor_confirmacion_servicios import (  # noqa: E402
+import flows.maintenance.services as modulo_services  # noqa: E402
+from flows.maintenance.services_confirmation import (  # noqa: E402
     manejar_accion_edicion_servicios_registro,
     manejar_confirmacion_servicios,
     manejar_decision_agregar_otro_servicio,
@@ -21,11 +21,11 @@ from flows.gestores_estados.gestor_confirmacion_servicios import (  # noqa: E402
     manejar_reemplazo_servicio_registro,
     manejar_seleccion_reemplazo_servicio_registro,
 )
-from flows.gestores_estados.gestor_espera_especialidad import (  # noqa: E402
+from flows.maintenance.specialty import (  # noqa: E402
     manejar_espera_especialidad,
     normalizar_servicio_registro_individual,
 )
-from flows.gestores_estados.gestor_servicios import (  # noqa: E402
+from flows.maintenance.services import (  # noqa: E402
     manejar_agregar_servicios,
     manejar_confirmacion_agregar_servicios,
 )
@@ -40,30 +40,30 @@ from flows.onboarding.handlers.servicios_confirmacion import (  # noqa: E402
     manejar_decision_agregar_otro_servicio_onboarding,
 )
 from flows.onboarding.router import manejar_estado_onboarding  # noqa: E402
-from flows.validadores.validador_nombre import validar_nombre_completo  # noqa: E402
+from flows.validators.name import validar_nombre_completo  # noqa: E402
 from infrastructure.openai import (  # noqa: E402
     transformador_servicios as modulo_transformador,
 )
-from services.servicios_proveedor import (  # noqa: E402
+from services.maintenance import (  # noqa: E402
     clasificacion_semantica as modulo_clasificacion,
 )
-from services.servicios_proveedor.asistente_clarificacion import (  # noqa: E402
+from services.maintenance.asistente_clarificacion import (  # noqa: E402
     construir_mensaje_clarificacion_servicio,
 )
-from services.servicios_proveedor.utilidades import (  # noqa: E402
+from utils import (  # noqa: E402
     dividir_cadena_servicios,
     parsear_servicios_numerados_con_limite,
     normalizar_texto_visible_con_ia,
     normalizar_texto_visible_corto,
 )
-from services.servicios_proveedor.validacion_semantica import (  # noqa: E402
+from services.maintenance.validacion_semantica import (  # noqa: E402
     validar_servicio_semanticamente,
 )
 from templates.onboarding import (  # noqa: E402
     payload_servicios_onboarding_con_imagen,
     preguntar_servicios_onboarding,
 )
-from templates.registro import (  # noqa: E402
+from templates.onboarding.registration import (  # noqa: E402
     mensaje_correccion_servicios,
 )
 
@@ -507,8 +507,8 @@ def test_espera_especialidad_onboarding_con_linea_numerada_va_a_consentimiento(
         _TransformadorLinea,
     )
     monkeypatch.setattr(
-        "flows.gestores_estados."
-        "gestor_espera_especialidad.validar_servicio_semanticamente",
+        "flows.maintenance."
+        "specialty.validar_servicio_semanticamente",
         _fake_validar_servicio_semanticamente,
     )
     flujo = {"state": "awaiting_specialty"}
@@ -592,8 +592,8 @@ def test_confirmacion_servicio_onboarding_avanza_al_siguiente_servicio(monkeypat
         }
 
     monkeypatch.setattr(
-        "flows.gestores_estados."
-        "gestor_espera_especialidad.validar_servicio_semanticamente",
+        "flows.maintenance."
+        "specialty.validar_servicio_semanticamente",
         _fake_validar_servicio_semanticamente,
     )
 
@@ -690,8 +690,8 @@ def test_espera_especialidad_onboarding_con_tres_servicios_va_a_consentimiento(
         _TransformadorExtra,
     )
     monkeypatch.setattr(
-        "flows.gestores_estados."
-        "gestor_espera_especialidad.validar_servicio_semanticamente",
+        "flows.maintenance."
+        "specialty.validar_servicio_semanticamente",
         _fake_validar_servicio_semanticamente,
     )
     flujo = {
@@ -765,13 +765,13 @@ def test_normalizacion_servicio_pide_aclaracion_en_lugar_de_revision(monkeypatch
         _TransformadorPaneles,
     )
     monkeypatch.setattr(
-        "flows.gestores_estados."
-        "gestor_espera_especialidad.validar_servicio_semanticamente",
+        "flows.maintenance."
+        "specialty.validar_servicio_semanticamente",
         _fake_validar_servicio_semanticamente,
     )
     monkeypatch.setattr(
-        "flows.gestores_estados."
-        "gestor_espera_especialidad."
+        "flows.maintenance."
+        "specialty."
         "construir_mensaje_clarificacion_servicio",
         _fake_construir_mensaje_clarificacion_servicio,
     )
@@ -831,7 +831,7 @@ def test_asistente_clarificacion_usa_ejemplos_reales(monkeypatch):
         return operation()
 
     monkeypatch.setattr(
-        "services.servicios_proveedor.asistente_clarificacion.run_supabase",
+        "services.maintenance.asistente_clarificacion.run_supabase",
         _fake_run_supabase,
     )
 
@@ -882,7 +882,7 @@ def test_decision_agregar_otro_no_pasa_a_resumen_final():
 
 def test_confirmacion_agregar_servicios_re_normaliza_correccion_manual(monkeypatch):
     monkeypatch.setattr(
-        modulo_gestor_servicios, "TransformadorServicios", _TransformadorOK
+        modulo_services, "TransformadorServicios", _TransformadorOK
     )
 
     async def _fake_validar_servicio_semanticamente(**kwargs):
@@ -902,7 +902,7 @@ def test_confirmacion_agregar_servicios_re_normaliza_correccion_manual(monkeypat
         }
 
     monkeypatch.setattr(
-        "flows.gestores_estados.gestor_servicios.validar_servicio_semanticamente",
+        "flows.maintenance.services.validar_servicio_semanticamente",
         _fake_validar_servicio_semanticamente,
     )
     flujo = {
@@ -1010,8 +1010,8 @@ def test_normalizar_servicio_pide_aclaracion_en_servicio_generico(monkeypatch):
         }
 
     monkeypatch.setattr(
-        "flows.gestores_estados."
-        "gestor_espera_especialidad.validar_servicio_semanticamente",
+        "flows.maintenance."
+        "specialty.validar_servicio_semanticamente",
         _fake_validar_servicio_semanticamente,
     )
 
@@ -1062,8 +1062,8 @@ def test_normalizar_servicio_acepta_transporte_y_barco(monkeypatch):
         }
 
     monkeypatch.setattr(
-        "flows.gestores_estados."
-        "gestor_espera_especialidad.validar_servicio_semanticamente",
+        "flows.maintenance."
+        "specialty.validar_servicio_semanticamente",
         _fake_validar_servicio_semanticamente,
     )
 
@@ -1150,8 +1150,8 @@ def test_reemplazo_servicio_en_edicion(monkeypatch):
         }
 
     monkeypatch.setattr(
-        "flows.gestores_estados."
-        "gestor_espera_especialidad.validar_servicio_semanticamente",
+        "flows.maintenance."
+        "specialty.validar_servicio_semanticamente",
         _fake_validar_servicio_semanticamente,
     )
     flujo = {
@@ -1214,7 +1214,7 @@ def test_agregar_servicios_acepta_servicio_sin_bloqueo_taxonomico(monkeypatch):
             return ["transporte de mercancías"]
 
     monkeypatch.setattr(
-        modulo_gestor_servicios, "TransformadorServicios", _TransformadorGenerico
+        modulo_services, "TransformadorServicios", _TransformadorGenerico
     )
 
     async def _fake_validar_servicio_semanticamente(**kwargs):
@@ -1235,7 +1235,7 @@ def test_agregar_servicios_acepta_servicio_sin_bloqueo_taxonomico(monkeypatch):
         }
 
     monkeypatch.setattr(
-        "flows.gestores_estados.gestor_servicios.validar_servicio_semanticamente",
+        "flows.maintenance.services.validar_servicio_semanticamente",
         _fake_validar_servicio_semanticamente,
     )
 
@@ -1328,7 +1328,7 @@ def test_actualizar_servicios_persiste_servicio_sin_canonizacion_taxonomica(
     import importlib
 
     modulo_actualizar_servicios = importlib.import_module(
-        "services.servicios_proveedor.actualizar_servicios"
+        "services.maintenance.actualizar_servicios"
     )
     actualizar_servicios = modulo_actualizar_servicios.actualizar_servicios
 
@@ -1419,7 +1419,7 @@ def test_actualizar_servicios_persiste_servicio_sin_canonizacion_taxonomica(
 
     monkeypatch.setattr(modulo_actualizar_servicios, "run_supabase", _fake_run_supabase)
     monkeypatch.setattr(
-        "services.registro.insertar_servicios_proveedor",
+        "services.onboarding.registration.insertar_servicios_proveedor",
         _fake_insertar_servicios_proveedor,
     )
 
@@ -1427,7 +1427,7 @@ def test_actualizar_servicios_persiste_servicio_sin_canonizacion_taxonomica(
     principal_stub.supabase = supabase
     principal_stub.servicio_embeddings = object()
     sys.modules["principal"] = principal_stub
-    flows_sesion_stub = types.ModuleType("flows.sesion")
+    flows_sesion_stub = types.ModuleType("flows.session")
 
     async def _fake_invalidar_cache_perfil_proveedor(_telefono):
         return None
@@ -1441,7 +1441,7 @@ def test_actualizar_servicios_persiste_servicio_sin_canonizacion_taxonomica(
     flows_sesion_stub.refrescar_cache_perfil_proveedor = (
         _fake_refrescar_cache_perfil_proveedor
     )
-    sys.modules["flows.sesion"] = flows_sesion_stub
+    sys.modules["flows.session"] = flows_sesion_stub
 
     resultado = asyncio.run(actualizar_servicios("prov-1", ["laboralista"]))
 

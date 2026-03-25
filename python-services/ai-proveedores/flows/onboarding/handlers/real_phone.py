@@ -3,8 +3,8 @@
 import re
 from typing import Any, Dict, Optional
 
-from services.registro.normalizacion import _normalizar_telefono_ecuador
-from services.servicios_proveedor.utilidades import limpiar_espacios
+from services.onboarding.registration.normalizacion import _normalizar_telefono_ecuador
+from utils import limpiar_espacios
 from templates.onboarding.ciudad import preguntar_ciudad
 from templates.onboarding.telefono import error_real_phone_invalido
 

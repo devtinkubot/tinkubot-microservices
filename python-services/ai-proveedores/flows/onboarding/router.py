@@ -2,8 +2,8 @@
 
 from typing import Any, Dict, Optional
 
-from flows.constructores import construir_respuesta_solicitud_consentimiento
-from flows.gestores_estados.gestor_confirmacion_servicios import (
+from flows.constructors import construir_respuesta_solicitud_consentimiento
+from flows.maintenance.services_confirmation import (
     manejar_accion_edicion_servicios_registro,
     manejar_agregar_servicio_desde_edicion_registro,
     manejar_eliminacion_servicio_registro,
@@ -19,6 +19,9 @@ from .handlers import (
     manejar_espera_real_phone_onboarding,
     manejar_espera_servicios_onboarding,
     manejar_foto_perfil_onboarding,
+)
+from .handlers.servicios_confirmacion import (
+    manejar_decision_agregar_otro_servicio_onboarding,
 )
 
 STANDARD_ONBOARDING_STATES = {
@@ -185,5 +188,11 @@ async def manejar_estado_onboarding(
             texto_mensaje=texto_mensaje,
             selected_option=carga.get("selected_option"),
             supabase=supabase,
+        )
+    if estado_normalizado == "onboarding_add_another_service":
+        return await manejar_decision_agregar_otro_servicio_onboarding(
+            flujo=flujo,
+            texto_mensaje=texto_mensaje,
+            selected_option=carga.get("selected_option"),
         )
     return None

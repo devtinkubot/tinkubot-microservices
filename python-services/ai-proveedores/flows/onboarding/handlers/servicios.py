@@ -4,12 +4,12 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from infrastructure.database import get_supabase_client
-from services.servicios_proveedor.constantes import SERVICIOS_MAXIMOS_ONBOARDING
-from services.servicios_proveedor.utilidades import (
+from services.maintenance.constantes import SERVICIOS_MAXIMOS_ONBOARDING
+from utils import (
     limpiar_espacios,
     sanitizar_lista_servicios,
 )
-from services.servicios_proveedor.validacion_semantica import (
+from services.maintenance.validacion_semantica import (
     validar_servicio_semanticamente,
 )
 from templates.onboarding.servicios import (

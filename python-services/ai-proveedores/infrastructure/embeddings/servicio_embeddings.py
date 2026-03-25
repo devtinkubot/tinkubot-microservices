@@ -20,7 +20,7 @@ from typing import List, Optional
 
 from openai import AsyncOpenAI
 
-from infrastructure.redis.cliente_redis import get_redis_client
+from ..redis.cliente_redis import get_redis_client
 
 logger = logging.getLogger(__name__)
 

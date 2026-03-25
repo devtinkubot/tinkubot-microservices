@@ -6,14 +6,14 @@ from typing import Any, Dict, Optional
 import httpx
 
 from infrastructure.database import run_supabase
-from services.registro.parser_ubicacion import (
+from services.onboarding.registration.parser_ubicacion import (
     VALIDATION_ERROR_INVALID_CHARS,
     VALIDATION_ERROR_MULTIPLE,
     VALIDATION_ERROR_TOO_LONG,
     VALIDATION_ERROR_TOO_SHORT,
     validar_y_normalizar_ubicacion,
 )
-from services.servicios_proveedor.utilidades import limpiar_espacios
+from utils import limpiar_espacios
 from templates.onboarding.ciudad import (
     error_ciudad_caracteres_invalidos,
     error_ciudad_corta,

@@ -1,4 +1,4 @@
-"""Router de revisión."""
+"""Entradas del contexto review."""
 
 from .router import manejar_estado_revision_inicial, manejar_revision_proveedor
 

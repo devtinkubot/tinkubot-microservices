@@ -1,8 +1,8 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
 
-import services.registro.limpieza_onboarding_proveedores as limpieza_module
-from services.registro.limpieza_onboarding_proveedores import (
+import services.onboarding.registration.limpieza_onboarding_proveedores as limpieza_module
+from services.onboarding.registration.limpieza_onboarding_proveedores import (
     limpiar_onboarding_proveedores,
 )
 

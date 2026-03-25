@@ -2,10 +2,10 @@
 
 from typing import Any, Dict, Optional
 
-from flows.constructores import construir_respuesta_solicitud_consentimiento
-from flows.gestores_estados.gestor_confirmacion import manejar_confirmacion
+from flows.constructors import construir_respuesta_solicitud_consentimiento
+from flows.maintenance.confirmation import manejar_confirmacion
 from flows.onboarding import es_estado_onboarding, manejar_estado_onboarding
-from flows.sesion import reiniciar_flujo
+from flows.session import reiniciar_flujo
 from services import registrar_proveedor_en_base_datos
 
 

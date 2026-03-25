@@ -2,22 +2,22 @@
 
 from typing import Any, Dict, Optional
 
-from flows.gestores_estados.gestor_actualizacion_selfie import (
+from flows.maintenance.selfie_update import (
     manejar_actualizacion_selfie,
 )
-from flows.gestores_estados.gestor_documentos import (
+from flows.maintenance.document_update import (
     manejar_dni_frontal_actualizacion,
     manejar_dni_trasera_actualizacion,
     manejar_inicio_documentos,
 )
-from flows.gestores_estados.gestor_espera_certificado import (
+from flows.maintenance.wait_certificate import (
     manejar_espera_certificado,
 )
-from flows.gestores_estados.gestor_espera_experiencia import (
+from flows.maintenance.wait_experience import (
     manejar_espera_experiencia,
 )
-from flows.gestores_estados.gestor_espera_nombre import manejar_espera_nombre
-from flows.gestores_estados.gestor_espera_red_social import manejar_espera_red_social
+from flows.maintenance.wait_name import manejar_espera_nombre
+from flows.maintenance.wait_social import manejar_espera_red_social
 from flows.onboarding.handlers.ciudad import manejar_espera_ciudad_onboarding
 from flows.onboarding.handlers.real_phone import (
     manejar_espera_real_phone_onboarding,
@@ -81,7 +81,7 @@ def _normalizar_estado(flujo: Dict[str, Any]) -> None:
         flujo["state"] = STATE_ALIAS_TO_MAINTENANCE[estado]
 
 
-async def manejar_mantenimiento_perfil(
+async def manejar_perfil_mantenimiento(
     *,
     flujo: Dict[str, Any],
     estado: Optional[str],

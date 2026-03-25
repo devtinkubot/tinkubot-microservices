@@ -4,76 +4,76 @@ from importlib import import_module
 from typing import Any
 
 _EXPORTS = {
-    "normalizar_datos_proveedor": ("services.registro", "normalizar_datos_proveedor"),
+    "normalizar_datos_proveedor": ("services.onboarding.registration", "normalizar_datos_proveedor"),
     "garantizar_campos_obligatorios_proveedor": (
-        "services.registro",
+        "services.onboarding.registration",
         "garantizar_campos_obligatorios_proveedor",
     ),
     "insertar_servicios_proveedor": (
-        "services.registro",
+        "services.onboarding.registration",
         "insertar_servicios_proveedor",
     ),
     "registrar_proveedor_en_base_datos": (
-        "services.registro",
+        "services.onboarding.registration",
         "registrar_proveedor_en_base_datos",
     ),
     "asegurar_proveedor_borrador": (
-        "services.registro",
+        "services.onboarding.registration",
         "asegurar_proveedor_borrador",
     ),
     "limpiar_onboarding_proveedores": (
-        "services.registro",
+        "services.onboarding.registration",
         "limpiar_onboarding_proveedores",
     ),
     "validar_y_construir_proveedor": (
-        "services.registro",
+        "services.onboarding.registration",
         "validar_y_construir_proveedor",
     ),
-    "eliminar_registro_proveedor": ("services.registro", "eliminar_registro_proveedor"),
+    "eliminar_registro_proveedor": ("services.onboarding.registration", "eliminar_registro_proveedor"),
     "actualizar_perfil_profesional": (
-        "services.servicios_proveedor",
+        "services.maintenance",
         "actualizar_perfil_profesional",
     ),
-    "actualizar_servicios": ("services.servicios_proveedor", "actualizar_servicios"),
+    "actualizar_servicios": ("services.maintenance", "actualizar_servicios"),
     "agregar_servicios_proveedor": (
-        "services.servicios_proveedor",
+        "services.maintenance",
         "agregar_servicios_proveedor",
     ),
     "eliminar_servicio_proveedor": (
-        "services.servicios_proveedor",
+        "services.maintenance",
         "eliminar_servicio_proveedor",
     ),
     "actualizar_redes_sociales": (
-        "services.servicios_proveedor",
+        "services.maintenance",
         "actualizar_redes_sociales",
     ),
-    "actualizar_selfie": ("services.servicios_proveedor", "actualizar_selfie"),
+    "actualizar_selfie": ("services.maintenance", "actualizar_selfie"),
     "actualizar_nombre_proveedor": (
-        "services.servicios_proveedor",
+        "services.maintenance",
         "actualizar_nombre_proveedor",
     ),
     "actualizar_documentos_identidad": (
-        "services.servicios_proveedor",
+        "services.maintenance",
         "actualizar_documentos_identidad",
     ),
     "agregar_certificado_proveedor": (
-        "services.servicios_proveedor",
+        "services.maintenance",
         "agregar_certificado_proveedor",
     ),
     "actualizar_certificado_proveedor": (
-        "services.servicios_proveedor",
+        "services.maintenance",
         "actualizar_certificado_proveedor",
     ),
     "listar_certificados_proveedor": (
-        "services.servicios_proveedor",
+        "services.maintenance",
         "listar_certificados_proveedor",
     ),
     "eliminar_certificado_proveedor": (
-        "services.servicios_proveedor",
+        "services.maintenance",
         "eliminar_certificado_proveedor",
     ),
     "perfil_profesional_completo": (
-        "services.servicios_proveedor",
+        "services.maintenance",
         "perfil_profesional_completo",
     ),
 }

@@ -45,14 +45,14 @@ def test_subir_medios_identidad_refresca_cache_del_perfil(monkeypatch):
     async def _fake_refrescar_cache_perfil_proveedor(telefono):
         llamadas["refresh"].append(telefono)
 
-    flows_sesion_stub = types.ModuleType("flows.sesion")
+    flows_sesion_stub = types.ModuleType("flows.session")
     flows_sesion_stub.invalidar_cache_perfil_proveedor = (
         _fake_invalidar_cache_perfil_proveedor
     )
     flows_sesion_stub.refrescar_cache_perfil_proveedor = (
         _fake_refrescar_cache_perfil_proveedor
     )
-    sys.modules["flows.sesion"] = flows_sesion_stub
+    sys.modules["flows.session"] = flows_sesion_stub
 
     monkeypatch.setattr(modulo_almacenamiento, "get_supabase_client", lambda: _SupabaseStub())
     monkeypatch.setattr(

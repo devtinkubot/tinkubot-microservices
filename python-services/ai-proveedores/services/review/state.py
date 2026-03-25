@@ -2,12 +2,12 @@
 
 from typing import Any, Dict, Optional, Tuple
 
-from services.registro import determinar_estado_registro
-from services.registro.checkpoint_onboarding import (
+from services.onboarding.registration import determinar_estado_registro
+from services.onboarding.progress import (
     es_perfil_onboarding_completo,
     resolver_checkpoint_onboarding_desde_perfil,
 )
-from services.servicios_proveedor.redes_sociales_slots import resolver_redes_sociales
+from services.maintenance.redes_sociales_slots import resolver_redes_sociales
 
 from .messages import (
     construir_respuesta_revision,

@@ -26,7 +26,7 @@ def test_mantenimiento_social_reclama_alias_legacy(monkeypatch):
     )
 
     resultado = asyncio.run(
-        modulo_social.manejar_mantenimiento_redes(
+        modulo_social.manejar_redes_mantenimiento(
             flujo=flujo,
             estado="awaiting_social_media",
             texto_mensaje="facebook",
@@ -56,7 +56,7 @@ def test_mantenimiento_social_update_se_mantiene_en_redes(monkeypatch):
     )
 
     resultado = asyncio.run(
-        modulo_social.manejar_mantenimiento_redes(
+        modulo_social.manejar_redes_mantenimiento(
             flujo=flujo,
             estado="maintenance_social_facebook_username",
             texto_mensaje="@mi_usuario",
@@ -69,4 +69,3 @@ def test_mantenimiento_social_update_se_mantiene_en_redes(monkeypatch):
     assert resultado["persist_flow"] is True
     assert resultado["response"]["messages"][0]["response"] == "update"
     assert llamadas[0]["flujo"] is flujo
-

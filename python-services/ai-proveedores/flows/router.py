@@ -4,12 +4,12 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from config import configuracion
-from flows.constructores import (
+from flows.constructors import (
     construir_payload_menu_principal,
     construir_respuesta_solicitud_consentimiento,
 )
 from routes.onboarding import manejar_contexto_onboarding
-from flows.sesion import reiniciar_flujo
+from flows.session import reiniciar_flujo
 from routes.availability import manejar_estado_disponibilidad
 from routes.maintenance import manejar_contexto_mantenimiento
 from routes.review.router import manejar_revision_proveedor
@@ -20,9 +20,23 @@ from services import (
     eliminar_registro_proveedor,
 )
 from services.review.state import resolver_estado_registro, sincronizar_flujo_con_perfil
-from templates.sesion.manejo import (
+from templates.maintenance import payload_confirmacion_servicios_menu
+from templates.onboarding import (
+    payload_consentimiento_proveedor,
+    payload_experiencia_onboarding,
+    payload_menu_registro_proveedor,
+    payload_onboarding_dni_frontal,
+    payload_onboarding_foto_perfil,
+    payload_preguntar_otro_servicio_onboarding,
+    payload_redes_sociales_onboarding_con_imagen,
+    payload_servicios_onboarding_con_imagen,
+    preguntar_real_phone,
+    solicitar_ciudad_registro,
+)
+from templates.shared import (
     informar_reinicio_con_eliminacion,
     informar_reinicio_conversacion,
+    informar_reanudacion_inactividad,
     informar_timeout_inactividad,
 )
 
@@ -38,6 +52,88 @@ RESET_KEYWORDS = {
 }
 
 TIEMPO_INACTIVIDAD_SESION_SEGUNDOS = configuracion.ttl_flujo_segundos
+TIEMPO_AVISO_INACTIVIDAD_SEGUNDOS = 300
+
+ONBOARDING_REANUDACION_STATES = {
+    "awaiting_menu_option",
+    "onboarding_consent",
+    "onboarding_city",
+    "onboarding_dni_front_photo",
+    "onboarding_face_photo",
+    "onboarding_experience",
+    "onboarding_specialty",
+    "onboarding_add_another_service",
+    "onboarding_services_confirmation",
+    "onboarding_social_media",
+}
+
+
+def _sesion_expirada_por_inactividad(
+    flujo: Dict[str, Any],
+    ahora_utc: datetime,
+    *,
+    umbral_segundos: int = TIEMPO_INACTIVIDAD_SESION_SEGUNDOS,
+) -> bool:
+    ultima_vista = (
+        flujo.get("last_seen_at")
+        or flujo.get("last_seen_at_prev")
+        or flujo.get("onboarding_step_updated_at")
+        or flujo.get("updated_at")
+    )
+    if not isinstance(ultima_vista, str):
+        return False
+
+    try:
+        ultima_vista_dt = datetime.fromisoformat(ultima_vista)
+    except ValueError:
+        return False
+
+    if ultima_vista_dt.tzinfo is None:
+        ultima_vista_dt = ultima_vista_dt.replace(tzinfo=timezone.utc)
+    else:
+        ultima_vista_dt = ultima_vista_dt.astimezone(timezone.utc)
+    return (ahora_utc - ultima_vista_dt).total_seconds() > umbral_segundos
+
+
+def _construir_reanudacion_onboarding(flujo: Dict[str, Any]) -> Dict[str, Any]:
+    estado = str(flujo.get("state") or "").strip()
+    if estado == "onboarding_consent":
+        prompt = payload_consentimiento_proveedor()["messages"][0]
+    elif estado == "awaiting_menu_option":
+        prompt = payload_menu_registro_proveedor()
+    elif estado == "onboarding_city":
+        prompt = solicitar_ciudad_registro()
+    elif estado == "onboarding_dni_front_photo":
+        prompt = payload_onboarding_dni_frontal()
+    elif estado == "onboarding_face_photo":
+        prompt = payload_onboarding_foto_perfil()
+    elif estado == "onboarding_real_phone":
+        prompt = {"response": preguntar_real_phone()}
+    elif estado == "onboarding_experience":
+        prompt = payload_experiencia_onboarding()
+    elif estado == "onboarding_specialty":
+        prompt = payload_servicios_onboarding_con_imagen()
+    elif estado == "onboarding_add_another_service":
+        prompt = payload_preguntar_otro_servicio_onboarding()
+    elif estado == "onboarding_services_confirmation":
+        prompt = payload_confirmacion_servicios_menu(list(flujo.get("services") or []))
+    elif estado == "onboarding_social_media":
+        prompt = payload_redes_sociales_onboarding_con_imagen()
+    else:
+        prompt = {
+            "response": (
+                "Tu proceso de registro sigue activo. "
+                "Responde para continuar donde te quedaste."
+            )
+        }
+
+    return {
+        "success": True,
+        "messages": [
+            {"response": informar_reanudacion_inactividad()},
+            prompt,
+        ],
+    }
 
 
 async def _manejar_timeout_inactividad(
@@ -267,6 +363,20 @@ async def manejar_mensaje(
         except Exception as exc:
             if logger and hasattr(logger, "debug"):
                 logger.debug("No se pudo parsear last_seen_at_prev: %s", exc)
+
+    inactividad_reanudable = _sesion_expirada_por_inactividad(
+        flujo,
+        ahora_utc,
+        umbral_segundos=TIEMPO_AVISO_INACTIVIDAD_SEGUNDOS,
+    )
+    if inactividad_reanudable and flujo.get("state") in ONBOARDING_REANUDACION_STATES:
+        flujo["last_seen_at_prev"] = flujo.get("last_seen_at") or ahora_iso
+        flujo["last_seen_at"] = ahora_iso
+        return {
+            "response": _construir_reanudacion_onboarding(flujo),
+            "new_flow": flujo,
+            "persist_flow": True,
+        }
 
     last_seen_previo = flujo.get("last_seen_at") or ahora_iso
     flujo["last_seen_at_prev"] = last_seen_previo

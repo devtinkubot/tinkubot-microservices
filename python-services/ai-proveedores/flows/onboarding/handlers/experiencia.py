@@ -2,10 +2,10 @@
 
 from typing import Any, Dict, Optional
 
-from services.servicios_proveedor.estado_operativo import (
+from services.maintenance.estado_operativo import (
     formatear_rango_experiencia,
 )
-from services.servicios_proveedor.utilidades import (
+from utils import (
     extraer_anios_experiencia as parsear_anios_experiencia,
 )
 from templates.onboarding.experiencia import payload_experiencia_onboarding

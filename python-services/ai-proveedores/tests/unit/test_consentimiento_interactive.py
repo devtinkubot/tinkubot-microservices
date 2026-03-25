@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from services.onboarding.consentimiento import (  # noqa: E402
     _resolver_opcion_consentimiento,
 )
-from flows.constructores.construidor_consentimiento import (  # noqa: E402
+from flows.constructors.consent import (  # noqa: E402
     construir_respuesta_solicitud_consentimiento,
 )
 from models.mensajes import RecepcionMensajeWhatsApp  # noqa: E402

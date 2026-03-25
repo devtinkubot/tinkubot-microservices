@@ -1,4 +1,4 @@
-from services.registro.validacion_registro import validar_y_construir_proveedor
+from services.onboarding.registration.validacion_registro import validar_y_construir_proveedor
 
 
 def test_validacion_registro_rechaza_provincia_en_city():

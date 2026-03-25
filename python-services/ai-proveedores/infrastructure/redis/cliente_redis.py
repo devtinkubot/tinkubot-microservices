@@ -7,14 +7,9 @@ Este módulo proporciona un cliente de Redis asíncrono sin fallback local.
 import asyncio
 import json
 import logging
-import sys
-from pathlib import Path
 from typing import Any, Optional
 
 import redis.asyncio as redis
-
-# Agregar el directorio raíz al sys.path para imports absolutos
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from config import configuracion
 

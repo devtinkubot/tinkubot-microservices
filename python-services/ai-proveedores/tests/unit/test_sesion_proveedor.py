@@ -15,12 +15,12 @@ from services.sesion_proveedor import (  # noqa: E402
     resolver_estado_registro,
     sincronizar_flujo_con_perfil,
 )
-from services.registro.checkpoint_onboarding import (  # noqa: E402
+from services.onboarding.progress import (  # noqa: E402
     inferir_checkpoint_onboarding_desde_perfil,
     determinar_checkpoint_onboarding,
     es_perfil_onboarding_completo,
 )
-from services.registro.normalizacion import (  # noqa: E402
+from services.onboarding.registration.normalizacion import (  # noqa: E402
     garantizar_campos_obligatorios_proveedor,
 )
 

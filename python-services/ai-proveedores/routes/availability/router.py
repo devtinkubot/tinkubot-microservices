@@ -2,7 +2,7 @@
 
 from typing import Any, Dict, Optional
 
-from flows.constructores import construir_payload_menu_principal
+from flows.constructors import construir_payload_menu_principal
 
 
 async def manejar_estado_disponibilidad(

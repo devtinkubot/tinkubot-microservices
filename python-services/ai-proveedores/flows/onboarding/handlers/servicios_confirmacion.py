@@ -2,8 +2,8 @@
 
 from typing import Any, Dict, Optional
 
-from services.servicios_proveedor.constantes import SERVICIOS_MAXIMOS_ONBOARDING
-from templates.registro import (
+from services.maintenance.constantes import SERVICIOS_MAXIMOS_ONBOARDING
+from templates.onboarding.registration import (
     mensaje_correccion_servicios,
     mensaje_debes_registrar_al_menos_un_servicio,
     mensaje_menu_edicion_servicios_registro,

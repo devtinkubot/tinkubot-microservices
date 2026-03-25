@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator
-from services.servicios_proveedor.constantes import SERVICIOS_MAXIMOS
+from services.maintenance.constantes import SERVICIOS_MAXIMOS
 
 
 class ServiceInfo(BaseModel):

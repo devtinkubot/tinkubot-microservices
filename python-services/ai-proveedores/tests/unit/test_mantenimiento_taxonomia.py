@@ -1,6 +1,6 @@
 import asyncio
 
-from services.servicios_proveedor.mantenimiento_taxonomia import (
+from services.maintenance.mantenimiento_taxonomia import (
     planificar_mantenimiento_taxonomia,
 )
 
@@ -176,7 +176,7 @@ def test_planificar_mantenimiento_taxonomia_crea_borradores_y_supersede_hermanos
     supabase = _SupabaseStub(tables)
 
     monkeypatch.setattr(
-        "services.servicios_proveedor.mantenimiento_taxonomia.run_supabase",
+        "services.maintenance.mantenimiento_taxonomia.run_supabase",
         _fake_run_supabase,
     )
 

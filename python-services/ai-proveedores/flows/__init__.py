@@ -1,7 +1,7 @@
 """Flujos conversacionales del servicio de proveedores."""
 
 # Gestión de sesiones
-from .sesion import (
+from .session import (
     cachear_perfil_proveedor,
     es_comando_reinicio,
     es_disparador_registro,

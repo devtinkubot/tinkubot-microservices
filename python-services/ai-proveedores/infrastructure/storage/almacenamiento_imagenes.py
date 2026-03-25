@@ -6,19 +6,14 @@ Este módulo gestiona la subida, actualización y recuperación de medios de ide
 
 import logging
 import os
-import sys
 import base64
 import imghdr
 import re
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Dict, Optional
 
-# Agregar el directorio raíz al sys.path para imports absolutos
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
-
-from infrastructure.database import run_supabase, get_supabase_client
-from infrastructure.storage.utilidades import (
+from ..database import get_supabase_client, run_supabase
+from .utilidades import (
     normalizar_respuesta_storage as _coerce_storage_string,
 )
 
@@ -448,7 +443,7 @@ async def subir_medios_identidad(
             telefono = await _obtener_telefono_proveedor(supabase, proveedor_id)
             if telefono:
                 try:
-                    from flows.sesion import (
+                    from flows.session import (
                         invalidar_cache_perfil_proveedor,
                         refrescar_cache_perfil_proveedor,
                     )

@@ -2,10 +2,10 @@
 
 from typing import Any, Dict, Optional
 
-from flows.gestores_estados.gestor_actualizacion_redes import (
+from flows.maintenance.social_update import (
     manejar_actualizacion_redes_sociales,
 )
-from flows.gestores_estados.gestor_espera_red_social import (
+from flows.maintenance.wait_social import (
     manejar_espera_red_social,
 )
 
@@ -25,7 +25,7 @@ STATE_ALIAS_TO_MAINTENANCE = {
 }
 
 
-async def manejar_mantenimiento_redes(
+async def manejar_redes_mantenimiento(
     *,
     flujo: Dict[str, Any],
     estado: Optional[str],

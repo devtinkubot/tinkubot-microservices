@@ -13,7 +13,7 @@ tinkubot-microservices/
 ├── node-services/            # Servicios en Node.js
 │   └── whatsapp-gateway/     # Gateway de WhatsApp
 ├── docs/                     # Documentación SQL y migraciones
-├── scripts/                  # Scripts de utilidad
+├── tools/                    # Herramientas operativas y scripts de mantenimiento
 └── docker-compose.yml        # Orquestación de contenedores
 ```
 

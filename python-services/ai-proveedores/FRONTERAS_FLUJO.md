@@ -23,17 +23,19 @@ Estos archivos forman parte del alta de proveedores y deben mantenerse juntos:
 - `routes/onboarding/router.py`
 - `flows/router.py`
 - `services/sesion_proveedor.py`
-- `templates/verificacion/estados.py`
+- `templates/review/estados.py`
 
 ## 2. Menú del proveedor
 
 Estos archivos son del menú operativo ya registrado y deben evolucionar aparte:
 
-- `templates/interfaz/menus.py`
-- `flows/constructores/construidor_menu.py`
-- `flows/constructores/construidor_verificacion.py`
-- `flows/gestores_estados/gestor_menu.py`
-- `flows/gestores_estados/gestor_servicios.py`
+- `templates/maintenance/menus.py`
+- `templates/maintenance/actualizacion_perfil.py`
+- `templates/maintenance/eliminacion_registro.py`
+- `flows/constructors/menu.py`
+- `flows/constructors/verification.py`
+- `flows/maintenance/menu.py`
+- `flows/maintenance/services.py`
 - `tests/unit/test_servicios_submenus.py`
 
 ## 3. Disponibilidad
@@ -41,25 +43,32 @@ Estos archivos son del menú operativo ya registrado y deben evolucionar aparte:
 La disponibilidad queda separada del onboarding y del menú del proveedor:
 
 - `services/availability/processor.py`
-- `services/disponibilidad_admin.py`
+- `services/availability/disponibilidad_admin.py`
 - `tests/unit/test_principal_disponibilidad.py`
 
-## 4. Compatibilidad y legado
+## 4. Sesión y reanudación
+
+La sesión ya no tiene carpeta propia en `templates/`; sus mensajes son compartidos:
+
+- `templates/shared/mensajes_sesion.py`
+- `flows/router.py`
+
+## 5. Compatibilidad y legado
 
 Estos módulos siguen vivos porque aún existen rutas, fallbacks o tests que los usan. No se deben borrar todavía:
 
-- `flows/gestores_estados/gestor_documentos.py`
-- `flows/gestores_estados/gestor_espera_experiencia.py`
-- `flows/gestores_estados/gestor_espera_red_social.py`
-- `flows/gestores_estados/gestor_espera_nombre.py`
-- `flows/gestores_estados/gestor_confirmacion_servicios.py`
-- `flows/gestores_estados/gestor_confirmacion.py`
-- `tests/unit/test_gestor_documentos_actualizacion.py`
+- `flows/maintenance/document_update.py`
+- `flows/maintenance/wait_experience.py`
+- `flows/maintenance/wait_social.py`
+- `flows/maintenance/wait_name.py`
+- `flows/maintenance/services_confirmation.py`
+- `flows/maintenance/confirmation.py`
+- `tests/unit/test_document_update.py`
 - `tests/unit/test_consentimiento_interactive.py`
 
-`gestor_espera_red_social.py` sigue vivo como flujo de perfil y completado post-alta, no como onboarding.
+`wait_social.py` sigue vivo como flujo de perfil y completado post-alta, no como onboarding.
 
-## 5. Candidatos a limpieza futura
+## 6. Candidatos a limpieza futura
 
 Cuando el menú del proveedor deje de depender de la compatibilidad de estados de disponibilidad, se puede revisar si ya no hace falta:
 
