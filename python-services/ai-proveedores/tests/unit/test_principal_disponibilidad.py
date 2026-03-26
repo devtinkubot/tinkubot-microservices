@@ -4,10 +4,11 @@ import types
 from pathlib import Path
 
 imghdr_stub = types.ModuleType("imghdr")
-imghdr_stub.what = lambda *args, **kwargs: None
+setattr(imghdr_stub, "what", lambda *args, **kwargs: None)
 sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-import principal
+
+import principal  # noqa: E402
 
 
 class RedisFalso:
@@ -139,7 +140,7 @@ def test_respuesta_disponibilidad_sin_pendientes_pending_verification_no_interce
 
 
 def test_respuesta_disponibilidad_en_menu_option_no_intercepta(monkeypatch):
-    """Cuando el estado es awaiting_menu_option, NO debe mostrarse mensaje de timeout."""
+    """No debe mostrar timeout en awaiting_menu_option."""
     telefono = "593999111226@s.whatsapp.net"
     redis_falso = RedisFalso()
     monkeypatch.setattr(principal, "cliente_redis", redis_falso)
@@ -183,17 +184,20 @@ def test_respuesta_disponibilidad_fuera_onboarding_devuelve_caducado(monkeypatch
     monkeypatch.setattr(principal, "cliente_redis", redis_falso)
 
     resultado = asyncio.run(
-        principal._registrar_respuesta_disponibilidad_si_aplica(telefono, "1", "searching")
+        principal._registrar_respuesta_disponibilidad_si_aplica(
+            telefono, "1", "searching"
+        )
     )
 
     assert resultado is not None
-    assert "tiempo de respuesta ha caducado" in resultado["messages"][0][
-        "response"
-    ].lower()
+    assert (
+        "tiempo de respuesta ha caducado"
+        in resultado["messages"][0]["response"].lower()
+    )
 
 
 def test_respuesta_disponibilidad_en_face_photo_update_no_intercepta(monkeypatch):
-    """Cuando el estado es awaiting_face_photo_update, NO debe mostrarse mensaje de timeout."""
+    """No debe mostrar timeout en awaiting_face_photo_update."""
     telefono = "593999111227@s.whatsapp.net"
     redis_falso = RedisFalso()
     monkeypatch.setattr(principal, "cliente_redis", redis_falso)
@@ -254,7 +258,7 @@ def test_respuesta_disponibilidad_en_flujo_activo_con_pendiente_valido_registra(
     assert redis_falso.data[clave_req]["status"] == "accepted"
 
 
-def test_respuesta_disponibilidad_recupera_request_id_desde_contexto_si_pending_esta_corrupto(
+def test_respuesta_disponibilidad_recupera_request_id_desde_contexto_corrupto(
     monkeypatch,
 ):
     telefono = "593999111233@s.whatsapp.net"

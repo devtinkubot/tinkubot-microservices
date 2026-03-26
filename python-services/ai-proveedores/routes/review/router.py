@@ -2,7 +2,10 @@
 
 from typing import Any, Dict, Optional
 
-from services.review.messages import construir_respuesta_revision_con_menu, construir_respuesta_revision
+from services.review.menu import poner_flujo_en_menu_revision
+from services.review.messages import (
+    construir_respuesta_revision_con_menu,
+)
 from services.review.state import (
     manejar_aprobacion_reciente,
     manejar_bloqueo_revision_posterior,
@@ -12,13 +15,9 @@ from services.review.state import (
 
 
 def _marcar_menu_revision(flujo: Dict[str, Any]) -> None:
-    flujo.update(
-        {
-            "state": "awaiting_menu_option",
-            "has_consent": True,
-            "esta_registrado": True,
-            "approved_basic": bool(flujo.get("approved_basic")),
-        }
+    poner_flujo_en_menu_revision(
+        flujo,
+        approved_basic=bool(flujo.get("approved_basic")),
     )
 
 

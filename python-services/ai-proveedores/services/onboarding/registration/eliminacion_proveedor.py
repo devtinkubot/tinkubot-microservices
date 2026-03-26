@@ -10,6 +10,12 @@ from urllib.parse import unquote, urlparse
 
 from infrastructure.database import run_supabase
 from infrastructure.storage.almacenamiento_imagenes import SUPABASE_PROVIDERS_BUCKET
+from services.onboarding.session import (
+    limpiar_claves_proveedor,
+    limpiar_marca_perfil_eliminado,
+    marcar_perfil_eliminado,
+    reiniciar_flujo,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +60,9 @@ async def eliminar_registro_proveedor(
                 label="provider_services.delete_on_provider_removal",
             )
             resultado["deleted_related_services"] = True
-            logger.info("✅ Servicios relacionados eliminados para provider_id=%s", provider_id)
+            logger.info(
+                "✅ Servicios relacionados eliminados para provider_id=%s", provider_id
+            )
 
         rutas_storage = _obtener_rutas_storage(perfil, provider_id)
         resultado["deleted_storage_assets"] = await _eliminar_assets_storage(
@@ -72,13 +80,6 @@ async def eliminar_registro_proveedor(
         resultado["deleted_from_db"] = True
         logger.info("✅ Proveedor %s eliminado de la base de datos", telefono)
 
-        from flows.session import (
-            limpiar_claves_proveedor,
-            limpiar_marca_perfil_eliminado,
-            marcar_perfil_eliminado,
-        )
-        from flows.session.session_manager import reiniciar_flujo
-
         resultado["deleted_from_cache"] = await marcar_perfil_eliminado(telefono)
         await reiniciar_flujo(telefono)
         await limpiar_claves_proveedor(telefono)
@@ -90,7 +91,9 @@ async def eliminar_registro_proveedor(
         logger.info("✨ Eliminación completada exitosamente para %s", telefono)
 
     except Exception as exc:
-        logger.error("❌ Error al eliminar proveedor %s: %s", telefono, exc, exc_info=True)
+        logger.error(
+            "❌ Error al eliminar proveedor %s: %s", telefono, exc, exc_info=True
+        )
         resultado["message"] = (
             "Hubo un error al eliminar tu registro. Por favor, intenta nuevamente."
         )
@@ -146,7 +149,7 @@ def _extraer_path_storage_desde_url(valor: Any) -> Optional[str]:
         limpio = texto.lstrip("/")
         prefijo_bucket = f"{SUPABASE_PROVIDERS_BUCKET}/"
         if limpio.startswith(prefijo_bucket):
-            return limpio[len(prefijo_bucket):]
+            return limpio[len(prefijo_bucket) :]
         return limpio
 
     parsed = urlparse(texto)
@@ -167,7 +170,7 @@ def _extraer_path_storage_desde_url(valor: Any) -> Optional[str]:
     partes = [segmento for segmento in path.split("/") if segmento]
     if bucket in partes:
         indice = partes.index(bucket)
-        resto = partes[indice + 1:]
+        resto = partes[indice + 1 :]
         if resto:
             return "/".join(resto)
 

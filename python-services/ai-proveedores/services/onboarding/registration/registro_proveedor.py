@@ -7,17 +7,17 @@ from typing import Any, Dict, List, Optional
 from infrastructure.database import run_supabase
 from infrastructure.embeddings.servicio_embeddings import ServicioEmbeddings
 from models.proveedores import SolicitudCreacionProveedor
-from services.onboarding.registration.normalizacion import (
-    garantizar_campos_obligatorios_proveedor,
-    normalizar_datos_proveedor,
-)
 from services.maintenance.clasificacion_semantica import (
     clasificar_servicios_livianos,
     construir_service_summary,
 )
 from services.maintenance.constantes import DISPLAY_ORDER_MAX_DB
-from utils import normalizar_texto_para_busqueda
+from services.onboarding.registration.normalizacion import (
+    garantizar_campos_obligatorios_proveedor,
+    normalizar_datos_proveedor,
+)
 from supabase import Client
+from utils import normalizar_texto_para_busqueda
 
 logger = logging.getLogger(__name__)
 
@@ -182,8 +182,7 @@ async def insertar_servicios_proveedor(
     service_entries = _normalizar_entradas_servicio(servicios)
     requested_count = len(service_entries)
     tiene_embeddings = bool(
-        servicio_embeddings
-        and hasattr(servicio_embeddings, "generar_embedding")
+        servicio_embeddings and hasattr(servicio_embeddings, "generar_embedding")
     )
     clasificaciones_semanticas = await clasificar_servicios_livianos(
         cliente_openai=getattr(servicio_embeddings, "client", None),
@@ -556,7 +555,7 @@ async def registrar_proveedor_en_base_datos(
                 registro_proveedor
             )
             # Importar localmente para evitar ciclo de importación
-            from flows.session import (
+            from services.onboarding.session import (
                 cachear_perfil_proveedor,
                 limpiar_marca_perfil_eliminado,
             )

@@ -58,7 +58,9 @@ def _texto_limpio(valor: Any) -> str:
 def _lista_servicios(perfil_proveedor: Optional[Dict[str, Any]]) -> list[str]:
     if not perfil_proveedor:
         return []
-    servicios = perfil_proveedor.get("services_list") or perfil_proveedor.get("services") or []
+    servicios = (
+        perfil_proveedor.get("services_list") or perfil_proveedor.get("services") or []
+    )
     resultado: list[str] = []
     for servicio in servicios:
         texto = _texto_limpio(servicio)
@@ -77,7 +79,7 @@ def normalizar_checkpoint_onboarding(checkpoint: Optional[str]) -> Optional[str]
 def resolver_checkpoint_onboarding_desde_perfil(
     perfil_proveedor: Optional[Dict[str, Any]],
 ) -> Optional[str]:
-    """Obtiene un checkpoint canónico usando el perfil persistido como fuente de verdad."""
+    """Obtiene un checkpoint canónico desde el perfil persistido."""
     if not perfil_proveedor:
         return None
 
@@ -134,7 +136,7 @@ def inferir_checkpoint_onboarding_desde_perfil(
     if not _lista_servicios(perfil_proveedor):
         return "onboarding_specialty"
     if not bool(perfil_proveedor.get("has_consent")):
-        return "onboarding_add_another_service"
+        return "onboarding_consent"
 
     estado = _texto_limpio(perfil_proveedor.get("status")).lower()
     if estado in {"pending", "approved_basic", "rejected"}:

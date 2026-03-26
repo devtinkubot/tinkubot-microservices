@@ -2,27 +2,19 @@
 
 from typing import Any, Dict, Optional
 
-from flows.maintenance.context import es_contexto_mantenimiento
-from flows.maintenance.document_update import (
+from ..compat import es_contexto_mantenimiento
+from ..compat_profile import (
+    manejar_actualizacion_selfie,
     manejar_dni_frontal_actualizacion,
     manejar_dni_trasera_actualizacion,
+    manejar_espera_certificado,
+    manejar_espera_ciudad_onboarding,
+    manejar_espera_experiencia,
+    manejar_espera_nombre,
+    manejar_espera_real_phone_onboarding,
     manejar_inicio_documentos,
 )
-from flows.maintenance.selfie_update import (
-    manejar_actualizacion_selfie,
-)
-from flows.maintenance.wait_certificate import (
-    manejar_espera_certificado,
-)
-from flows.maintenance.wait_experience import (
-    manejar_espera_experiencia,
-)
-from flows.maintenance.wait_name import manejar_espera_nombre
-from flows.maintenance.wait_social import manejar_espera_red_social
-from flows.onboarding.handlers.ciudad import manejar_espera_ciudad_onboarding
-from flows.onboarding.handlers.real_phone import (
-    manejar_espera_real_phone_onboarding,
-)
+from ..compat_services import manejar_espera_red_social
 
 MAINTENANCE_PROFILE_STATES = {
     "maintenance_experience",

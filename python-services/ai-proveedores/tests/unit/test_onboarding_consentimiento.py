@@ -7,7 +7,7 @@ from typing import Any, Dict
 
 import pytest
 
-imghdr_stub = types.ModuleType("imghdr")
+imghdr_stub: Any = types.ModuleType("imghdr")
 imghdr_stub.what = lambda *args, **kwargs: None
 sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -53,12 +53,10 @@ async def test_consentimiento_onboarding_aceptado_actualiza_flujo_y_registra(
         }
 
     monkeypatch.setattr(
-        "services.onboarding.consentimiento.establecer_flujo",
-        _fake_establecer_flujo,
+        "services.onboarding.session.establecer_flujo", _fake_establecer_flujo
     )
     monkeypatch.setattr(
-        "services.onboarding.consentimiento.run_supabase",
-        _fake_run_supabase,
+        "services.onboarding.consentimiento.run_supabase", _fake_run_supabase
     )
     monkeypatch.setattr(
         "services.onboarding.consentimiento.registrar_consentimiento",
@@ -126,12 +124,10 @@ async def test_consentimiento_onboarding_aceptado_crea_borrador_si_no_hay_provid
         _fake_asegurar_proveedor_borrador,
     )
     monkeypatch.setattr(
-        "services.onboarding.consentimiento.establecer_flujo",
-        _fake_establecer_flujo,
+        "services.onboarding.session.establecer_flujo", _fake_establecer_flujo
     )
     monkeypatch.setattr(
-        "services.onboarding.consentimiento.run_supabase",
-        _fake_run_supabase,
+        "services.onboarding.consentimiento.run_supabase", _fake_run_supabase
     )
     monkeypatch.setattr(
         "services.onboarding.consentimiento.registrar_consentimiento",
@@ -182,12 +178,10 @@ async def test_consentimiento_onboarding_rechazado_reinicia_flujo(monkeypatch):
         captured["registro"] = True
 
     monkeypatch.setattr(
-        "services.onboarding.consentimiento.reiniciar_flujo",
-        _fake_reiniciar_flujo,
+        "services.onboarding.session.reiniciar_flujo", _fake_reiniciar_flujo
     )
     monkeypatch.setattr(
-        "services.onboarding.consentimiento.run_supabase",
-        _fake_run_supabase,
+        "services.onboarding.consentimiento.run_supabase", _fake_run_supabase
     )
     monkeypatch.setattr(
         "services.onboarding.consentimiento.registrar_consentimiento",

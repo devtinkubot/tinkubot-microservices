@@ -5,12 +5,12 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from flows.constructors import (
+from infrastructure.database import run_supabase
+from services.onboarding import session as onboarding_session
+from services.onboarding.messages import (
     construir_respuesta_consentimiento_rechazado,
     construir_respuesta_solicitud_consentimiento,
 )
-from flows.session import establecer_flujo, reiniciar_flujo
-from infrastructure.database import run_supabase
 from services.onboarding.registrador import registrar_consentimiento
 from services.onboarding.registration import asegurar_proveedor_borrador
 from services.shared import (
@@ -137,6 +137,34 @@ def _resolver_opcion_consentimiento(carga: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+async def manejar_estado_consentimiento_onboarding(
+    *,
+    flujo: Dict[str, Any],
+    tiene_consentimiento: bool,
+    esta_registrado: bool,
+    telefono: str,
+    carga: Dict[str, Any],
+    perfil_proveedor: Optional[Dict[str, Any]],
+    supabase: Any = None,
+    subir_medios_identidad: Any = None,
+) -> Dict[str, Any]:
+    """Compatibilidad con el handler histórico de consentimiento."""
+    from flows.onboarding.handlers.consentimiento import (
+        manejar_estado_consentimiento_onboarding as _impl,
+    )
+
+    return await _impl(
+        flujo=flujo,
+        tiene_consentimiento=tiene_consentimiento,
+        esta_registrado=esta_registrado,
+        telefono=telefono,
+        carga=carga,
+        perfil_proveedor=perfil_proveedor,
+        supabase=supabase,
+        subir_medios_identidad=subir_medios_identidad,
+    )
+
+
 async def procesar_respuesta_consentimiento_onboarding(
     *,
     telefono: str,
@@ -195,7 +223,7 @@ async def procesar_respuesta_consentimiento_onboarding(
                 telefono,
             )
             flujo["state"] = "onboarding_city"
-            await establecer_flujo(telefono, flujo)
+            await onboarding_session.establecer_flujo(telefono, flujo)
             return {
                 "success": True,
                 "messages": [solicitar_ciudad_registro()],
@@ -229,7 +257,7 @@ async def procesar_respuesta_consentimiento_onboarding(
                 "has_consent": True,
             }
         )
-        await establecer_flujo(telefono, flujo)
+        await onboarding_session.establecer_flujo(telefono, flujo)
 
         await registrar_consentimiento(proveedor_id, telefono, carga, "accepted")
         logger.info("Consentimiento aceptado por proveedor %s", telefono)
@@ -260,7 +288,7 @@ async def procesar_respuesta_consentimiento_onboarding(
             )
 
     await registrar_consentimiento(proveedor_id, telefono, carga, "declined")
-    await reiniciar_flujo(telefono)
+    await onboarding_session.reiniciar_flujo(telefono)
     logger.info("Consentimiento rechazado por proveedor %s", telefono)
 
     return construir_respuesta_consentimiento_rechazado()

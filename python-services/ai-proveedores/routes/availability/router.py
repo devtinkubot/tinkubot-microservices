@@ -2,8 +2,11 @@
 
 from typing import Any, Dict, Optional
 
-from flows.constructors import construir_payload_menu_principal
+from services.availability import ESTADO_ESPERANDO_DISPONIBILIDAD
 from services.shared import es_salida_menu
+
+from .menu import construir_respuesta_menu
+from .messages import construir_recordatorio_disponibilidad
 
 
 async def manejar_estado_disponibilidad(
@@ -15,38 +18,17 @@ async def manejar_estado_disponibilidad(
     esta_registrado: bool,
 ) -> Optional[Dict[str, Any]]:
     """Resuelve el estado de espera de disponibilidad."""
-    if estado != "awaiting_availability_response":
+    if estado != ESTADO_ESPERANDO_DISPONIBILIDAD:
         return None
 
     if es_salida_menu(texto_mensaje, opcion_menu):
         flujo["state"] = "awaiting_menu_option"
         return {
-            "response": {
-                "success": True,
-                "messages": [
-                    construir_payload_menu_principal(
-                        esta_registrado=esta_registrado,
-                        approved_basic=bool(flujo.get("approved_basic")),
-                    )
-                ],
-            },
+            "response": construir_respuesta_menu(),
             "persist_flow": True,
         }
 
     return {
-        "response": {
-            "success": True,
-            "messages": [
-                {
-                    "response": (
-                        "📌 Tienes una solicitud pendiente de disponibilidad.\n"
-                        "Usa los botones del mensaje anterior o responde:\n"
-                        "*Disponible*\n"
-                        "*No disponible*\n\n"
-                        "Si deseas volver al menú, escribe *menu*."
-                    )
-                }
-            ],
-        },
+        "response": construir_recordatorio_disponibilidad(),
         "persist_flow": True,
     }

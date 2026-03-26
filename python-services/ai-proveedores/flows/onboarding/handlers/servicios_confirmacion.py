@@ -122,6 +122,7 @@ async def manejar_confirmacion_servicios_onboarding(
     flujo: Dict[str, Any],
     texto_mensaje: Optional[str],
     selected_option: Optional[str] = None,
+    cliente_openai: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Procesa la confirmación final de la lista de servicios del onboarding."""
     maximo_visible = _maximo_visible(flujo)

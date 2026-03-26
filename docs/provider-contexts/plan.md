@@ -27,6 +27,21 @@ This migration is gradual. The codebase is already partially split, so the remai
 - Renaming every module at once
 - Changing the runtime container layout beyond what is needed for compatibility
 
+## Runtime Stack Size
+
+This document describes the provider-boundary split, not an implemented worker topology.
+
+The repo currently does **not** ship BullMQ workers. The live runtime remains:
+
+- `wa-gateway`
+- `frontend`
+- `redis`
+- `ai-clientes`
+- `ai-proveedores`
+- `ai-search`
+
+If async workers are introduced later, their container shape should be documented alongside the implementation instead of being assumed here.
+
 ## Proposed boundaries
 
 ### Onboarding

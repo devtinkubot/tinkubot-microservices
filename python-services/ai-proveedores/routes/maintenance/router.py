@@ -2,19 +2,18 @@
 
 from typing import Any, Dict, Optional
 
-from flows.maintenance.menu import manejar_estado_menu
-
 from .deletion import manejar_eliminacion_proveedor
-from .info import (
-    manejar_informacion_personal_mantenimiento,
-    manejar_informacion_profesional_mantenimiento,
-)
 from .handlers import (
     manejar_perfil_mantenimiento,
     manejar_redes_mantenimiento,
     manejar_servicios_mantenimiento,
     manejar_vistas_mantenimiento,
 )
+from .info import (
+    manejar_informacion_personal_mantenimiento,
+    manejar_informacion_profesional_mantenimiento,
+)
+from .menu import manejar_estado_menu
 
 
 async def manejar_menu_proveedor(

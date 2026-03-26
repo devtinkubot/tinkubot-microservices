@@ -1,13 +1,11 @@
 import asyncio
-import sys
-import types
 
 from models.proveedores import SolicitudCreacionProveedor
+from services.onboarding.registration.normalizacion import normalizar_datos_proveedor
 from services.onboarding.registration.registro_proveedor import (
     insertar_servicios_proveedor,
     registrar_proveedor_en_base_datos,
 )
-from services.onboarding.registration.normalizacion import normalizar_datos_proveedor
 
 
 def test_registro_inicial_persiste_servicios_normalizados_sin_taxonomia_runtime(
@@ -68,14 +66,16 @@ def test_registro_inicial_persiste_servicios_normalizados_sin_taxonomia_runtime(
         }
 
     monkeypatch.setattr(
-        "services.onboarding.registration.registro_proveedor.run_supabase", _fake_run_supabase
+        "services.onboarding.registration.registro_proveedor.run_supabase",
+        _fake_run_supabase,
     )
     monkeypatch.setattr(
-        "services.onboarding.registration.registro_proveedor.insertar_servicios_proveedor",
+        (
+            "services.onboarding.registration.registro_proveedor."
+            "insertar_servicios_proveedor"
+        ),
         _fake_insertar_servicios_proveedor,
     )
-
-    flows_sesion_stub = types.ModuleType("flows.session")
 
     async def _fake_cachear_perfil_proveedor(_telefono, _perfil):
         return None
@@ -83,11 +83,14 @@ def test_registro_inicial_persiste_servicios_normalizados_sin_taxonomia_runtime(
     async def _fake_limpiar_marca_perfil_eliminado(_telefono):
         return None
 
-    flows_sesion_stub.cachear_perfil_proveedor = _fake_cachear_perfil_proveedor
-    flows_sesion_stub.limpiar_marca_perfil_eliminado = (
-        _fake_limpiar_marca_perfil_eliminado
+    monkeypatch.setattr(
+        "services.onboarding.session.cachear_perfil_proveedor",
+        _fake_cachear_perfil_proveedor,
     )
-    sys.modules["flows.session"] = flows_sesion_stub
+    monkeypatch.setattr(
+        "services.onboarding.session.limpiar_marca_perfil_eliminado",
+        _fake_limpiar_marca_perfil_eliminado,
+    )
 
     solicitud = SolicitudCreacionProveedor(
         phone="593959091325@s.whatsapp.net",
@@ -204,7 +207,10 @@ def test_insertar_servicios_persiste_taxonomia_sugerida_sin_revision(
         ]
 
     monkeypatch.setattr(
-        "services.onboarding.registration.registro_proveedor.clasificar_servicios_livianos",
+        (
+            "services.onboarding.registration.registro_proveedor."
+            "clasificar_servicios_livianos"
+        ),
         _fake_clasificar_servicios_livianos,
     )
 

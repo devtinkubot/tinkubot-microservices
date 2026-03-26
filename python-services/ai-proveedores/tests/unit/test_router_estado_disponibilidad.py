@@ -1,20 +1,21 @@
 import asyncio
 import sys
 import types
-from pathlib import Path
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from types import SimpleNamespace
 
 imghdr_stub = types.ModuleType("imghdr")
-imghdr_stub.what = lambda *args, **kwargs: None
+setattr(imghdr_stub, "what", lambda *args, **kwargs: None)
 sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-import flows.router as modulo_router  # noqa: E402
 import flows.onboarding.router as modulo_onboarding_router  # noqa: E402
+import flows.router as modulo_router  # noqa: E402
+from flows.router import enrutar_estado, manejar_mensaje  # noqa: E402
 from routes.availability import manejar_estado_disponibilidad  # noqa: E402
-from flows.router import enrutar_estado, manejar_mensaje
-from templates.onboarding.inicio import ONBOARDING_REGISTER_BUTTON_ID
+from services.availability import ESTADO_ESPERANDO_DISPONIBILIDAD  # noqa: E402
+from templates.onboarding.inicio import ONBOARDING_REGISTER_BUTTON_ID  # noqa: E402
 
 
 def _ejecutar_enrutado(flujo, texto_mensaje, opcion_menu=None):
@@ -39,21 +40,22 @@ def _ejecutar_enrutado(flujo, texto_mensaje, opcion_menu=None):
 
 
 def test_estado_esperando_disponibilidad_mantiene_flujo():
-    flujo = {"state": "awaiting_availability_response"}
+    flujo = {"state": ESTADO_ESPERANDO_DISPONIBILIDAD}
     resultado = _ejecutar_enrutado(flujo, "hola")
 
     assert resultado is not None
     assert resultado["persist_flow"] is True
-    assert flujo["state"] == "awaiting_availability_response"
-    assert "solicitud pendiente de disponibilidad" in resultado["response"]["messages"][0][
-        "response"
-    ].lower()
+    assert flujo["state"] == ESTADO_ESPERANDO_DISPONIBILIDAD
+    assert (
+        "solicitud pendiente de disponibilidad"
+        in resultado["response"]["messages"][0]["response"].lower()
+    )
     assert "disponible" in resultado["response"]["messages"][0]["response"].lower()
     assert "no disponible" in resultado["response"]["messages"][0]["response"].lower()
 
 
 def test_estado_esperando_disponibilidad_permite_volver_menu():
-    flujo = {"state": "awaiting_availability_response"}
+    flujo = {"state": ESTADO_ESPERANDO_DISPONIBILIDAD}
     resultado = _ejecutar_enrutado(flujo, "menu")
 
     assert resultado is not None
@@ -63,12 +65,12 @@ def test_estado_esperando_disponibilidad_permite_volver_menu():
 
 
 def test_router_availability_directo_regresa_recordatorio():
-    flujo = {"state": "awaiting_availability_response"}
+    flujo = {"state": ESTADO_ESPERANDO_DISPONIBILIDAD}
 
     resultado = asyncio.run(
         manejar_estado_disponibilidad(
             flujo=flujo,
-            estado="awaiting_availability_response",
+            estado=ESTADO_ESPERANDO_DISPONIBILIDAD,
             texto_mensaje="hola",
             opcion_menu=None,
             esta_registrado=True,
@@ -77,19 +79,20 @@ def test_router_availability_directo_regresa_recordatorio():
 
     assert resultado is not None
     assert resultado["persist_flow"] is True
-    assert flujo["state"] == "awaiting_availability_response"
-    assert "solicitud pendiente de disponibilidad" in resultado["response"]["messages"][0][
-        "response"
-    ].lower()
+    assert flujo["state"] == ESTADO_ESPERANDO_DISPONIBILIDAD
+    assert (
+        "solicitud pendiente de disponibilidad"
+        in resultado["response"]["messages"][0]["response"].lower()
+    )
 
 
 def test_router_availability_directo_vuelve_al_menu():
-    flujo = {"state": "awaiting_availability_response"}
+    flujo = {"state": ESTADO_ESPERANDO_DISPONIBILIDAD}
 
     resultado = asyncio.run(
         manejar_estado_disponibilidad(
             flujo=flujo,
-            estado="awaiting_availability_response",
+            estado=ESTADO_ESPERANDO_DISPONIBILIDAD,
             texto_mensaje="menu",
             opcion_menu=None,
             esta_registrado=True,
@@ -160,12 +163,11 @@ def test_boton_onboarding_sin_registro_abre_consentimiento(monkeypatch):
 
 
 def test_redes_sociales_onboarding_nuevo_y_legacy_separados():
-    assert modulo_onboarding_router.es_estado_onboarding("awaiting_social_media") is False
     assert (
-        modulo_onboarding_router.es_estado_onboarding(
-            "onboarding_social_media"
-        )
-        is True
+        modulo_onboarding_router.es_estado_onboarding("awaiting_social_media") is False
+    )
+    assert (
+        modulo_onboarding_router.es_estado_onboarding("onboarding_social_media") is True
     )
     assert (
         modulo_onboarding_router.es_estado_onboarding(
@@ -192,9 +194,7 @@ def test_numero_sin_provider_id_usa_estado_canonico(monkeypatch):
             "response": {
                 "success": True,
                 "messages": [
-                    {
-                        "response": "Para poder conectarte con clientes vamos a utilizar"
-                    }
+                    {"response": "Para poder conectarte con clientes vamos a utilizar"}
                 ],
             },
             "persist_flow": True,

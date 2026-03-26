@@ -3,13 +3,14 @@
 import sys
 import types
 from pathlib import Path
+from typing import Any
 
-imghdr_stub = types.ModuleType("imghdr")
+imghdr_stub: Any = types.ModuleType("imghdr")
 imghdr_stub.what = lambda *args, **kwargs: None
 sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from flows.maintenance.confirmation import (  # noqa: E402
+from services.onboarding.confirmacion import (  # noqa: E402
     _resolver_opcion_confirmacion,
 )
 from templates.onboarding.registration.confirmacion import (  # noqa: E402

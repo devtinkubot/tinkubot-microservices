@@ -12,7 +12,6 @@ Audit complete, the shared runtime now has explicit route boundaries for onboard
 - Wrote a state audit that classifies onboarding, maintenance, review, and legacy aliases
 - Added a block-level audit for onboarding, maintenance, and review
 - Added an ownership matrix that maps states to onboarding, review, maintenance, and shared bridges
-- Added a migration-priority document that orders the next refactor steps by ownership and risk
 - Prioritized the remaining shared-router branches for extraction in the next pass
 - Extracted the availability-response state into `routes/availability`
 - Delegated availability session handling out of `flows/router.py`
@@ -64,7 +63,6 @@ Audit complete, the shared runtime now has explicit route boundaries for onboard
 - Keeping the profile-view router bridges until onboarding and maintenance stop sharing the same edit path
 - Leaving the shared router branches in place until the business-flow states themselves are split or renamed intentionally
 - Using the ownership matrix as the next source of truth for deciding which router branches still need to move
-- Using the migration-priority document to decide the next branch to extract from the shared router
 - Preparing the shared router split starting with availability response and the remaining maintenance submenu branches
 - Availability response is now delegated out of `flows/router.py`
 - Availability has dedicated route and processor boundaries for the pending-response session state

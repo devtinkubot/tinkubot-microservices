@@ -39,6 +39,13 @@ def _estado_usuario_red_social(
     flujo: Dict[str, Any],
     tipo_red: str,
 ) -> str:
+    estado = str(flujo.get("state") or "").strip()
+    if estado == "awaiting_social_media" or estado.startswith("onboarding_"):
+        return (
+            ONBOARDING_FACEBOOK_USERNAME_STATE
+            if tipo_red == SOCIAL_NETWORK_FACEBOOK
+            else ONBOARDING_INSTAGRAM_USERNAME_STATE
+        )
     if es_contexto_mantenimiento(flujo):
         return (
             MAINTENANCE_FACEBOOK_USERNAME_STATE

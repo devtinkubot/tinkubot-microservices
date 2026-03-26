@@ -2,10 +2,8 @@
 
 from typing import Any, Dict, Optional
 
-from flows.maintenance.social_update import (
+from ..compat_services import (
     manejar_actualizacion_redes_sociales,
-)
-from flows.maintenance.wait_social import (
     manejar_espera_red_social,
 )
 

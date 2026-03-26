@@ -171,7 +171,7 @@ We will use the ownership matrix to decide whether a state or branch belongs to 
 This keeps the migration aligned with business ownership instead of letting folder structure or naming style drive the refactor by itself.
 
 ## Decision 23: Follow the migration-priority order
-The next changes will follow the priority order documented in `migration-priority.md`: review first, maintenance second, onboarding third, shared orchestration cleanup last.
+The next changes will follow the priority order established during the provider-context split: review first, maintenance second, onboarding third, shared orchestration cleanup last.
 
 ### Why
 This keeps the work focused on the highest-value boundaries first and reduces the chance of splitting a bridge before its owner is ready.
@@ -218,13 +218,28 @@ The onboarding entry, consent, and confirmation flow now lives behind `routes/on
 ### Why
 Onboarding is a full context, not a fallback branch of the shared router. Moving it behind its own route boundary makes the shared router thinner and keeps registration logic owned by the onboarding context itself.
 
-## Decision 31: Treat `runtime` as a conceptual boundary
+## Decision 31: Keep Redis as a shared infrastructure service
+Redis will remain a single shared container for cache, session state, and read model storage. If async workers are introduced later, they should reuse the same Redis deployment unless a new operational need appears.
+
+### Why
+The current runtime already shares one Redis across `ai-clientes`, `ai-proveedores`, and `ai-search`. Reusing that infrastructure avoids unnecessary operational duplication and keeps the new async layer consistent with the existing topology.
+
+## Decision 32: Introduce async workers only if the repo needs them
+If we add background workers later, onboarding is still the safest first use case for durable async processing. The repo does not currently include a BullMQ worker implementation.
+
+### Why
+Onboarding is the safest first use case for durable async processing. Starting with one worker keeps the rollout controlled while still validating the queue, idempotency, and Redis-backed propagation pattern.
+
+## Decision 33: Treat the final runtime shape as a deployment detail
+The repo does not currently prescribe a worker container count. If async processing is introduced later, the deployment shape should be decided with the implementation and not assumed in advance.
+
+## Decision 34: Treat `runtime` as a conceptual boundary
 We will document `runtime` as the set of production layers that execute the service, but we will not force a physical `runtime/` folder if the current top-level package layout is already stable.
 
 ### Why
 The current import graph and deployment shape already work with `config`, `models`, `flows`, `routes`, `services`, `templates`, `infrastructure`, `utils`, `tools`, and `tests` as separate concerns. A folder move would add churn without improving ownership.
 
-## Decision 32: Onboarding is alta-only
+## Decision 35: Onboarding is alta-only
 Onboarding only owns the new-provider journey. If Supabase says the provider already exists, the shared router must restore the canonical operational context instead of sending the user back into onboarding.
 
 ### Why

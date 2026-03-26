@@ -2,13 +2,14 @@
 
 from typing import Any, Dict, Optional, Tuple
 
-from services.onboarding.registration import determinar_estado_registro
+from services.maintenance.redes_sociales_slots import resolver_redes_sociales
 from services.onboarding.progress import (
     es_perfil_onboarding_completo,
     resolver_checkpoint_onboarding_desde_perfil,
 )
-from services.maintenance.redes_sociales_slots import resolver_redes_sociales
+from services.onboarding.registration import determinar_estado_registro
 
+from .menu import poner_flujo_en_menu_revision
 from .messages import (
     construir_respuesta_revision,
     construir_respuesta_verificado,
@@ -17,6 +18,18 @@ from .messages import (
 ESTADOS_APROBADOS_OPERATIVOS = {"approved", "approved_basic"}
 ESTADOS_BLOQUEO_REVISION = {"rejected"}
 MAX_INTENTOS_REVISION_SIN_RESPUESTA = 3
+
+
+def _copiar_campo_si_presente(
+    flujo: Dict[str, Any],
+    perfil_proveedor: Dict[str, Any],
+    origen: str,
+    destino: Optional[str] = None,
+) -> None:
+    """Copia un campo del perfil al flujo cuando el valor existe."""
+    valor = perfil_proveedor.get(origen)
+    if valor is not None:
+        flujo[destino or origen] = valor
 
 
 def _fusionar_servicios_perfil(perfil_proveedor: Dict[str, Any]) -> list[str]:
@@ -30,6 +43,69 @@ def _fusionar_servicios_perfil(perfil_proveedor: Dict[str, Any]) -> list[str]:
         if texto and texto not in servicios_unificados:
             servicios_unificados.append(texto)
     return servicios_unificados
+
+
+def _sincronizar_campos_base(
+    flujo: Dict[str, Any],
+    perfil_proveedor: Dict[str, Any],
+) -> None:
+    """Sincroniza datos básicos e identidad del proveedor."""
+    if perfil_proveedor.get("has_consent") and not flujo.get("has_consent"):
+        flujo["has_consent"] = True
+    proveedor_id = perfil_proveedor.get("id")
+    if proveedor_id:
+        flujo["provider_id"] = proveedor_id
+    _copiar_campo_si_presente(flujo, perfil_proveedor, "full_name")
+    _copiar_campo_si_presente(flujo, perfil_proveedor, "document_first_names")
+    _copiar_campo_si_presente(flujo, perfil_proveedor, "document_last_names")
+    _copiar_campo_si_presente(flujo, perfil_proveedor, "document_id_number")
+
+
+def _sincronizar_campos_ubicacion(
+    flujo: Dict[str, Any],
+    perfil_proveedor: Dict[str, Any],
+) -> None:
+    """Sincroniza los datos de ubicación y confirmación de ciudad."""
+    _copiar_campo_si_presente(flujo, perfil_proveedor, "city")
+    _copiar_campo_si_presente(flujo, perfil_proveedor, "location_lat")
+    _copiar_campo_si_presente(flujo, perfil_proveedor, "location_lng")
+    _copiar_campo_si_presente(flujo, perfil_proveedor, "location_updated_at")
+    _copiar_campo_si_presente(flujo, perfil_proveedor, "city_confirmed_at")
+
+
+def _sincronizar_campos_onboarding(
+    flujo: Dict[str, Any],
+    perfil_proveedor: Dict[str, Any],
+) -> None:
+    """Sincroniza checkpoints y progreso de onboarding."""
+    if perfil_proveedor.get("onboarding_step") is not None:
+        flujo["onboarding_step"] = resolver_checkpoint_onboarding_desde_perfil(
+            perfil_proveedor
+        )
+    _copiar_campo_si_presente(
+        flujo,
+        perfil_proveedor,
+        "onboarding_step_updated_at",
+    )
+    _copiar_campo_si_presente(flujo, perfil_proveedor, "experience_years")
+    _copiar_campo_si_presente(flujo, perfil_proveedor, "experience_range")
+
+
+def _sincronizar_campos_contacto(
+    flujo: Dict[str, Any],
+    perfil_proveedor: Dict[str, Any],
+) -> None:
+    """Sincroniza datos de contacto, medios y documentos."""
+    flujo["services"] = _fusionar_servicios_perfil(perfil_proveedor)
+    _copiar_campo_si_presente(flujo, perfil_proveedor, "social_media_url")
+    _copiar_campo_si_presente(flujo, perfil_proveedor, "social_media_type")
+    redes = resolver_redes_sociales(perfil_proveedor)
+    flujo["facebook_username"] = redes["facebook_username"]
+    flujo["instagram_username"] = redes["instagram_username"]
+    _copiar_campo_si_presente(flujo, perfil_proveedor, "face_photo_url")
+    _copiar_campo_si_presente(flujo, perfil_proveedor, "dni_front_photo_url")
+    _copiar_campo_si_presente(flujo, perfil_proveedor, "dni_back_photo_url")
+    _copiar_campo_si_presente(flujo, perfil_proveedor, "real_phone")
 
 
 def normalizar_estado_administrativo(
@@ -69,59 +145,10 @@ def sincronizar_flujo_con_perfil(
 ) -> Dict[str, Any]:
     """Sincroniza datos del flujo con el perfil persistido."""
     if perfil_proveedor:
-        if perfil_proveedor.get("has_consent") and not flujo.get("has_consent"):
-            flujo["has_consent"] = True
-        proveedor_id = perfil_proveedor.get("id")
-        if proveedor_id:
-            flujo["provider_id"] = proveedor_id
-        if perfil_proveedor.get("full_name"):
-            flujo["full_name"] = perfil_proveedor.get("full_name")
-        if perfil_proveedor.get("document_first_names") is not None:
-            flujo["document_first_names"] = perfil_proveedor.get(
-                "document_first_names"
-            )
-        if perfil_proveedor.get("document_last_names") is not None:
-            flujo["document_last_names"] = perfil_proveedor.get("document_last_names")
-        if perfil_proveedor.get("document_id_number") is not None:
-            flujo["document_id_number"] = perfil_proveedor.get("document_id_number")
-        if perfil_proveedor.get("city") is not None:
-            flujo["city"] = perfil_proveedor.get("city")
-        if perfil_proveedor.get("location_lat") is not None:
-            flujo["location_lat"] = perfil_proveedor.get("location_lat")
-        if perfil_proveedor.get("location_lng") is not None:
-            flujo["location_lng"] = perfil_proveedor.get("location_lng")
-        if perfil_proveedor.get("location_updated_at") is not None:
-            flujo["location_updated_at"] = perfil_proveedor.get("location_updated_at")
-        if perfil_proveedor.get("city_confirmed_at") is not None:
-            flujo["city_confirmed_at"] = perfil_proveedor.get("city_confirmed_at")
-        if perfil_proveedor.get("onboarding_step") is not None:
-            flujo["onboarding_step"] = resolver_checkpoint_onboarding_desde_perfil(
-                perfil_proveedor
-            )
-        if perfil_proveedor.get("onboarding_step_updated_at") is not None:
-            flujo["onboarding_step_updated_at"] = perfil_proveedor.get(
-                "onboarding_step_updated_at"
-            )
-        if perfil_proveedor.get("experience_years") is not None:
-            flujo["experience_years"] = perfil_proveedor.get("experience_years")
-        if perfil_proveedor.get("experience_range") is not None:
-            flujo["experience_range"] = perfil_proveedor.get("experience_range")
-        flujo["services"] = _fusionar_servicios_perfil(perfil_proveedor)
-        if perfil_proveedor.get("social_media_url") is not None:
-            flujo["social_media_url"] = perfil_proveedor.get("social_media_url")
-        if perfil_proveedor.get("social_media_type") is not None:
-            flujo["social_media_type"] = perfil_proveedor.get("social_media_type")
-        redes = resolver_redes_sociales(perfil_proveedor)
-        flujo["facebook_username"] = redes["facebook_username"]
-        flujo["instagram_username"] = redes["instagram_username"]
-        if perfil_proveedor.get("face_photo_url") is not None:
-            flujo["face_photo_url"] = perfil_proveedor.get("face_photo_url")
-        if perfil_proveedor.get("dni_front_photo_url") is not None:
-            flujo["dni_front_photo_url"] = perfil_proveedor.get("dni_front_photo_url")
-        if perfil_proveedor.get("dni_back_photo_url") is not None:
-            flujo["dni_back_photo_url"] = perfil_proveedor.get("dni_back_photo_url")
-        if perfil_proveedor.get("real_phone") is not None:
-            flujo["real_phone"] = perfil_proveedor.get("real_phone")
+        _sincronizar_campos_base(flujo, perfil_proveedor)
+        _sincronizar_campos_ubicacion(flujo, perfil_proveedor)
+        _sincronizar_campos_onboarding(flujo, perfil_proveedor)
+        _sincronizar_campos_contacto(flujo, perfil_proveedor)
         flujo["approved_basic"] = normalizar_estado_administrativo(
             perfil_proveedor
         ) in {"approved_basic", "approved"}
@@ -199,29 +226,16 @@ def manejar_aprobacion_reciente(
     if flujo.get("state") != "pending_verification" or not esta_verificado:
         return None
     if flujo.get("verification_notified"):
-        flujo.update(
-            {
-                "state": "awaiting_menu_option",
-                "has_consent": True,
-                "esta_registrado": True,
-                "approved_basic": approved_basic,
-                "profile_pending_review": False,
-                "pending_review_attempts": 0,
-                "review_silenced": False,
-            }
+        poner_flujo_en_menu_revision(
+            flujo,
+            approved_basic=approved_basic,
+            verification_notified=True,
         )
         return None
-    flujo.update(
-        {
-            "state": "awaiting_menu_option",
-            "has_consent": True,
-            "esta_registrado": True,
-            "verification_notified": True,
-            "approved_basic": approved_basic,
-            "profile_pending_review": False,
-            "pending_review_attempts": 0,
-            "review_silenced": False,
-        }
+    poner_flujo_en_menu_revision(
+        flujo,
+        approved_basic=approved_basic,
+        verification_notified=True,
     )
     return construir_respuesta_verificado(approved_basic=approved_basic)
 

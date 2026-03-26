@@ -2,26 +2,27 @@ import asyncio
 import sys
 import types
 from pathlib import Path
+from typing import Any
 
-imghdr_stub = types.ModuleType("imghdr")
+imghdr_stub: Any = types.ModuleType("imghdr")
 imghdr_stub.what = lambda *args, **kwargs: None
 sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from services.onboarding.progress import (  # noqa: E402
+    determinar_checkpoint_onboarding,
+    es_perfil_onboarding_completo,
+    inferir_checkpoint_onboarding_desde_perfil,
+)
+from services.onboarding.registration.normalizacion import (  # noqa: E402
+    garantizar_campos_obligatorios_proveedor,
+)
 from services.sesion_proveedor import (  # noqa: E402
     manejar_aprobacion_reciente,
     manejar_bloqueo_revision_posterior,
     manejar_estado_inicial,
     resolver_estado_registro,
     sincronizar_flujo_con_perfil,
-)
-from services.onboarding.progress import (  # noqa: E402
-    inferir_checkpoint_onboarding_desde_perfil,
-    determinar_checkpoint_onboarding,
-    es_perfil_onboarding_completo,
-)
-from services.onboarding.registration.normalizacion import (  # noqa: E402
-    garantizar_campos_obligatorios_proveedor,
 )
 
 
@@ -124,7 +125,9 @@ def test_manejar_estado_inicial_en_revision_devuelve_menu_normal():
     assert flujo["state"] == "awaiting_menu_option"
     assert len(respuesta["messages"]) == 2
     assert "revis" in respuesta["messages"][0]["response"].lower()
-    assert "Información personal" in respuesta["messages"][1]["ui"]["options"][0]["title"]
+    assert (
+        "Información personal" in respuesta["messages"][1]["ui"]["options"][0]["title"]
+    )
 
 
 def test_manejar_estado_inicial_rejected_permanece_en_pending_verification():
@@ -208,7 +211,10 @@ def test_manejar_estado_inicial_aprobado_muestra_menu_interactivo():
     assert respuesta is not None
     assert flujo["state"] == "awaiting_menu_option"
     assert respuesta["messages"][0]["ui"]["type"] == "list"
-    assert respuesta["messages"][0]["ui"]["options"][0]["id"] == "provider_menu_info_personal"
+    assert (
+        respuesta["messages"][0]["ui"]["options"][0]["id"]
+        == "provider_menu_info_personal"
+    )
 
 
 def test_manejar_aprobacion_reciente_notifica_una_sola_vez():
@@ -239,7 +245,7 @@ def test_manejar_aprobacion_reciente_notifica_una_sola_vez():
     assert flujo["state"] == "awaiting_menu_option"
 
 
-def test_manejar_bloqueo_revision_posterior_responde_hasta_tres_veces_y_luego_silencia():
+def test_bloqueo_revision_posterior_limita_respuestas():
     flujo = {
         "state": "pending_verification",
         "full_name": "Proveedor En Revision",
@@ -396,6 +402,23 @@ def test_checkpoint_onboarding_infiere_desde_perfil_durable():
     assert inferir_checkpoint_onboarding_desde_perfil(perfil) == "onboarding_city"
 
 
+def test_checkpoint_onboarding_sin_consent_retorna_consentimiento():
+    perfil = {
+        "id": "prov-consent",
+        "full_name": "Proveedor Consentimiento",
+        "city": "Quito",
+        "dni_front_photo_url": "dni-front.jpg",
+        "face_photo_url": "face.jpg",
+        "experience_range": "3 a 5 años",
+        "services_list": ["Plomeria"],
+        "has_consent": False,
+        "verified": False,
+        "status": "pending",
+    }
+
+    assert inferir_checkpoint_onboarding_desde_perfil(perfil) == "onboarding_consent"
+
+
 def test_checkpoint_onboarding_detecta_perfil_completo():
     perfil = {
         "id": "prov-complete",
@@ -438,7 +461,7 @@ def test_sincronizar_flujo_con_perfil_marca_approved_basic():
     assert flujo["approved_basic"] is True
 
 
-def test_sincronizar_flujo_con_perfil_marca_profile_pending_review_como_aprobado_basico():
+def test_sincronizar_flujo_perfil_pending_review_marca_aprobado_basico():
     flujo = {}
     perfil = {
         "id": "prov-review",

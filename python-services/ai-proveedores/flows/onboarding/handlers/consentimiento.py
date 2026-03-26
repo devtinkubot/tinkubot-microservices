@@ -2,13 +2,11 @@
 
 from typing import Any, Dict, Optional
 
-from flows.constructors import (
-    construir_payload_menu_principal,
-)
 from services.onboarding.consentimiento import (
     asegurar_proveedor_persistido_tras_consentimiento_onboarding,
     procesar_respuesta_consentimiento_onboarding,
 )
+from templates.maintenance.menus import payload_menu_post_registro_proveedor
 from templates.onboarding.ciudad import solicitar_ciudad_registro
 from templates.onboarding.telefono import preguntar_real_phone
 
@@ -57,12 +55,7 @@ async def manejar_estado_consentimiento_onboarding(
         flujo["state"] = "awaiting_menu_option"
         return {
             "success": True,
-            "messages": [
-                construir_payload_menu_principal(
-                    esta_registrado=esta_registrado,
-                    approved_basic=bool(flujo.get("approved_basic")),
-                )
-            ],
+            "messages": [payload_menu_post_registro_proveedor()],
         }
 
     return await procesar_respuesta_consentimiento_onboarding(

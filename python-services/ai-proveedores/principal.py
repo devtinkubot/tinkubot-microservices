@@ -6,56 +6,36 @@ Servicio de gestión de proveedores con búsqueda y capacidad de recibir mensaje
 import asyncio
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime
 from time import perf_counter
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict, Optional
 
 import uvicorn
 from config import configuracion
 from fastapi import FastAPI, Header
 from fastapi.middleware.cors import CORSMiddleware
-# Import de módulos especializados del flujo de proveedores
-from flows.router import manejar_mensaje
-
-# Gestores de sesión y perfil
-from flows.session import (
-    establecer_flujo,
-    invalidar_cache_perfil_proveedor,
-    obtener_flujo,
-    obtener_perfil_proveedor,
-    obtener_perfil_proveedor_cacheado,
-    reiniciar_flujo,
-)
 from infrastructure.database import run_supabase, set_supabase_client
 from infrastructure.embeddings.servicio_embeddings import ServicioEmbeddings
-from infrastructure.redis import cliente_redis
 from infrastructure.storage import subir_medios_identidad
 from models import RecepcionMensajeWhatsApp, RespuestaSalud
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
-from services.availability import (
-    ESTADO_ESPERANDO_DISPONIBILIDAD,
-    _hay_contexto_disponibilidad_activo as _hay_contexto_disponibilidad_activo_impl,
-    _registrar_respuesta_disponibilidad_si_aplica as _registrar_respuesta_disponibilidad_si_aplica_impl,
-    _resolver_alias_disponibilidad as _resolver_alias_disponibilidad_impl,
+from services.availability.disponibilidad_admin import (
+    router as router_disponibilidad_admin,
 )
-from services.availability.disponibilidad_admin import router as router_disponibilidad_admin
-from services.shared import interpretar_respuesta
-from services.onboarding.registration import limpiar_onboarding_proveedores
-from services.onboarding.progress import (
-    es_perfil_onboarding_completo,
-    persistir_checkpoint_onboarding,
-    resolver_checkpoint_onboarding_desde_perfil,
+from services.onboarding.session import invalidar_cache_perfil_proveedor
+from services.onboarding.worker import (
+    bucle_limpieza_onboarding,
+    ejecutar_limpieza_onboarding,
 )
-from services.sesion_proveedor import sincronizar_flujo_con_perfil
-from services.maintenance.actualizar_servicios import actualizar_servicios
+from services.shared.orquestacion_whatsapp import (
+    normalizar_respuesta_whatsapp as normalizar_respuesta_whatsapp_impl,
+)
+from services.shared.orquestacion_whatsapp import (
+    procesar_mensaje_whatsapp,
+)
 from supabase import Client, create_client
-from templates.onboarding.registration import (
-    PROFILE_SINGLE_USE_CONTROL_IDS,
-    SERVICE_CONFIRM_ID,
-    SERVICE_CORRECT_ID,
-)
-from templates.maintenance import payload_confirmacion_servicios_menu
+
 # Configuración desde variables de entorno
 URL_SUPABASE = configuracion.supabase_url or os.getenv("SUPABASE_URL", "")
 # settings expone la clave JWT de servicio para Supabase
@@ -64,182 +44,7 @@ CLAVE_API_OPENAI = os.getenv("OPENAI_API_KEY", "")
 NIVEL_LOG = os.getenv("LOG_LEVEL", "INFO")
 TIEMPO_ESPERA_SUPABASE_SEGUNDOS = float(os.getenv("SUPABASE_TIMEOUT_SECONDS", "5"))
 UMBRAL_LENTO_MS = int(os.getenv("SLOW_QUERY_THRESHOLD_MS", "800"))
-CLAVE_DEDUPE_MEDIA = "prov_media_dedupe:{}:{}"
-TTL_DEDUPE_MEDIA_SEGUNDOS = int(os.getenv("PROVIDER_MEDIA_DEDUPE_TTL_SECONDS", "900"))
-CLAVE_DEDUPE_INTERACTIVE = "prov_interactive_dedupe:{}:{}"
-CLAVE_DEDUPE_INTERACTIVE_ACTION = "prov_interactive_action_dedupe:{}:{}:{}:{}"
-TTL_DEDUPE_INTERACTIVE_SEGUNDOS = int(
-    os.getenv("PROVIDER_INTERACTIVE_DEDUPE_TTL_SECONDS", "900")
-)
 TIEMPO_INACTIVIDAD_SESION_SEGUNDOS = configuracion.ttl_flujo_segundos
-STANDARD_ONBOARDING_STATES = {
-    None,
-    "pending_verification",
-    "onboarding_consent",
-    "onboarding_city",
-    "onboarding_dni_front_photo",
-    "onboarding_face_photo",
-    "onboarding_experience",
-    "onboarding_specialty",
-    "onboarding_add_another_service",
-    "onboarding_services_confirmation",
-    "onboarding_services_edit_action",
-    "onboarding_services_edit_replace_select",
-    "onboarding_services_edit_replace_input",
-    "onboarding_services_edit_delete_select",
-    "onboarding_services_edit_add",
-    "onboarding_social_media",
-    "confirm",
-}
-
-MANUAL_PHONE_FALLBACK_STATES = {"onboarding_real_phone"}
-
-ONBOARDING_STATES = STANDARD_ONBOARDING_STATES | MANUAL_PHONE_FALLBACK_STATES
-
-# Estados de menú post-registro (deben ignorar flujo de disponibilidad)
-MENU_STATES = {
-    "awaiting_menu_option",
-    "awaiting_personal_info_action",
-    "awaiting_professional_info_action",
-    "awaiting_deletion_confirmation",
-    "awaiting_active_service_action",
-    "awaiting_service_remove",
-    "awaiting_face_photo_update",
-    "awaiting_dni_front_photo_update",
-    "awaiting_dni_back_photo_update",
-    "viewing_personal_name",
-    "viewing_personal_city",
-    "viewing_personal_photo",
-    "viewing_personal_dni_front",
-    "viewing_personal_dni_back",
-    "viewing_professional_experience",
-    "viewing_professional_services",
-    "viewing_professional_service",
-    "viewing_professional_social",
-    "viewing_professional_social_facebook",
-    "viewing_professional_social_instagram",
-    "viewing_professional_certificates",
-    "viewing_professional_certificate",
-}
-PROFILE_COMPLETION_STATES = {
-    "maintenance_experience",
-    "maintenance_social_media",
-    "maintenance_social_facebook_username",
-    "maintenance_social_instagram_username",
-    "maintenance_certificate",
-    "maintenance_specialty",
-    "maintenance_profile_service_confirmation",
-    "maintenance_add_another_service",
-    "maintenance_services_confirmation",
-    "maintenance_profile_completion_confirmation",
-    "maintenance_profile_completion_edit_action",
-    "maintenance_services_edit_action",
-    "maintenance_services_edit_replace_select",
-    "maintenance_services_edit_replace_input",
-    "maintenance_services_edit_delete_select",
-    "maintenance_services_edit_add",
-    "maintenance_profile_completion_finalize",
-}
-
-PROFILE_COMPLETION_STATES |= {
-    "onboarding_social_facebook_username",
-    "onboarding_social_instagram_username",
-    "awaiting_certificate",
-    "awaiting_experience",
-    "awaiting_social_media",
-    "awaiting_social_media_onboarding",
-    "onboarding_social_media",
-    "awaiting_specialty",
-    "awaiting_profile_service_confirmation",
-    "awaiting_add_another_service",
-    "awaiting_services_confirmation",
-    "awaiting_services_edit_action",
-    "awaiting_services_edit_replace_select",
-    "awaiting_services_edit_replace_input",
-    "awaiting_services_edit_delete_select",
-    "awaiting_services_edit_add",
-    "maintenance_profile_completion_finalize",
-}
-MEDIA_STATES = {
-    "onboarding_dni_front_photo",
-    "onboarding_face_photo",
-    "awaiting_dni_front_photo_update",
-    "awaiting_dni_back_photo_update",
-    "awaiting_face_photo_update",
-}
-
-
-def _normalizar_lista_servicios_flujo(flujo: Dict[str, Any]) -> list[str]:
-    servicios = flujo.get("servicios_temporales")
-    if servicios is None:
-        servicios = flujo.get("services")
-    resultado: list[str] = []
-    for servicio in list(servicios or []):
-        texto = str(servicio or "").strip()
-        if texto and texto not in resultado:
-            resultado.append(texto)
-    return resultado
-
-
-def _rehidratar_estado_onboarding_desde_supabase(
-    flujo: Dict[str, Any],
-    perfil_proveedor: Optional[Dict[str, Any]],
-) -> bool:
-    """Reconstruye el estado del onboarding si Redis llegó vacío o incompleto."""
-    if flujo.get("state") or not perfil_proveedor:
-        return False
-
-    checkpoint = resolver_checkpoint_onboarding_desde_perfil(perfil_proveedor)
-    if not checkpoint:
-        return False
-
-    flujo["state"] = checkpoint
-    flujo["onboarding_step"] = checkpoint
-    if perfil_proveedor.get("onboarding_step_updated_at") is not None:
-        flujo["onboarding_step_updated_at"] = perfil_proveedor.get(
-            "onboarding_step_updated_at"
-        )
-    if checkpoint == "awaiting_menu_option" and not es_perfil_onboarding_completo(
-        perfil_proveedor
-    ):
-        flujo["mode"] = "registration"
-    elif checkpoint == "awaiting_menu_option":
-        flujo.pop("mode", None)
-    return True
-
-
-async def _sincronizar_servicios_si_cambiaron(
-    flujo_anterior: Dict[str, Any],
-    flujo_actual: Dict[str, Any],
-) -> bool:
-    provider_id = str(
-        flujo_actual.get("provider_id") or flujo_anterior.get("provider_id") or ""
-    ).strip()
-    if not provider_id or not supabase:
-        return False
-
-    servicios_previos = _normalizar_lista_servicios_flujo(flujo_anterior)
-    servicios_actuales = _normalizar_lista_servicios_flujo(flujo_actual)
-    if servicios_previos == servicios_actuales:
-        return False
-
-    try:
-        servicios_persistidos = await actualizar_servicios(
-            provider_id,
-            servicios_actuales,
-        )
-    except Exception as exc:
-        logger.warning(
-            "No se pudieron sincronizar los servicios persistidos para %s: %s",
-            provider_id,
-            exc,
-        )
-        return False
-
-    flujo_actual["services"] = servicios_persistidos
-    if "servicios_temporales" in flujo_actual:
-        flujo_actual["servicios_temporales"] = list(servicios_persistidos)
-    return True
 
 # Configurar logging
 logging.basicConfig(level=getattr(logging, NIVEL_LOG))
@@ -332,7 +137,17 @@ async def startup_event():
     )
     if supabase:
         app.state.onboarding_cleanup_task = asyncio.create_task(
-            _bucle_limpieza_onboarding()
+            bucle_limpieza_onboarding(
+                supabase=supabase,
+                whatsapp_url=configuracion.whatsapp_proveedores_url,
+                whatsapp_account_id=configuracion.whatsapp_proveedores_account_id,
+                warning_hours=configuracion.provider_onboarding_warning_hours,
+                expiry_hours=configuracion.provider_onboarding_expiry_hours,
+                intervalo_segundos=(
+                    configuracion.provider_onboarding_cleanup_interval_seconds
+                ),
+                logger=logger,
+            )
         )
         logger.info(
             "🧹 Limpieza onboarding habilitada (warning=%sh expiry=%sh intervalo=%ss)",
@@ -362,220 +177,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- Flujo interactivo de registro de proveedores ---
-CLAVE_FLUJO = "prov_flow:{}"  # telefono
 
-
-async def _ejecutar_limpieza_onboarding() -> Dict[str, Any]:
-    if not supabase:
-        return {"success": False, "message": "Supabase no disponible"}
-
-    if not configuracion.whatsapp_proveedores_url:
-        return {"success": False, "message": "WhatsApp Proveedores URL no configurada"}
-
-    resultado = await limpiar_onboarding_proveedores(
-        supabase,
-        configuracion.whatsapp_proveedores_url,
-        configuracion.whatsapp_proveedores_account_id,
-        warning_hours=configuracion.provider_onboarding_warning_hours,
-        expiry_hours=configuracion.provider_onboarding_expiry_hours,
-    )
-    return {"success": True, "result": resultado}
-
-
-async def _bucle_limpieza_onboarding():
-    intervalo = max(configuracion.provider_onboarding_cleanup_interval_seconds, 60)
-    while True:
-        try:
-            resultado = await _ejecutar_limpieza_onboarding()
-            if resultado.get("success"):
-                resumen = resultado.get("result") or {}
-                logger.info(
-                    (
-                        "🧹 Limpieza onboarding ejecutada "
-                        "candidates=%s warnings=%s expirations=%s deleted=%s failed=%s"
-                    ),
-                    resumen.get("candidates", 0),
-                    resumen.get("warnings_sent", 0),
-                    resumen.get("expirations_sent", 0),
-                    resumen.get("deleted", 0),
-                    resumen.get("failed", 0),
-                )
-            else:
-                logger.info(
-                    "🧹 Limpieza onboarding omitida: %s",
-                    resultado.get("message", "sin detalle"),
-                )
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            logger.exception("❌ Error en limpieza automática de onboarding: %s", exc)
-
-        await asyncio.sleep(intervalo)
-
-
-def _normalizar_jid(valor: str) -> Optional[str]:
-    texto = (valor or "").strip()
-    if "@" not in texto:
-        return None
-
-    user, server = texto.split("@", 1)
-    user = user.strip()
-    server = server.strip().lower()
-    if not user or not server:
-        return None
-    return f"{user}@{server}"
-
-
-def _extraer_user_jid(valor: str) -> str:
-    texto = (valor or "").strip()
-    if not texto:
-        return ""
-    if "@" in texto:
-        return texto.split("@", 1)[0].strip()
-    return texto
-
-
-def _resolver_telefono_canonico(raw_from: str, raw_phone: str) -> str:
-    jid = _normalizar_jid(raw_from) or _normalizar_jid(raw_phone)
-    if jid:
-        return jid
-
-    user = _extraer_user_jid(raw_phone)
-    if not user:
-        return ""
-    return f"{user}@s.whatsapp.net"
-
-
-def _resolver_message_id(carga: Dict[str, Any]) -> str:
-    return str(carga.get("id") or carga.get("message_id") or "").strip()
-
-
-def _es_evento_multimedia(carga: Dict[str, Any]) -> bool:
-    if any(
-        carga.get(campo) for campo in ("image_base64", "media_base64", "file_base64")
-    ):
-        return True
-    if carga.get("attachments") or carga.get("media"):
-        return True
-    contenido = carga.get("content") or carga.get("message")
-    return isinstance(contenido, str) and contenido.startswith("data:image/")
-
-
-def _es_evento_interactivo(carga: Dict[str, Any]) -> bool:
-    if carga.get("selected_option"):
-        return True
-    message_type = str(carga.get("message_type") or "").strip().lower()
-    return message_type.startswith("interactive_")
-
-
-def _resumen_contexto_interactivo_semantico(
-    estado: Optional[str], flujo: Optional[Dict[str, Any]]
-) -> str:
-    flujo = flujo or {}
-    nonce = str(flujo.get("service_add_confirmation_nonce") or "").strip()
-    return f"{estado or 'unknown'}:{nonce or 'no_nonce'}"
-
-
-async def _es_mensaje_multimedia_duplicado(
-    telefono: str,
-    estado: Optional[str],
-    carga: Dict[str, Any],
-) -> bool:
-    if estado not in MEDIA_STATES:
-        return False
-    if not _es_evento_multimedia(carga):
-        return False
-
-    message_id = _resolver_message_id(carga)
-    if not message_id:
-        return False
-
-    creado = await cliente_redis.set_if_absent(
-        CLAVE_DEDUPE_MEDIA.format(telefono, message_id),
-        {"state": estado, "processed_at": datetime.now(timezone.utc).isoformat()},
-        expire=TTL_DEDUPE_MEDIA_SEGUNDOS,
-    )
-    return not creado
-
-
-async def _es_mensaje_interactivo_duplicado(
-    telefono: str,
-    estado: Optional[str],
-    carga: Dict[str, Any],
-    flujo: Optional[Dict[str, Any]] = None,
-) -> bool:
-    if (
-        estado not in ONBOARDING_STATES
-        and estado not in MENU_STATES
-        and estado not in PROFILE_COMPLETION_STATES
-    ):
-        return False
-    if not _es_evento_interactivo(carga):
-        return False
-
-    seleccionado = str(carga.get("selected_option") or "").strip().lower()
-    if seleccionado in {SERVICE_CONFIRM_ID, SERVICE_CORRECT_ID}:
-        return False
-    message_id = _resolver_message_id(carga)
-    if not message_id:
-        if seleccionado not in PROFILE_SINGLE_USE_CONTROL_IDS:
-            return False
-        contexto = _resumen_contexto_interactivo_semantico(estado, flujo)
-        creado_semantico = await cliente_redis.set_if_absent(
-            CLAVE_DEDUPE_INTERACTIVE_ACTION.format(
-                telefono,
-                estado or "unknown",
-                seleccionado,
-                contexto,
-            ),
-            {"state": estado, "processed_at": datetime.now(timezone.utc).isoformat()},
-            expire=TTL_DEDUPE_INTERACTIVE_SEGUNDOS,
-        )
-        return not creado_semantico
-
-    creado = await cliente_redis.set_if_absent(
-        CLAVE_DEDUPE_INTERACTIVE.format(telefono, message_id),
-        {"state": estado, "processed_at": datetime.now(timezone.utc).isoformat()},
-        expire=TTL_DEDUPE_INTERACTIVE_SEGUNDOS,
-    )
-    if not creado:
-        return True
-
-    if seleccionado not in PROFILE_SINGLE_USE_CONTROL_IDS:
-        return False
-
-    contexto = _resumen_contexto_interactivo_semantico(estado, flujo)
-    creado_semantico = await cliente_redis.set_if_absent(
-        CLAVE_DEDUPE_INTERACTIVE_ACTION.format(
-            telefono,
-            estado or "unknown",
-            seleccionado,
-            contexto,
-        ),
-        {"state": estado, "processed_at": datetime.now(timezone.utc).isoformat()},
-        expire=TTL_DEDUPE_INTERACTIVE_SEGUNDOS,
-    )
-    return not creado_semantico
-
-
-async def _hay_contexto_disponibilidad_activo(telefono: str) -> bool:
-    return await _hay_contexto_disponibilidad_activo_impl(cliente_redis, telefono)
-
-
-async def _resolver_alias_disponibilidad(telefono: str) -> str:
-    return await _resolver_alias_disponibilidad_impl(cliente_redis, telefono)
-
-
-async def _registrar_respuesta_disponibilidad_si_aplica(  # noqa: C901
-    telefono: str, texto_mensaje: str, estado_actual: Optional[str] = None
-) -> Optional[Dict[str, Any]]:
-    return await _registrar_respuesta_disponibilidad_si_aplica_impl(
-        cliente_redis,
-        telefono,
-        texto_mensaje,
-        estado_actual=estado_actual,
-    )
+def normalizar_respuesta_whatsapp(respuesta: Any) -> Dict[str, Any]:
+    return normalizar_respuesta_whatsapp_impl(respuesta)
 
 
 @app.get("/health", response_model=RespuestaSalud)
@@ -639,7 +243,13 @@ async def cleanup_provider_onboarding(
     if token_esperado and token != token_esperado:
         return {"success": False, "message": "Unauthorized"}
 
-    return await _ejecutar_limpieza_onboarding()
+    return await ejecutar_limpieza_onboarding(
+        supabase=supabase,
+        whatsapp_url=configuracion.whatsapp_proveedores_url,
+        whatsapp_account_id=configuracion.whatsapp_proveedores_account_id,
+        warning_hours=configuracion.provider_onboarding_warning_hours,
+        expiry_hours=configuracion.provider_onboarding_expiry_hours,
+    )
 
 
 @app.post("/admin/service-governance/reviews/{review_id}/approve")
@@ -781,149 +391,14 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
     """
     inicio_tiempo = perf_counter()
     try:
-        raw_phone = (solicitud.phone or "").strip()
-        raw_from = (solicitud.from_number or "").strip()
-        telefono = _resolver_telefono_canonico(raw_from, raw_phone) or "unknown"
-        telefono_disponibilidad = await _resolver_alias_disponibilidad(telefono)
-        phone_user = _extraer_user_jid(telefono)
-        is_lid = telefono.endswith("@lid")
-        texto_mensaje = (
-            solicitud.message or solicitud.content or solicitud.selected_option or ""
-        )
-        carga = solicitud.model_dump()
-        opcion_menu = cast(Optional[str], interpretar_respuesta(texto_mensaje, "menu"))
-        resumen_mensaje = (texto_mensaje or "")[:80]
-
-        logger.info(
-            (
-                "provider_inbound_message phone=%s canonical_phone=%s message_type=%s "
-                "selected_option=%s raw_from=%s raw_phone=%s text=%r"
-            ),
-            telefono_disponibilidad,
-            telefono,
-            solicitud.message_type,
-            solicitud.selected_option,
-            raw_from,
-            raw_phone,
-            resumen_mensaje,
-        )
-
-        logger.info(
-            f"📨 Mensaje WhatsApp recibido de {telefono}: {texto_mensaje[:50]}..."
-        )
-        logger.info(
-            "🔎 principal.cliente_openai inicializado=%s",
-            bool(cliente_openai),
-        )
-
-        flujo = await obtener_flujo(telefono)
-        if await _es_mensaje_multimedia_duplicado(telefono, flujo.get("state"), carga):
-            logger.info(
-                "media_message_duplicate_ignored provider=%s state=%s message_id=%s",
-                telefono,
-                flujo.get("state"),
-                _resolver_message_id(carga),
-            )
-            return {"success": True, "messages": []}
-        if await _es_mensaje_interactivo_duplicado(
-            telefono,
-            flujo.get("state"),
-            carga,
-            flujo=flujo,
-        ):
-            logger.info(
-                (
-                    "interactive_message_duplicate_ignored provider=%s "
-                    "state=%s message_id=%s"
-                ),
-                telefono,
-                flujo.get("state"),
-                _resolver_message_id(carga),
-            )
-            return {"success": True, "messages": []}
-
-        perfil_proveedor = await obtener_perfil_proveedor_cacheado(telefono)
-        flujo = sincronizar_flujo_con_perfil(flujo, perfil_proveedor)
-        _rehidratar_estado_onboarding_desde_supabase(flujo, perfil_proveedor)
-
-        hay_contexto_disponibilidad = await _hay_contexto_disponibilidad_activo(
-            telefono_disponibilidad
-        )
-        if hay_contexto_disponibilidad and flujo.get("state") in MENU_STATES:
-            flujo["state"] = ESTADO_ESPERANDO_DISPONIBILIDAD
-        elif (
-            not hay_contexto_disponibilidad
-            and flujo.get("state") == ESTADO_ESPERANDO_DISPONIBILIDAD
-        ):
-            flujo["state"] = "awaiting_menu_option"
-        respuesta_disponibilidad = await _registrar_respuesta_disponibilidad_si_aplica(
-            telefono_disponibilidad, texto_mensaje, flujo.get("state")
-        )
-        if respuesta_disponibilidad:
-            logger.info(
-                (
-                    "availability_response_intercepted provider=%s "
-                    "state=%s selected_option=%s"
-                ),
-                telefono_disponibilidad,
-                flujo.get("state"),
-                solicitud.selected_option,
-            )
-            if flujo.get("state") == ESTADO_ESPERANDO_DISPONIBILIDAD:
-                flujo["state"] = "awaiting_menu_option"
-                await establecer_flujo(telefono, flujo)
-            return normalizar_respuesta_whatsapp(respuesta_disponibilidad)
-
-        tiene_real_phone = bool(
-            flujo.get("real_phone") or (perfil_proveedor or {}).get("real_phone")
-        )
-        flujo["phone_user"] = phone_user
-        flujo["phone"] = telefono
-        # Solo necesitamos captura manual cuando el remitente entra por LID
-        # y no tenemos un teléfono reutilizable desde el webhook.
-        flujo["requires_real_phone"] = bool(is_lid and not tiene_real_phone)
-        if not is_lid and phone_user and not flujo.get("real_phone"):
-            flujo["real_phone"] = phone_user
-        servicios_previos = _normalizar_lista_servicios_flujo(flujo)
-        resultado_manejo = await manejar_mensaje(
-            flujo=flujo,
-            telefono=telefono,
-            texto_mensaje=texto_mensaje,
-            carga=carga,
-            opcion_menu=opcion_menu,
-            perfil_proveedor=perfil_proveedor,
+        return await procesar_mensaje_whatsapp(
+            solicitud=solicitud,
             supabase=supabase,
             servicio_embeddings=servicio_embeddings,
             cliente_openai=cliente_openai,
-            subir_medios_identidad=subir_medios_identidad,
             logger=logger,
+            subir_medios_identidad_fn=subir_medios_identidad,
         )
-        respuesta = normalizar_respuesta_whatsapp(resultado_manejo.get("response", {}))
-        nuevo_flujo = resultado_manejo.get("new_flow")
-        persistir_flujo = resultado_manejo.get("persist_flow", True)
-        flujo_a_persistir = nuevo_flujo if nuevo_flujo is not None else flujo
-        await _sincronizar_servicios_si_cambiaron(
-            {"provider_id": flujo.get("provider_id"), "services": servicios_previos},
-            flujo_a_persistir,
-        )
-        if persistir_flujo:
-            if supabase:
-                try:
-                    await persistir_checkpoint_onboarding(
-                        supabase,
-                        flujo_a_persistir,
-                        perfil_proveedor=flujo_a_persistir,
-                    )
-                except Exception as exc:
-                    logger.debug(
-                        "No se pudo persistir checkpoint onboarding para %s: %s",
-                        telefono,
-                        exc,
-                    )
-            await establecer_flujo(telefono, flujo_a_persistir)
-        elif nuevo_flujo is not None:
-            await establecer_flujo(telefono, nuevo_flujo)
-        return respuesta
 
     except Exception as error:
         import traceback
@@ -942,76 +417,6 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
                     "threshold_ms": UMBRAL_LENTO_MS,
                 },
             )
-
-
-def normalizar_respuesta_whatsapp(respuesta: Any) -> Dict[str, Any]:
-    """
-    Normaliza la respuesta para que siempre use el esquema esperado por wa-gateway.
-    """
-    def _normalizar_mensaje(item: Any) -> list[Dict[str, Any]]:
-        if item is None:
-            return [{"response": ""}]
-
-        if not isinstance(item, dict):
-            return [{"response": str(item)}]
-
-        if "messages" in item:
-            mensajes_anidados: list[Dict[str, Any]] = []
-            for nested in item.get("messages") or []:
-                mensajes_anidados.extend(_normalizar_mensaje(nested))
-            return mensajes_anidados
-
-        if "response" in item and isinstance(item.get("response"), list):
-            mensajes_anidados: list[Dict[str, Any]] = []
-            payload_base = {k: v for k, v in item.items() if k != "response"}
-            for nested in item.get("response") or []:
-                for mensaje in _normalizar_mensaje(nested):
-                    combinado = dict(payload_base)
-                    combinado.update(mensaje)
-                    mensajes_anidados.append(combinado)
-            return mensajes_anidados
-
-        mensaje = dict(item)
-        if "response" not in mensaje or mensaje["response"] is None:
-            mensaje["response"] = ""
-        elif not isinstance(mensaje["response"], str):
-            mensaje["response"] = str(mensaje["response"])
-        return [mensaje]
-
-    if respuesta is None:
-        return {"success": True, "messages": []}
-
-    if not isinstance(respuesta, dict):
-        return {"success": True, "messages": [{"response": str(respuesta)}]}
-
-    if "messages" in respuesta:
-        mensajes: list[Dict[str, Any]] = []
-        for item in respuesta.get("messages") or []:
-            mensajes.extend(_normalizar_mensaje(item))
-        normalizada = {k: v for k, v in respuesta.items() if k != "messages"}
-        normalizada["messages"] = mensajes
-        if "success" not in normalizada:
-            normalizada["success"] = True
-        return normalizada
-
-    if "response" in respuesta:
-        texto = respuesta.get("response")
-        mensajes: list[Dict[str, Any]] = []
-        if isinstance(texto, list):
-            for item in texto:
-                mensajes.extend(_normalizar_mensaje(item))
-        else:
-            mensajes.append({"response": str(texto) if texto is not None else ""})
-
-        normalizada = {k: v for k, v in respuesta.items() if k != "response"}
-        normalizada["messages"] = mensajes
-        if "success" not in normalizada:
-            normalizada["success"] = True
-        return normalizada
-
-    if "success" not in respuesta:
-        respuesta["success"] = True
-    return respuesta
 
 
 if __name__ == "__main__":

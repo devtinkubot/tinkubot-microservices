@@ -2,9 +2,10 @@
 
 from typing import Any, Dict, Optional
 
-from flows.constructors import construir_payload_menu_principal
-from flows.maintenance.views import manejar_vista_perfil
 from services.shared import es_salida_menu
+
+from ..compat_views import manejar_vista_perfil
+from ..menu import construir_menu_principal_mantenimiento
 
 
 def _es_salida_a_menu(texto_mensaje: str, opcion_menu: Optional[str]) -> bool:
@@ -46,7 +47,7 @@ async def manejar_vistas_mantenimiento(
             "response": {
                 "success": True,
                 "messages": [
-                    construir_payload_menu_principal(
+                    construir_menu_principal_mantenimiento(
                         esta_registrado=True,
                         approved_basic=bool(flujo.get("approved_basic")),
                     )

@@ -6,6 +6,7 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
+from services.availability.estados import es_estado_flujo_activo
 from services.shared import (
     RESPUESTAS_DISPONIBILIDAD_AFIRMATIVAS,
     RESPUESTAS_DISPONIBILIDAD_NEGATIVAS,
@@ -21,86 +22,6 @@ CLAVE_CONTEXTO_DISPONIBILIDAD = "availability:provider:{}:context"
 CLAVE_PENDIENTES_DISPONIBILIDAD = "availability:provider:{}:pending"
 CLAVE_CICLO_SOLICITUD = "availability:lifecycle:{}"
 CLAVE_ALIAS_DISPONIBILIDAD = "availability:alias:{}"
-ESTADO_ESPERANDO_DISPONIBILIDAD = "awaiting_availability_response"
-STANDARD_ONBOARDING_STATES = {
-    None,
-    "pending_verification",
-    "onboarding_consent",
-    "onboarding_city",
-    "onboarding_dni_front_photo",
-    "onboarding_face_photo",
-    "onboarding_experience",
-    "onboarding_specialty",
-    "onboarding_add_another_service",
-    "onboarding_services_confirmation",
-    "onboarding_services_edit_action",
-    "onboarding_services_edit_replace_select",
-    "onboarding_services_edit_replace_input",
-    "onboarding_services_edit_delete_select",
-    "onboarding_services_edit_add",
-    "onboarding_social_media",
-    "confirm",
-}
-MANUAL_PHONE_FALLBACK_STATES = {"onboarding_real_phone"}
-ONBOARDING_STATES = STANDARD_ONBOARDING_STATES | MANUAL_PHONE_FALLBACK_STATES
-MENU_STATES = {
-    "awaiting_menu_option",
-    "awaiting_personal_info_action",
-    "awaiting_professional_info_action",
-    "awaiting_deletion_confirmation",
-    "awaiting_active_service_action",
-    "awaiting_service_remove",
-    "awaiting_face_photo_update",
-    "awaiting_dni_front_photo_update",
-    "awaiting_dni_back_photo_update",
-    "viewing_personal_name",
-    "viewing_personal_city",
-    "viewing_personal_photo",
-    "viewing_personal_dni_front",
-    "viewing_personal_dni_back",
-    "viewing_professional_experience",
-    "viewing_professional_services",
-    "viewing_professional_service",
-    "viewing_professional_social",
-    "viewing_professional_social_facebook",
-    "viewing_professional_social_instagram",
-    "viewing_professional_certificates",
-    "viewing_professional_certificate",
-}
-PROFILE_COMPLETION_STATES = {
-    "maintenance_experience",
-    "maintenance_social_media",
-    "maintenance_social_facebook_username",
-    "maintenance_social_instagram_username",
-    "maintenance_certificate",
-    "maintenance_specialty",
-    "maintenance_profile_service_confirmation",
-    "maintenance_add_another_service",
-    "maintenance_services_confirmation",
-    "maintenance_profile_completion_confirmation",
-    "maintenance_profile_completion_edit_action",
-    "maintenance_services_edit_action",
-    "maintenance_services_edit_replace_select",
-    "maintenance_services_edit_replace_input",
-    "maintenance_services_edit_delete_select",
-    "maintenance_services_edit_add",
-    "awaiting_experience",
-    "awaiting_social_media",
-    "awaiting_social_media_onboarding",
-    "onboarding_social_facebook_username",
-    "onboarding_social_instagram_username",
-    "awaiting_certificate",
-    "awaiting_specialty",
-    "awaiting_profile_service_confirmation",
-    "awaiting_add_another_service",
-    "awaiting_services_confirmation",
-    "awaiting_services_edit_action",
-    "awaiting_services_edit_replace_select",
-    "awaiting_services_edit_replace_input",
-    "awaiting_services_edit_delete_select",
-    "awaiting_services_edit_add",
-    "maintenance_profile_completion_finalize",
-}
 
 
 def _parsear_respuesta_disponibilidad(texto: str) -> Optional[str]:
@@ -254,9 +175,7 @@ async def _registrar_respuesta_disponibilidad_si_aplica(
         await cliente_redis.get(clave_contexto)
     )
     pendientes = _decodificar_payload_redis(pendientes_crudo)
-    flujo_activo = estado_actual is not None and estado_actual in (
-        ONBOARDING_STATES | MENU_STATES | PROFILE_COMPLETION_STATES
-    )
+    flujo_activo = es_estado_flujo_activo(estado_actual)
 
     esperando_disponibilidad = bool(
         isinstance(contexto_disponibilidad, dict)

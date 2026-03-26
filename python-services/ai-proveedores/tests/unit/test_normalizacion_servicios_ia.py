@@ -1,10 +1,11 @@
 import asyncio
 import json
-import pytest
 import sys
 import types
 from pathlib import Path
 from types import SimpleNamespace
+
+import pytest
 
 imghdr_stub = types.ModuleType("imghdr")
 setattr(imghdr_stub, "what", lambda *args, **kwargs: None)
@@ -12,32 +13,29 @@ sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import flows.maintenance.services as modulo_services  # noqa: E402
+from flows.maintenance.services import (  # noqa: E402
+    manejar_agregar_servicios,
+    manejar_confirmacion_agregar_servicios,
+)
 from flows.maintenance.services_confirmation import (  # noqa: E402
-    manejar_accion_edicion_servicios_registro,
-    manejar_confirmacion_servicios,
-    manejar_decision_agregar_otro_servicio,
-    manejar_eliminacion_servicio_registro,
     manejar_confirmacion_servicio_perfil,
-    manejar_reemplazo_servicio_registro,
-    manejar_seleccion_reemplazo_servicio_registro,
 )
 from flows.maintenance.specialty import (  # noqa: E402
     manejar_espera_especialidad,
     normalizar_servicio_registro_individual,
 )
-from flows.maintenance.services import (  # noqa: E402
-    manejar_agregar_servicios,
-    manejar_confirmacion_agregar_servicios,
-)
 from flows.onboarding.handlers.experiencia import (  # noqa: E402
     manejar_espera_experiencia_onboarding,
-)
-from flows.onboarding.handlers.servicios import (  # noqa: E402
-    manejar_espera_servicios_onboarding,
 )
 from flows.onboarding.handlers.servicios_confirmacion import (  # noqa: E402
     manejar_confirmacion_servicios_onboarding,
     manejar_decision_agregar_otro_servicio_onboarding,
+)
+from flows.onboarding.handlers.servicios_edicion import (  # noqa: E402
+    manejar_accion_edicion_servicios_registro,
+    manejar_eliminacion_servicio_registro,
+    manejar_reemplazo_servicio_registro,
+    manejar_seleccion_reemplazo_servicio_registro,
 )
 from flows.onboarding.router import manejar_estado_onboarding  # noqa: E402
 from flows.validators.name import validar_nombre_completo  # noqa: E402
@@ -50,12 +48,6 @@ from services.maintenance import (  # noqa: E402
 from services.maintenance.asistente_clarificacion import (  # noqa: E402
     construir_mensaje_clarificacion_servicio,
 )
-from utils import (  # noqa: E402
-    dividir_cadena_servicios,
-    parsear_servicios_numerados_con_limite,
-    normalizar_texto_visible_con_ia,
-    normalizar_texto_visible_corto,
-)
 from services.maintenance.validacion_semantica import (  # noqa: E402
     validar_servicio_semanticamente,
 )
@@ -65,6 +57,12 @@ from templates.onboarding import (  # noqa: E402
 )
 from templates.onboarding.registration import (  # noqa: E402
     mensaje_correccion_servicios,
+)
+from utils import (  # noqa: E402
+    dividir_cadena_servicios,
+    normalizar_texto_visible_con_ia,
+    normalizar_texto_visible_corto,
+    parsear_servicios_numerados_con_limite,
 )
 
 
@@ -124,7 +122,7 @@ async def test_onboarding_experiencia_solo_primera_vez_muestra_imagen(monkeypatc
         "https://example.com/services-image.png",
     )
 
-    flujo = {"state": "awaiting_experience"}
+    flujo = {"state": "onboarding_experience"}
 
     respuesta = await manejar_espera_experiencia_onboarding(
         flujo=flujo,
@@ -147,7 +145,7 @@ async def test_onboarding_agregar_otro_servicio_va_sin_imagen(monkeypatch):
     )
 
     flujo = {
-        "state": "awaiting_add_another_service",
+        "state": "onboarding_add_another_service",
         "services_guide_shown": True,
         "servicios_temporales": ["instalaciones eléctricas"],
     }
@@ -179,7 +177,7 @@ async def test_router_onboarding_nuevo_enruta_servicios_compactos(monkeypatch):
     )
 
     respuesta = await manejar_estado_onboarding(
-        estado="awaiting_specialty",
+        estado="onboarding_specialty",
         flujo={"mode": "registration"},
         telefono="593999111200@s.whatsapp.net",
         texto_mensaje="1 albañilería 2 plomería",
@@ -193,7 +191,7 @@ async def test_router_onboarding_nuevo_enruta_servicios_compactos(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_handler_onboarding_experiencia_avanza_a_servicios():
-    flujo = {"state": "awaiting_experience"}
+    flujo = {"state": "onboarding_experience"}
 
     respuesta = await manejar_espera_experiencia_onboarding(
         flujo=flujo,
@@ -249,7 +247,7 @@ def test_parsear_servicios_numerados_con_limite_recorta_a_siete():
 
 @pytest.mark.asyncio
 async def test_espera_experiencia_onboarding_muestra_lista_de_ejemplos():
-    flujo = {"state": "awaiting_experience"}
+    flujo = {"state": "onboarding_experience"}
 
     respuesta = await manejar_espera_experiencia_onboarding(
         flujo=flujo,
@@ -261,13 +259,10 @@ async def test_espera_experiencia_onboarding_muestra_lista_de_ejemplos():
     assert flujo["experience_range"] == "3 a 5 años"
     assert respuesta["messages"][0]["media_type"] == "image"
     assert "tinkubot_add_services.png" in respuesta["messages"][0]["media_url"]
-    assert (
-        respuesta["messages"][0]["response"]
-        == (
-            "*Describe el servicio que ofreces*\n\n"
-            "Escribe solo un servicio por mensaje. "
-            "Mientras más claro y detallado sea, mejor podremos clasificarlo."
-        )
+    assert respuesta["messages"][0]["response"] == (
+        "*Describe el servicio que ofreces*\n\n"
+        "Escribe solo un servicio por mensaje. "
+        "Mientras más claro y detallado sea, mejor podremos clasificarlo."
     )
 
 
@@ -507,11 +502,10 @@ def test_espera_especialidad_onboarding_con_linea_numerada_va_a_consentimiento(
         _TransformadorLinea,
     )
     monkeypatch.setattr(
-        "flows.maintenance."
-        "specialty.validar_servicio_semanticamente",
+        "flows.maintenance.specialty.validar_servicio_semanticamente",
         _fake_validar_servicio_semanticamente,
     )
-    flujo = {"state": "awaiting_specialty"}
+    flujo = {"state": "onboarding_specialty"}
 
     respuesta = asyncio.run(
         manejar_espera_especialidad(
@@ -529,12 +523,15 @@ def test_espera_especialidad_onboarding_con_linea_numerada_va_a_consentimiento(
         "mantenimiento de software",
         "soporte tecnico",
     ]
-    assert respuesta["messages"][0]["ui"]["header_text"] == "Resumen de servicios identificados"
+    assert (
+        respuesta["messages"][0]["ui"]["header_text"]
+        == "Resumen de servicios identificados"
+    )
     assert respuesta["messages"][0]["ui"]["options"][0]["title"] == "Continuar"
     assert respuesta["messages"][0]["ui"]["options"][1]["title"] == "Corregir"
-    assert "¿Estás de acuerdo con esta lista?" not in respuesta["messages"][0][
-        "response"
-    ]
+    assert (
+        "¿Estás de acuerdo con esta lista?" not in respuesta["messages"][0]["response"]
+    )
 
 
 def test_espera_especialidad_onboarding_rechaza_multiservicio_sin_numeros(
@@ -556,9 +553,10 @@ def test_espera_especialidad_onboarding_rechaza_multiservicio_sin_numeros(
 
     respuesta = asyncio.run(
         manejar_espera_especialidad(
-            flujo={"state": "awaiting_specialty"},
+            flujo={"state": "onboarding_specialty"},
             texto_mensaje=(
-                "Albañilería general, plomería y fontanería, jardinería y poda de árboles"
+                "Albañilería general, plomería y fontanería, "
+                "jardinería y poda de árboles"
             ),
             cliente_openai=object(),
         )
@@ -592,13 +590,12 @@ def test_confirmacion_servicio_onboarding_avanza_al_siguiente_servicio(monkeypat
         }
 
     monkeypatch.setattr(
-        "flows.maintenance."
-        "specialty.validar_servicio_semanticamente",
+        "flows.maintenance.specialty.validar_servicio_semanticamente",
         _fake_validar_servicio_semanticamente,
     )
 
     flujo = {
-        "state": "awaiting_specialty",
+        "state": "onboarding_specialty",
         "servicios_temporales": [],
         "profile_completion_mode": True,
     }
@@ -626,8 +623,7 @@ def test_confirmacion_servicio_onboarding_avanza_al_siguiente_servicio(monkeypat
     assert respuesta["messages"][0]["media_type"] == "image"
     assert "tinkubot_add_services.png" in respuesta["messages"][0]["media_url"]
     assert (
-        respuesta["messages"][0]["response"]
-        == "*Describe el servicio que ofreces*\n\n"
+        respuesta["messages"][0]["response"] == "*Describe el servicio que ofreces*\n\n"
         "Escribe solo un servicio por mensaje. "
         "Mientras más claro y detallado sea, mejor podremos clasificarlo."
     )
@@ -690,8 +686,7 @@ def test_espera_especialidad_onboarding_con_tres_servicios_va_a_consentimiento(
         _TransformadorExtra,
     )
     monkeypatch.setattr(
-        "flows.maintenance."
-        "specialty.validar_servicio_semanticamente",
+        "flows.maintenance.specialty.validar_servicio_semanticamente",
         _fake_validar_servicio_semanticamente,
     )
     flujo = {
@@ -700,7 +695,7 @@ def test_espera_especialidad_onboarding_con_tres_servicios_va_a_consentimiento(
             "servicio 2",
             "servicio 3",
         ],
-        "state": "awaiting_specialty",
+        "state": "onboarding_specialty",
     }
 
     respuesta = asyncio.run(
@@ -713,12 +708,15 @@ def test_espera_especialidad_onboarding_con_tres_servicios_va_a_consentimiento(
 
     assert flujo["state"] == "onboarding_services_confirmation"
     assert flujo["specialty"] == "servicio 1, servicio 2, servicio 3, servicio extra"
-    assert respuesta["messages"][0]["ui"]["header_text"] == "Resumen de servicios identificados"
+    assert (
+        respuesta["messages"][0]["ui"]["header_text"]
+        == "Resumen de servicios identificados"
+    )
     assert respuesta["messages"][0]["ui"]["options"][0]["title"] == "Continuar"
     assert respuesta["messages"][0]["ui"]["options"][1]["title"] == "Corregir"
-    assert "¿Estás de acuerdo con esta lista?" not in respuesta["messages"][0][
-        "response"
-    ]
+    assert (
+        "¿Estás de acuerdo con esta lista?" not in respuesta["messages"][0]["response"]
+    )
 
 
 def test_normalizacion_servicio_pide_aclaracion_en_lugar_de_revision(monkeypatch):
@@ -765,14 +763,11 @@ def test_normalizacion_servicio_pide_aclaracion_en_lugar_de_revision(monkeypatch
         _TransformadorPaneles,
     )
     monkeypatch.setattr(
-        "flows.maintenance."
-        "specialty.validar_servicio_semanticamente",
+        "flows.maintenance.specialty.validar_servicio_semanticamente",
         _fake_validar_servicio_semanticamente,
     )
     monkeypatch.setattr(
-        "flows.maintenance."
-        "specialty."
-        "construir_mensaje_clarificacion_servicio",
+        "flows.maintenance." "specialty." "construir_mensaje_clarificacion_servicio",
         _fake_construir_mensaje_clarificacion_servicio,
     )
 
@@ -854,7 +849,7 @@ def test_asistente_clarificacion_usa_ejemplos_reales(monkeypatch):
 
 def test_decision_agregar_otro_no_pasa_a_resumen_final():
     flujo = {
-        "state": "awaiting_add_another_service",
+        "state": "onboarding_add_another_service",
         "servicios_temporales": ["desarrollo web", "cableado estructurado"],
     }
 
@@ -881,9 +876,7 @@ def test_decision_agregar_otro_no_pasa_a_resumen_final():
 
 
 def test_confirmacion_agregar_servicios_re_normaliza_correccion_manual(monkeypatch):
-    monkeypatch.setattr(
-        modulo_services, "TransformadorServicios", _TransformadorOK
-    )
+    monkeypatch.setattr(modulo_services, "TransformadorServicios", _TransformadorOK)
 
     async def _fake_validar_servicio_semanticamente(**kwargs):
         servicio = kwargs["service_name"]
@@ -940,7 +933,7 @@ def test_espera_especialidad_bloquea_servicio_generico_critico(monkeypatch):
 
     respuesta = asyncio.run(
         manejar_espera_especialidad(
-            flujo={"state": "awaiting_specialty"},
+            flujo={"state": "onboarding_specialty"},
             texto_mensaje="asesoria legal",
             cliente_openai=object(),
         )
@@ -1010,8 +1003,7 @@ def test_normalizar_servicio_pide_aclaracion_en_servicio_generico(monkeypatch):
         }
 
     monkeypatch.setattr(
-        "flows.maintenance."
-        "specialty.validar_servicio_semanticamente",
+        "flows.maintenance.specialty.validar_servicio_semanticamente",
         _fake_validar_servicio_semanticamente,
     )
 
@@ -1062,8 +1054,7 @@ def test_normalizar_servicio_acepta_transporte_y_barco(monkeypatch):
         }
 
     monkeypatch.setattr(
-        "flows.maintenance."
-        "specialty.validar_servicio_semanticamente",
+        "flows.onboarding.handlers.servicios.validar_servicio_semanticamente",
         _fake_validar_servicio_semanticamente,
     )
 
@@ -1096,15 +1087,12 @@ def test_confirmacion_servicios_acepta_resumen_y_pasa_a_experiencia():
         manejar_confirmacion_servicios_onboarding(
             flujo=flujo,
             texto_mensaje="1",
-            cliente_openai=None,
         )
     )
 
     assert flujo["state"] == "onboarding_social_media"
     assert flujo["specialty"] == "desarrollo web, cableado estructurado"
-    assert "agrega tus redes sociales" in respuesta["messages"][0][
-        "response"
-    ].lower()
+    assert "agrega tus redes sociales" in respuesta["messages"][0]["response"].lower()
 
 
 def test_confirmacion_servicios_abre_menu_edicion():
@@ -1117,7 +1105,6 @@ def test_confirmacion_servicios_abre_menu_edicion():
         manejar_confirmacion_servicios_onboarding(
             flujo=flujo,
             texto_mensaje="2",
-            cliente_openai=None,
         )
     )
 
@@ -1150,8 +1137,7 @@ def test_reemplazo_servicio_en_edicion(monkeypatch):
         }
 
     monkeypatch.setattr(
-        "flows.maintenance."
-        "specialty.validar_servicio_semanticamente",
+        "flows.onboarding.handlers.servicios.validar_servicio_semanticamente",
         _fake_validar_servicio_semanticamente,
     )
     flujo = {
