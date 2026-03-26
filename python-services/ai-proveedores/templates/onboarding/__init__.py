@@ -31,7 +31,6 @@ from .ciudad import (
     ui_solicitud_ubicacion,
 )
 from .consentimiento import (
-    mensaje_consentimiento_rechazado,
     payload_consentimiento_proveedor,
 )
 from .documentos import (
@@ -133,7 +132,6 @@ __all__ = [
     "payload_redes_sociales_onboarding_con_imagen",
     "preguntar_redes_sociales_onboarding",
     "payload_consentimiento_proveedor",
-    "mensaje_consentimiento_rechazado",
     "payload_recordatorio_onboarding_48h",
     "payload_baja_onboarding_72h",
     "TEMPLATE_WARNING_48H_ID",

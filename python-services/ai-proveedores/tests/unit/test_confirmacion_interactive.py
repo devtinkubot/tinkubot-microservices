@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from services.onboarding.confirmacion import (  # noqa: E402
     _resolver_opcion_confirmacion,
 )
-from templates.onboarding.registration.confirmacion import (  # noqa: E402
+from templates.maintenance.confirmacion import (  # noqa: E402
     CONFIRM_ACCEPT_ID,
     CONFIRM_REJECT_ID,
     payload_confirmacion_resumen,

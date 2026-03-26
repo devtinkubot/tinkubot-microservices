@@ -77,6 +77,8 @@ async def test_consentimiento_onboarding_aceptado_actualiza_flujo_y_registra(
 
     assert captured["flow"]["state"] == "onboarding_city"
     assert captured["flow"]["has_consent"] is True
+    assert captured["flow"]["real_phone"] == "593999111222"
+    assert captured["flow"].get("requires_real_phone") is False
     assert captured["registro"]["respuesta"] == "accepted"
     assert respuesta["messages"][0]["response"].startswith(
         "Ahora comparte tu *ubicación*"
@@ -156,7 +158,96 @@ async def test_consentimiento_onboarding_aceptado_crea_borrador_si_no_hay_provid
 
 
 @pytest.mark.asyncio
-async def test_consentimiento_onboarding_rechazado_reinicia_flujo(monkeypatch):
+async def test_consentimiento_onboarding_persiste_metadata_whatsapp_al_aceptar(
+    monkeypatch,
+):
+    principal_stub = types.ModuleType("principal")
+    principal_stub.supabase = object()
+    monkeypatch.setitem(sys.modules, "principal", principal_stub)
+
+    captured: Dict[str, Any] = {}
+    flujo = {
+        "state": "onboarding_consent",
+        "display_name": "@DiegoUnkuch",
+        "formatted_name": "",
+        "first_name": "",
+        "last_name": "",
+        "has_consent": False,
+    }
+
+    class _Query:
+        def update(self, payload):
+            captured["payload"] = dict(payload)
+            return self
+
+        def eq(self, *_args, **_kwargs):
+            return self
+
+        def execute(self):
+            return None
+
+    class _SupabaseStub:
+        def table(self, table_name):
+            assert table_name == "providers"
+            return _Query()
+
+    async def _fake_establecer_flujo(_telefono: str, flujo_guardado: Dict[str, Any]):
+        captured["flow"] = dict(flujo_guardado)
+
+    async def _fake_run_supabase(operation, **_kwargs):
+        return operation()
+
+    async def _fake_registrar_consentimiento(
+        proveedor_id: str | None,
+        telefono: str,
+        carga: Dict[str, Any],
+        respuesta: str,
+    ):
+        captured["registro"] = {
+            "proveedor_id": proveedor_id,
+            "telefono": telefono,
+            "respuesta": respuesta,
+        }
+
+    monkeypatch.setattr(
+        "services.onboarding.session.establecer_flujo", _fake_establecer_flujo
+    )
+    monkeypatch.setattr(
+        "services.onboarding.consentimiento.run_supabase", _fake_run_supabase
+    )
+    monkeypatch.setattr(
+        "services.onboarding.consentimiento.registrar_consentimiento",
+        _fake_registrar_consentimiento,
+    )
+
+    respuesta = await procesar_respuesta_consentimiento_onboarding(
+        telefono="593999111222@s.whatsapp.net",
+        flujo=flujo,
+        carga={
+            "selected_option": "1",
+            "message": "Acepto",
+            "content": "Acepto",
+        },
+        perfil_proveedor={"id": "prov-123", "full_name": "Proveedor Demo"},
+        supabase=_SupabaseStub(),
+    )
+
+    assert captured["payload"]["has_consent"] is True
+    assert captured["payload"]["display_name"] == "@DiegoUnkuch"
+    assert "formatted_name" not in captured["payload"]
+    assert "first_name" not in captured["payload"]
+    assert "last_name" not in captured["payload"]
+    assert captured["payload"]["real_phone"] == "593999111222"
+    assert captured["registro"]["respuesta"] == "accepted"
+    assert respuesta["messages"][0]["response"].startswith(
+        "Ahora comparte tu *ubicación*"
+    )
+
+
+@pytest.mark.asyncio
+async def test_consentimiento_onboarding_sin_jid_numerico_pide_real_phone(
+    monkeypatch,
+):
     principal_stub = types.ModuleType("principal")
     principal_stub.supabase = object()
     monkeypatch.setitem(sys.modules, "principal", principal_stub)
@@ -168,8 +259,68 @@ async def test_consentimiento_onboarding_rechazado_reinicia_flujo(monkeypatch):
         "has_consent": False,
     }
 
-    async def _fake_reiniciar_flujo(_telefono: str):
-        captured["reinicio"] = True
+    async def _fake_establecer_flujo(_telefono: str, flujo_guardado: Dict[str, Any]):
+        captured["flow"] = dict(flujo_guardado)
+
+    async def _fake_run_supabase(*_args, **_kwargs):
+        return None
+
+    async def _fake_registrar_consentimiento(
+        proveedor_id: str | None,
+        telefono: str,
+        carga: Dict[str, Any],
+        respuesta: str,
+    ):
+        captured["registro"] = {
+            "proveedor_id": proveedor_id,
+            "telefono": telefono,
+            "respuesta": respuesta,
+        }
+
+    monkeypatch.setattr(
+        "services.onboarding.session.establecer_flujo", _fake_establecer_flujo
+    )
+    monkeypatch.setattr(
+        "services.onboarding.consentimiento.run_supabase", _fake_run_supabase
+    )
+    monkeypatch.setattr(
+        "services.onboarding.consentimiento.registrar_consentimiento",
+        _fake_registrar_consentimiento,
+    )
+
+    respuesta = await procesar_respuesta_consentimiento_onboarding(
+        telefono="106214625132641@lid",
+        flujo=flujo,
+        carga={
+            "selected_option": "1",
+            "message": "Acepto",
+            "content": "Acepto",
+        },
+        perfil_proveedor={"id": "prov-123", "full_name": "Proveedor Demo"},
+    )
+
+    assert captured["flow"]["state"] == "onboarding_real_phone"
+    assert captured["flow"]["requires_real_phone"] is True
+    assert "real_phone" not in captured["flow"]
+    assert respuesta["messages"][0].lower().startswith(
+        "*para continuar, escribe tu número de celular"
+    )
+
+
+@pytest.mark.asyncio
+async def test_consentimiento_onboarding_rechazo_inesperado_reemite_solicitud(
+    monkeypatch,
+):
+    principal_stub = types.ModuleType("principal")
+    principal_stub.supabase = object()
+    monkeypatch.setitem(sys.modules, "principal", principal_stub)
+
+    captured: Dict[str, Any] = {}
+    flujo = {
+        "state": "onboarding_consent",
+        "id": "prov-123",
+        "has_consent": False,
+    }
 
     async def _fake_run_supabase(*_args, **_kwargs):
         return None
@@ -177,9 +328,6 @@ async def test_consentimiento_onboarding_rechazado_reinicia_flujo(monkeypatch):
     async def _fake_registrar_consentimiento(*_args, **_kwargs):
         captured["registro"] = True
 
-    monkeypatch.setattr(
-        "services.onboarding.session.reiniciar_flujo", _fake_reiniciar_flujo
-    )
     monkeypatch.setattr(
         "services.onboarding.consentimiento.run_supabase", _fake_run_supabase
     )
@@ -195,9 +343,11 @@ async def test_consentimiento_onboarding_rechazado_reinicia_flujo(monkeypatch):
         perfil_proveedor={"id": "prov-123"},
     )
 
-    assert captured["reinicio"] is True
-    assert captured["registro"] is True
-    assert "entendido" in respuesta["messages"][0]["response"].lower()
+    assert "registro" not in captured
+    assert flujo["state"] == "onboarding_consent"
+    assert respuesta["messages"][0]["ui"]["type"] == "buttons"
+    assert respuesta["messages"][0]["ui"]["options"][0]["title"] == "Aceptar"
+    assert "política de privacidad" in respuesta["messages"][0]["response"].lower()
 
 
 @pytest.mark.asyncio

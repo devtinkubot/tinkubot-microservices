@@ -57,6 +57,15 @@ Pasos principales:
 7. Consentimiento final.
 8. Envío a revisión.
 
+Regla operativa:
+
+- Cada paso normaliza su entrada antes de persistirla.
+- Consentimiento solo avanza con el botón interactivo de aceptar; texto libre o rechazos se reemiten como solicitud de consentimiento.
+- `real_phone` solo se deriva automáticamente en consentimiento cuando el `phone` observado es un JID numérico usable (`...@s.whatsapp.net`).
+- Si no hay un JID numérico usable, `real_phone` se pide explícitamente después de consentimiento.
+- `@lid` y `user_id`/BSUID son identidades de continuidad, no teléfonos humanos.
+- Al final del flujo solo se ajusta el estado del proveedor y el checkpoint duradero; no se reinterpreta identidad.
+
 ## Review
 
 La revisión vive en:

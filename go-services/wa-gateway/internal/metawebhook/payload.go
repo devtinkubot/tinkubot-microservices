@@ -34,9 +34,12 @@ type metaContact struct {
 }
 
 type metaProfile struct {
-	Name        string `json:"name"`
-	Username    string `json:"username,omitempty"`
-	CountryCode string `json:"country_code,omitempty"`
+	Name          string `json:"name,omitempty"`
+	FormattedName string `json:"formatted_name,omitempty"`
+	FirstName     string `json:"first_name,omitempty"`
+	LastName      string `json:"last_name,omitempty"`
+	Username      string `json:"username,omitempty"`
+	CountryCode   string `json:"country_code,omitempty"`
 }
 
 type metaMetadata struct {
@@ -44,20 +47,20 @@ type metaMetadata struct {
 }
 
 type metaMessage struct {
-	From       string           `json:"from"`
-	FromUserID string           `json:"from_user_id,omitempty"` // BSUID - Business-Scoped User ID
-	ID         string           `json:"id"`
-	Timestamp  string           `json:"timestamp"`
-	Type       string           `json:"type"`
-	Context    *metaContext     `json:"context,omitempty"`
-	Text       *metaText        `json:"text,omitempty"`
+	From        string           `json:"from"`
+	FromUserID  string           `json:"from_user_id,omitempty"` // BSUID - Business-Scoped User ID
+	ID          string           `json:"id"`
+	Timestamp   string           `json:"timestamp"`
+	Type        string           `json:"type"`
+	Context     *metaContext     `json:"context,omitempty"`
+	Text        *metaText        `json:"text,omitempty"`
 	Interactive *metaInteractive `json:"interactive,omitempty"`
-	Location   *metaLocation    `json:"location,omitempty"`
-	Image      *metaImage       `json:"image,omitempty"`
-	Document   *metaDocument    `json:"document,omitempty"`
-	Audio      *metaAudio       `json:"audio,omitempty"`
-	Video      *metaVideo       `json:"video,omitempty"`
-	Button     *metaButton      `json:"button,omitempty"`
+	Location    *metaLocation    `json:"location,omitempty"`
+	Image       *metaImage       `json:"image,omitempty"`
+	Document    *metaDocument    `json:"document,omitempty"`
+	Audio       *metaAudio       `json:"audio,omitempty"`
+	Video       *metaVideo       `json:"video,omitempty"`
+	Button      *metaButton      `json:"button,omitempty"`
 }
 
 type metaButton struct {
@@ -140,8 +143,12 @@ type incomingMessage struct {
 	MediaMimetype  string
 	MediaFilename  string
 	// Contact profile fields
-	Username    string
-	CountryCode string
+	DisplayName   string
+	FormattedName string
+	FirstName     string
+	LastName      string
+	Username      string
+	CountryCode   string
 }
 
 func extractIncomingMessages(evt webhookEvent) []incomingMessage {
@@ -158,17 +165,27 @@ func extractIncomingMessages(evt webhookEvent) []incomingMessage {
 			}
 			phoneNumberID := ch.Value.Metadata.PhoneNumberID
 
-			// Build contact lookup map by wa_id for efficient lookup
-			contactLookup := make(map[string]metaContact)
+			// Build contact lookup maps by wa_id and user_id for efficient lookup
+			contactLookupByWAID := make(map[string]metaContact)
+			contactLookupByUserID := make(map[string]metaContact)
 			for _, contact := range ch.Value.Contacts {
-				if contact.WAID != "" {
-					contactLookup[contact.WAID] = contact
+				if waID := strings.TrimSpace(contact.WAID); waID != "" {
+					contactLookupByWAID[waID] = contact
+				}
+				if userID := strings.TrimSpace(contact.UserID); userID != "" {
+					contactLookupByUserID[userID] = contact
 				}
 			}
 
 			for k, msg := range ch.Value.Messages {
-				log.Printf("[MetaWebhook] DEBUG message[%d] from=%s type=%s id=%s from_user_id=%s", k, msg.From, msg.Type, msg.ID, msg.FromUserID)
-				if msg.From == "" {
+				rawFrom := strings.TrimSpace(msg.From)
+				fromUserIDRaw := strings.TrimSpace(msg.FromUserID)
+				resolvedFrom := rawFrom
+				if resolvedFrom == "" {
+					resolvedFrom = fromUserIDRaw
+				}
+				log.Printf("[MetaWebhook] DEBUG message[%d] from=%s type=%s id=%s from_user_id=%s", k, resolvedFrom, msg.Type, msg.ID, msg.FromUserID)
+				if resolvedFrom == "" {
 					log.Printf("[MetaWebhook] DEBUG message[%d] skipped: empty from", k)
 					continue
 				}
@@ -179,31 +196,61 @@ func extractIncomingMessages(evt webhookEvent) []incomingMessage {
 				}
 
 				// Extract contact info if available
-				var username, countryCode, contactBSUID string
-				if contact, ok := contactLookup[msg.From]; ok {
+				var (
+					displayName   string
+					formattedName string
+					firstName     string
+					lastName      string
+					username      string
+					countryCode   string
+					contactBSUID  string
+				)
+				if contact, ok := contactLookupByWAID[resolvedFrom]; ok {
+					formattedName = strings.TrimSpace(contact.Profile.FormattedName)
+					firstName = strings.TrimSpace(contact.Profile.FirstName)
+					lastName = strings.TrimSpace(contact.Profile.LastName)
+					displayName = strings.TrimSpace(contact.Profile.Name)
+					if formattedName != "" {
+						displayName = formattedName
+					}
 					username = strings.TrimSpace(contact.Profile.Username)
 					countryCode = strings.TrimSpace(contact.Profile.CountryCode)
 					contactBSUID = strings.TrimSpace(contact.UserID)
-					if username != "" || countryCode != "" || contactBSUID != "" {
-						log.Printf("[MetaWebhook] DEBUG message[%d] contact_found wa_id=%s username=%s country_code=%s user_id=%s",
-							k, msg.From, username, countryCode, contactBSUID)
+					if displayName != "" || formattedName != "" || firstName != "" || lastName != "" || username != "" || countryCode != "" || contactBSUID != "" {
+						log.Printf("[MetaWebhook] DEBUG message[%d] contact_found wa_id=%s display_name=%s formatted_name=%s first_name=%s last_name=%s username=%s country_code=%s user_id=%s",
+							k, resolvedFrom, displayName, formattedName, firstName, lastName, username, countryCode, contactBSUID)
+					}
+				} else if contact, ok := contactLookupByUserID[resolvedFrom]; ok {
+					formattedName = strings.TrimSpace(contact.Profile.FormattedName)
+					firstName = strings.TrimSpace(contact.Profile.FirstName)
+					lastName = strings.TrimSpace(contact.Profile.LastName)
+					displayName = strings.TrimSpace(contact.Profile.Name)
+					if formattedName != "" {
+						displayName = formattedName
+					}
+					username = strings.TrimSpace(contact.Profile.Username)
+					countryCode = strings.TrimSpace(contact.Profile.CountryCode)
+					contactBSUID = strings.TrimSpace(contact.UserID)
+					if displayName != "" || formattedName != "" || firstName != "" || lastName != "" || username != "" || countryCode != "" || contactBSUID != "" {
+						log.Printf("[MetaWebhook] DEBUG message[%d] contact_found wa_id=%s display_name=%s formatted_name=%s first_name=%s last_name=%s username=%s country_code=%s user_id=%s",
+							k, resolvedFrom, displayName, formattedName, firstName, lastName, username, countryCode, contactBSUID)
 					}
 				}
 
 				// Determine BSUID: prefer from_user_id from message, fallback to contact's user_id
-				fromUserID := strings.TrimSpace(msg.FromUserID)
+				fromUserID := fromUserIDRaw
 				if fromUserID == "" && contactBSUID != "" {
 					fromUserID = contactBSUID
 				}
 
 				// Log BSUID detection
 				if fromUserID != "" {
-					log.Printf("[MetaWebhook] BSUID detected: from_user_id=%s (from=%s)", fromUserID, msg.From)
+					log.Printf("[MetaWebhook] BSUID detected: from_user_id=%s (from=%s)", fromUserID, resolvedFrom)
 				}
 
 				entry := incomingMessage{
 					PhoneNumberID:  phoneNumberID,
-					From:           msg.From,
+					From:           resolvedFrom,
 					FromUserID:     fromUserID,
 					MessageID:      strings.TrimSpace(msg.ID),
 					MessageTS:      strings.TrimSpace(msg.Timestamp),
@@ -214,6 +261,10 @@ func extractIncomingMessages(evt webhookEvent) []incomingMessage {
 					SelectedOption: selectedOption,
 					FlowPayload:    flowPayload,
 					Location:       location,
+					DisplayName:    displayName,
+					FormattedName:  formattedName,
+					FirstName:      firstName,
+					LastName:       lastName,
 					Username:       username,
 					CountryCode:    countryCode,
 				}
@@ -222,7 +273,7 @@ func extractIncomingMessages(evt webhookEvent) []incomingMessage {
 					entry.MediaMimetype = media.MimeType
 					entry.MediaFilename = media.Filename
 				}
-				log.Printf("[MetaWebhook] DEBUG message[%d] extracted: phone_number_id=%s from=%s from_user_id=%s type=%s", k, phoneNumberID, msg.From, fromUserID, messageType)
+				log.Printf("[MetaWebhook] DEBUG message[%d] extracted: phone_number_id=%s from=%s from_user_id=%s type=%s", k, phoneNumberID, resolvedFrom, fromUserID, messageType)
 				out = append(out, entry)
 			}
 		}

@@ -1,10 +1,8 @@
-"""Resumen de confirmación del registro del proveedor."""
+"""Resumen de confirmación reutilizado en maintenance."""
 
 from typing import Any, Dict
 
-from templates.onboarding.registration.confirmacion import (
-    mensaje_resumen_confirmacion_registro,
-)
+from .confirmacion import mensaje_resumen_confirmacion_registro
 from templates.shared.estados import (
     estado_no_especificada,
     estado_no_especificado,
@@ -32,3 +30,4 @@ def construir_resumen_confirmacion_registro(flujo: Dict[str, Any]) -> str:
         f"- Foto de perfil: {foto_perfil}",
     ]
     return "\n".join(lineas)
+

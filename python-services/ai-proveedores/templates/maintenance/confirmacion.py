@@ -1,8 +1,4 @@
-"""Mensajes de confirmación y resumen de registro.
-
-Este módulo contiene mensajes relacionados con la confirmación
-de datos recibidos y resumen del registro del proveedor.
-"""
+"""Mensajes de confirmación y resumen reutilizados en maintenance."""
 
 from typing import Any, Dict
 
@@ -12,14 +8,7 @@ CONFIRM_REJECT_ID = "confirm_reject"
 
 
 def payload_confirmacion_resumen(resumen: str) -> Dict[str, Any]:
-    """Retorna payload interactivo con botones para confirmar registro.
-
-    Args:
-        resumen: Texto del resumen de datos a confirmar.
-
-    Returns:
-        Diccionario con estructura de mensaje incluyendo UI de botones.
-    """
+    """Retorna payload interactivo con botones para confirmar un resumen."""
     ui: Dict[str, Any] = {
         "type": "buttons",
         "id": "provider_registration_confirm_v1",
@@ -38,3 +27,4 @@ def payload_confirmacion_resumen(resumen: str) -> Dict[str, Any]:
 
 def mensaje_resumen_confirmacion_registro() -> str:
     return "✅ *Por favor confirma tus datos:*"
+

@@ -39,6 +39,9 @@ class SolicitudCreacionProveedor(BaseModel):
 
     Campos:
         phone: Número de teléfono del proveedor (10-20 caracteres)
+        account_id: Identificador de la cuenta WhatsApp que originó el flujo
+        from_number: JID observado por Meta en el webhook original
+        user_id: BSUID observado por Meta
         real_phone: Número real del proveedor para contacto (opcional)
         full_name: Nombre completo del proveedor (2-255 caracteres)
         city: Ciudad donde opera el proveedor (2-100 caracteres)
@@ -50,6 +53,10 @@ class SolicitudCreacionProveedor(BaseModel):
         document_first_names: Nombres leídos del documento (opcional)
         document_last_names: Apellidos leídos del documento (opcional)
         document_id_number: Número de cédula (opcional)
+        display_name: Nombre visible del contacto de WhatsApp (opcional)
+        formatted_name: Nombre formateado del contacto de WhatsApp (opcional)
+        first_name: Primer nombre del contacto de WhatsApp (opcional)
+        last_name: Apellido del contacto de WhatsApp (opcional)
         dni_front_photo_url: URL foto frontal DNI (opcional)
         dni_back_photo_url: URL foto trasera DNI (opcional)
         face_photo_url: URL foto facial (opcional)
@@ -58,7 +65,10 @@ class SolicitudCreacionProveedor(BaseModel):
         location_lng: Longitud de ubicación (opcional)
     """
 
-    phone: str = Field(..., min_length=3, max_length=64)
+    phone: str = Field(..., min_length=3, max_length=160)
+    account_id: Optional[str] = None
+    from_number: Optional[str] = None
+    user_id: Optional[str] = None
     real_phone: Optional[str] = None
     full_name: str = Field(..., min_length=2, max_length=255)
     city: str = Field(..., min_length=2, max_length=100)
@@ -71,6 +81,10 @@ class SolicitudCreacionProveedor(BaseModel):
     social_media_type: Optional[str] = None
     facebook_username: Optional[str] = None
     instagram_username: Optional[str] = None
+    display_name: Optional[str] = None
+    formatted_name: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
     document_first_names: Optional[str] = None
     document_last_names: Optional[str] = None
     document_id_number: Optional[str] = None
@@ -154,6 +168,10 @@ class RespuestaProveedor(BaseModel):
         document_first_names: Nombres leídos del documento (opcional)
         document_last_names: Apellidos leídos del documento (opcional)
         document_id_number: Número de cédula (opcional)
+        display_name: Nombre visible del contacto de WhatsApp (opcional)
+        formatted_name: Nombre formateado del contacto de WhatsApp (opcional)
+        first_name: Primer nombre del contacto de WhatsApp (opcional)
+        last_name: Apellido del contacto de WhatsApp (opcional)
         dni_front_photo_url: URL foto frontal DNI (opcional)
         dni_back_photo_url: URL foto trasera DNI (opcional)
         face_photo_url: URL foto facial (opcional)
@@ -181,6 +199,10 @@ class RespuestaProveedor(BaseModel):
     social_media_type: Optional[str] = None
     facebook_username: Optional[str] = None
     instagram_username: Optional[str] = None
+    display_name: Optional[str] = None
+    formatted_name: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
     document_first_names: Optional[str] = None
     document_last_names: Optional[str] = None
     document_id_number: Optional[str] = None

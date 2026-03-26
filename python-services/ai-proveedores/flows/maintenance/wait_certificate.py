@@ -19,10 +19,10 @@ from services import (
 from services.maintenance.constantes import (
     SERVICIOS_MINIMOS_PERFIL_PROFESIONAL,
 )
+from templates.maintenance import payload_confirmacion_resumen
 from templates.onboarding.registration import (
     CERTIFICATE_SKIP_ID,
     construir_resumen_confirmacion_perfil_profesional,
-    payload_confirmacion_resumen,
 )
 from templates.shared import (
     mensaje_certificado_actualizado,

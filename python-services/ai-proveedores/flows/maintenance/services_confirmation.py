@@ -22,6 +22,12 @@ from services.shared import (
     normalizar_respuesta_binaria,
     normalizar_texto_interaccion,
 )
+from templates.maintenance import (
+    CONFIRM_ACCEPT_ID,
+    CONFIRM_REJECT_ID,
+    mensaje_correccion_servicios,
+    payload_confirmacion_resumen,
+)
 from templates.maintenance.mensajes_servicios import (
     mensaje_confirmar_o_corregir_servicio,
     mensaje_limite_servicios_temporales,
@@ -35,7 +41,6 @@ from templates.onboarding.registration import (
     SERVICE_CONFIRM_ID,
     SERVICE_CORRECT_ID,
     construir_resumen_confirmacion_perfil_profesional,
-    mensaje_correccion_servicios,
     mensaje_debes_registrar_al_menos_un_servicio,
     mensaje_debes_registrar_mas_servicios,
     mensaje_error_opcion_agregar_otro,
@@ -46,17 +51,12 @@ from templates.onboarding.registration import (
     mensaje_servicio_actualizado,
     mensaje_servicio_eliminado_registro,
     payload_certificado_opcional,
-    payload_confirmacion_resumen,
     payload_red_social_opcional,
     preguntar_experiencia_general,
     preguntar_nuevo_servicio_reemplazo,
     preguntar_numero_servicio_eliminar,
     preguntar_numero_servicio_reemplazar,
     preguntar_siguiente_servicio_registro,
-)
-from templates.onboarding.registration.confirmacion import (
-    CONFIRM_ACCEPT_ID,
-    CONFIRM_REJECT_ID,
 )
 from templates.shared import mensaje_perfecto_guardar_perfil_profesional
 

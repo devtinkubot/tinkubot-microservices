@@ -5,14 +5,14 @@ from typing import Any, Dict
 from config.configuracion import configuracion
 
 PROMPT_CONSENTIMIENTO = (
-    "Para poder conectarte con clientes vamos a utilizar la siguiente información:\n\n"
+    "Para continuar con tu registro, necesitamos estos datos:\n\n"
     "- Nombres\n"
     "- Teléfono\n"
     "- Ubicación\n"
     "- Foto de perfil\n\n"
-    f"Política de privacidad: {configuracion.privacy_policy_url}\n"
-    "Al tocar *Aceptar* autorizas el uso de tu información para crear y validar "
-    "tu perfil de proveedor."
+    f"Revisa nuestra política de privacidad aquí: {configuracion.privacy_policy_url}\n"
+    "Al tocar *Aceptar*, nos autorizas a usar tu información para crear tu "
+    "perfil de proveedor."
 )
 
 OPCION_ACEPTAR = "Aceptar"
@@ -41,20 +41,6 @@ def payload_consentimiento_proveedor() -> Dict[str, Any]:
     }
 
 
-def mensaje_consentimiento_rechazado() -> str:
-    """Mensaje cuando el proveedor rechaza el consentimiento."""
-    return (
-        "Entendido. Sin tu consentimiento no puedo registrar tu perfil ni "
-        "compartir tus datos.\n\n"
-        'Si cambias de opinión más adelante, escribe "registro" y '
-        "continuamos desde aquí. "
-        "Gracias por tu tiempo."
-    )
-
-
 def mensaje_consentimiento_aceptado_revision() -> str:
-    """Mensaje cuando el proveedor acepta el consentimiento."""
-    return (
-        "✅ Gracias. Estamos revisando tu información y te avisaremos cuando "
-        "quede listo."
-    )
+    """Mensaje legacy sin salida visible en el flujo actual."""
+    return ""

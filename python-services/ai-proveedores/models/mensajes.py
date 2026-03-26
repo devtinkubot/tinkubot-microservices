@@ -13,7 +13,14 @@ class RecepcionMensajeWhatsApp(BaseModel):
     """Modelo flexible para recepción de mensajes desde servicios Node"""
     # Campos principales para la carga de servicios Node
     id: Optional[str] = None
+    account_id: Optional[str] = None
     from_number: Optional[str] = None
+    from_user_id: Optional[str] = None
+    user_id: Optional[str] = None
+    display_name: Optional[str] = None
+    formatted_name: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
     content: Optional[str] = None
     message_type: Optional[str] = None
     selected_option: Optional[str] = None

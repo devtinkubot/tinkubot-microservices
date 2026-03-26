@@ -3,7 +3,7 @@ import {
   type MonetizationOverview,
   type MonetizationProviderRecord,
 } from "@tinkubot/api-client";
-import { formatearMarcaTemporalEcuador } from "./utils";
+import { formatearMarcaTemporalEcuador, formatearTelefonoEcuador } from "./utils";
 
 type BillingFilter = "all" | "active" | "paused_paywall" | "suspended";
 
@@ -144,7 +144,9 @@ function renderTable() {
       <tr>
         <td>
           <div class="fw-semibold">${provider.name}</div>
-          <small class="text-muted">${provider.phone ?? "Sin teléfono"}</small>
+          <small class="text-muted">${
+            formatearTelefonoEcuador(provider.phone) ?? "Sin teléfono"
+          }</small>
         </td>
         <td>${provider.city ?? "—"}</td>
         <td>${statusBadge(provider.billingStatus)}</td>

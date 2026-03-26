@@ -27,7 +27,10 @@ async def obtener_vista_onboarding(
 
     perfil = perfil_proveedor
     if perfil is None and telefono and usar_cache_perfil:
-        perfil = await obtener_perfil_proveedor_cacheado(telefono)
+        perfil = await obtener_perfil_proveedor_cacheado(
+            telefono,
+            account_id=flujo_base.get("account_id"),
+        )
 
     flujo_canonico = sincronizar_flujo_con_perfil(flujo_base, perfil)
     rehidratado = False

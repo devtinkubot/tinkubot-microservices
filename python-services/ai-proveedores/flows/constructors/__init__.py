@@ -2,7 +2,6 @@
 
 from .consent import (
     construir_respuesta_consentimiento_aceptado,
-    construir_respuesta_consentimiento_rechazado,
     construir_respuesta_solicitud_consentimiento,
 )
 from .menu import (
@@ -12,7 +11,6 @@ from .menu import (
     construir_menu_principal,
     construir_respuesta_menu_registro,
 )
-from .summary import construir_resumen_confirmacion
 from .services import construir_menu_servicios
 from .verification import (
     construir_respuesta_revision_perfil_profesional,
@@ -33,7 +31,5 @@ __all__ = [
     "construir_respuesta_revision_con_menu",
     "construir_respuesta_solicitud_consentimiento",
     "construir_respuesta_consentimiento_aceptado",
-    "construir_respuesta_consentimiento_rechazado",
     "construir_menu_servicios",
-    "construir_resumen_confirmacion",
 ]

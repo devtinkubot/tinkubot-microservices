@@ -2,7 +2,6 @@
 
 from typing import Any, Dict, Optional
 
-import flows.onboarding.router as compat_onboarding
 from services import registrar_proveedor_en_base_datos
 from services.onboarding.confirmacion import manejar_confirmacion_onboarding
 from services.onboarding.messages import (
@@ -46,6 +45,7 @@ async def manejar_estado_onboarding(
     subir_medios_identidad: Any = None,
 ) -> Optional[Dict[str, Any]]:
     estado_normalizado = str(estado or "").strip()
+    from flows.onboarding import router as compat_onboarding
 
     if estado_normalizado == "onboarding_city":
         return await compat_onboarding.manejar_espera_ciudad_onboarding(

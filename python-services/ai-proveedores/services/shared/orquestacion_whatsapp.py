@@ -35,6 +35,11 @@ from services.shared.ingreso_whatsapp import (
 )
 
 
+def _valor_texto_opcional(valor: Optional[str]) -> Optional[str]:
+    texto = str(valor or "").strip()
+    return texto or None
+
+
 async def _hay_contexto_disponibilidad_activo(telefono: str) -> bool:
     return await hay_contexto_disp_impl(cliente_redis, telefono)
 
@@ -80,11 +85,16 @@ async def procesar_mensaje_whatsapp(
 
     logger.info(
         (
-            "provider_inbound_message phone=%s canonical_phone=%s message_type=%s "
+            "provider_inbound_message phone=%s canonical_phone=%s display_name=%s "
+            "formatted_name=%s first_name=%s last_name=%s message_type=%s "
             "selected_option=%s raw_from=%s raw_phone=%s text=%r"
         ),
         telefono_disponibilidad,
         telefono,
+        solicitud.display_name,
+        solicitud.formatted_name,
+        solicitud.first_name,
+        solicitud.last_name,
         solicitud.message_type,
         solicitud.selected_option,
         raw_from,
@@ -98,6 +108,12 @@ async def procesar_mensaje_whatsapp(
     logger.info("🔎 principal.cliente_openai inicializado=%s", bool(cliente_openai))
 
     flujo = await obtener_flujo(telefono)
+    if solicitud.account_id:
+        flujo["account_id"] = solicitud.account_id
+    if solicitud.user_id:
+        flujo["user_id"] = solicitud.user_id
+    if raw_from:
+        flujo["from_number"] = raw_from
     if await es_mensaje_multimedia_duplicado(telefono, flujo.get("state"), carga):
         logger.info(
             "media_message_duplicate_ignored provider=%s state=%s message_id=%s",
@@ -123,7 +139,10 @@ async def procesar_mensaje_whatsapp(
         )
         return {"success": True, "messages": []}
 
-    perfil_proveedor = await obtener_perfil_proveedor_cacheado(telefono)
+    perfil_proveedor = await obtener_perfil_proveedor_cacheado(
+        telefono,
+        account_id=solicitud.account_id,
+    )
     vista_onboarding = await obtener_vista_onboarding(
         telefono=telefono,
         flujo=flujo,
@@ -166,6 +185,15 @@ async def procesar_mensaje_whatsapp(
     flujo["phone_user"] = phone_user
     flujo["phone"] = telefono
     flujo["requires_real_phone"] = bool(is_lid and not tiene_real_phone)
+    for clave, valor in (
+        ("display_name", solicitud.display_name),
+        ("formatted_name", solicitud.formatted_name),
+        ("first_name", solicitud.first_name),
+        ("last_name", solicitud.last_name),
+    ):
+        texto = _valor_texto_opcional(valor)
+        if texto:
+            flujo[clave] = texto
     if not is_lid and phone_user and not flujo.get("real_phone"):
         flujo["real_phone"] = phone_user
     servicios_previos = normalizar_lista_servicios_flujo(flujo)

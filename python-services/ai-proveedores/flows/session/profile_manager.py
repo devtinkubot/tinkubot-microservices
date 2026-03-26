@@ -16,6 +16,7 @@ from utils import (
     extraer_servicios_almacenados as extraer_servicios_guardados,
 )
 from infrastructure.database import run_supabase
+from services.onboarding.whatsapp_identity import resolver_provider_id_por_identidad
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,11 @@ TTL_MARCA_PERFIL_ELIMINADO_SEGUNDOS = int(
 )
 
 
-async def obtener_perfil_proveedor(telefono: str) -> Optional[Dict[str, Any]]:
+async def obtener_perfil_proveedor(
+    telefono: str,
+    *,
+    account_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
     """
     Obtener perfil de proveedor por teléfono desde Supabase (esquema unificado).
 
@@ -47,6 +52,35 @@ async def obtener_perfil_proveedor(telefono: str) -> Optional[Dict[str, Any]]:
         return None
 
     try:
+        provider_id_resuelto = await resolver_provider_id_por_identidad(
+            supabase,
+            telefono,
+            whatsapp_account_id=account_id,
+        )
+        if provider_id_resuelto:
+            respuesta = await run_supabase(
+                lambda: supabase.table("providers")
+                .select("*")
+                .eq("id", provider_id_resuelto)
+                .limit(1)
+                .execute(),
+                label="providers.by_whatsapp_identity",
+            )
+            if respuesta.data:
+                registro = garantizar_campos_obligatorios_proveedor(
+                    cast(Dict[str, Any], respuesta.data[0])
+                )
+                servicios_relacionados = await _obtener_servicios_relacionados(
+                    supabase=supabase, provider_id=registro.get("id")
+                )
+                if servicios_relacionados:
+                    registro["services_list"] = servicios_relacionados
+                else:
+                    registro["services_list"] = extraer_servicios_guardados(
+                        registro.get("services")
+                    )
+                return registro
+
         respuesta = await run_supabase(
             lambda: supabase.table("providers")
             .select("*")

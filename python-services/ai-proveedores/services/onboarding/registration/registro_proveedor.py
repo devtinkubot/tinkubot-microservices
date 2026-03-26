@@ -12,6 +12,7 @@ from services.maintenance.clasificacion_semantica import (
     construir_service_summary,
 )
 from services.maintenance.constantes import DISPLAY_ORDER_MAX_DB
+from services.onboarding.whatsapp_identity import persistir_identities_whatsapp
 from services.onboarding.registration.normalizacion import (
     garantizar_campos_obligatorios_proveedor,
     normalizar_datos_proveedor,
@@ -419,6 +420,9 @@ async def registrar_proveedor_en_base_datos(
         datos_normalizados = normalizar_datos_proveedor(datos_proveedor)
         servicios_normalizados = datos_normalizados.pop("services_normalized", [])
         service_entries = datos_normalizados.pop("service_entries", [])
+        account_id = datos_normalizados.pop("account_id", None)
+        from_number = datos_normalizados.pop("from_number", None)
+        user_id = datos_normalizados.pop("user_id", None)
 
         # Upsert por teléfono: reabre rechazados como pending, evita doble round-trip
         carga_upsert = {
@@ -469,6 +473,22 @@ async def registrar_proveedor_en_base_datos(
         if registro_insertado:
             id_proveedor = registro_insertado.get("id")
             logger.info(f"✅ Proveedor registrado en esquema unificado: {id_proveedor}")
+
+            try:
+                await persistir_identities_whatsapp(
+                    supabase,
+                    str(id_proveedor or "").strip(),
+                    phone=datos_normalizados.get("phone"),
+                    from_number=from_number,
+                    user_id=user_id,
+                    account_id=account_id,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "⚠️ No se pudieron persistir identidades WhatsApp para %s: %s",
+                    id_proveedor,
+                    exc,
+                )
 
             # Fase 6: Insertar servicios en provider_services con embeddings
             servicios = service_entries or servicios_normalizados
@@ -539,6 +559,18 @@ async def registrar_proveedor_en_base_datos(
                 ),
                 "social_media_type": registro_insertado.get(
                     "social_media_type", datos_normalizados["social_media_type"]
+                ),
+                "display_name": registro_insertado.get(
+                    "display_name", datos_normalizados.get("display_name")
+                ),
+                "formatted_name": registro_insertado.get(
+                    "formatted_name", datos_normalizados.get("formatted_name")
+                ),
+                "first_name": registro_insertado.get(
+                    "first_name", datos_normalizados.get("first_name")
+                ),
+                "last_name": registro_insertado.get(
+                    "last_name", datos_normalizados.get("last_name")
                 ),
                 "facebook_username": registro_insertado.get(
                     "facebook_username", datos_normalizados.get("facebook_username")

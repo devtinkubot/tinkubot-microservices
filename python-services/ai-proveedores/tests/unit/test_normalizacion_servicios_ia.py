@@ -55,7 +55,7 @@ from templates.onboarding import (  # noqa: E402
     payload_servicios_onboarding_con_imagen,
     preguntar_servicios_onboarding,
 )
-from templates.onboarding.registration import (  # noqa: E402
+from templates.maintenance import (  # noqa: E402
     mensaje_correccion_servicios,
 )
 from utils import (  # noqa: E402

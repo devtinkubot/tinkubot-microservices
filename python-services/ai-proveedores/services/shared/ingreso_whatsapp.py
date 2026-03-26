@@ -1,6 +1,7 @@
 """Helpers de ingreso y dedupe para mensajes WhatsApp de proveedores."""
 
 import os
+import re
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
@@ -54,6 +55,10 @@ def normalizar_telefono_canonico(raw_from: str, raw_phone: str) -> str:
             return texto.split("@", 1)[0].strip()
         return texto
 
+    def _parece_bsuid(valor: str) -> bool:
+        texto = (valor or "").strip()
+        return bool(re.fullmatch(r"[A-Z]{2}\.[A-Za-z0-9]{1,128}", texto))
+
     jid = _normalizar_jid(raw_from) or _normalizar_jid(raw_phone)
     if jid:
         return jid
@@ -61,6 +66,8 @@ def normalizar_telefono_canonico(raw_from: str, raw_phone: str) -> str:
     user = _extraer_user_jid(raw_phone)
     if not user:
         return ""
+    if _parece_bsuid(user):
+        return f"{user}@lid"
     return f"{user}@s.whatsapp.net"
 
 

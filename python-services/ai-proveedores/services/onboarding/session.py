@@ -136,8 +136,9 @@ async def perfil_marcado_eliminado(telefono: str) -> bool:
 
 async def obtener_perfil_proveedor_cacheado(
     telefono: str,
+    account_id: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Obtiene perfil de proveedor desde caché."""
+    """Obtiene perfil de proveedor desde caché o Supabase."""
     if await perfil_marcado_eliminado(telefono):
         return None
 
@@ -151,4 +152,13 @@ async def obtener_perfil_proveedor_cacheado(
     if cacheado:
         return cacheado
 
-    return None
+    try:
+        from flows.session.profile_manager import obtener_perfil_proveedor
+
+        perfil = await obtener_perfil_proveedor(telefono, account_id=account_id)
+        if perfil:
+            await cachear_perfil_proveedor(telefono, perfil)
+        return perfil
+    except Exception as exc:
+        logger.debug("No se pudo resolver perfil de %s desde Supabase: %s", telefono, exc)
+        return None

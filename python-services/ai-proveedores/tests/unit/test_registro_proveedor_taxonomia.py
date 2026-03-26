@@ -156,6 +156,22 @@ def test_normalizar_datos_proveedor_incluye_identidad_documental():
     assert normalizado["experience_range"] == "1 a 3 años"
 
 
+def test_normalizar_datos_proveedor_no_infiere_real_phone_desde_phone():
+    solicitud = SolicitudCreacionProveedor(
+        phone="593959091325@s.whatsapp.net",
+        real_phone=None,
+        full_name="diego",
+        city="Quito",
+        services_list=[],
+        experience_years=1,
+        has_consent=True,
+    )
+
+    normalizado = normalizar_datos_proveedor(solicitud)
+
+    assert normalizado["real_phone"] is None
+
+
 def test_insertar_servicios_persiste_taxonomia_sugerida_sin_revision(
     monkeypatch,
 ):

@@ -59,6 +59,10 @@ def _sincronizar_campos_base(
     _copiar_campo_si_presente(flujo, perfil_proveedor, "document_first_names")
     _copiar_campo_si_presente(flujo, perfil_proveedor, "document_last_names")
     _copiar_campo_si_presente(flujo, perfil_proveedor, "document_id_number")
+    _copiar_campo_si_presente(flujo, perfil_proveedor, "display_name")
+    _copiar_campo_si_presente(flujo, perfil_proveedor, "formatted_name")
+    _copiar_campo_si_presente(flujo, perfil_proveedor, "first_name")
+    _copiar_campo_si_presente(flujo, perfil_proveedor, "last_name")
 
 
 def _sincronizar_campos_ubicacion(

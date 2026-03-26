@@ -62,7 +62,7 @@ Legacy onboarding aliases still exist only where they are used to normalize old 
 
 Route ownership:
 
-- `routes/onboarding` owns onboarding entry, consent, and final confirmation
+- `routes/onboarding` owns onboarding entry, consent, the service-confirmation bridge, and the social-media handoff
 - `flows/onboarding/router.py` owns the state-specific onboarding transitions
 
 ## Maintenance States

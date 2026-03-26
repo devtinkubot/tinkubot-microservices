@@ -13,17 +13,6 @@ from templates.onboarding.telefono import (
     preguntar_real_phone,
 )
 
-from .confirmacion import (
-    CONFIRM_ACCEPT_ID,
-    CONFIRM_REJECT_ID,
-    payload_confirmacion_resumen,
-)
-from .confirmacion_servicios import (
-    mensaje_confirmacion_servicios,
-    mensaje_correccion_servicios,
-    mensaje_lista_servicios_corregida,
-    mensaje_servicios_aceptados,
-)
 from .perfil_profesional import (
     CERTIFICATE_SKIP_ID,
     PROFILE_CONTROL_IDS,
@@ -49,7 +38,6 @@ from .perfil_profesional import (
     preguntar_experiencia_general,
     preguntar_nombre,
 )
-from .resumen import construir_resumen_confirmacion_registro
 from .servicios import (
     confirmar_servicio_y_preguntar_otro,
     mensaje_debes_registrar_al_menos_un_servicio,
@@ -76,15 +64,6 @@ __all__ = [
     "mensaje_inicio_perfil_profesional",
     "preguntar_experiencia_general",
     # Confirmación
-    "payload_confirmacion_resumen",
-    "construir_resumen_confirmacion_registro",
-    "CONFIRM_ACCEPT_ID",
-    "CONFIRM_REJECT_ID",
-    # Confirmación de servicios
-    "mensaje_confirmacion_servicios",
-    "mensaje_correccion_servicios",
-    "mensaje_servicios_aceptados",
-    "mensaje_lista_servicios_corregida",
     "preguntar_siguiente_servicio_registro",
     "confirmar_servicio_y_preguntar_otro",
     "payload_agregar_otro_servicio",

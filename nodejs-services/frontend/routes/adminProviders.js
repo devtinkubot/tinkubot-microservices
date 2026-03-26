@@ -40,6 +40,19 @@ async function obtenerNuevos(req, res) {
   }
 }
 
+async function obtenerOnboarding(req, res) {
+  try {
+    const providers = await proveedoresBff.obtenerProveedoresOnboarding();
+    res.json({ providers });
+  } catch (error) {
+    const status = error?.status ?? 500;
+    const payload = error?.data ?? {
+      error: "No se pudo obtener la lista de proveedores en onboarding.",
+    };
+    res.status(status).json(payload);
+  }
+}
+
 async function obtenerPerfilProfesionalIncompleto(req, res) {
   try {
     const providers =
@@ -235,6 +248,7 @@ async function servirImagen(req, res) {
 }
 
 router.get("/pending", obtenerPendientes);
+router.get("/onboarding", obtenerOnboarding);
 router.get("/new", obtenerNuevos);
 router.get("/profile-incomplete", obtenerPerfilProfesionalIncompleto);
 router.get("/post-review", obtenerPostRevision);

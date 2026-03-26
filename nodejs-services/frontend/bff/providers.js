@@ -8,6 +8,17 @@ const toPositiveInt = (value) => {
 const requestTimeoutMs =
   toPositiveInt(process.env.PROVIDERS_SERVICE_TIMEOUT_MS) ?? 5000;
 const pendingLimit = toPositiveInt(process.env.PROVIDERS_PENDING_LIMIT) ?? 100;
+const ONBOARDING_STEPS = [
+  "onboarding_consent",
+  "onboarding_city",
+  "onboarding_dni_front_photo",
+  "onboarding_face_photo",
+  "onboarding_experience",
+  "onboarding_specialty",
+  "onboarding_add_another_service",
+  "onboarding_services_confirmation",
+  "onboarding_social_media",
+];
 const monetizationLimit =
   toPositiveInt(process.env.MONETIZATION_PROVIDER_LIMIT) ?? 100;
 
@@ -151,6 +162,64 @@ const limpiarTextoIdentidad = (...valores) => {
     }
   }
   return null;
+};
+
+const formatearTelefonoVisible = (valor) => {
+  const texto = limpiarTexto(valor);
+  if (!texto) return null;
+
+  const digitos = texto.replace(/\D/g, "");
+  if (!digitos) return null;
+
+  const localDigits = digitos.startsWith("593")
+    ? digitos.slice(3)
+    : digitos.startsWith("0")
+      ? digitos.slice(1)
+      : digitos;
+
+  if (localDigits.length === 9) {
+    return `+593 ${localDigits.slice(0, 2)}-${localDigits.slice(2, 5)}-${localDigits.slice(5)}`;
+  }
+
+  if (localDigits.length === 8) {
+    return `+593 ${localDigits.slice(0, 1)}-${localDigits.slice(1, 4)}-${localDigits.slice(4)}`;
+  }
+
+  if (digitos.startsWith("593")) {
+    return `+${digitos}`;
+  }
+
+  if (digitos.startsWith("0")) {
+    return `+593 ${localDigits}`;
+  }
+
+  return null;
+};
+
+const resolverNombreVisibleProveedor = (registro) => {
+  const displayName = limpiarTexto(registro?.display_name);
+  const formattedName = limpiarTexto(registro?.formatted_name);
+  const firstName = limpiarTexto(registro?.first_name);
+  const lastName = limpiarTexto(registro?.last_name);
+  const nombreCompuesto = [firstName, lastName].filter(Boolean).join(" ").trim();
+  const telefonoVisible = formatearTelefonoVisible(
+    registro?.contact_phone || registro?.phone || registro?.real_phone,
+  );
+  const nombreVisible = formatearTelefonoVisible(registro?.name);
+
+  return (
+    formattedName ||
+    nombreCompuesto ||
+    displayName ||
+    telefonoVisible ||
+    nombreVisible ||
+    limpiarTexto(registro?.full_name) ||
+    limpiarTexto(registro?.contact_name) ||
+    limpiarTexto(registro?.contact_phone) ||
+    limpiarTexto(registro?.phone) ||
+    limpiarTexto(registro?.real_phone) ||
+    "Proveedor sin nombre"
+  );
 };
 
 const construirNotasIdentidad = ({
@@ -458,21 +527,38 @@ const normalizarEstadoProveedor = (registro) => {
   ) {
     return "approved";
   }
+  if (estado === "pending_verification") {
+    return "pending_verification";
+  }
   if (["approved", "aprobado", "ok"].includes(estado)) {
     return "approved";
   }
   if (["rejected", "rechazado", "denied"].includes(estado)) {
     return "rejected";
   }
-  if (["pending", "pendiente"].includes(estado)) {
+  if (["pending", "pendiente", "new"].includes(estado)) {
     return "pending";
   }
   return registro?.verified ? "approved" : "pending";
 };
 
 const normalizarProveedorSupabase = (registro) => {
+  const displayName = resolverNombreVisibleProveedor(registro);
+  const formattedName = limpiarTexto(registro?.formatted_name) || null;
+  const firstName = limpiarTexto(registro?.first_name) || null;
+  const lastName = limpiarTexto(registro?.last_name) || null;
+  const onboardingStep = limpiarTexto(registro?.onboarding_step) || null;
+  const onboardingStepUpdatedAt =
+    normalizarTimestampComoUtc(registro?.onboarding_step_updated_at) || null;
+  const telefonoVisible =
+    formatearTelefonoVisible(registro?.contact_phone) ||
+    formatearTelefonoVisible(registro?.phone) ||
+    formatearTelefonoVisible(registro?.real_phone) ||
+    formatearTelefonoVisible(registro?.name);
   const nombre =
     limpiarTexto(registro?.full_name) ||
+    displayName ||
+    telefonoVisible ||
     limpiarTexto(registro?.name) ||
     limpiarTexto(registro?.contact_phone) ||
     limpiarTexto(registro?.phone) ||
@@ -661,6 +747,10 @@ const normalizarProveedorSupabase = (registro) => {
   return {
     id: registro?.id,
     name: nombre,
+    displayName,
+    formattedName,
+    firstName,
+    lastName,
     businessName,
     contact,
     contactPhone,
@@ -681,6 +771,8 @@ const normalizarProveedorSupabase = (registro) => {
     socialMediaType,
     hasConsent,
     rating,
+    onboardingStep,
+    onboardingStepUpdatedAt,
     documentFirstNames,
     documentLastNames,
     documentIdNumber,
@@ -768,12 +860,43 @@ const construirRutaSupabasePendientes = (incluirEstado = true) => {
   ];
 
   if (incluirEstado) {
-    parametrosBase.push(
-      "or=(status.is.null,status.in.(new,pending,pending_verification))",
-    );
+    parametrosBase.push("status=eq.pending_verification");
   }
 
   return `${supabaseProvidersTable}?${parametrosBase.join("&")}`;
+};
+
+const construirRutaSupabaseOnboarding = () => {
+  const parametrosBase = [
+    `limit=${pendingLimit}`,
+    `order=onboarding_step_updated_at.desc.nullslast,created_at.desc`,
+    "select=*,provider_services(service_name,service_name_normalized,raw_service_text,service_summary,domain_code,category_name,classification_confidence,display_order),provider_certificates(id,file_url,display_order,status,created_at,updated_at)",
+    "or=(status.is.null,status.in.(new,pending))",
+    `onboarding_step=in.(${ONBOARDING_STEPS.join(",")})`,
+  ];
+
+  return `${supabaseProvidersTable}?${parametrosBase.join("&")}`;
+};
+
+const obtenerProveedoresOnboardingSupabase = async () => {
+  if (!supabaseClient) {
+    return [];
+  }
+
+  const ruta = construirRutaSupabaseOnboarding();
+  const response = await supabaseClient.get(ruta, {
+    headers: {
+      Accept: "application/json",
+    },
+  });
+  const lista = Array.isArray(response.data)
+    ? response.data.map((item) => normalizarProveedorSupabase(item))
+    : normalizarListaProveedores(response.data).map((item) =>
+        normalizarProveedorSupabase(item),
+      );
+  return lista.filter((provider) =>
+    ONBOARDING_STEPS.includes(provider.onboardingStep || ""),
+  );
 };
 
 const obtenerProveedoresPendientesSupabase = async () => {
@@ -860,11 +983,7 @@ const obtenerResumenEstadosProveedoresSupabase = async () => {
     return {
       summary: {
         newPending: 0,
-        personalApproved: 0,
-        professionalToComplete: 0,
-        professionalUnderReview: 0,
         profileComplete: 0,
-        total: 0,
       },
     };
   }
@@ -883,27 +1002,19 @@ const obtenerResumenEstadosProveedoresSupabase = async () => {
 
   const summary = {
     newPending: 0,
-    personalApproved: 0,
-    professionalToComplete: 0,
-    professionalUnderReview: 0,
     profileComplete: 0,
-    total: lista.length,
   };
 
   for (const provider of lista) {
-    if (provider.status === "pending") {
+    if (provider.status === "pending_verification") {
       summary.newPending += 1;
       continue;
     }
 
     if (provider.status === "approved") {
-      summary.personalApproved += 1;
       if (provider.professionalProfileComplete) {
         summary.profileComplete += 1;
-      } else {
-        summary.professionalToComplete += 1;
       }
-      continue;
     }
   }
 
@@ -1006,6 +1117,14 @@ async function obtenerProveedoresPendientes(_requestId = null) {
 async function obtenerProveedoresNuevos(_requestId = null) {
   try {
     return await obtenerProveedoresPendientesSupabase();
+  } catch (error) {
+    throw gestionarErrorAxios(error);
+  }
+}
+
+async function obtenerProveedoresOnboarding(_requestId = null) {
+  try {
+    return await obtenerProveedoresOnboardingSupabase();
   } catch (error) {
     throw gestionarErrorAxios(error);
   }
@@ -1596,6 +1715,7 @@ async function obtenerMonetizacionProveedor(providerId) {
 }
 
 module.exports = {
+  obtenerProveedoresOnboarding,
   obtenerProveedoresPendientes,
   obtenerProveedoresNuevos,
   obtenerProveedoresPostRevision,

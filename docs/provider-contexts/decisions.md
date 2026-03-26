@@ -245,5 +245,20 @@ Onboarding only owns the new-provider journey. If Supabase says the provider alr
 ### Why
 Redis can drift out of date, but onboarding should not be used to rescue registered providers. The shared dispatcher should use the persisted profile as truth and route to the appropriate operational boundary.
 
+## Decision 36: Normalize on each onboarding step and keep final persistence focused on state
+Each onboarding step must normalize the data it receives before persisting anything for that step. The final stage must not re-interpret identity; it should only finalize provider state.
+
+### Rules
+- Consent only advances on the explicit interactive button `continue_provider_onboarding`.
+- Free-text answers are ignored and the consent prompt is reissued.
+- There is no operational reject button in consent.
+- Consent is the first step that may persist `real_phone` automatically, and only when the observed `phone` is a usable numeric JID like `...@s.whatsapp.net`.
+- If there is no usable numeric JID, `real_phone` is requested explicitly after consent.
+- `@lid` and `user_id`/BSUID are continuity identities, not human phone numbers.
+- The closing of onboarding should only adjust provider state fields such as `status`, `has_consent`, and `onboarding_step`.
+
+### Why
+This keeps identity rules consistent across steps, prevents late-stage inference drift, and makes the onboarding contract easier to follow for anyone who takes over the project.
+
 ## Decision log updates
 This file should be updated whenever a migration decision changes or a new boundary is introduced.

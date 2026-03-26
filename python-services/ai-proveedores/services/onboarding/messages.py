@@ -2,11 +2,7 @@
 
 from typing import Any, Dict
 
-from templates.onboarding.consentimiento import (
-    mensaje_consentimiento_aceptado_revision,
-    mensaje_consentimiento_rechazado,
-    payload_consentimiento_proveedor,
-)
+from templates.onboarding.consentimiento import payload_consentimiento_proveedor
 
 
 def construir_respuesta_solicitud_consentimiento() -> Dict[str, Any]:
@@ -22,13 +18,5 @@ def construir_respuesta_consentimiento_aceptado(
     """Construye la respuesta cuando se acepta el consentimiento."""
     return {
         "success": True,
-        "messages": [{"response": mensaje_consentimiento_aceptado_revision()}],
-    }
-
-
-def construir_respuesta_consentimiento_rechazado() -> Dict[str, Any]:
-    """Construye la respuesta cuando se rechaza el consentimiento."""
-    return {
-        "success": True,
-        "messages": [{"response": mensaje_consentimiento_rechazado()}],
+        "messages": [],
     }

@@ -158,7 +158,7 @@ def test_boton_onboarding_sin_registro_abre_consentimiento(monkeypatch):
     assert resultado["persist_flow"] is True
     assert flujo["state"] == "onboarding_consent"
     assert resultado["response"]["messages"][0]["response"].startswith(
-        "Para poder conectarte con clientes"
+        "Para continuar con tu registro"
     )
 
 
@@ -194,7 +194,7 @@ def test_numero_sin_provider_id_usa_estado_canonico(monkeypatch):
             "response": {
                 "success": True,
                 "messages": [
-                    {"response": "Para poder conectarte con clientes vamos a utilizar"}
+                    {"response": "Para continuar con tu registro, necesitamos estos datos"}
                 ],
             },
             "persist_flow": True,
@@ -231,7 +231,7 @@ def test_numero_sin_provider_id_usa_estado_canonico(monkeypatch):
     assert resultado is not None
     assert resultado["persist_flow"] is True
     assert resultado["response"]["messages"][0]["response"].startswith(
-        "Para poder conectarte con clientes vamos a utilizar"
+        "Para continuar con tu registro"
     )
 
 
@@ -259,7 +259,7 @@ def test_boton_onboarding_no_repite_bienvenida(monkeypatch):
     assert resultado["persist_flow"] is True
     assert flujo["state"] == "onboarding_consent"
     assert resultado["response"]["messages"][0]["response"].startswith(
-        "Para poder conectarte con clientes"
+        "Para continuar con tu registro"
     )
 
 
@@ -360,6 +360,6 @@ def test_inactividad_mayor_al_umbral_reinicia(monkeypatch):
         "No tuve respuesta y *reinicié la conversación* para ayudarte mejor."
     )
     assert any(
-        "Para poder conectarte con clientes" in mensaje.get("response", "")
+        "Para continuar con tu registro" in mensaje.get("response", "")
         for mensaje in resultado["response"]["messages"]
     )

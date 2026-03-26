@@ -1,12 +1,12 @@
 """Mensajes y payloads para el teléfono real en onboarding."""
 
 REAL_PHONE_PROMPT = (
-    "*Si no podemos tomar tu número de WhatsApp, comparte tu número real de contacto.*"
+    "*Para continuar, escribe tu número de celular.*"
 )
 
 REAL_PHONE_ERROR_INVALIDO = (
     "*Ese número no parece válido.*\n"
-    "Por favor envía un número de contacto válido."
+    "Por favor escribe un número de celular válido."
 )
 
 

@@ -107,6 +107,24 @@ func buildInboundTraceID(accountID string, msg incomingMessage) string {
 	return hex.EncodeToString(sum[:8])
 }
 
+func buildFromNumber(rawFrom, fallbackUserID string) string {
+	from := strings.TrimSpace(rawFrom)
+	fallbackUserID = strings.TrimSpace(fallbackUserID)
+	if from != "" {
+		if strings.Contains(from, "@") {
+			return from
+		}
+		if fallbackUserID != "" && from == fallbackUserID {
+			return from + "@lid"
+		}
+		return from + "@s.whatsapp.net"
+	}
+	if fallbackUserID != "" {
+		return fallbackUserID + "@lid"
+	}
+	return ""
+}
+
 // VerifyChallenge validates Meta's initial verification challenge.
 func (s *Service) VerifyChallenge(mode, verifyToken, challenge string) (int, string) {
 	if !s.cfg.Enabled {
@@ -167,12 +185,16 @@ func (s *Service) ProcessEvent(ctx context.Context, signature string, body []byt
 		}
 
 		log.Printf(
-			"[MetaWebhook] inbound_received inbound_trace_id=%s account=%s phone_number_id=%s from=%s from_user_id=%s username=%s country_code=%s context_from=%s context_id=%s message_id=%s message_ts=%s message_type=%s selected_option=%q content=%q",
+			"[MetaWebhook] inbound_received inbound_trace_id=%s account=%s phone_number_id=%s from=%s from_user_id=%s display_name=%s formatted_name=%s first_name=%s last_name=%s username=%s country_code=%s context_from=%s context_id=%s message_id=%s message_ts=%s message_type=%s selected_option=%q content=%q",
 			inboundTraceID,
 			accountID,
 			msg.PhoneNumberID,
 			msg.From,
 			msg.FromUserID,
+			msg.DisplayName,
+			msg.FormattedName,
+			msg.FirstName,
+			msg.LastName,
 			msg.Username,
 			msg.CountryCode,
 			msg.ContextFrom,
@@ -197,8 +219,12 @@ func (s *Service) ProcessEvent(ctx context.Context, signature string, body []byt
 
 		payload := &webhook.WebhookPayload{
 			Phone:          userIdentifier, // BSUID with fallback to phone number
-			FromNumber:     msg.From + "@s.whatsapp.net",
-			UserID:         msg.FromUserID,  // BSUID - may be empty for backwards compatibility
+			FromNumber:     buildFromNumber(msg.From, msg.FromUserID),
+			UserID:         msg.FromUserID, // BSUID - may be empty for backwards compatibility
+			DisplayName:    msg.DisplayName,
+			FormattedName:  msg.FormattedName,
+			FirstName:      msg.FirstName,
+			LastName:       msg.LastName,
 			Username:       msg.Username,
 			CountryCode:    msg.CountryCode,
 			ContextFrom:    msg.ContextFrom,

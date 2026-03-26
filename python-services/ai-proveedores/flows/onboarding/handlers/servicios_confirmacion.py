@@ -18,8 +18,8 @@ from services.shared import (
 from templates.onboarding.redes_sociales import (
     payload_redes_sociales_onboarding_con_imagen,
 )
+from templates.maintenance import mensaje_correccion_servicios
 from templates.onboarding.registration import (
-    mensaje_correccion_servicios,
     mensaje_debes_registrar_al_menos_un_servicio,
     mensaje_menu_edicion_servicios_registro,
     payload_resumen_servicios_registro,

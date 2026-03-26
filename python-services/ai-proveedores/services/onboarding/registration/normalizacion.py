@@ -1,7 +1,6 @@
 """Funciones de normalización de datos de proveedores."""
 
 from datetime import datetime, timezone
-import re
 from typing import Any, Dict, List, Optional
 
 from models.proveedores import SolicitudCreacionProveedor
@@ -184,11 +183,6 @@ def normalizar_datos_proveedor(
         if datos_crudos.real_phone
         else None
     )
-    if not real_phone and telefono.endswith("@s.whatsapp.net"):
-        user = telefono.split("@", 1)[0]
-        if re.fullmatch(r"\+?\d{10,20}", user or ""):
-            real_phone = _normalizar_telefono_ecuador(user)
-
     ahora_iso = datetime.now(timezone.utc).isoformat()
     tiene_coordenadas = (
         datos_crudos.location_lat is not None and datos_crudos.location_lng is not None
@@ -202,6 +196,9 @@ def normalizar_datos_proveedor(
 
     return {
         "phone": telefono,
+        "account_id": datos_crudos.account_id,
+        "from_number": datos_crudos.from_number,
+        "user_id": datos_crudos.user_id,
         "real_phone": real_phone,
         "full_name": datos_crudos.full_name.strip().title(),  # Formato legible
         "document_first_names": (
@@ -239,6 +236,18 @@ def normalizar_datos_proveedor(
         "social_media_type": datos_crudos.social_media_type,
         "facebook_username": redes_sociales["facebook_username"],
         "instagram_username": redes_sociales["instagram_username"],
+        "display_name": datos_crudos.display_name.strip()
+        if datos_crudos.display_name
+        else None,
+        "formatted_name": datos_crudos.formatted_name.strip()
+        if datos_crudos.formatted_name
+        else None,
+        "first_name": datos_crudos.first_name.strip()
+        if datos_crudos.first_name
+        else None,
+        "last_name": datos_crudos.last_name.strip()
+        if datos_crudos.last_name
+        else None,
     }
 
 
@@ -280,6 +289,10 @@ def garantizar_campos_obligatorios_proveedor(
     datos.setdefault("onboarding_step_updated_at", None)
     datos.setdefault("facebook_username", None)
     datos.setdefault("instagram_username", None)
+    datos.setdefault("display_name", None)
+    datos.setdefault("formatted_name", None)
+    datos.setdefault("first_name", None)
+    datos.setdefault("last_name", None)
     # Fase 5: Eliminada referencia a 'profession'
     datos["has_consent"] = bool(datos.get("has_consent"))
     if not datos.get("status"):

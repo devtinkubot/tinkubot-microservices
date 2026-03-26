@@ -33,16 +33,20 @@ async def manejar_estado_consentimiento_onboarding(
                     subir_medios_fn=subir_medios_identidad,
                 )
             )
-            needs_manual_phone_fallback = bool(
-                flujo.get("requires_real_phone") and not flujo.get("real_phone")
+            real_phone = flujo.get("real_phone") or (perfil_proveedor or {}).get(
+                "real_phone"
             )
+            needs_manual_phone_fallback = not bool(real_phone)
             flujo["provider_id"] = provider_id or flujo.get("provider_id")
             flujo["has_consent"] = True
+            if real_phone:
+                flujo["real_phone"] = real_phone
             flujo["state"] = (
                 "onboarding_real_phone"
                 if needs_manual_phone_fallback
                 else "onboarding_city"
             )
+            flujo["requires_real_phone"] = needs_manual_phone_fallback
             return {
                 "success": True,
                 "messages": (

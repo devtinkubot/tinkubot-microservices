@@ -28,28 +28,17 @@ from templates.onboarding.documentos import (  # noqa: E402
 def test_payload_menu_registro_proveedor_incluye_header_image_y_registrarse():
     payload = payload_menu_registro_proveedor()
 
-    assert payload["response"].startswith("Para poder conectarte con clientes")
+    assert payload["response"].startswith("Para continuar con tu registro")
     assert payload["ui"]["header_type"] == "image"
     assert "tinkubot_providers_onboarding.png" in payload["ui"]["header_media_url"]
     assert payload["ui"]["options"][0]["title"] == "Aceptar"
-
-
-def test_payload_menu_registro_proveedor_usa_env_override(monkeypatch):
-    monkeypatch.setenv(
-        "WA_PROVIDER_ONBOARDING_IMAGE_URL",
-        "https://example.com/provider-start.png",
-    )
-
-    payload = payload_menu_registro_proveedor()
-
-    assert payload["ui"]["header_media_url"] == "https://example.com/provider-start.png"
 
 
 def test_payload_consentimiento_proveedor_retorna_el_mismo_payload():
     payload = payload_consentimiento_proveedor()
 
     assert payload["messages"][0]["response"].startswith(
-        "Para poder conectarte con clientes"
+        "Para continuar con tu registro"
     )
 
 

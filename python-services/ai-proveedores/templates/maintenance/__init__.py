@@ -14,6 +14,19 @@ from .actualizacion_perfil import (
     solicitar_selfie_actualizacion,
     solicitar_selfie_requerida,
 )
+from .confirmacion import (
+    CONFIRM_ACCEPT_ID,
+    CONFIRM_REJECT_ID,
+    mensaje_resumen_confirmacion_registro,
+    payload_confirmacion_resumen,
+)
+from .confirmacion_servicios import (
+    mensaje_confirmacion_servicios,
+    mensaje_correccion_servicios,
+    mensaje_lista_servicios_corregida,
+    mensaje_servicios_aceptados,
+)
+from .resumen import construir_resumen_confirmacion_registro
 from .eliminacion_registro import (
     advertencia_eliminacion_irreversible,
     confirmar_eliminacion_exitosa,
@@ -49,6 +62,15 @@ __all__ = [
     "solicitar_selfie_requerida",
     "confirmar_selfie_actualizada",
     "error_actualizar_selfie",
+    "payload_confirmacion_resumen",
+    "mensaje_resumen_confirmacion_registro",
+    "CONFIRM_ACCEPT_ID",
+    "CONFIRM_REJECT_ID",
+    "mensaje_confirmacion_servicios",
+    "mensaje_correccion_servicios",
+    "mensaje_servicios_aceptados",
+    "mensaje_lista_servicios_corregida",
+    "construir_resumen_confirmacion_registro",
     "solicitar_red_social_actualizacion",
     "error_actualizar_redes_sociales",
     "confirmar_actualizacion_redes_sociales",

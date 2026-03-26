@@ -96,7 +96,7 @@ async def test_real_phone_onboarding_avanza_a_ciudad():
 
 
 def test_prompt_real_phone_onboarding_existe():
-    assert "comparte tu número real" in preguntar_real_phone().lower()
+    assert "escribe tu número de celular" in preguntar_real_phone().lower()
 
 
 @pytest.mark.asyncio
@@ -209,7 +209,7 @@ async def test_boundary_onboarding_sin_consentimiento_pide_consentimiento():
     assert respuesta is not None
     assert flujo["state"] == "onboarding_consent"
     assert respuesta["response"]["messages"][0]["response"].startswith(
-        "Para poder conectarte con clientes"
+        "Para continuar con tu registro"
     )
 
 

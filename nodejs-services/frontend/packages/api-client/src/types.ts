@@ -1,5 +1,6 @@
 export type ProviderStatus =
   | "pending"
+  | "pending_verification"
   | "approved"
   | "rejected";
 
@@ -54,6 +55,12 @@ export interface ProviderRecord {
   experienceRange?: string | null;
   socialMediaUrl?: string | null;
   socialMediaType?: string | null;
+  displayName?: string | null;
+  formattedName?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  onboardingStep?: string | null;
+  onboardingStepUpdatedAt?: string | null;
   documentFirstNames?: string | null;
   documentLastNames?: string | null;
   documentIdNumber?: string | null;
@@ -88,11 +95,7 @@ export interface ProviderActionResponse {
 export interface ProviderStatusOverviewResponse {
   summary: {
     newPending: number;
-    personalApproved: number;
-    professionalToComplete: number;
-    professionalUnderReview: number;
     profileComplete: number;
-    total: number;
   };
 }
 

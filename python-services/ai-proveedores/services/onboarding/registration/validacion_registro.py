@@ -70,6 +70,9 @@ def validar_y_construir_proveedor(
         )
         proveedor = SolicitudCreacionProveedor(
             phone=telefono,
+            account_id=flujo.get("account_id"),
+            from_number=flujo.get("from_number"),
+            user_id=flujo.get("user_id"),
             real_phone=flujo.get("real_phone") or flujo.get("phone_user"),
             full_name=str(nombre_visible).strip() or "Pendiente de nombre",
             city=ciudad_canonica,
@@ -85,6 +88,10 @@ def validar_y_construir_proveedor(
             has_consent=flujo.get("has_consent", False),
             social_media_url=flujo.get("social_media_url"),
             social_media_type=flujo.get("social_media_type"),
+            display_name=flujo.get("display_name"),
+            formatted_name=flujo.get("formatted_name"),
+            first_name=flujo.get("first_name"),
+            last_name=flujo.get("last_name"),
             document_first_names=flujo.get("document_first_names"),
             document_last_names=flujo.get("document_last_names"),
             document_id_number=flujo.get("document_id_number"),

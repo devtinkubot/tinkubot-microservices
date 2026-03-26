@@ -10,6 +10,10 @@ type WebhookPayload struct {
 	Phone          string           `json:"phone"`
 	FromNumber     string           `json:"from_number,omitempty"` // Full JID (user@server) - preserves original server type (lid, s.whatsapp.net, etc.)
 	UserID         string           `json:"user_id,omitempty"`     // BSUID - Business-Scoped User ID
+	DisplayName    string           `json:"display_name,omitempty"`
+	FormattedName  string           `json:"formatted_name,omitempty"`
+	FirstName      string           `json:"first_name,omitempty"`
+	LastName       string           `json:"last_name,omitempty"`
 	Username       string           `json:"username,omitempty"`
 	CountryCode    string           `json:"country_code,omitempty"`
 	ContextFrom    string           `json:"context_from,omitempty"`

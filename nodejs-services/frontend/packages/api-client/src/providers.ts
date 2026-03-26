@@ -37,6 +37,18 @@ export async function obtenerProveedoresNuevos(): Promise<ProviderRecord[]> {
   return [];
 }
 
+export async function obtenerProveedoresOnboarding(): Promise<
+  ProviderRecord[]
+> {
+  const datos = await realizarSolicitudHttp<RespuestaProveedoresPendientes>(
+    `${RUTA_BASE}/onboarding`,
+  );
+  if (Array.isArray(datos.providers)) {
+    return datos.providers;
+  }
+  return [];
+}
+
 export async function obtenerProveedoresPostRevision(): Promise<
   ProviderRecord[]
 > {

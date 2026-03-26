@@ -14,10 +14,7 @@ from services.shared import (
     normalizar_respuesta_binaria,
     normalizar_texto_interaccion,
 )
-from templates.onboarding.registration import (
-    CONFIRM_ACCEPT_ID,
-    CONFIRM_REJECT_ID,
-)
+from templates.maintenance import CONFIRM_ACCEPT_ID, CONFIRM_REJECT_ID
 from templates.review.estados import mensaje_proveedor_en_revision
 from templates.shared import (
     mensaje_no_pude_guardar_informacion_registro,

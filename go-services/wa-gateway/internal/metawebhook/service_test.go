@@ -1294,7 +1294,7 @@ func TestProcessEventBSUIDWithFallback(t *testing.T) {
 						"value":{
 							"metadata":{"phone_number_id":"123456789"},
 							"contacts":[{
-								"profile":{"name":"Test User","username":"testuser","country_code":"US"},
+								"profile":{"name":"Test User","formatted_name":"Test User Formatted","first_name":"Test","last_name":"User","username":"testuser","country_code":"US"},
 								"wa_id":"593999111222",
 								"user_id":"user.9373795779eb6441c8adb2eaee5b848e7dd174ddd302d7db62142f4722d574b6"
 							}],
@@ -1333,6 +1333,20 @@ func TestProcessEventBSUIDWithFallback(t *testing.T) {
 	if got.Username != "testuser" {
 		t.Fatalf("expected username testuser, got %s", got.Username)
 	}
+	// DisplayName should be extracted from contact name
+	if got.DisplayName != "Test User Formatted" {
+		t.Fatalf("expected display_name Test User Formatted, got %s", got.DisplayName)
+	}
+	// FormattedName, FirstName and LastName should be extracted from contact
+	if got.FormattedName != "Test User Formatted" {
+		t.Fatalf("expected formatted_name Test User Formatted, got %s", got.FormattedName)
+	}
+	if got.FirstName != "Test" {
+		t.Fatalf("expected first_name Test, got %s", got.FirstName)
+	}
+	if got.LastName != "User" {
+		t.Fatalf("expected last_name User, got %s", got.LastName)
+	}
 	// CountryCode should be extracted from contact
 	if got.CountryCode != "US" {
 		t.Fatalf("expected country_code US, got %s", got.CountryCode)
@@ -1340,6 +1354,66 @@ func TestProcessEventBSUIDWithFallback(t *testing.T) {
 	// FromNumber should still be the original phone number
 	if got.FromNumber != "593999111222@s.whatsapp.net" {
 		t.Fatalf("expected from_number 593999111222@s.whatsapp.net, got %s", got.FromNumber)
+	}
+}
+
+func TestProcessEventBSUIDWithoutFromField(t *testing.T) {
+	fs := &fakeSender{}
+	svc := NewService(Config{
+		Enabled:   true,
+		AppSecret: "secret-1",
+		PhoneNumberToAccount: map[string]string{
+			"123456789": "bot-clientes",
+		},
+	}, fs, nil, nil)
+
+	body := []byte(`{
+		"object":"whatsapp_business_account",
+		"entry":[
+			{
+				"id":"waba-1",
+				"changes":[
+					{
+						"field":"messages",
+						"value":{
+							"metadata":{"phone_number_id":"123456789"},
+							"contacts":[{
+								"profile":{"name":"Test User","formatted_name":"Test User Formatted","first_name":"Test","last_name":"User","username":"testuser","country_code":"US"},
+								"user_id":"US.13491208655302741918"
+							}],
+							"messages":[{
+								"from_user_id":"US.13491208655302741918",
+								"id":"wamid.bsuid.1",
+								"timestamp":"1730000005",
+								"type":"text",
+								"text":{"body":"hola"}
+							}]
+						}
+					}
+				]
+			}
+		]
+	}`)
+	sig := buildSignature("secret-1", body)
+
+	if err := svc.ProcessEvent(context.Background(), sig, body); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if len(fs.payloads) != 1 {
+		t.Fatalf("expected 1 forwarded payload, got %d", len(fs.payloads))
+	}
+	got := fs.payloads[0]
+	if got.Phone != "US.13491208655302741918" {
+		t.Fatalf("expected phone to use BSUID fallback, got %s", got.Phone)
+	}
+	if got.UserID != "US.13491208655302741918" {
+		t.Fatalf("expected user_id US.13491208655302741918, got %s", got.UserID)
+	}
+	if got.FromNumber != "US.13491208655302741918@lid" {
+		t.Fatalf("expected from_number US.13491208655302741918@lid, got %s", got.FromNumber)
+	}
+	if got.DisplayName != "Test User Formatted" {
+		t.Fatalf("expected display_name Test User Formatted, got %s", got.DisplayName)
 	}
 }
 

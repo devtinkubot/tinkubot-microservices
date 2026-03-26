@@ -16,6 +16,10 @@ from services.onboarding.session import (
     marcar_perfil_eliminado,
     reiniciar_flujo,
 )
+from services.onboarding.whatsapp_identity import (
+    obtener_identidades_proveedor,
+    resolver_provider_id_por_identidad,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +54,10 @@ async def eliminar_registro_proveedor(
 
         perfil = await _obtener_perfil_para_eliminacion(supabase, telefono)
         provider_id = perfil.get("id") if perfil else None
+        if not provider_id:
+            provider_id = await resolver_provider_id_por_identidad(supabase, telefono)
+            if provider_id:
+                perfil = await _obtener_perfil_por_id(supabase, provider_id)
 
         if provider_id:
             await run_supabase(
@@ -70,20 +78,49 @@ async def eliminar_registro_proveedor(
             rutas=rutas_storage,
         )
 
-        await run_supabase(
-            lambda: supabase.table("providers")
-            .delete()
-            .eq("phone", telefono)
-            .execute(),
-            label="providers.delete_by_phone",
-        )
+        if provider_id:
+            await run_supabase(
+                lambda: supabase.table("providers")
+                .delete()
+                .eq("id", provider_id)
+                .execute(),
+                label="providers.delete_by_id",
+            )
+        else:
+            await run_supabase(
+                lambda: supabase.table("providers")
+                .delete()
+                .eq("phone", telefono)
+                .execute(),
+                label="providers.delete_by_phone",
+            )
         resultado["deleted_from_db"] = True
         logger.info("✅ Proveedor %s eliminado de la base de datos", telefono)
 
-        resultado["deleted_from_cache"] = await marcar_perfil_eliminado(telefono)
-        await reiniciar_flujo(telefono)
-        await limpiar_claves_proveedor(telefono)
-        await limpiar_marca_perfil_eliminado(telefono)
+        claves_cache = [telefono]
+        if provider_id:
+            try:
+                identidades = await obtener_identidades_proveedor(supabase, provider_id)
+                claves_cache.extend(
+                    str(row.get("identity_value") or "").strip()
+                    for row in identidades
+                    if str(row.get("identity_value") or "").strip()
+                )
+            except Exception:
+                logger.debug(
+                    "No se pudieron cargar identidades para limpiar cache de %s",
+                    provider_id,
+                )
+
+        resultado["deleted_from_cache"] = False
+        for clave in {valor for valor in claves_cache if valor}:
+            resultado["deleted_from_cache"] = (
+                await marcar_perfil_eliminado(clave) or resultado["deleted_from_cache"]
+            )
+            await reiniciar_flujo(clave)
+            await limpiar_claves_proveedor(clave)
+        for clave in {valor for valor in claves_cache if valor}:
+            await limpiar_marca_perfil_eliminado(clave)
         logger.info("✅ Caché y flujo conversacional limpiados para %s", telefono)
 
         resultado["success"] = True
@@ -111,6 +148,22 @@ async def _obtener_perfil_para_eliminacion(
         .limit(1)
         .execute(),
         label="providers.lookup_for_delete",
+    )
+    if respuesta.data:
+        return respuesta.data[0]
+    return None
+
+
+async def _obtener_perfil_por_id(
+    supabase: Any, provider_id: str
+) -> Optional[Dict[str, Any]]:
+    respuesta = await run_supabase(
+        lambda: supabase.table("providers")
+        .select("id,dni_front_photo_url,dni_back_photo_url,face_photo_url")
+        .eq("id", provider_id)
+        .limit(1)
+        .execute(),
+        label="providers.lookup_for_delete_by_id",
     )
     if respuesta.data:
         return respuesta.data[0]

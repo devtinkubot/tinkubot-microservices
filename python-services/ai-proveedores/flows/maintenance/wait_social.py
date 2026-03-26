@@ -12,13 +12,15 @@ from services.maintenance.redes_sociales_slots import (
     resolver_redes_sociales,
 )
 from services.shared import es_skip_value
+from templates.maintenance import (
+    payload_confirmacion_resumen,
+)
 from templates.onboarding.registration import (
     SOCIAL_FACEBOOK_ID,
     SOCIAL_INSTAGRAM_ID,
     SOCIAL_SKIP_ID,
     construir_resumen_confirmacion_perfil_profesional,
     payload_certificado_opcional,
-    payload_confirmacion_resumen,
     payload_red_social_opcional_estado,
 )
 from templates.shared import (

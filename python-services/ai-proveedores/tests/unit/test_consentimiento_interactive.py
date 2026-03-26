@@ -25,11 +25,12 @@ def test_payload_consentimiento_proveedor_retorna_interactive_con_imagen_default
     assert "messages" in payload
     assert len(payload["messages"]) == 1
     mensaje = payload["messages"][0]
-    assert "Para poder conectarte con clientes" in mensaje["response"]
+    assert "Para continuar con tu registro" in mensaje["response"]
     assert "- Nombres" in mensaje["response"]
     assert "- Teléfono" in mensaje["response"]
     assert "- Ubicación" in mensaje["response"]
     assert "- Foto de perfil" in mensaje["response"]
+    assert "Revisa nuestra política de privacidad aquí" in mensaje["response"]
     assert "https://www.tinku.bot/privacy" in mensaje["response"]
     assert "Al tocar *Aceptar*" in mensaje["response"]
     assert mensaje["ui"]["type"] == "buttons"
@@ -63,7 +64,7 @@ def test_resolver_opcion_consentimiento_acepta_selected_option_interactivo():
     assert opcion == "1"
 
 
-def test_resolver_opcion_consentimiento_mantiene_fallback_textual_de_rechazo():
+def test_resolver_opcion_consentimiento_ignora_texto_sin_boton():
     opcion = _resolver_opcion_consentimiento(
         {
             "selected_option": "",
@@ -71,12 +72,16 @@ def test_resolver_opcion_consentimiento_mantiene_fallback_textual_de_rechazo():
         }
     )
 
-    assert opcion == "2"
+    assert opcion is None
 
 
 def test_modelo_recepcion_preserva_selected_option_interactivo():
     solicitud = RecepcionMensajeWhatsApp(
         from_number="593999111222@s.whatsapp.net",
+        display_name="Diego Unkuch",
+        formatted_name="Diego Unkuch",
+        first_name="Diego",
+        last_name="Unkuch",
         content="",
         message_type="interactive_button_reply",
         selected_option="continue_provider_onboarding",
@@ -84,5 +89,9 @@ def test_modelo_recepcion_preserva_selected_option_interactivo():
 
     datos = solicitud.model_dump()
 
+    assert datos["display_name"] == "Diego Unkuch"
+    assert datos["formatted_name"] == "Diego Unkuch"
+    assert datos["first_name"] == "Diego"
+    assert datos["last_name"] == "Unkuch"
     assert datos["selected_option"] == "continue_provider_onboarding"
     assert datos["message_type"] == "interactive_button_reply"

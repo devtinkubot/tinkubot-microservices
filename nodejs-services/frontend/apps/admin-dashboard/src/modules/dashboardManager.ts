@@ -30,18 +30,6 @@ function renderSummary() {
     summary ? String(summary.newPending) : "—",
   );
   setValue(
-    "#dashboard-metric-personal-approved",
-    summary ? String(summary.personalApproved) : "—",
-  );
-  setValue(
-    "#dashboard-metric-professional-to-complete",
-    summary ? String(summary.professionalToComplete) : "—",
-  );
-  setValue(
-    "#dashboard-metric-professional-under-review",
-    summary ? String(summary.professionalUnderReview) : "—",
-  );
-  setValue(
     "#dashboard-metric-profile-complete",
     summary ? String(summary.profileComplete) : "—",
   );

@@ -5,6 +5,7 @@ import {
 } from "@tinkubot/api-client";
 import {
   formatearMarcaTemporalEcuador,
+  formatearTelefonoEcuador,
   parsearMarcaTemporalSupabase,
 } from "./utils";
 
@@ -27,7 +28,24 @@ function extraerMensajeError(error: unknown): string {
 
 type TipoAviso = "success" | "error" | "info";
 
-type ProviderBucket = "new" | "profile_incomplete";
+type ProviderBucket = "onboarding" | "new" | "profile_incomplete";
+
+type OnboardingColumn = {
+  state: string;
+  title: string;
+};
+
+const ONBOARDING_COLUMNS: OnboardingColumn[] = [
+  { state: "onboarding_consent", title: "Consentimiento" },
+  { state: "onboarding_city", title: "Ciudad" },
+  { state: "onboarding_dni_front_photo", title: "Cédula frontal" },
+  { state: "onboarding_face_photo", title: "Foto de perfil" },
+  { state: "onboarding_experience", title: "Experiencia" },
+  { state: "onboarding_specialty", title: "Servicios" },
+  { state: "onboarding_add_another_service", title: "Agregar servicio" },
+  { state: "onboarding_services_confirmation", title: "Confirmación" },
+  { state: "onboarding_social_media", title: "Redes sociales" },
+];
 
 interface EstadoProveedores {
   proveedores: ProviderRecord[];
@@ -58,7 +76,7 @@ const estado: EstadoProveedores = {
   estaCargando: false,
   idAccionEnProceso: null,
   proveedorSeleccionado: null,
-  bucketActivo: "new",
+  bucketActivo: "onboarding",
 };
 
 const formateadorFecha = new Intl.DateTimeFormat("es-EC", {
@@ -98,12 +116,77 @@ function extraerPrimerNombre(
   return texto.split(/\s+/).filter(Boolean)[0] || "Proveedor";
 }
 
+function esIdentificadorWhatsAppCrudo(valor: string): boolean {
+  const texto = valor.trim();
+  if (!texto) return false;
+  if (texto.includes("@s.whatsapp.net") || texto.includes("@lid")) {
+    return true;
+  }
+  return /^\d{8,}$/.test(texto.replace(/[^\d]/g, ""));
+}
+
+function resolverTextoVisible(
+  valor: string | null | undefined,
+): string | null {
+  const texto = valor?.trim();
+  if (!texto) return null;
+  return esIdentificadorWhatsAppCrudo(texto)
+    ? formatearTelefonoEcuador(texto)
+    : texto;
+}
+
+function resolverNombreVisibleProveedor(
+  proveedor: ProviderRecord,
+): string {
+  const displayName = proveedor.displayName?.trim();
+  const formattedName = proveedor.formattedName?.trim();
+  const firstName = proveedor.firstName?.trim();
+  const lastName = proveedor.lastName?.trim();
+  const nombreCompuesto = [firstName, lastName].filter(Boolean).join(" ").trim();
+  const telefonoPresentable =
+    resolverTextoVisible(proveedor.contactPhone) ??
+    resolverTextoVisible(proveedor.realPhone) ??
+    resolverTextoVisible(proveedor.phone) ??
+    resolverTextoVisible(proveedor.name);
+
+  return (
+    formattedName ||
+    nombreCompuesto ||
+    displayName ||
+    telefonoPresentable ||
+    resolverTextoVisible(proveedor.name) ||
+    resolverTextoVisible(proveedor.contact) ||
+    "Proveedor"
+  );
+}
+
+function normalizarPasoOnboarding(
+  proveedor: ProviderRecord,
+): string | null {
+  const estado = proveedor.onboardingStep?.trim();
+  if (!estado) {
+    return null;
+  }
+
+  return ONBOARDING_COLUMNS.some((column) => column.state === estado)
+    ? estado
+    : null;
+}
+
 function construirUrlWhatsApp(
   telefono: string | null | undefined,
 ): string | null {
   const digitos = limpiarTelefonoWhatsApp(telefono);
   if (!digitos) return null;
   return `https://wa.me/${digitos}`;
+}
+
+function normalizarTelefonoCopiable(
+  telefono: string | null | undefined,
+): string | null {
+  const digitos = limpiarTelefonoWhatsApp(telefono);
+  if (!digitos) return null;
+  return `+${digitos}`;
 }
 
 function formatearAntiguedadAprobacion(
@@ -246,8 +329,20 @@ function actualizarEncabezadoBucket() {
   const textoCarga =
     obtenerElemento<HTMLElement>("#providers-loading")?.querySelector("p");
 
+  if (estado.bucketActivo === "onboarding") {
+    if (titulo) titulo.textContent = "Onboarding";
+    if (subtitulo) {
+      subtitulo.textContent =
+        "Seguimiento por fase del alta de proveedores, sin saturar al administrativo.";
+    }
+    if (vacio) vacio.textContent = "No hay proveedores en onboarding.";
+    if (textoCarga)
+      textoCarga.textContent = "Obteniendo onboarding de proveedores...";
+    return;
+  }
+
   if (estado.bucketActivo === "profile_incomplete") {
-    if (titulo) titulo.textContent = "Perfil profesional incompleto";
+    if (titulo) titulo.textContent = "Incompletos";
     if (subtitulo) {
       subtitulo.textContent =
         "Proveedores con información personal aprobada que todavía no completan experiencia y 3 servicios principales.";
@@ -259,14 +354,14 @@ function actualizarEncabezadoBucket() {
     return;
   }
 
-  if (titulo) titulo.textContent = "Onboarding por revisar";
+  if (titulo) titulo.textContent = "Nuevos";
   if (subtitulo) {
     subtitulo.textContent =
-      "Revisa consentimiento, ciudad e identidad del proveedor antes del alta inicial.";
+      "Onboardings completos que ya esperan revisión.";
   }
-  if (vacio) vacio.textContent = "No hay onboardings pendientes por revisar.";
+  if (vacio) vacio.textContent = "No hay proveedores nuevos por revisar.";
   if (textoCarga)
-    textoCarga.textContent = "Obteniendo onboardings pendientes...";
+    textoCarga.textContent = "Obteniendo proveedores nuevos...";
 }
 
 function escaparHtml(texto: string): string {
@@ -369,7 +464,9 @@ function actualizarContacto(proveedor: ProviderRecord) {
   const telefono =
     proveedor.contactPhone ?? proveedor.realPhone ?? proveedor.phone ?? null;
   const realPhone = proveedor.realPhone ?? null;
-  const nombre = proveedor.contact ?? proveedor.name ?? "Contacto";
+  const telefonoPresentable = formatearTelefonoEcuador(telefono);
+  const realPhonePresentable = formatearTelefonoEcuador(realPhone);
+  const nombre = resolverNombreVisibleProveedor(proveedor);
   const estadoContacto =
     proveedor.contactStatus === "lid_with_real_phone"
       ? "LID con número real confirmado"
@@ -379,10 +476,10 @@ function actualizarContacto(proveedor: ProviderRecord) {
           ? "Número real disponible"
           : "Solo teléfono base";
 
-  establecerTexto("#provider-detail-phone", telefono, {
+  establecerTexto("#provider-detail-phone", telefonoPresentable, {
     fallback: "Sin número",
   });
-  establecerTexto("#provider-detail-real-phone", realPhone, {
+  establecerTexto("#provider-detail-real-phone", realPhonePresentable, {
     fallback: "Sin número real",
   });
   establecerTexto("#provider-detail-contact-status", estadoContacto);
@@ -393,7 +490,8 @@ function actualizarContacto(proveedor: ProviderRecord) {
   );
   if (telefonoBtn) {
     if (telefono) {
-      telefonoBtn.dataset.phone = telefono;
+      telefonoBtn.dataset.phone =
+        normalizarTelefonoCopiable(telefono) ?? telefono;
       telefonoBtn.disabled = false;
     } else {
       delete telefonoBtn.dataset.phone;
@@ -406,7 +504,7 @@ function actualizarContacto(proveedor: ProviderRecord) {
   );
   if (enlaceWhatsapp) {
     if (telefono) {
-      const telefonoE164 = telefono.replace(/[^\d+]/g, "");
+  const telefonoE164 = telefono.replace(/[^\d+]/g, "");
       enlaceWhatsapp.href = `https://wa.me/${telefonoE164}`;
       enlaceWhatsapp.style.display = "inline-flex";
     } else {
@@ -845,7 +943,10 @@ function actualizarBadgeEstado(status: ProviderRecord["status"]) {
 }
 
 function actualizarDetalleProveedor(proveedor: ProviderRecord) {
-  establecerTexto("#provider-detail-name", proveedor.name);
+  establecerTexto(
+    "#provider-detail-name",
+    resolverNombreVisibleProveedor(proveedor),
+  );
   actualizarBadgeEstado(proveedor.status);
   establecerTexto(
     "#provider-detail-status-text",
@@ -948,7 +1049,9 @@ async function cargarProveedoresBucket() {
 
   try {
     const proveedores =
-      estado.bucketActivo === "profile_incomplete"
+      estado.bucketActivo === "onboarding"
+        ? await apiProveedores.obtenerProveedoresOnboarding()
+        : estado.bucketActivo === "profile_incomplete"
         ? await apiProveedores.obtenerProveedoresPerfilProfesionalIncompleto()
         : await apiProveedores.obtenerProveedoresNuevos();
     estado.proveedores = proveedores;
@@ -1060,7 +1163,7 @@ function construirMensajeSugerido(
 ): string {
   const nombreLimpio = extraerPrimerNombre(
     proveedor?.documentFirstNames ||
-      proveedor?.name ||
+      (proveedor ? resolverNombreVisibleProveedor(proveedor) : null) ||
       proveedor?.contact ||
       null,
   );
@@ -1267,6 +1370,7 @@ function renderizarEncabezadoTabla() {
 
   encabezado.innerHTML = `
     <tr>
+      <th>Nombre</th>
       <th>Contacto</th>
       <th>Ciudad</th>
       <th>Fecha de Registro</th>
@@ -1276,16 +1380,13 @@ function renderizarEncabezadoTabla() {
 }
 
 function renderizarFilaProveedorGeneral(proveedor: ProviderRecord): string {
-  const { id, contact, contactPhone, registeredAt, city } = proveedor;
+  const { id, contactPhone, registeredAt, city } = proveedor;
+  const nombreVisible = resolverNombreVisibleProveedor(proveedor);
+  const telefonoPresentable = formatearTelefonoEcuador(contactPhone);
 
-  const infoContacto = [
-    contact ?? null,
-    contactPhone
-      ? `<span class="text-muted d-block">${escaparHtml(contactPhone)}</span>`
-      : null,
-  ]
-    .filter(Boolean)
-    .join("");
+  const contactoMarkup = telefonoPresentable
+    ? escaparHtml(telefonoPresentable)
+    : '<span class="text-muted">Sin contacto</span>';
 
   const ubicacion = city
     ? escaparHtml(city)
@@ -1293,7 +1394,10 @@ function renderizarFilaProveedorGeneral(proveedor: ProviderRecord): string {
 
   return `
     <tr data-provider-id="${id}">
-      <td>${infoContacto || '<span class="text-muted">Sin contacto</span>'}</td>
+      <td>
+        <div class="fw-semibold">${escaparHtml(nombreVisible)}</div>
+      </td>
+      <td>${contactoMarkup}</td>
       <td>${ubicacion}</td>
       <td>
         <span class="text-muted small">
@@ -1318,7 +1422,7 @@ function renderizarFilaProveedorGeneral(proveedor: ProviderRecord): string {
 function renderizarFilaPerfilProfesionalIncompleto(
   proveedor: ProviderRecord,
 ): string {
-  const firstName = extraerPrimerNombre(proveedor.name || proveedor.contact);
+  const firstName = extraerPrimerNombre(resolverNombreVisibleProveedor(proveedor));
   const ciudad = proveedor.city?.trim()
     ? escaparHtml(proveedor.city.trim())
     : '<span class="text-muted">Sin ciudad</span>';
@@ -1339,7 +1443,6 @@ function renderizarFilaPerfilProfesionalIncompleto(
     <tr data-provider-id="${proveedor.id}">
       <td>
         <div class="fw-semibold">${escaparHtml(firstName)}</div>
-        <span class="badge bg-info text-dark">Información personal aprobada</span>
       </td>
       <td>${ciudad}</td>
       <td>${ageMarkup}</td>
@@ -1359,10 +1462,98 @@ function renderizarFilaPerfilProfesionalIncompleto(
   `;
 }
 
+function renderizarTarjetaOnboarding(proveedor: ProviderRecord): string {
+  const nombreVisible = resolverNombreVisibleProveedor(proveedor);
+  return `
+    <article class="providers-kanban-card">
+      <div class="providers-kanban-card-name">${escaparHtml(nombreVisible)}</div>
+    </article>
+  `;
+}
+
+function renderizarTableroOnboarding() {
+  const wrapper = obtenerElemento<HTMLDivElement>("#providers-kanban-wrapper");
+  const nav = obtenerElemento<HTMLDivElement>("#providers-kanban-nav");
+  const board = obtenerElemento<HTMLDivElement>("#providers-kanban-board");
+  const estadoVacio = obtenerElemento<HTMLDivElement>("#providers-empty");
+  if (!wrapper || !nav || !board || !estadoVacio) {
+    return;
+  }
+
+  const agrupados = new Map<string, ProviderRecord[]>();
+  for (const proveedor of estado.proveedores) {
+    const paso = normalizarPasoOnboarding(proveedor);
+    if (!paso) {
+      continue;
+    }
+    if (!agrupados.has(paso)) {
+      agrupados.set(paso, []);
+    }
+      agrupados.get(paso)?.push(proveedor);
+  }
+
+  const totalOnboarding = Array.from(agrupados.values()).reduce(
+    (acumulado, lista) => acumulado + lista.length,
+    0,
+  );
+  if (totalOnboarding === 0) {
+    wrapper.style.display = "none";
+    nav.innerHTML = "";
+    board.innerHTML = "";
+    estadoVacio.style.display = "block";
+    return;
+  }
+
+  nav.innerHTML = ONBOARDING_COLUMNS.map(
+    (columna) => `
+      <button
+        type="button"
+        class="btn btn-outline-primary btn-sm"
+        data-onboarding-jump="${columna.state}"
+      >
+        ${escaparHtml(columna.title)}
+      </button>
+    `,
+  ).join("");
+
+  board.innerHTML = ONBOARDING_COLUMNS.map((columna) => {
+    const proveedores = agrupados.get(columna.state) ?? [];
+    const contenido = proveedores.length
+      ? proveedores
+          .map((proveedor) => renderizarTarjetaOnboarding(proveedor))
+          .join("")
+      : '<div class="providers-kanban-empty">Sin proveedores en esta fase.</div>';
+    return `
+      <section
+        class="providers-kanban-column"
+        id="onboarding-column-${columna.state}"
+        data-onboarding-column="${columna.state}"
+      >
+        <div class="providers-kanban-column-header">
+          <div>
+            <div class="providers-kanban-column-title">${escaparHtml(columna.title)}</div>
+            <div class="providers-kanban-column-key">${escaparHtml(columna.state)}</div>
+          </div>
+          <span class="providers-kanban-column-count">${proveedores.length}</span>
+        </div>
+        <div class="providers-kanban-column-list">
+          ${contenido}
+        </div>
+      </section>
+    `;
+  }).join("");
+
+  estadoVacio.style.display = "none";
+  wrapper.style.display = "block";
+}
+
 function renderizarProveedores() {
   const estadoVacio = obtenerElemento<HTMLDivElement>("#providers-empty");
   const contenedorTabla = obtenerElemento<HTMLDivElement>(
     "#providers-table-wrapper",
+  );
+  const contenedorKanban = obtenerElemento<HTMLDivElement>(
+    "#providers-kanban-wrapper",
   );
   const cuerpoTabla = obtenerElemento<HTMLTableSectionElement>(
     "#providers-table-body",
@@ -1370,6 +1561,29 @@ function renderizarProveedores() {
 
   if (!contenedorTabla || !cuerpoTabla || !estadoVacio) {
     return;
+  }
+
+  if (estado.bucketActivo === "onboarding") {
+    contenedorTabla.style.display = "none";
+    cuerpoTabla.innerHTML = "";
+    if (contenedorKanban) {
+      contenedorKanban.style.display = "block";
+    }
+    if (estado.proveedores.length === 0) {
+      if (contenedorKanban) {
+        contenedorKanban.style.display = "none";
+      }
+      estadoVacio.style.display = "block";
+      return;
+    }
+
+    estadoVacio.style.display = "none";
+    renderizarTableroOnboarding();
+    return;
+  }
+
+  if (contenedorKanban) {
+    contenedorKanban.style.display = "none";
   }
 
   renderizarEncabezadoTabla();
@@ -1421,6 +1635,29 @@ function enlazarEventos() {
       void cargarProveedoresBucket();
     });
   });
+
+  const contenedorKanban = obtenerElemento<HTMLDivElement>(
+    "#providers-kanban-wrapper",
+  );
+  if (contenedorKanban) {
+    contenedorKanban.addEventListener("click", (evento) => {
+      const objetivo = evento.target as HTMLElement;
+      const boton = objetivo.closest<HTMLButtonElement>(
+        "[data-onboarding-jump]",
+      );
+      if (!boton) return;
+      const estadoOnboarding = boton.dataset.onboardingJump;
+      if (!estadoOnboarding) return;
+      const columna = obtenerElemento<HTMLElement>(
+        `#onboarding-column-${estadoOnboarding}`,
+      );
+      columna?.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+        inline: "start",
+      });
+    });
+  }
 
   const contenedorTabla = obtenerElemento<HTMLDivElement>(
     "#providers-table-wrapper",
