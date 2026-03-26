@@ -52,20 +52,18 @@ python-services/ai-proveedores/
 
 | State | Owner | Writer | Reader | Bridge |
 |---|---|---|---|---|
-| `onboarding_consent` | onboarding | onboarding router | onboarding router | no |
 | `onboarding_city` | onboarding | onboarding router | onboarding router | no |
 | `onboarding_dni_front_photo` | onboarding | onboarding router | onboarding router | no |
 | `onboarding_face_photo` | onboarding | onboarding router | onboarding router | no |
 | `onboarding_experience` | onboarding | onboarding router | onboarding router | no |
 | `onboarding_specialty` | onboarding | onboarding router | onboarding router | no |
-| `onboarding_add_another_service` | onboarding | onboarding flow | onboarding flow | no |
-| `onboarding_services_confirmation` | onboarding | onboarding flow | onboarding flow | no |
 | `onboarding_services_edit_action` | onboarding | onboarding flow | onboarding flow | no |
 | `onboarding_services_edit_replace_select` | onboarding | onboarding flow | onboarding flow | no |
 | `onboarding_services_edit_replace_input` | onboarding | onboarding flow | onboarding flow | no |
 | `onboarding_services_edit_delete_select` | onboarding | onboarding flow | onboarding flow | no |
 | `onboarding_services_edit_add` | onboarding | onboarding flow | onboarding flow | no |
 | `onboarding_social_media` | onboarding | onboarding flow | onboarding flow | no |
+| `onboarding_consent` | onboarding | onboarding router | onboarding router | no |
 | `onboarding_real_phone` | onboarding | onboarding flow | onboarding flow | no |
 | `pending_verification` | review | onboarding handoff, admin sync | review router | no |
 | `maintenance_menu_option` | maintenance | maintenance router | maintenance router | no |

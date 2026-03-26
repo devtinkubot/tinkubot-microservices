@@ -5,7 +5,7 @@ from typing import Any, Dict
 from .consentimiento import payload_consentimiento_proveedor
 
 ONBOARDING_REGISTER_BUTTON_ID = "continue_provider_onboarding"
-MENU_REGISTRO_HEADER_IMAGE_URL_ENV = "WA_PROVIDER_ONBOARDING_IMAGE_URL"
+MENU_REGISTRO_HEADER_IMAGE_URL_ENV = "PROVIDER_ONBOARDING_CONSENT_IMAGE_URL"
 MENU_REGISTRO_PROVEEDOR = payload_consentimiento_proveedor()["messages"][0]["response"]
 
 

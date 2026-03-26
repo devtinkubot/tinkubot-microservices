@@ -36,14 +36,11 @@ type OnboardingColumn = {
 };
 
 const ONBOARDING_COLUMNS: OnboardingColumn[] = [
-  { state: "onboarding_consent", title: "Consentimiento" },
   { state: "onboarding_city", title: "Ciudad" },
   { state: "onboarding_dni_front_photo", title: "Cédula frontal" },
   { state: "onboarding_face_photo", title: "Foto de perfil" },
   { state: "onboarding_experience", title: "Experiencia" },
   { state: "onboarding_specialty", title: "Servicios" },
-  { state: "onboarding_add_another_service", title: "Agregar servicio" },
-  { state: "onboarding_services_confirmation", title: "Confirmación" },
   { state: "onboarding_social_media", title: "Redes sociales" },
 ];
 
@@ -125,9 +122,7 @@ function esIdentificadorWhatsAppCrudo(valor: string): boolean {
   return /^\d{8,}$/.test(texto.replace(/[^\d]/g, ""));
 }
 
-function resolverTextoVisible(
-  valor: string | null | undefined,
-): string | null {
+function resolverTextoVisible(valor: string | null | undefined): string | null {
   const texto = valor?.trim();
   if (!texto) return null;
   return esIdentificadorWhatsAppCrudo(texto)
@@ -135,14 +130,15 @@ function resolverTextoVisible(
     : texto;
 }
 
-function resolverNombreVisibleProveedor(
-  proveedor: ProviderRecord,
-): string {
+function resolverNombreVisibleProveedor(proveedor: ProviderRecord): string {
   const displayName = proveedor.displayName?.trim();
   const formattedName = proveedor.formattedName?.trim();
   const firstName = proveedor.firstName?.trim();
   const lastName = proveedor.lastName?.trim();
-  const nombreCompuesto = [firstName, lastName].filter(Boolean).join(" ").trim();
+  const nombreCompuesto = [firstName, lastName]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
   const telefonoPresentable =
     resolverTextoVisible(proveedor.contactPhone) ??
     resolverTextoVisible(proveedor.realPhone) ??
@@ -160,9 +156,7 @@ function resolverNombreVisibleProveedor(
   );
 }
 
-function normalizarPasoOnboarding(
-  proveedor: ProviderRecord,
-): string | null {
+function normalizarPasoOnboarding(proveedor: ProviderRecord): string | null {
   const estado = proveedor.onboardingStep?.trim();
   if (!estado) {
     return null;
@@ -356,12 +350,10 @@ function actualizarEncabezadoBucket() {
 
   if (titulo) titulo.textContent = "Nuevos";
   if (subtitulo) {
-    subtitulo.textContent =
-      "Onboardings completos que ya esperan revisión.";
+    subtitulo.textContent = "Onboardings completos que ya esperan revisión.";
   }
   if (vacio) vacio.textContent = "No hay proveedores nuevos por revisar.";
-  if (textoCarga)
-    textoCarga.textContent = "Obteniendo proveedores nuevos...";
+  if (textoCarga) textoCarga.textContent = "Obteniendo proveedores nuevos...";
 }
 
 function escaparHtml(texto: string): string {
@@ -504,7 +496,7 @@ function actualizarContacto(proveedor: ProviderRecord) {
   );
   if (enlaceWhatsapp) {
     if (telefono) {
-  const telefonoE164 = telefono.replace(/[^\d+]/g, "");
+      const telefonoE164 = telefono.replace(/[^\d+]/g, "");
       enlaceWhatsapp.href = `https://wa.me/${telefonoE164}`;
       enlaceWhatsapp.style.display = "inline-flex";
     } else {
@@ -711,9 +703,7 @@ function actualizarPerfilProfesional(proveedor: ProviderRecord) {
             Boolean(item.requiresReview) ||
             (typeof item.classificationConfidence === "number" &&
               item.classificationConfidence < 0.7);
-          const borde = requiereRevision
-            ? "border-danger"
-            : "border-success";
+          const borde = requiereRevision ? "border-danger" : "border-success";
           const badge = requiereRevision
             ? '<span class="badge bg-danger">Revisión</span>'
             : '<span class="badge bg-success">Claro</span>';
@@ -1052,8 +1042,8 @@ async function cargarProveedoresBucket() {
       estado.bucketActivo === "onboarding"
         ? await apiProveedores.obtenerProveedoresOnboarding()
         : estado.bucketActivo === "profile_incomplete"
-        ? await apiProveedores.obtenerProveedoresPerfilProfesionalIncompleto()
-        : await apiProveedores.obtenerProveedoresNuevos();
+          ? await apiProveedores.obtenerProveedoresPerfilProfesionalIncompleto()
+          : await apiProveedores.obtenerProveedoresNuevos();
     estado.proveedores = proveedores;
     renderizarProveedores();
   } catch (error) {
@@ -1422,7 +1412,9 @@ function renderizarFilaProveedorGeneral(proveedor: ProviderRecord): string {
 function renderizarFilaPerfilProfesionalIncompleto(
   proveedor: ProviderRecord,
 ): string {
-  const firstName = extraerPrimerNombre(resolverNombreVisibleProveedor(proveedor));
+  const firstName = extraerPrimerNombre(
+    resolverNombreVisibleProveedor(proveedor),
+  );
   const ciudad = proveedor.city?.trim()
     ? escaparHtml(proveedor.city.trim())
     : '<span class="text-muted">Sin ciudad</span>';
@@ -1489,7 +1481,7 @@ function renderizarTableroOnboarding() {
     if (!agrupados.has(paso)) {
       agrupados.set(paso, []);
     }
-      agrupados.get(paso)?.push(proveedor);
+    agrupados.get(paso)?.push(proveedor);
   }
 
   const totalOnboarding = Array.from(agrupados.values()).reduce(

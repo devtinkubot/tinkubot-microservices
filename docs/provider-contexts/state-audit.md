@@ -33,8 +33,6 @@ These belong to the initial provider journey and should stay in the onboarding c
 - `onboarding_face_photo`
 - `onboarding_experience`
 - `onboarding_specialty`
-- `onboarding_add_another_service`
-- `onboarding_services_confirmation`
 - `onboarding_services_edit_action`
 - `onboarding_services_edit_replace_select`
 - `onboarding_services_edit_replace_input`
@@ -42,6 +40,11 @@ These belong to the initial provider journey and should stay in the onboarding c
 - `onboarding_services_edit_add`
 - `onboarding_social_media`
 - `onboarding_real_phone`
+
+For dashboard purposes, the operational kanban should start at `onboarding_city`. The pre-city states
+(`onboarding_consent`, `onboarding_real_phone`) and the transitory service-step states
+(`onboarding_add_another_service`, `onboarding_services_confirmation`) remain part of backend flow
+control but should not be shown as primary dashboard columns.
 
 Legacy onboarding aliases still exist only where they are used to normalize old state values:
 

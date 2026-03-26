@@ -6,7 +6,7 @@ parámetros de limpieza automática del onboarding.
 
 from typing import Optional
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings
 
 
@@ -98,7 +98,10 @@ class ConfiguracionServicio(BaseSettings):
             "vYXJkaW5nLnBuZyIsImlhdCI6MTc3Mjk1MDYyMiwiZXhwIjoxODM2MDIyNjIyfQ."
             "J3a8O9wRoUo8PDwpcdv3KD5kPpfvKIONoIqXjsWORdI"
         ),
-        validation_alias="WA_PROVIDER_ONBOARDING_IMAGE_URL",
+        validation_alias=AliasChoices(
+            "PROVIDER_ONBOARDING_CONSENT_IMAGE_URL",
+            "WA_PROVIDER_ONBOARDING_IMAGE_URL",
+        ),
     )
 
     # Seguridad interna (endpoints administrativos)

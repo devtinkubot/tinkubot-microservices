@@ -11,6 +11,7 @@ PROMPT_CONSENTIMIENTO = (
     "- Ubicación\n"
     "- Foto de perfil\n\n"
     f"Revisa nuestra política de privacidad aquí: {configuracion.privacy_policy_url}\n"
+    "\n"
     "Al tocar *Aceptar*, nos autorizas a usar tu información para crear tu "
     "perfil de proveedor."
 )
