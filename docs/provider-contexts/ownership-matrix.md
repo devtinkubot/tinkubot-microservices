@@ -57,11 +57,7 @@ python-services/ai-proveedores/
 | `onboarding_face_photo` | onboarding | onboarding router | onboarding router | no |
 | `onboarding_experience` | onboarding | onboarding router | onboarding router | no |
 | `onboarding_specialty` | onboarding | onboarding router | onboarding router | no |
-| `onboarding_services_edit_action` | onboarding | onboarding flow | onboarding flow | no |
-| `onboarding_services_edit_replace_select` | onboarding | onboarding flow | onboarding flow | no |
-| `onboarding_services_edit_replace_input` | onboarding | onboarding flow | onboarding flow | no |
-| `onboarding_services_edit_delete_select` | onboarding | onboarding flow | onboarding flow | no |
-| `onboarding_services_edit_add` | onboarding | onboarding flow | onboarding flow | no |
+| `onboarding_add_another_service` | onboarding | onboarding router | onboarding router | no |
 | `onboarding_social_media` | onboarding | onboarding flow | onboarding flow | no |
 | `onboarding_consent` | onboarding | onboarding router | onboarding router | no |
 | `onboarding_real_phone` | onboarding | onboarding flow | onboarding flow | no |

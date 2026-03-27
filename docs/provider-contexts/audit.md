@@ -50,11 +50,7 @@ These are business states and should not be removed as cleanup:
 - `verification_notified`
 - `review_silenced`
 - `pending_review_attempts`
-- `onboarding_services_edit_action`
-- `onboarding_services_edit_replace_select`
-- `onboarding_services_edit_replace_input`
-- `onboarding_services_edit_delete_select`
-- `onboarding_services_edit_add`
+- `onboarding_add_another_service`
 
 ### Keep: runtime configuration
 These are configuration knobs, not feature flags:

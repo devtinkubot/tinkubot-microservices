@@ -21,16 +21,8 @@ from services.onboarding.redes_sociales import (
 from services.onboarding.servicios import (
     manejar_espera_servicios_onboarding,
 )
-from services.onboarding.servicios_confirmacion import (
-    manejar_confirmacion_servicios_onboarding,
+from flows.onboarding.handlers.servicios_confirmacion import (
     manejar_decision_agregar_otro_servicio_onboarding,
-)
-from services.onboarding.servicios_edicion import (
-    manejar_accion_edicion_servicios_registro,
-    manejar_agregar_servicio_desde_edicion_registro,
-    manejar_eliminacion_servicio_registro,
-    manejar_reemplazo_servicio_registro,
-    manejar_seleccion_reemplazo_servicio_registro,
 )
 
 __all__ = [
@@ -44,11 +36,5 @@ __all__ = [
     "manejar_espera_experiencia_onboarding",
     "manejar_espera_servicios_onboarding",
     "manejar_estado_consentimiento_onboarding",
-    "manejar_confirmacion_servicios_onboarding",
     "manejar_decision_agregar_otro_servicio_onboarding",
-    "manejar_accion_edicion_servicios_registro",
-    "manejar_agregar_servicio_desde_edicion_registro",
-    "manejar_eliminacion_servicio_registro",
-    "manejar_reemplazo_servicio_registro",
-    "manejar_seleccion_reemplazo_servicio_registro",
 ]

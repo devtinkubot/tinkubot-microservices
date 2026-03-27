@@ -1,5 +1,6 @@
 import {
   apiProveedores,
+  type ProviderOnboardingResetResponse,
   type ProviderActionResponse,
   type ProviderRecord,
 } from "@tinkubot/api-client";
@@ -34,6 +35,8 @@ type OnboardingColumn = {
   state: string;
   title: string;
 };
+
+type OnboardingAgeLevel = "fresh" | "warning" | "critical";
 
 const ONBOARDING_COLUMNS: OnboardingColumn[] = [
   { state: "onboarding_city", title: "Ciudad" },
@@ -203,6 +206,41 @@ function formatearAntiguedadAprobacion(
 
   const diffDias = Math.floor(diffHoras / 24);
   return `Aprobado hace ${diffDias} ${diffDias === 1 ? "día" : "días"}`;
+}
+
+function resolverAntiguedadOnboarding(
+  timestamp: string | null | undefined,
+): {
+  horas: number | null;
+  etiqueta: string | null;
+  nivel: OnboardingAgeLevel;
+} {
+  if (!timestamp) {
+    return { horas: null, etiqueta: null, nivel: "fresh" };
+  }
+
+  const fecha = parsearMarcaTemporalSupabase(timestamp);
+  if (!fecha) {
+    return { horas: null, etiqueta: null, nivel: "fresh" };
+  }
+
+  const diffMs = Date.now() - fecha.getTime();
+  if (!Number.isFinite(diffMs) || diffMs < 0) {
+    return { horas: null, etiqueta: null, nivel: "fresh" };
+  }
+
+  const horas = Math.floor(diffMs / (60 * 60 * 1000));
+  const dias = Math.floor(horas / 24);
+  const etiqueta =
+    horas < 1
+      ? "Hace menos de 1 hora"
+      : horas < 24
+        ? `Hace ${horas} ${horas === 1 ? "hora" : "horas"}`
+        : `Hace ${dias} ${dias === 1 ? "día" : "días"}`;
+  const nivel: OnboardingAgeLevel =
+    horas >= 72 ? "critical" : horas >= 48 ? "warning" : "fresh";
+
+  return { horas, etiqueta, nivel };
 }
 
 function obtenerModalRevision(): ModalInstance | null {
@@ -1092,16 +1130,40 @@ function abrirModalRevision(proveedorId: string) {
 
 async function ejecutarAccionSobreProveedor(
   proveedorId: string,
-  accion: "review",
+  accion: "review" | "reset",
   opciones: AccionProveedorOpciones = {},
 ) {
   establecerAccionEnProceso(proveedorId);
   mostrarErrorModal();
 
   try {
-    let respuesta: ProviderActionResponse;
+    if (accion === "reset") {
+      const confirmado = window.confirm(
+        "¿Quieres reiniciar la operación activa de este proveedor? Se eliminará su avance actual y podrá registrarse nuevamente.",
+      );
+      if (!confirmado) {
+        return;
+      }
 
-    respuesta = await apiProveedores.revisarProveedor(proveedorId, opciones);
+      const respuesta: ProviderOnboardingResetResponse =
+        await apiProveedores.resetearProveedorOnboarding(proveedorId);
+      if (!respuesta.success) {
+        throw new Error(
+          respuesta.message ??
+            "No se pudo reiniciar el onboarding del proveedor.",
+        );
+      }
+
+      mostrarAviso(
+        respuesta.message ?? "Reset administrativo ejecutado correctamente.",
+        "success",
+      );
+      await cargarProveedoresBucket();
+      return;
+    }
+
+    const respuesta: ProviderActionResponse =
+      await apiProveedores.revisarProveedor(proveedorId, opciones);
 
     const mensaje = respuesta.message ?? "Revisión guardada correctamente.";
 
@@ -1109,7 +1171,7 @@ async function ejecutarAccionSobreProveedor(
     mostrarAviso(mensaje, "success");
     await cargarProveedoresBucket();
   } catch (error) {
-    console.error("Error al revisar proveedor:", error);
+    console.error("Error al procesar proveedor:", error);
     const mensaje = extraerMensajeError(error);
     mostrarErrorModal(mensaje);
     mostrarAviso(mensaje, "error");
@@ -1128,6 +1190,14 @@ function manejarAccionesDeProveedores(evento: Event) {
     const proveedorId = boton.dataset.providerId;
     if (proveedorId) {
       abrirModalRevision(proveedorId);
+    }
+    return;
+  }
+
+  if (boton?.dataset.providerAction === "reset") {
+    const proveedorId = boton.dataset.providerId;
+    if (proveedorId) {
+      void ejecutarAccionSobreProveedor(proveedorId, "reset");
     }
     return;
   }
@@ -1456,9 +1526,51 @@ function renderizarFilaPerfilProfesionalIncompleto(
 
 function renderizarTarjetaOnboarding(proveedor: ProviderRecord): string {
   const nombreVisible = resolverNombreVisibleProveedor(proveedor);
+  const telefonoVisible = resolverTextoVisible(
+    proveedor.contactPhone || proveedor.realPhone || proveedor.phone,
+  );
+  const antiguedad = resolverAntiguedadOnboarding(proveedor.registeredAt);
+  const claseNivel =
+    antiguedad.nivel === "critical"
+      ? "critical"
+      : antiguedad.nivel === "warning"
+        ? "warning"
+        : "fresh";
+  const mostrarReset = antiguedad.nivel !== "fresh";
   return `
-    <article class="providers-kanban-card">
-      <div class="providers-kanban-card-name">${escaparHtml(nombreVisible)}</div>
+    <article class="providers-kanban-card providers-kanban-card--${claseNivel}">
+      <div class="providers-kanban-card-top">
+        <div class="providers-kanban-card-contact">
+          <div class="providers-kanban-card-name">${escaparHtml(nombreVisible)}</div>
+          ${
+            telefonoVisible
+              ? `<div class="providers-kanban-card-meta"><i class="fas fa-phone me-1"></i>${escaparHtml(telefonoVisible)}</div>`
+              : ""
+          }
+        </div>
+        ${
+          antiguedad.etiqueta
+            ? `<span class="providers-kanban-card-age providers-kanban-card-age--${claseNivel}">
+                <i class="fas fa-clock me-1"></i>${escaparHtml(antiguedad.etiqueta)}
+              </span>`
+            : ""
+        }
+      </div>
+      ${
+        mostrarReset
+          ? `<div class="providers-kanban-card-actions">
+              <button
+                type="button"
+                class="btn btn-sm ${antiguedad.nivel === "critical" ? "btn-danger" : "btn-outline-warning"}"
+                data-provider-action="reset"
+                data-provider-id="${escaparHtml(proveedor.id)}"
+              >
+                <i class="fas fa-rotate-right me-1"></i>
+                Reset
+              </button>
+            </div>`
+          : ""
+      }
     </article>
   `;
 }
@@ -1634,6 +1746,13 @@ function enlazarEventos() {
   if (contenedorKanban) {
     contenedorKanban.addEventListener("click", (evento) => {
       const objetivo = evento.target as HTMLElement;
+      const botonReset = objetivo.closest<HTMLButtonElement>(
+        '[data-provider-action="reset"]',
+      );
+      if (botonReset) {
+        manejarAccionesDeProveedores(evento);
+        return;
+      }
       const boton = objetivo.closest<HTMLButtonElement>(
         "[data-onboarding-jump]",
       );

@@ -92,6 +92,20 @@ export interface ProviderActionResponse {
   message?: string;
 }
 
+export interface ProviderOnboardingResetResponse {
+  success: boolean;
+  providerId?: string;
+  phone?: string | null;
+  message?: string;
+  sent_whatsapp?: boolean;
+  deleted_from_db?: boolean;
+  deleted_from_cache?: boolean;
+  deleted_related_services?: boolean;
+  deleted_storage_assets?: boolean;
+  event_type?: string;
+  reset_type?: string;
+}
+
 export interface ProviderStatusOverviewResponse {
   summary: {
     newPending: number;

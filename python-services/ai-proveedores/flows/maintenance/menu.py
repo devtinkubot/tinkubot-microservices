@@ -26,7 +26,7 @@ from templates.maintenance.menus import (
     payload_submenu_informacion_personal,
     payload_submenu_informacion_profesional,
 )
-from templates.onboarding.registration import (
+from templates.maintenance.registration import (
     mensaje_inicio_perfil_profesional,
 )
 from templates.shared import error_opcion_no_reconocida, informar_cierre_sesion

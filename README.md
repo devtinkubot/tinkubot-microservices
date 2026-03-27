@@ -20,7 +20,8 @@ tinkubot-microservices/
 ## Documentación Principal
 
 - [Índice de `ai-proveedores`](docs/ai-proveedores.md)
-- [Contextos de `ai-proveedores`](docs/provider-contexts/plan.md)
+- [Decisiones de `ai-proveedores`](docs/provider-contexts/decisions.md)
+- [Audit de estado de `ai-proveedores`](docs/provider-contexts/state-audit.md)
 - [Fronteras de `ai-proveedores`](docs/ai-proveedores-boundaries.md)
 
 ## Servicios Implementados

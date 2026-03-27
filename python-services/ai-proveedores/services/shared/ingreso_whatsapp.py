@@ -17,7 +17,7 @@ from services.onboarding.progress import (
     es_perfil_onboarding_completo,
     resolver_checkpoint_onboarding_desde_perfil,
 )
-from templates.onboarding.registration import (
+from templates.maintenance.registration import (
     PROFILE_SINGLE_USE_CONTROL_IDS,
     SERVICE_CONFIRM_ID,
     SERVICE_CORRECT_ID,

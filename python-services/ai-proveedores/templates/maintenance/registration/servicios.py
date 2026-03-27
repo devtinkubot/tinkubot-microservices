@@ -27,20 +27,6 @@ def preguntar_siguiente_servicio_registro(
     )
 
 
-def confirmar_servicio_y_preguntar_otro(
-    servicio: str,
-    cantidad_actual: int,
-    maximo: int,
-) -> str:
-    """Confirma un servicio válido y pregunta si desea agregar otro."""
-    return (
-        f"Servicio {cantidad_actual} de {maximo} registrado: *{servicio}*.\n\n"
-        "¿Deseas sumar otro servicio?\n"
-        "*1.* Sí, sumar otro\n"
-        "*2.* No, continuar"
-    )
-
-
 def mensaje_resumen_servicios_registro(servicios: List[str], maximo: int) -> str:
     """Muestra el resumen final de servicios capturados."""
     servicios_formateados = _formatear_lista_servicios(servicios)

@@ -57,7 +57,7 @@ from templates.maintenance.menus import (
     SERVICE_EXAMPLE_PREFIX,
     payload_lista_eliminar_servicios,
 )
-from templates.onboarding.registration import SERVICE_CONFIRM_ID, SERVICE_CORRECT_ID
+from templates.maintenance.registration import SERVICE_CONFIRM_ID, SERVICE_CORRECT_ID
 from templates.shared import (
     error_opcion_no_reconocida,
     mensaje_indica_servicio_exacto,
@@ -248,7 +248,6 @@ async def _normalizar_servicios_ingresados(
     servicio_embeddings: Optional[Any],
     max_servicios: int,
     provider_id: Optional[str],
-    review_source: str,
 ) -> Dict[str, Any]:
     if not cliente_openai:
         return {"ok": False, "response": error_normalizar_servicio()}
@@ -533,7 +532,6 @@ async def manejar_agregar_servicios(
         servicio_embeddings=servicio_embeddings,
         max_servicios=SERVICIOS_MAXIMOS,
         provider_id=proveedor_id,
-        review_source="provider_service_add",
     )
 
     if not resultado_normalizacion.get("ok"):

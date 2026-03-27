@@ -28,6 +28,7 @@ from services.onboarding.worker import (
     bucle_limpieza_onboarding,
     ejecutar_limpieza_onboarding,
 )
+from services.onboarding.registration import reiniciar_onboarding_proveedor
 from services.shared.orquestacion_whatsapp import (
     normalizar_respuesta_whatsapp as normalizar_respuesta_whatsapp_impl,
 )
@@ -249,6 +250,28 @@ async def cleanup_provider_onboarding(
         whatsapp_account_id=configuracion.whatsapp_proveedores_account_id,
         warning_hours=configuracion.provider_onboarding_warning_hours,
         expiry_hours=configuracion.provider_onboarding_expiry_hours,
+    )
+
+
+@app.post("/admin/provider-onboarding/{provider_id}/reset")
+async def reset_provider_onboarding(
+    provider_id: str,
+    token: Optional[str] = Header(default=None, alias="x-internal-token"),
+) -> Dict[str, Any]:
+    """Reinicia de forma fuerte el onboarding de un proveedor."""
+    token_esperado = configuracion.internal_token
+    if token_esperado and token != token_esperado:
+        return {"success": False, "message": "Unauthorized"}
+
+    provider_id_limpio = (provider_id or "").strip()
+    if not provider_id_limpio:
+        return {"success": False, "message": "provider_id is required"}
+
+    return await reiniciar_onboarding_proveedor(
+        supabase=supabase,
+        provider_id=provider_id_limpio,
+        whatsapp_url=configuracion.whatsapp_proveedores_url,
+        whatsapp_account_id=configuracion.whatsapp_proveedores_account_id,
     )
 
 

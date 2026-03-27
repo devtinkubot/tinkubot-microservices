@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 from services.maintenance.ejemplos_servicios_top import (
     obtener_ejemplos_servicios_top,
 )
-from templates.onboarding.registration import SERVICE_CONFIRM_ID, SERVICE_CORRECT_ID
+from templates.maintenance.registration import SERVICE_CONFIRM_ID, SERVICE_CORRECT_ID
 
 from .menus import (
     SERVICE_EXAMPLE_ADMIN_ID,

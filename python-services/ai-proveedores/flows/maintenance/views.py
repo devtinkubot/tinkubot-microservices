@@ -76,7 +76,7 @@ from templates.maintenance.views_labels import (
 from templates.onboarding.ciudad import (
     solicitar_ciudad_actualizacion,
 )
-from templates.onboarding.registration import (
+from templates.maintenance.registration import (
     payload_certificado_opcional,
     preguntar_experiencia_general,
     preguntar_nombre,

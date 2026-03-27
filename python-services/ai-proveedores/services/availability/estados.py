@@ -15,12 +15,6 @@ STANDARD_ONBOARDING_STATES = frozenset(
         "onboarding_experience",
         "onboarding_specialty",
         "onboarding_add_another_service",
-        "onboarding_services_confirmation",
-        "onboarding_services_edit_action",
-        "onboarding_services_edit_replace_select",
-        "onboarding_services_edit_replace_input",
-        "onboarding_services_edit_delete_select",
-        "onboarding_services_edit_add",
         "onboarding_social_media",
         "confirm",
     }

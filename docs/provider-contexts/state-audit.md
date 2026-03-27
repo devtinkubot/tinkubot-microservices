@@ -33,18 +33,29 @@ These belong to the initial provider journey and should stay in the onboarding c
 - `onboarding_face_photo`
 - `onboarding_experience`
 - `onboarding_specialty`
-- `onboarding_services_edit_action`
-- `onboarding_services_edit_replace_select`
-- `onboarding_services_edit_replace_input`
-- `onboarding_services_edit_delete_select`
-- `onboarding_services_edit_add`
+- `onboarding_add_another_service`
 - `onboarding_social_media`
 - `onboarding_real_phone`
 
 For dashboard purposes, the operational kanban should start at `onboarding_city`. The pre-city states
-(`onboarding_consent`, `onboarding_real_phone`) and the transitory service-step states
-(`onboarding_add_another_service`, `onboarding_services_confirmation`) remain part of backend flow
-control but should not be shown as primary dashboard columns.
+(`onboarding_consent`, `onboarding_real_phone`) and the transitory service-step state
+(`onboarding_add_another_service`) remain part of backend flow control but should not be shown as
+primary dashboard columns.
+
+The admin dashboard also treats onboarding as a timed operational queue:
+
+- `created_at` is the aging source of truth
+- `48h` should surface as a soft warning state
+- `72h` should surface as a critical warning state
+- the alert should be visual on the contact/card, not a provider-facing message
+- the administrative `reset` action must be treated as a strong operational reset with audit preserved
+
+Operational processing policy:
+
+- Supabase remains the source of truth for provider state and audit history
+- Redis remains the operational layer for queues, locks, and fast projections
+- the first durable worker boundary, if expanded further, should start with onboarding cleanup/reset paths
+- governance, monetization, and batch review stay out of the first worker phase
 
 Legacy onboarding aliases still exist only where they are used to normalize old state values:
 
@@ -53,19 +64,13 @@ Legacy onboarding aliases still exist only where they are used to normalize old 
 - `awaiting_experience`
 - `awaiting_specialty`
 - `awaiting_add_another_service`
-- `awaiting_services_confirmation`
-- `awaiting_services_edit_action`
-- `awaiting_services_edit_replace_select`
-- `awaiting_services_edit_replace_input`
-- `awaiting_services_edit_delete_select`
-- `awaiting_services_edit_add`
 - `awaiting_social_media_onboarding`
 - `awaiting_consent`
 - `awaiting_real_phone`
 
 Route ownership:
 
-- `routes/onboarding` owns onboarding entry, consent, the service-confirmation bridge, and the social-media handoff
+- `routes/onboarding` owns onboarding entry, consent, the add-another-service bridge, and the social-media handoff
 - `flows/onboarding/router.py` owns the state-specific onboarding transitions
 
 ## Maintenance States

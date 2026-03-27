@@ -110,11 +110,11 @@ This removes the last menu-layer bridge into alta from the maintenance stack and
 ### Why
 These are post-registration interactions and should not remain in the shared router.
 
-## Decision 13: Onboarding has its own edit subflow
-When a provider corrects services before finishing onboarding, the edit flow now uses `onboarding_services_edit_*` states instead of borrowing maintenance labels.
+## Decision 13: Onboarding services are append-only
+The onboarding services flow is limited to capture, confirmation to add another service, and the handoff to social media. Any service editing or correction flow belongs to maintenance, not onboarding.
 
 ### Why
-This keeps onboarding and maintenance visually and semantically separate, even though they reuse the same underlying handlers for now.
+This keeps onboarding focused on the minimum viable path to registration and avoids duplicating correction menus inside the initial provider journey.
 
 ## Decision 14: Retire wrappers only when no consumers remain
 We can delete a wrapper or alias once a repo-wide search shows no live imports or runtime paths depend on it.
@@ -259,6 +259,18 @@ Each onboarding step must normalize the data it receives before persisting anyth
 
 ### Why
 This keeps identity rules consistent across steps, prevents late-stage inference drift, and makes the onboarding contract easier to follow for anyone who takes over the project.
+
+## Decision 37: Surface stalled onboarding in the admin dashboard with age-based visual alerts and a strong reset
+The admin dashboard should visually flag providers that remain in onboarding for too long based on `created_at`, not on chat activity. The operational view applies to all onboarding states, uses a yellow-orange alert after 48 hours, a red alert after 72 hours, and keeps the signal as a visual cue on the contact/card rather than as provider-facing text. The dashboard may expose a `reset` action for administrators, but that action is a strong operational reset: it clears the active onboarding data while preserving audit history so the provider can register again from scratch.
+
+### Why
+This turns the dashboard into an operational triage tool instead of a passive list, helps administrators prioritize stalled onboarding cases quickly, and preserves a clean audit trail when a provider needs a fresh registration attempt.
+
+## Decision 38: Treat onboarding as the first durable worker boundary
+If the repo grows a durable worker layer, the first phase should center on onboarding and its operational cleanup/reset paths. Supabase remains the source of truth, Redis remains the operational layer for jobs, locks, and projections, and the worker scope should stay narrow until onboarding proves the pattern. Governanza, monetization, and batch review stay out of phase 1.
+
+### Why
+Onboarding is the base of the provider journey and the clearest place to validate durable async processing without turning the first worker pass into a platform rewrite. Keeping the first boundary small reduces risk while still solving the real operational pain.
 
 ## Decision log updates
 This file should be updated whenever a migration decision changes or a new boundary is introduced.

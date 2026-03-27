@@ -15,12 +15,6 @@ STANDARD_ONBOARDING_STATES = {
     "onboarding_experience",
     "onboarding_specialty",
     "onboarding_add_another_service",
-    "onboarding_services_confirmation",
-    "onboarding_services_edit_action",
-    "onboarding_services_edit_replace_select",
-    "onboarding_services_edit_replace_input",
-    "onboarding_services_edit_delete_select",
-    "onboarding_services_edit_add",
     "onboarding_social_media",
     "onboarding_real_phone",
     "onboarding_consent",
@@ -88,36 +82,6 @@ async def manejar_estado_onboarding(
             servicio_embeddings=servicio_embeddings,
             selected_option=carga.get("selected_option"),
         )
-    if estado_normalizado == "onboarding_services_edit_action":
-        return await compat_onboarding.manejar_accion_edicion_servicios_registro(
-            flujo,
-            texto_mensaje,
-        )
-    if estado_normalizado == "onboarding_services_edit_replace_select":
-        return await compat_onboarding.manejar_seleccion_reemplazo_servicio_registro(
-            flujo,
-            texto_mensaje,
-        )
-    if estado_normalizado == "onboarding_services_edit_replace_input":
-        return await compat_onboarding.manejar_reemplazo_servicio_registro(
-            flujo,
-            texto_mensaje,
-            cliente_openai=cliente_openai,
-        )
-    if estado_normalizado == "onboarding_services_edit_delete_select":
-        return await compat_onboarding.manejar_eliminacion_servicio_registro(
-            flujo,
-            texto_mensaje,
-        )
-    if estado_normalizado == "onboarding_services_edit_add":
-        return await compat_onboarding.manejar_agregar_servicio_desde_edicion_registro(
-            flujo,
-            proveedor_id=flujo.get("provider_id"),
-            texto_mensaje=texto_mensaje,
-            selected_option=carga.get("selected_option"),
-            cliente_openai=cliente_openai,
-            servicio_embeddings=servicio_embeddings,
-        )
     if estado_normalizado == "onboarding_consent":
         tiene_consentimiento = bool(flujo.get("has_consent"))
         esta_registrado = bool(flujo.get("provider_id"))
@@ -145,12 +109,6 @@ async def manejar_estado_onboarding(
                 texto_mensaje=texto_mensaje,
                 selected_option=carga.get("selected_option"),
             )
-        )
-    if estado_normalizado == "onboarding_services_confirmation":
-        return await compat_onboarding.manejar_confirmacion_servicios_onboarding(
-            flujo=flujo,
-            texto_mensaje=texto_mensaje,
-            selected_option=carga.get("selected_option"),
         )
     return None
 

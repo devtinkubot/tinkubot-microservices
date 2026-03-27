@@ -51,7 +51,6 @@ ONBOARDING_TO_MAINTENANCE_STATES = {
     "onboarding_face_photo": "maintenance_face_photo_update",
     "onboarding_specialty": "maintenance_specialty",
     "onboarding_add_another_service": "maintenance_add_another_service",
-    "onboarding_services_confirmation": "maintenance_services_confirmation",
 }
 
 

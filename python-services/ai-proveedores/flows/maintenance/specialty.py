@@ -22,7 +22,7 @@ from templates.maintenance.menus import (
     SERVICE_EXAMPLE_LEGAL_ID,
     SERVICE_EXAMPLE_MECHANICS_ID,
 )
-from templates.onboarding.registration import (
+from templates.maintenance.registration import (
     PROFILE_CONTROL_IDS,
     mensaje_maximo_servicios_registro,
     mensaje_minimo_servicios_perfil_profesional,
@@ -91,12 +91,9 @@ def _limite_visible_para_contexto(flujo: Dict[str, Any]) -> int:
 def _estado_servicio_contextual(
     flujo: Dict[str, Any],
     *,
-    onboarding: str,
     maintenance: str,
 ) -> str:
-    if flujo.get("profile_completion_mode") or flujo.get("profile_edit_mode"):
-        return maintenance
-    return onboarding
+    return maintenance
 
 
 async def _mensajes_prompt_servicio_compartido(
@@ -128,7 +125,6 @@ async def normalizar_servicio_registro_individual(
     texto_mensaje: str,
     cliente_openai: Optional[Any],
     servicio_embeddings: Optional[Any] = None,
-    review_source: str = "provider_onboarding",
 ) -> Dict[str, Any]:
     """Normaliza un solo servicio durante el flujo de servicios."""
     especialidad_texto = limpiar_espacios(texto_mensaje)
@@ -361,7 +357,6 @@ async def manejar_espera_especialidad(
         )
         flujo["state"] = _estado_servicio_contextual(
             flujo,
-            onboarding="onboarding_specialty",
             maintenance="maintenance_specialty",
         )
         return {"success": True, "messages": mensajes}
@@ -371,7 +366,6 @@ async def manejar_espera_especialidad(
     ):
         flujo["state"] = _estado_servicio_contextual(
             flujo,
-            onboarding="onboarding_specialty",
             maintenance="maintenance_specialty",
         )
         return {
@@ -387,7 +381,6 @@ async def manejar_espera_especialidad(
         if len(servicios_temporales) >= maximo_servicios:
             flujo["state"] = _estado_servicio_contextual(
                 flujo,
-                onboarding="onboarding_services_confirmation",
                 maintenance="maintenance_services_confirmation",
             )
             return {
@@ -405,7 +398,6 @@ async def manejar_espera_especialidad(
             if flujo.get("profile_completion_mode"):
                 flujo["state"] = _estado_servicio_contextual(
                     flujo,
-                    onboarding="onboarding_specialty",
                     maintenance="maintenance_specialty",
                 )
                 return {
@@ -433,12 +425,10 @@ async def manejar_espera_especialidad(
             texto_mensaje=texto_mensaje or "",
             cliente_openai=cliente_openai,
             servicio_embeddings=servicio_embeddings,
-            review_source="provider_profile_completion",
         )
         if not resultado.get("ok"):
             flujo["state"] = _estado_servicio_contextual(
                 flujo,
-                onboarding="onboarding_specialty",
                 maintenance="maintenance_specialty",
             )
             return {
@@ -481,7 +471,6 @@ async def manejar_espera_especialidad(
     if not resultado.get("ok"):
         flujo["state"] = _estado_servicio_contextual(
             flujo,
-            onboarding="onboarding_specialty",
             maintenance="maintenance_specialty",
         )
         return {
@@ -493,7 +482,6 @@ async def manejar_espera_especialidad(
     if not servicios_capturados:
         flujo["state"] = _estado_servicio_contextual(
             flujo,
-            onboarding="onboarding_specialty",
             maintenance="maintenance_specialty",
         )
         return {
@@ -509,7 +497,6 @@ async def manejar_espera_especialidad(
     if not nuevos_servicios:
         flujo["state"] = _estado_servicio_contextual(
             flujo,
-            onboarding="onboarding_specialty",
             maintenance="maintenance_specialty",
         )
         return {
@@ -534,7 +521,6 @@ async def manejar_espera_especialidad(
     if cantidad < SERVICIOS_MINIMOS_PERFIL_PROFESIONAL:
         flujo["state"] = _estado_servicio_contextual(
             flujo,
-            onboarding="onboarding_specialty",
             maintenance="maintenance_specialty",
         )
         mensaje_base = mensaje_minimo_servicios_perfil_profesional(
@@ -554,7 +540,6 @@ async def manejar_espera_especialidad(
     flujo["specialty"] = ", ".join(flujo.get("servicios_temporales") or [])
     flujo["state"] = _estado_servicio_contextual(
         flujo,
-        onboarding="onboarding_services_confirmation",
         maintenance="maintenance_services_confirmation",
     )
     mensajes = [

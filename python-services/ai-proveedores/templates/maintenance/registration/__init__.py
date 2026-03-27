@@ -1,4 +1,4 @@
-"""Mensajes relacionados con el flujo de registro de proveedores."""
+"""Mensajes relacionados con el flujo de registro y mantenimiento de proveedores."""
 
 from templates.onboarding.caducidad import (
     TEMPLATE_EXPIRY_72H_ID,
@@ -39,7 +39,6 @@ from .perfil_profesional import (
     preguntar_nombre,
 )
 from .servicios import (
-    confirmar_servicio_y_preguntar_otro,
     mensaje_debes_registrar_al_menos_un_servicio,
     mensaje_debes_registrar_mas_servicios,
     mensaje_error_opcion_agregar_otro,
@@ -58,14 +57,11 @@ from .servicios import (
 )
 
 __all__ = [
-    # Pasos de registro
     "preguntar_real_phone",
     "error_real_phone_invalido",
     "mensaje_inicio_perfil_profesional",
     "preguntar_experiencia_general",
-    # Confirmación
     "preguntar_siguiente_servicio_registro",
-    "confirmar_servicio_y_preguntar_otro",
     "payload_agregar_otro_servicio",
     "payload_confirmacion_servicio_perfil",
     "mensaje_resumen_servicios_registro",

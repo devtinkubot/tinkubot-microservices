@@ -10,7 +10,7 @@ from utils import (
     extraer_anios_experiencia as parsear_anios_experiencia,
 )
 from templates.onboarding.experiencia import payload_experiencia_onboarding
-from templates.onboarding.registration import payload_red_social_opcional_estado
+from templates.maintenance.registration import payload_red_social_opcional_estado
 
 
 def _resolver_anios_experiencia(

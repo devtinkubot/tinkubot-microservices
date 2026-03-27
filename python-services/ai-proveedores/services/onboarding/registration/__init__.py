@@ -3,6 +3,7 @@
 from .eliminacion_proveedor import eliminar_registro_proveedor
 from .limpieza_onboarding_proveedores import limpiar_onboarding_proveedores
 from .determinador_estado import determinar_estado_registro
+from .reinicio_onboarding_proveedor import reiniciar_onboarding_proveedor
 from .normalizacion import (
     garantizar_campos_obligatorios_proveedor,
     normalizar_datos_proveedor,
@@ -22,6 +23,7 @@ __all__ = [
     "asegurar_proveedor_borrador",
     "registrar_proveedor_en_base_datos",
     "limpiar_onboarding_proveedores",
+    "reiniciar_onboarding_proveedor",
     "validar_y_construir_proveedor",
     "eliminar_registro_proveedor",
 ]

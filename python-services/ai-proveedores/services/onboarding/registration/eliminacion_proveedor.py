@@ -28,13 +28,16 @@ _RUTAS_POR_DEFECTO_EXTS = ("jpg", "jpeg", "png", "webp")
 
 async def eliminar_registro_proveedor(
     supabase: Any,
-    telefono: str,
+    telefono: str | None = None,
+    provider_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Elimina completamente el registro de un proveedor.
     """
-    if not telefono:
-        raise ValueError("telefono es requerido")
+    telefono_normalizado = (telefono or "").strip()
+    provider_id_normalizado = (provider_id or "").strip() or None
+    if not telefono_normalizado and not provider_id_normalizado:
+        raise ValueError("telefono o provider_id es requerido")
 
     resultado = {
         "success": False,
@@ -50,39 +53,51 @@ async def eliminar_registro_proveedor(
         return resultado
 
     try:
-        logger.info("🗑️ Iniciando eliminación integral del proveedor %s", telefono)
+        identidad_log = provider_id_normalizado or telefono_normalizado
+        logger.info("🗑️ Iniciando eliminación integral del proveedor %s", identidad_log)
 
-        perfil = await _obtener_perfil_para_eliminacion(supabase, telefono)
-        provider_id = perfil.get("id") if perfil else None
-        if not provider_id:
-            provider_id = await resolver_provider_id_por_identidad(supabase, telefono)
-            if provider_id:
-                perfil = await _obtener_perfil_por_id(supabase, provider_id)
+        perfil = None
+        provider_id_resuelto = provider_id_normalizado
+        if provider_id_resuelto:
+            perfil = await _obtener_perfil_por_id(supabase, provider_id_resuelto)
+        if not perfil and telefono_normalizado:
+            perfil = await _obtener_perfil_para_eliminacion(
+                supabase, telefono_normalizado
+            )
+            if perfil and not provider_id_resuelto:
+                provider_id_resuelto = perfil.get("id") if perfil else None
+        if not provider_id_resuelto and telefono_normalizado:
+            provider_id_resuelto = await resolver_provider_id_por_identidad(
+                supabase, telefono_normalizado
+            )
+            if provider_id_resuelto and not perfil:
+                perfil = await _obtener_perfil_por_id(supabase, provider_id_resuelto)
 
-        if provider_id:
+        if provider_id_resuelto:
             await run_supabase(
                 lambda: supabase.table("provider_services")
                 .delete()
-                .eq("provider_id", provider_id)
+                .eq("provider_id", provider_id_resuelto)
                 .execute(),
                 label="provider_services.delete_on_provider_removal",
             )
             resultado["deleted_related_services"] = True
             logger.info(
-                "✅ Servicios relacionados eliminados para provider_id=%s", provider_id
+                "✅ Servicios relacionados eliminados para provider_id=%s",
+                provider_id_resuelto,
             )
 
-        rutas_storage = _obtener_rutas_storage(perfil, provider_id)
+        rutas_storage = _obtener_rutas_storage(perfil, provider_id_resuelto)
         resultado["deleted_storage_assets"] = await _eliminar_assets_storage(
             supabase=supabase,
             rutas=rutas_storage,
         )
 
-        if provider_id:
+        if provider_id_resuelto:
             await run_supabase(
                 lambda: supabase.table("providers")
                 .delete()
-                .eq("id", provider_id)
+                .eq("id", provider_id_resuelto)
                 .execute(),
                 label="providers.delete_by_id",
             )
@@ -90,17 +105,22 @@ async def eliminar_registro_proveedor(
             await run_supabase(
                 lambda: supabase.table("providers")
                 .delete()
-                .eq("phone", telefono)
+                .eq("phone", telefono_normalizado)
                 .execute(),
                 label="providers.delete_by_phone",
             )
         resultado["deleted_from_db"] = True
-        logger.info("✅ Proveedor %s eliminado de la base de datos", telefono)
+        logger.info(
+            "✅ Proveedor %s eliminado de la base de datos",
+            identidad_log,
+        )
 
-        claves_cache = [telefono]
-        if provider_id:
+        claves_cache = [telefono_normalizado]
+        if provider_id_resuelto:
             try:
-                identidades = await obtener_identidades_proveedor(supabase, provider_id)
+                identidades = await obtener_identidades_proveedor(
+                    supabase, provider_id_resuelto
+                )
                 claves_cache.extend(
                     str(row.get("identity_value") or "").strip()
                     for row in identidades
@@ -109,7 +129,7 @@ async def eliminar_registro_proveedor(
             except Exception:
                 logger.debug(
                     "No se pudieron cargar identidades para limpiar cache de %s",
-                    provider_id,
+                    provider_id_resuelto,
                 )
 
         resultado["deleted_from_cache"] = False
@@ -121,15 +141,20 @@ async def eliminar_registro_proveedor(
             await limpiar_claves_proveedor(clave)
         for clave in {valor for valor in claves_cache if valor}:
             await limpiar_marca_perfil_eliminado(clave)
-        logger.info("✅ Caché y flujo conversacional limpiados para %s", telefono)
+        logger.info("✅ Caché y flujo conversacional limpiados para %s", identidad_log)
 
         resultado["success"] = True
         resultado["message"] = "Tu registro ha sido eliminado correctamente."
-        logger.info("✨ Eliminación completada exitosamente para %s", telefono)
+        if provider_id_resuelto:
+            resultado["provider_id"] = provider_id_resuelto
+        logger.info("✨ Eliminación completada exitosamente para %s", identidad_log)
 
     except Exception as exc:
         logger.error(
-            "❌ Error al eliminar proveedor %s: %s", telefono, exc, exc_info=True
+            "❌ Error al eliminar proveedor %s: %s",
+            provider_id_normalizado or telefono_normalizado,
+            exc,
+            exc_info=True,
         )
         resultado["message"] = (
             "Hubo un error al eliminar tu registro. Por favor, intenta nuevamente."

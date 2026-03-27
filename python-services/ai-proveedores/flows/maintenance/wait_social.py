@@ -15,7 +15,7 @@ from services.shared import es_skip_value
 from templates.maintenance import (
     payload_confirmacion_resumen,
 )
-from templates.onboarding.registration import (
+from templates.maintenance.registration import (
     SOCIAL_FACEBOOK_ID,
     SOCIAL_INSTAGRAM_ID,
     SOCIAL_SKIP_ID,

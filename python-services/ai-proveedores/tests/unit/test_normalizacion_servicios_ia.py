@@ -27,15 +27,15 @@ from flows.maintenance.specialty import (  # noqa: E402
 from flows.onboarding.handlers.experiencia import (  # noqa: E402
     manejar_espera_experiencia_onboarding,
 )
-from flows.onboarding.handlers.servicios_confirmacion import (  # noqa: E402
-    manejar_confirmacion_servicios_onboarding,
-    manejar_decision_agregar_otro_servicio_onboarding,
-)
-from flows.onboarding.handlers.servicios_edicion import (  # noqa: E402
+from flows.maintenance.services_confirmation import (  # noqa: E402
+    manejar_confirmacion_servicios,
     manejar_accion_edicion_servicios_registro,
     manejar_eliminacion_servicio_registro,
     manejar_reemplazo_servicio_registro,
     manejar_seleccion_reemplazo_servicio_registro,
+)
+from flows.onboarding.handlers.servicios_confirmacion import (  # noqa: E402
+    manejar_decision_agregar_otro_servicio_onboarding,
 )
 from flows.onboarding.router import manejar_estado_onboarding  # noqa: E402
 from flows.validators.name import validar_nombre_completo  # noqa: E402
@@ -517,7 +517,7 @@ def test_espera_especialidad_onboarding_con_linea_numerada_va_a_consentimiento(
         )
     )
 
-    assert flujo["state"] == "onboarding_services_confirmation"
+    assert flujo["state"] == "maintenance_services_confirmation"
     assert flujo["servicios_temporales"] == [
         "desarrollo web",
         "mantenimiento de software",
@@ -706,7 +706,7 @@ def test_espera_especialidad_onboarding_con_tres_servicios_va_a_consentimiento(
         )
     )
 
-    assert flujo["state"] == "onboarding_services_confirmation"
+    assert flujo["state"] == "maintenance_services_confirmation"
     assert flujo["specialty"] == "servicio 1, servicio 2, servicio 3, servicio extra"
     assert (
         respuesta["messages"][0]["ui"]["header_text"]
@@ -1079,36 +1079,36 @@ def test_normalizar_servicio_acepta_transporte_y_barco(monkeypatch):
 
 def test_confirmacion_servicios_acepta_resumen_y_pasa_a_experiencia():
     flujo = {
-        "state": "onboarding_services_confirmation",
+        "state": "maintenance_services_confirmation",
         "servicios_temporales": ["desarrollo web", "cableado estructurado"],
     }
 
     respuesta = asyncio.run(
-        manejar_confirmacion_servicios_onboarding(
+        manejar_confirmacion_servicios(
             flujo=flujo,
             texto_mensaje="1",
         )
     )
 
-    assert flujo["state"] == "onboarding_social_media"
+    assert flujo["state"] == "pending_verification"
     assert flujo["specialty"] == "desarrollo web, cableado estructurado"
-    assert "agrega tus redes sociales" in respuesta["messages"][0]["response"].lower()
+    assert "revisión" in respuesta["messages"][0]["response"].lower()
 
 
 def test_confirmacion_servicios_abre_menu_edicion():
     flujo = {
-        "state": "onboarding_services_confirmation",
+        "state": "maintenance_services_confirmation",
         "servicios_temporales": ["desarrollo web", "cableado estructurado"],
     }
 
     respuesta = asyncio.run(
-        manejar_confirmacion_servicios_onboarding(
+        manejar_confirmacion_servicios(
             flujo=flujo,
             texto_mensaje="2",
         )
     )
 
-    assert flujo["state"] == "onboarding_services_edit_action"
+    assert flujo["state"] == "maintenance_services_edit_action"
     assert "¿Qué deseas corregir?" in respuesta["messages"][1]["response"]
 
 
@@ -1141,20 +1141,20 @@ def test_reemplazo_servicio_en_edicion(monkeypatch):
         _fake_validar_servicio_semanticamente,
     )
     flujo = {
-        "state": "onboarding_services_edit_action",
+        "state": "maintenance_services_edit_action",
         "servicios_temporales": ["desarrollo web", "cableado estructurado"],
     }
 
     respuesta_select = asyncio.run(
         manejar_accion_edicion_servicios_registro(flujo, "1")
     )
-    assert flujo["state"] == "onboarding_services_edit_replace_select"
+    assert flujo["state"] == "maintenance_services_edit_replace_select"
     assert "reemplazar" in respuesta_select["messages"][1]["response"].lower()
 
     respuesta_indice = asyncio.run(
         manejar_seleccion_reemplazo_servicio_registro(flujo, "2")
     )
-    assert flujo["state"] == "onboarding_services_edit_replace_input"
+    assert flujo["state"] == "maintenance_services_edit_replace_input"
     assert "servicio 2" in respuesta_indice["messages"][0]["response"].lower()
 
     respuesta_reemplazo = asyncio.run(
@@ -1164,7 +1164,7 @@ def test_reemplazo_servicio_en_edicion(monkeypatch):
             cliente_openai=object(),
         )
     )
-    assert flujo["state"] == "onboarding_services_confirmation"
+    assert flujo["state"] == "maintenance_services_confirmation"
     assert flujo["servicios_temporales"] == [
         "desarrollo web",
         "asesoría para rebaja de pensión alimenticia",
@@ -1174,7 +1174,7 @@ def test_reemplazo_servicio_en_edicion(monkeypatch):
 
 def test_eliminacion_servicio_en_edicion():
     flujo = {
-        "state": "onboarding_services_edit_delete_select",
+        "state": "maintenance_services_edit_delete_select",
         "servicios_temporales": ["desarrollo web", "cableado estructurado"],
     }
 
@@ -1185,7 +1185,7 @@ def test_eliminacion_servicio_en_edicion():
         )
     )
 
-    assert flujo["state"] == "onboarding_services_confirmation"
+    assert flujo["state"] == "maintenance_services_confirmation"
     assert flujo["servicios_temporales"] == ["cableado estructurado"]
     assert "Servicio eliminado" in respuesta["messages"][0]["response"]
 

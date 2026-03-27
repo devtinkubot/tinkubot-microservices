@@ -20,7 +20,6 @@ from services import (
 )
 from services.review.state import resolver_estado_registro, sincronizar_flujo_con_perfil
 from services.shared import es_comando_reinicio
-from templates.maintenance import payload_confirmacion_servicios_menu
 from templates.onboarding import (
     payload_consentimiento_proveedor,
     payload_experiencia_onboarding,
@@ -54,7 +53,6 @@ ONBOARDING_REANUDACION_STATES = {
     "onboarding_experience",
     "onboarding_specialty",
     "onboarding_add_another_service",
-    "onboarding_services_confirmation",
     "onboarding_social_media",
 }
 
@@ -106,8 +104,6 @@ def _construir_reanudacion_onboarding(flujo: Dict[str, Any]) -> Dict[str, Any]:
         prompt = payload_servicios_onboarding_con_imagen()
     elif estado == "onboarding_add_another_service":
         prompt = payload_preguntar_otro_servicio_onboarding()
-    elif estado == "onboarding_services_confirmation":
-        prompt = payload_confirmacion_servicios_menu(list(flujo.get("services") or []))
     elif estado == "onboarding_social_media":
         prompt = payload_redes_sociales_onboarding_con_imagen()
     else:

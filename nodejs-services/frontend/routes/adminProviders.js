@@ -141,6 +141,25 @@ async function revisarProveedor(req, res) {
   }
 }
 
+async function resetearProveedorOnboarding(req, res) {
+  try {
+    const { providerId } = req.params;
+    const requestId =
+      req.headers["x-request-id"] || req.headers["x-correlation-id"] || null;
+    const resultado = await proveedoresBff.resetearProveedorOnboarding(
+      providerId,
+      requestId,
+    );
+    res.json(resultado);
+  } catch (error) {
+    const status = error?.status ?? 500;
+    const payload = error?.data ?? {
+      error: "No se pudo reiniciar el onboarding del proveedor.",
+    };
+    res.status(status).json(payload);
+  }
+}
+
 async function obtenerMonetizacionResumen(req, res) {
   try {
     const overview = await proveedoresBff.obtenerMonetizacionResumen();
@@ -255,6 +274,7 @@ router.get("/post-review", obtenerPostRevision);
 router.post("/:providerId/approve", aprobarProveedor);
 router.post("/:providerId/reject", rechazarProveedor);
 router.post("/:providerId/review", revisarProveedor);
+router.post("/:providerId/reset", resetearProveedorOnboarding);
 router.get("/monetization/overview", obtenerMonetizacionResumen);
 router.get("/summary", obtenerResumenEstados);
 router.get("/monetization/providers", obtenerMonetizacionProveedores);

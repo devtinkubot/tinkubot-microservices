@@ -5,6 +5,7 @@ import type {
   MonetizationProvidersResponse,
   ProviderActionPayload,
   ProviderActionResponse,
+  ProviderOnboardingResetResponse,
   ProviderRecord,
   ProviderStatusOverviewResponse,
 } from "./types";
@@ -117,6 +118,21 @@ export async function revisarProveedor(
         "Content-Type": "application/json",
       },
       body: JSON.stringify(carga),
+    },
+  );
+}
+
+export async function resetearProveedorOnboarding(
+  proveedorId: string,
+): Promise<ProviderOnboardingResetResponse> {
+  return realizarSolicitudHttp<ProviderOnboardingResetResponse>(
+    `${RUTA_BASE}/${proveedorId}/reset`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ provider_id: proveedorId }),
     },
   );
 }

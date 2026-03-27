@@ -16,7 +16,6 @@ const ONBOARDING_STEPS = [
   "onboarding_experience",
   "onboarding_specialty",
   "onboarding_add_another_service",
-  "onboarding_services_confirmation",
   "onboarding_social_media",
 ];
 const monetizationLimit =
@@ -1413,6 +1412,41 @@ async function revisarProveedor(providerId, payload = {}, requestId = null) {
   }
 }
 
+async function resetearProveedorOnboarding(providerId, requestId = null) {
+  try {
+    const id = limpiarTexto(providerId);
+    if (!id) {
+      return {
+        success: false,
+        providerId: "",
+        message: "providerId es requerido",
+      };
+    }
+
+    if (!aiProveedoresUrl) {
+      return {
+        success: false,
+        providerId: id,
+        message: "Servicio de proveedores no configurado.",
+      };
+    }
+
+    const headers = {};
+    if (requestId) headers["x-request-id"] = requestId;
+    if (aiProveedoresInternalToken) {
+      headers["x-internal-token"] = aiProveedoresInternalToken;
+    }
+
+    const response = await axios.post(
+      `${aiProveedoresUrl.replace(/\/$/, "")}/admin/provider-onboarding/${encodeURIComponent(id)}/reset`,
+      { headers },
+    );
+    return response.data;
+  } catch (error) {
+    throw gestionarErrorAxios(error);
+  }
+}
+
 const obtenerWalletsMonetizacion = async ({
   status = "all",
   limit = monetizationLimit,
@@ -1724,6 +1758,7 @@ module.exports = {
   aprobarProveedor,
   rechazarProveedor,
   revisarProveedor,
+  resetearProveedorOnboarding,
   obtenerMonetizacionResumen,
   obtenerMonetizacionProveedores,
   obtenerMonetizacionProveedor,
