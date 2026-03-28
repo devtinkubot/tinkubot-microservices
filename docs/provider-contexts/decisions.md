@@ -51,7 +51,9 @@ Maintenance will own:
 These are different business behaviors and should not live in the same branch of the router.
 
 ## Decision 6: Treat most "flags" as domain state
-Values like `pending_verification`, `approved_basic`, and `profile_pending_review` are business state, not feature toggles.
+Values like `pending_verification`, `approved_basic`, and `profile_pending_review` are backend
+business state or compatibility labels, not feature toggles. The frontend contract should only
+expose `pending`, `approved`, and `rejected`.
 
 ### Why
 Removing them would break the meaning of the workflow. They should remain, but be owned by the correct bounded context.
@@ -75,7 +77,8 @@ This avoids breaking the handoff from onboarding while still removing review dec
 This keeps existing tests and runtime imports stable while the new boundary is adopted incrementally.
 
 ## Decision 10: Menu-limited review belongs to maintenance
-The `pending_verification` branch that opened a limited menu was extracted into `routes/maintenance` and `services/maintenance`.
+The `pending_verification` branch that opened a limited menu was extracted into
+`routes/maintenance` and `services/maintenance`. The frontend no longer consumes it as a status.
 
 ### Why
 Review should only own the approval state and silence policy. Menu presentation and post-approval navigation belong to maintenance.
@@ -216,6 +219,15 @@ Keeping the shim after the processor boundary was in place only preserved a redu
 The onboarding entry, consent, and confirmation flow now lives behind `routes/onboarding`.
 
 ### Why
+This keeps the alta journey isolated from post-registration menus and makes it easier to move side effects to the worker without changing the user-facing flow.
+
+## Decision 31: Persist catalog suggestions in the review table
+When a service is understandable but does not close confidently against the operational catalog, the suggestion is stored in `provider_service_catalog_reviews` instead of inventing more columns in `provider_services`.
+
+### Why
+`provider_services` stays canonical for the provider profile, while `provider_service_catalog_reviews` acts as the review inbox for admin and governance. This keeps operational data and review data separate, and avoids making the service table harder to query.
+
+### Why
 Onboarding is a full context, not a fallback branch of the shared router. Moving it behind its own route boundary makes the shared router thinner and keeps registration logic owned by the onboarding context itself.
 
 ## Decision 31: Keep Redis as a shared infrastructure service
@@ -271,6 +283,34 @@ If the repo grows a durable worker layer, the first phase should center on onboa
 
 ### Why
 Onboarding is the base of the provider journey and the clearest place to validate durable async processing without turning the first worker pass into a platform rewrite. Keeping the first boundary small reduces risk while still solving the real operational pain.
+
+## Decision 39: Keep service normalization async and inside the provider domain
+The onboarding services step captures raw service text, publishes it to Redis, and lets the worker call an internal `ai-proveedores` endpoint for normalization before persisting to Supabase.
+
+### Why
+This keeps the user-facing flow fast, reuses the existing normalization logic inside `ai-proveedores`, and avoids a second Redis hop that would add latency and failure modes without adding value.
+
+## Decision 40: Retire `experience_years` from the live provider contract
+`experience_range` is now the canonical experience field for providers. The numeric `experience_years` field is considered legacy and should not be used as a source of truth in runtime flows, views, or new persistence paths.
+
+### Why
+The business and UX already operate on experience ranges, so keeping the integer field alive only duplicated state and created ambiguity about which value should drive the flow.
+
+## Decision 41: Do not keep a legacy onboarding DLQ stream
+The historical `provider_onboarding_events_dlq` stream was removed from the runtime model and should not be treated as a canonical queue or storage contract.
+
+### Why
+The DLQ was only an operational escape hatch for a previous failure mode. Once the worker flow was corrected, the legacy DLQ no longer added value and would only confuse the active topology.
+
+## Decision 42: Allow best-effort catalog suggestions only in review records
+When a service is ambiguous or lacks a confident domain/category match, `ai-proveedores`
+may make a second Structured Outputs pass with `json_schema` and `strict: true` to
+produce a best-effort suggestion for `provider_service_catalog_reviews`. The canonical
+`provider_services` row must remain unchanged until human approval.
+
+### Why
+This gives admins a useful starting point without asking the provider for more details
+and without turning uncertain classifications into source-of-truth data.
 
 ## Decision log updates
 This file should be updated whenever a migration decision changes or a new boundary is introduced.

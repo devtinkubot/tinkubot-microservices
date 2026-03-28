@@ -24,6 +24,12 @@ Those aliases were retired from runtime compatibility maps.
 
 What remains under `awaiting_*` is mostly real state vocabulary or transition glue for active flows.
 
+Frontend note:
+
+- `pending_verification` is still a live backend checkpoint in `ai-proveedores`.
+- It is no longer part of the public frontend `ProviderStatus` contract.
+- The frontend now classifies "Nuevos" from `onboarding_step = pending_verification`.
+
 ## Onboarding States
 These belong to the initial provider journey and should stay in the onboarding context:
 
@@ -142,6 +148,8 @@ Interpretation:
 
 - `routes/review` now owns the review entry decision
 - `services/review` owns the review policy and response helpers
+- `pending_verification` is an internal backend review/onboarding checkpoint, not a public status
+  alias.
 
 ## Availability States
 Availability is a separate provider-facing interaction that comes from client requests.
@@ -198,6 +206,11 @@ Observed responsibilities:
 - onboarding-only service editing
 - transition to `pending_verification`
 
+Experience policy:
+
+- the live provider contract uses `experience_range`
+- `experience_years` is historical only and should not be reintroduced into new flows or docs as a canonical field
+
 Interpretation:
 
 - the `onboarding_*` namespace is now the preferred vocabulary
@@ -234,7 +247,7 @@ Observed responsibilities:
 
 Interpretation:
 
-- `pending_verification` is a real business state, not a legacy alias
+- `pending_verification` is a backend review checkpoint, not a public frontend status
 - review should continue to own silence and approval transitions
 
 ## Recommended Next Cleanup

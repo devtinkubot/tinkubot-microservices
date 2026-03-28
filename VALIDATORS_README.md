@@ -7,9 +7,15 @@ Este directorio contiene scripts de validación de código para asegurar calidad
 ```bash
 # Validar todos los servicios
 ./validate_all.sh
+make validate
 
 # Validar solo servicios Python
 ./validate_quality.py
+
+# Validar solo Elixir
+./validate_elixir.sh
+make validate-elixir
+make format-elixir
 
 # Validar solo Go (wa-gateway)
 ./validate_go.sh
@@ -20,8 +26,28 @@ Este directorio contiene scripts de validación de código para asegurar calidad
 
 ## 📋 Validadores por Servicio
 
-### 1. Python (`validate_quality.py`)
-**Servicios:** ai-clientes, ai-proveedores, search-token
+### 1. Validador Unificado (`validate_all.sh`)
+**Cobertura:** Python, Go y Node.js
+
+**Uso:**
+```bash
+./validate_all.sh           # Valida todo el repo
+./validate_all.sh --python  # Solo Python
+./validate_all.sh --go      # Solo Go
+./validate_all.sh --node    # Solo Node.js
+```
+
+Atajos equivalentes:
+```bash
+make validate       # Alias de validate_all
+make validate-elixir # Solo Elixir
+make format-elixir  # Formatea el worker Elixir
+```
+
+### 2. Python (`validate_quality.py`)
+**Servicios:** ai-clientes, ai-proveedores, ai-search
+
+> `search-token` sigue aceptándose como alias retrocompatible para `ai-search`.
 
 **Validaciones:**
 - ✅ Formato de código (Black)
@@ -36,12 +62,13 @@ Este directorio contiene scripts de validación de código para asegurar calidad
 python3 validate_quality.py                         # Validar Python cambiado (default)
 python3 validate_quality.py --scope all            # Validar todo el servicio
 python3 validate_quality.py --service ai-clientes  # Validar un servicio
+python3 validate_quality.py --service ai-search    # Validar el servicio de búsqueda
 python3 validate_quality.py --fix                  # Corregir black/isort
 python3 validate_quality.py --strict               # Hacer mypy/bandit bloqueantes
 python3 validate_quality.py --include-templates    # Incluir templates en el scope
 ```
 
-### 2. Go (`validate_go.sh`)
+### 3. Go (`validate_go.sh`)
 **Servicio:** go-services/wa-gateway
 
 **Validaciones:**
@@ -59,7 +86,7 @@ python3 validate_quality.py --include-templates    # Incluir templates en el sco
 **Requisitos:**
 - Go 1.21+
 
-### 3. Node.js (`validate_nodejs.sh`)
+### 4. Node.js (`validate_nodejs.sh`)
 **Servicio:** nodejs-services/frontend
 
 **Validaciones:**
@@ -72,6 +99,23 @@ python3 validate_quality.py --include-templates    # Incluir templates en el sco
 ```bash
 ./validate_nodejs.sh
 ```
+
+### 5. Elixir (`validate_elixir.sh`)
+**Servicio:** elixir-services/provider-onboarding-worker
+
+**Validaciones:**
+- ✅ Formato de código (mix format)
+- ✅ Compilación (mix compile --warnings-as-errors)
+- ✅ Pruebas unitarias si existen (mix test)
+
+**Uso:**
+```bash
+./validate_elixir.sh
+```
+
+**Requisitos:**
+- Elixir 1.17+
+- Mix disponible, o Docker para el fallback automático del validador
 
 **Requisitos:**
 - Node.js 20+
@@ -112,14 +156,8 @@ jobs:
         with:
           go-version: '1.21'
 
-      - name: Run Python validator
-        run: python validate_quality.py
-
-      - name: Run Go validator
-        run: ./validate_go.sh
-
-      - name: Run Node.js validator
-        run: ./validate_nodejs.sh
+      - name: Run unified validator
+        run: ./validate_all.sh
 ```
 
 ### Pre-commit Hook (opcional)

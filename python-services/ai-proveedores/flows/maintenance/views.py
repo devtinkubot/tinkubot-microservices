@@ -211,9 +211,7 @@ async def render_profile_view(
         )
 
     if estado == "viewing_professional_experience":
-        return payload_detalle_experiencia(
-            flujo.get("experience_range") or flujo.get("experience_years")
-        )
+        return payload_detalle_experiencia(flujo.get("experience_range"))
 
     if estado == "viewing_professional_social":
         redes = _resolver_redes_desde_flujo(flujo)

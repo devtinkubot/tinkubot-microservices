@@ -110,7 +110,7 @@ async def manejar_espera_certificado(
                 "messages": [
                     payload_confirmacion_resumen(
                         construir_resumen_confirmacion_perfil_profesional(
-                            experience_years=flujo.get("experience_years"),
+                            experience_range=flujo.get("experience_range"),
                             social_media_url=flujo.get("social_media_url"),
                             certificate_uploaded=bool(
                                 flujo.get("certificate_uploaded")
@@ -286,7 +286,7 @@ async def manejar_espera_certificado(
             "messages": [
                 payload_confirmacion_resumen(
                     construir_resumen_confirmacion_perfil_profesional(
-                        experience_years=flujo.get("experience_years"),
+                        experience_range=flujo.get("experience_range"),
                         social_media_url=flujo.get("social_media_url"),
                         certificate_uploaded=bool(flujo.get("certificate_uploaded")),
                         services=list(flujo.get("servicios_temporales") or []),

@@ -91,7 +91,6 @@ def _sincronizar_campos_onboarding(
         perfil_proveedor,
         "onboarding_step_updated_at",
     )
-    _copiar_campo_si_presente(flujo, perfil_proveedor, "experience_years")
     _copiar_campo_si_presente(flujo, perfil_proveedor, "experience_range")
 
 

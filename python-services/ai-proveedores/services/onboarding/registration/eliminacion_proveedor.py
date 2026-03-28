@@ -10,6 +10,9 @@ from urllib.parse import unquote, urlparse
 
 from infrastructure.database import run_supabase
 from infrastructure.storage.almacenamiento_imagenes import SUPABASE_PROVIDERS_BUCKET
+from services.maintenance.revision_catalogo import (
+    eliminar_revisiones_catalogo_asociadas_servicio,
+)
 from services.onboarding.session import (
     limpiar_claves_proveedor,
     limpiar_marca_perfil_eliminado,
@@ -80,6 +83,10 @@ async def eliminar_registro_proveedor(
                 .eq("provider_id", provider_id_resuelto)
                 .execute(),
                 label="provider_services.delete_on_provider_removal",
+            )
+            await eliminar_revisiones_catalogo_asociadas_servicio(
+                supabase=supabase,
+                provider_id=provider_id_resuelto,
             )
             resultado["deleted_related_services"] = True
             logger.info(

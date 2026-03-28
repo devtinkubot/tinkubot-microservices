@@ -317,7 +317,6 @@ def test_sincronizar_flujo_con_perfil_prioriza_datos_durables_sobre_redis():
         "services_list": ["servicio supabase"],
         "generic_services_removed": ["pendiente supabase"],
         "real_phone": "593999111222",
-        "experience_years": 3,
         "experience_range": "3 a 5 años",
         "verified": True,
     }
@@ -329,7 +328,6 @@ def test_sincronizar_flujo_con_perfil_prioriza_datos_durables_sobre_redis():
     assert flujo["location_lng"] == -78.9
     assert flujo["services"] == ["servicio supabase", "pendiente supabase"]
     assert flujo["real_phone"] == "593999111222"
-    assert flujo["experience_years"] == 3
     assert flujo["experience_range"] == "3 a 5 años"
 
 

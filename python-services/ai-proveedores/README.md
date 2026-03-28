@@ -32,6 +32,12 @@ Rutas y piezas relevantes:
 - `templates/onboarding/`
 - `templates/onboarding/registration/`
 
+Política actual:
+
+- el paso de servicios publica un evento crudo y no espera la normalización de IA en el request path
+- `provider-onboarding-worker` consume el evento, llama al endpoint interno de `ai-proveedores` y persiste el resultado en Supabase
+- `experience_range` es la única representación canónica de experiencia; `experience_years` ya no forma parte del contrato vivo
+
 ### Review
 
 Estado de espera entre el alta y el uso operativo.
@@ -109,7 +115,7 @@ Variables y valores centralizados en `config/configuracion.py`:
 Ejecuta la validación del servicio desde la raíz del repositorio:
 
 ```bash
-python python-services/validate_quality.py --service ai-proveedores
+python validate_quality.py --service ai-proveedores
 ```
 
 Para una pasada completa del workspace:

@@ -20,7 +20,6 @@ def test_bloque_detalle_proveedor_usa_resumen_corto():
         {
             "name": "Diego Unkuch Gonzalez",
             "city": "Cuenca",
-            "experience_years": 10,
             "experience_range": "Más de 10 años",
             "rating": 5.0,
         }

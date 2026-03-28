@@ -19,6 +19,7 @@ from services.availability import (
     _resolver_alias_disponibilidad as resolver_alias_disp_impl,
 )
 from services.onboarding.progress import persistir_checkpoint_onboarding
+from services.onboarding.event_publisher import onboarding_async_persistence_enabled
 from services.onboarding.session import (
     establecer_flujo,
     obtener_flujo,
@@ -221,7 +222,7 @@ async def procesar_mensaje_whatsapp(
         logger=logger,
     )
     if persistir_flujo:
-        if supabase:
+        if supabase and not onboarding_async_persistence_enabled():
             try:
                 await persistir_checkpoint_onboarding(
                     supabase,

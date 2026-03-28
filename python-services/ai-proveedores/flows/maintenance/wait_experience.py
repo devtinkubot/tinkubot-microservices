@@ -17,7 +17,6 @@ def _resolver_anios_experiencia(
     texto_mensaje: Optional[str], selected_option: Optional[str]
 ) -> Optional[int]:
     seleccion = str(selected_option or "").strip().lower()
-    texto = str(texto_mensaje or "").strip().lower()
 
     mapping = {
         "provider_experience_under_1": 0,
@@ -43,7 +42,6 @@ async def manejar_espera_experiencia(
     if anios is None:
         return {"success": True, "messages": [payload_experiencia_onboarding()]}
 
-    flujo["experience_years"] = anios
     flujo["experience_range"] = formatear_rango_experiencia(anios)
 
     if flujo.get("profile_edit_mode") == "experience":

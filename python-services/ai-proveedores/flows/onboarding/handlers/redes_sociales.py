@@ -5,6 +5,12 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 from infrastructure.database import run_supabase
+from services.onboarding.event_payloads import payload_redes
+from services.onboarding.event_publisher import (
+    EVENT_TYPE_SOCIAL,
+    onboarding_async_persistence_enabled,
+    publicar_evento_onboarding,
+)
 from services.maintenance.redes_sociales_slots import (
     construir_payload_legacy_red_social,
     extraer_redes_sociales_desde_texto,
@@ -83,6 +89,18 @@ async def manejar_espera_red_social_onboarding(
     """Procesa el paso opcional de redes sociales durante onboarding."""
     if _debe_omitir_redes(texto_mensaje, selected_option):
         flujo["state"] = "pending_verification"
+        if onboarding_async_persistence_enabled():
+            await publicar_evento_onboarding(
+                event_type=EVENT_TYPE_SOCIAL,
+                flujo=flujo,
+                payload=payload_redes(
+                    facebook_username=None,
+                    instagram_username=None,
+                    social_media_url=None,
+                    social_media_type=None,
+                    checkpoint="pending_verification",
+                ),
+            )
         return {
             "success": True,
             "messages": [{"response": _mensaje_final_onboarding()}],
@@ -108,23 +126,36 @@ async def manejar_espera_red_social_onboarding(
     flujo["social_media_url"] = payload_legacy["social_media_url"]
     flujo["social_media_type"] = payload_legacy["social_media_type"]
 
-    persistido = await _persistir_redes_sociales_onboarding(
-        supabase=supabase,
-        proveedor_id=str(flujo.get("provider_id") or "").strip() or None,
-        facebook_username=facebook_username,
-        instagram_username=instagram_username,
-        social_media_url=payload_legacy["social_media_url"],
-        social_media_type=payload_legacy["social_media_type"],
-    )
-    if not persistido:
-        flujo["state"] = "onboarding_social_media"
-        return {
-            "success": True,
-            "messages": [
-                {"response": mensaje_no_pude_guardar_redes_sociales_onboarding()},
-                payload_redes_sociales_onboarding_con_imagen(),
-            ],
-        }
+    if onboarding_async_persistence_enabled():
+        await publicar_evento_onboarding(
+            event_type=EVENT_TYPE_SOCIAL,
+            flujo=flujo,
+            payload=payload_redes(
+                facebook_username=facebook_username,
+                instagram_username=instagram_username,
+                social_media_url=payload_legacy["social_media_url"],
+                social_media_type=payload_legacy["social_media_type"],
+                checkpoint="pending_verification",
+            ),
+        )
+    else:
+        persistido = await _persistir_redes_sociales_onboarding(
+            supabase=supabase,
+            proveedor_id=str(flujo.get("provider_id") or "").strip() or None,
+            facebook_username=facebook_username,
+            instagram_username=instagram_username,
+            social_media_url=payload_legacy["social_media_url"],
+            social_media_type=payload_legacy["social_media_type"],
+        )
+        if not persistido:
+            flujo["state"] = "onboarding_social_media"
+            return {
+                "success": True,
+                "messages": [
+                    {"response": mensaje_no_pude_guardar_redes_sociales_onboarding()},
+                    payload_redes_sociales_onboarding_con_imagen(),
+                ],
+            }
 
     flujo["state"] = "pending_verification"
     return {

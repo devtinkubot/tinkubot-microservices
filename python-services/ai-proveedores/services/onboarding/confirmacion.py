@@ -6,6 +6,12 @@ from typing import Any, Awaitable, Callable, Dict, Optional
 
 from flows.validators.input import parsear_cadena_servicios
 from models.proveedores import SolicitudCreacionProveedor
+from services.onboarding.event_payloads import payload_registro_proveedor
+from services.onboarding.event_publisher import (
+    EVENT_TYPE_REGISTRATION,
+    onboarding_async_persistence_enabled,
+    publicar_evento_onboarding,
+)
 from services.onboarding.messages import construir_respuesta_solicitud_consentimiento
 from services.onboarding.registration import validar_y_construir_proveedor
 from services.onboarding.session import reiniciar_flujo
@@ -109,6 +115,47 @@ async def manejar_confirmacion_onboarding(
                 "messages": [
                     {"response": mensaje_no_pude_validar_datos_registro(mensaje_error)}
                 ],
+            }
+
+        if onboarding_async_persistence_enabled():
+            servicios_registrados = list(datos_proveedor.services_list or [])
+            provider_id = str(flujo.get("provider_id") or "").strip() or None
+            flujo_evento = dict(flujo)
+            flujo_nuevo = {
+                "state": "pending_verification",
+                "has_consent": True,
+                "registration_allowed": False,
+                "awaiting_verification": True,
+                "provider_id": provider_id,
+                "services": servicios_registrados,
+            }
+            flujo.clear()
+            flujo.update(
+                {
+                    **flujo_nuevo,
+                }
+            )
+            await publicar_evento_onboarding(
+                event_type=EVENT_TYPE_REGISTRATION,
+                flujo=flujo_evento,
+                source_message_id=carga.get("id") or carga.get("message_id"),
+                payload=payload_registro_proveedor(
+                    provider_data=datos_proveedor.model_dump(mode="json"),
+                    flujo=flujo_evento,
+                    checkpoint="pending_verification",
+                ),
+            )
+            await reiniciar_flujo(telefono)
+            return {
+                "success": True,
+                "messages": [
+                    {
+                        "response": mensaje_proveedor_en_revision(
+                            datos_proveedor.full_name
+                        )
+                    }
+                ],
+                "new_flow": flujo_nuevo,
             }
 
         proveedor_registrado = await registrar_proveedor_fn(datos_proveedor)

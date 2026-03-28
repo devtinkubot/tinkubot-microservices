@@ -1,8 +1,4 @@
-export type ProviderStatus =
-  | "pending"
-  | "pending_verification"
-  | "approved"
-  | "rejected";
+export type ProviderStatus = "pending" | "approved" | "rejected";
 
 export interface ProviderDocuments {
   dniFront?: string | null;
@@ -51,7 +47,6 @@ export interface ProviderRecord {
   servicesRaw?: string | null;
   servicesList?: string[];
   servicesAudit?: ProviderServiceAudit[];
-  experienceYears?: number | null;
   experienceRange?: string | null;
   socialMediaUrl?: string | null;
   socialMediaType?: string | null;

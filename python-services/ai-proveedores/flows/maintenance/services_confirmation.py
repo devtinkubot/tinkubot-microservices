@@ -91,7 +91,7 @@ def _maximo_visible(flujo: Dict[str, Any]) -> int:
 def _payload_resumen_perfil(flujo: Dict[str, Any]) -> Dict[str, Any]:
     return payload_confirmacion_resumen(
         construir_resumen_confirmacion_perfil_profesional(
-            experience_years=flujo.get("experience_years"),
+            experience_range=flujo.get("experience_range"),
             social_media_url=flujo.get("social_media_url"),
             social_media_type=flujo.get("social_media_type"),
             facebook_username=flujo.get("facebook_username"),

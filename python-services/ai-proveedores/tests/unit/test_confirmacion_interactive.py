@@ -1,9 +1,11 @@
 """Tests para la confirmación interactiva con botones del registro de proveedores."""
 
+import asyncio
 import sys
 import types
 from pathlib import Path
 from typing import Any
+from types import SimpleNamespace
 
 imghdr_stub: Any = types.ModuleType("imghdr")
 imghdr_stub.what = lambda *args, **kwargs: None
@@ -11,8 +13,10 @@ sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from services.onboarding.confirmacion import (  # noqa: E402
+    manejar_confirmacion_onboarding,
     _resolver_opcion_confirmacion,
 )
+from models.proveedores import SolicitudCreacionProveedor  # noqa: E402
 from templates.maintenance.confirmacion import (  # noqa: E402
     CONFIRM_ACCEPT_ID,
     CONFIRM_REJECT_ID,
@@ -133,3 +137,70 @@ def test_constantes_ids_son_diferentes():
     assert CONFIRM_ACCEPT_ID != CONFIRM_REJECT_ID
     assert CONFIRM_ACCEPT_ID == "confirm_accept"
     assert CONFIRM_REJECT_ID == "confirm_reject"
+
+
+def test_confirmacion_onboarding_async_publica_evento_y_no_ejecuta_registro_sync(
+    monkeypatch,
+):
+    flujo = {
+        "state": "confirm",
+        "phone": "593999111222@s.whatsapp.net",
+        "provider_id": "prov-123",
+        "services": ["electricidad"],
+        "has_consent": True,
+    }
+    carga = {"selected_option": CONFIRM_ACCEPT_ID, "message_id": "msg-1"}
+    datos_proveedor = SolicitudCreacionProveedor(
+        phone="593999111222@s.whatsapp.net",
+        full_name="Proveedor Test",
+        city="Quito",
+        services_list=["electricidad"],
+        has_consent=True,
+    )
+    published = {}
+
+    async def _registrar_no_usar(*_args, **_kwargs):
+        raise AssertionError("No debe registrar síncronamente cuando async está activo")
+
+    async def _subir_no_usar(*_args, **_kwargs):
+        raise AssertionError("No debe subir medios síncronamente cuando async está activo")
+
+    async def _publish_mock(**kwargs):
+        published.update(kwargs)
+        return "stream-1"
+
+    async def _no_op(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(
+        "services.onboarding.confirmacion.onboarding_async_persistence_enabled",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        "services.onboarding.confirmacion.publicar_evento_onboarding",
+        _publish_mock,
+    )
+    monkeypatch.setattr(
+        "services.onboarding.confirmacion.reiniciar_flujo",
+        _no_op,
+    )
+    monkeypatch.setattr(
+        "services.onboarding.confirmacion.validar_y_construir_proveedor",
+        lambda *_args, **_kwargs: (True, None, datos_proveedor),
+    )
+
+    respuesta = asyncio.run(
+        manejar_confirmacion_onboarding(
+            flujo=flujo,
+            carga=carga,
+            telefono="593999111222@s.whatsapp.net",
+            registrar_proveedor_fn=_registrar_no_usar,
+            subir_medios_fn=_subir_no_usar,
+            logger=SimpleNamespace(info=lambda *a, **k: None, error=lambda *a, **k: None),
+        )
+    )
+
+    assert "revisión" in respuesta["messages"][0]["response"].lower()
+    assert respuesta["new_flow"]["state"] == "pending_verification"
+    assert published["event_type"] == "provider.onboarding.registration.persist_requested"
+    assert published["payload"]["provider_data"]["full_name"] == "Proveedor Test"

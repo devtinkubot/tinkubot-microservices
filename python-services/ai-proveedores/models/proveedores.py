@@ -46,7 +46,6 @@ class SolicitudCreacionProveedor(BaseModel):
         full_name: Nombre completo del proveedor (2-255 caracteres)
         city: Ciudad donde opera el proveedor (2-100 caracteres)
         services_list: Lista de 0-SERVICIOS_MAXIMOS servicios ofrecidos
-        experience_years: Años de experiencia (default: 0)
         experience_range: Rango legible de experiencia (opcional)
         social_media_url: URL de red social (opcional)
         social_media_type: Tipo de red social (opcional)
@@ -75,7 +74,6 @@ class SolicitudCreacionProveedor(BaseModel):
     # profession: ELIMINADO - Ahora se usa provider_services
     services_list: List[str] = Field(default_factory=list)
     service_entries: List[Dict[str, Any]] = Field(default_factory=list)
-    experience_years: Optional[int] = Field(default=0, ge=0)
     experience_range: Optional[str] = None
     social_media_url: Optional[str] = None
     social_media_type: Optional[str] = None
@@ -109,9 +107,7 @@ class SolicitudCreacionProveedor(BaseModel):
 
     @field_validator("service_entries")
     @classmethod
-    def validate_service_entries(
-        cls, v: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+    def validate_service_entries(cls, v: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if len(v) > SERVICIOS_MAXIMOS:
             raise ValueError(f"Máximo {SERVICIOS_MAXIMOS} servicios permitidos")
         return v
@@ -161,7 +157,6 @@ class RespuestaProveedor(BaseModel):
         rating: Calificación promedio
         available: Disponibilidad actual
         verified: Estado de verificación
-        experience_years: Años de experiencia
         experience_range: Rango legible de experiencia
         social_media_url: URL de red social (opcional)
         social_media_type: Tipo de red social (opcional)
@@ -193,7 +188,6 @@ class RespuestaProveedor(BaseModel):
     rating: float
     available: bool
     verified: bool
-    experience_years: int
     experience_range: Optional[str] = None
     social_media_url: Optional[str] = None
     social_media_type: Optional[str] = None

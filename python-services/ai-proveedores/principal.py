@@ -18,6 +18,7 @@ from infrastructure.database import run_supabase, set_supabase_client
 from infrastructure.embeddings.servicio_embeddings import ServicioEmbeddings
 from infrastructure.storage import subir_medios_identidad
 from models import RecepcionMensajeWhatsApp, RespuestaSalud
+from models.proveedores import SolicitudCreacionProveedor
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 from services.availability.disponibilidad_admin import (
@@ -29,6 +30,13 @@ from services.onboarding.worker import (
     ejecutar_limpieza_onboarding,
 )
 from services.onboarding.registration import reiniciar_onboarding_proveedor
+from flows.onboarding.handlers.servicios import (
+    resolver_servicio_onboarding_best_effort,
+)
+from services.maintenance.actualizar_servicios import actualizar_servicios
+from services.shared.ingreso_whatsapp import (
+    normalizar_lista_servicios_flujo,
+)
 from services.shared.orquestacion_whatsapp import (
     normalizar_respuesta_whatsapp as normalizar_respuesta_whatsapp_impl,
 )
@@ -127,6 +135,34 @@ class SolicitudAutoAsignacionGovernanceReviews(BaseModel):
     create_domain_if_missing: bool = False
 
 
+class SolicitudResolverServicioOnboarding(BaseModel):
+    raw_service_text: str
+    provider_id: Optional[str] = None
+    phone: Optional[str] = None
+    checkpoint: Optional[str] = None
+
+
+class RespuestaResolverServicioOnboarding(BaseModel):
+    ok: bool
+    raw_service_text: str
+    service_detail: Dict[str, Any]
+    used_fallback: bool = False
+    error_reason: Optional[str] = None
+
+
+class RespuestaRegistrarProveedorOnboarding(BaseModel):
+    ok: bool
+    provider_id: Optional[str] = None
+    provider: Optional[Dict[str, Any]] = None
+    media_uploaded: bool = False
+    error_reason: Optional[str] = None
+
+
+class SolicitudRegistrarProveedorOnboarding(BaseModel):
+    provider_data: SolicitudCreacionProveedor
+    flow: Dict[str, Any] = Field(default_factory=dict)
+
+
 # === FASTAPI LIFECYCLE EVENTS ===
 
 
@@ -181,6 +217,41 @@ app.add_middleware(
 
 def normalizar_respuesta_whatsapp(respuesta: Any) -> Dict[str, Any]:
     return normalizar_respuesta_whatsapp_impl(respuesta)
+
+
+async def _sincronizar_servicios_si_cambiaron(
+    flujo_anterior: Dict[str, Any],
+    flujo_actual: Dict[str, Any],
+) -> bool:
+    """Compat wrapper usado por tests y utilidades legacy."""
+    provider_id = str(
+        flujo_actual.get("provider_id") or flujo_anterior.get("provider_id") or ""
+    ).strip()
+    if not provider_id or not supabase:
+        return False
+
+    servicios_previos = normalizar_lista_servicios_flujo(flujo_anterior)
+    servicios_actuales = normalizar_lista_servicios_flujo(flujo_actual)
+    if servicios_previos == servicios_actuales:
+        return False
+
+    try:
+        servicios_persistidos = await actualizar_servicios(
+            provider_id,
+            servicios_actuales,
+        )
+    except Exception as exc:
+        logger.warning(
+            "No se pudieron sincronizar los servicios persistidos para %s: %s",
+            provider_id,
+            exc,
+        )
+        return False
+
+    flujo_actual["services"] = servicios_persistidos
+    if "servicios_temporales" in flujo_actual:
+        flujo_actual["servicios_temporales"] = list(servicios_persistidos)
+    return True
 
 
 @app.get("/health", response_model=RespuestaSalud)
@@ -273,6 +344,92 @@ async def reset_provider_onboarding(
         whatsapp_url=configuracion.whatsapp_proveedores_url,
         whatsapp_account_id=configuracion.whatsapp_proveedores_account_id,
     )
+
+
+@app.post(
+    "/internal/onboarding/services/resolve",
+    response_model=RespuestaResolverServicioOnboarding,
+)
+async def resolver_servicio_onboarding_interno(
+    solicitud: SolicitudResolverServicioOnboarding,
+    token: Optional[str] = Header(default=None, alias="x-internal-token"),
+) -> RespuestaResolverServicioOnboarding:
+    token_esperado = configuracion.internal_token
+    if token_esperado and token != token_esperado:
+        return RespuestaResolverServicioOnboarding(
+            ok=False,
+            raw_service_text=str(solicitud.raw_service_text or "").strip(),
+            service_detail={},
+            error_reason="unauthorized",
+        )
+
+    resultado = await resolver_servicio_onboarding_best_effort(
+        texto_mensaje=solicitud.raw_service_text,
+        cliente_openai=cliente_openai,
+        servicio_embeddings=servicio_embeddings,
+        provider_id=solicitud.provider_id,
+    )
+    return RespuestaResolverServicioOnboarding(**resultado)
+
+
+@app.post(
+    "/internal/onboarding/registration/resolve",
+    response_model=RespuestaRegistrarProveedorOnboarding,
+)
+async def registrar_proveedor_onboarding_interno(
+    solicitud: SolicitudRegistrarProveedorOnboarding,
+    token: Optional[str] = Header(default=None, alias="x-internal-token"),
+) -> RespuestaRegistrarProveedorOnboarding:
+    token_esperado = configuracion.internal_token
+    if token_esperado and token != token_esperado:
+        return RespuestaRegistrarProveedorOnboarding(
+            ok=False,
+            error_reason="unauthorized",
+        )
+
+    if not supabase:
+        return RespuestaRegistrarProveedorOnboarding(
+            ok=False,
+            error_reason="Supabase no configurado",
+        )
+
+    try:
+        from services.onboarding.registration import (
+            registrar_proveedor_en_base_datos,
+        )
+
+        provider = await registrar_proveedor_en_base_datos(
+            supabase,
+            solicitud.provider_data,
+            servicio_embeddings,
+        )
+        if not provider:
+            return RespuestaRegistrarProveedorOnboarding(
+                ok=False,
+                error_reason="registration_failed",
+            )
+
+        media_uploaded = False
+        try:
+            await subir_medios_identidad(
+                str(provider.get("id") or "").strip(),
+                solicitud.flow,
+            )
+            media_uploaded = True
+        except Exception:
+            media_uploaded = False
+
+        return RespuestaRegistrarProveedorOnboarding(
+            ok=True,
+            provider_id=str(provider.get("id") or "").strip() or None,
+            provider=provider,
+            media_uploaded=media_uploaded,
+        )
+    except Exception as exc:
+        return RespuestaRegistrarProveedorOnboarding(
+            ok=False,
+            error_reason=str(exc),
+        )
 
 
 @app.post("/admin/service-governance/reviews/{review_id}/approve")

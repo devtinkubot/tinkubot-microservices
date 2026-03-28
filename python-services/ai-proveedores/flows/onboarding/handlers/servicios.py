@@ -5,15 +5,31 @@ from typing import Any, Dict, List, Optional
 
 from infrastructure.database import get_supabase_client
 from services.maintenance.constantes import SERVICIOS_MAXIMOS_ONBOARDING
+from services.maintenance.clasificacion_semantica import (
+    obtener_catalogo_dominios_liviano,
+)
+from services.maintenance.revision_catalogo import (
+    generar_sugerencia_revision_catalogo_servicio,
+)
 from services.maintenance.validacion_semantica import (
     validar_servicio_semanticamente,
+)
+from services.maintenance.revision_catalogo import (
+    registrar_revision_catalogo_servicio,
+)
+from services.shared import (
+    RESPUESTAS_AGREGAR_SERVICIO_AFIRMATIVAS,
+    RESPUESTAS_AGREGAR_SERVICIO_NEGATIVAS,
+    SELECCION_AGREGAR_SERVICIO_AFIRMATIVA,
+    SELECCION_AGREGAR_SERVICIO_NEGATIVA,
+    normalizar_respuesta_binaria,
+    normalizar_texto_interaccion,
 )
 from templates.onboarding.redes_sociales import (
     payload_redes_sociales_onboarding_con_imagen,
 )
 from templates.onboarding.servicios import (
     mensaje_maximo_servicios_onboarding,
-    mensaje_no_pude_guardar_servicio,
     mensaje_no_pude_interpretar_servicio,
     mensaje_no_pude_normalizar_servicio,
     mensaje_no_pude_procesar_servicios,
@@ -51,6 +67,20 @@ def _lista_servicios_temporales(flujo: Dict[str, Any]) -> List[str]:
             if nombre:
                 servicios_desde_detail.append(nombre)
     return servicios_desde_detail
+
+
+def _servicio_crudo_a_meta_servicio(texto_crudo: str) -> Dict[str, Any]:
+    texto = limpiar_espacios(texto_crudo)
+    return {
+        "raw_service_text": texto,
+        "service_name": texto,
+        "service_summary": texto,
+        "domain_code": None,
+        "category_name": None,
+        "classification_confidence": 0.0,
+        "requires_review": True,
+        "review_reason": "pending_worker_resolution",
+    }
 
 
 def _normalizar_meta_servicio(
@@ -97,6 +127,45 @@ def _payload_prompt_servicio_onboarding(
         flujo["services_guide_shown"] = True
         return payload_servicios_onboarding_con_imagen()
     return payload_servicios_onboarding_sin_imagen()
+
+
+async def manejar_decision_agregar_otro_servicio_onboarding(
+    flujo: Dict[str, Any],
+    texto_mensaje: Optional[str],
+    selected_option: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Decide si el proveedor agrega otro servicio o pasa a redes sociales."""
+    texto = normalizar_texto_interaccion(texto_mensaje)
+    seleccionado = (selected_option or "").strip().lower()
+
+    decision = normalizar_respuesta_binaria(
+        texto,
+        RESPUESTAS_AGREGAR_SERVICIO_AFIRMATIVAS,
+        RESPUESTAS_AGREGAR_SERVICIO_NEGATIVAS,
+    )
+    if (
+        seleccionado in SELECCION_AGREGAR_SERVICIO_AFIRMATIVA
+        or decision is True
+        or selected_option == "onboarding_add_another_service_yes"
+    ):
+        flujo["state"] = "onboarding_specialty"
+        return {
+            "success": True,
+            "messages": [payload_servicios_onboarding_sin_imagen()],
+        }
+
+    if (
+        seleccionado in SELECCION_AGREGAR_SERVICIO_NEGATIVA
+        or decision is False
+        or selected_option == "onboarding_add_another_service_no"
+    ):
+        flujo["state"] = "onboarding_social_media"
+        return {
+            "success": True,
+            "messages": [payload_redes_sociales_onboarding_con_imagen()],
+        }
+
+    return {"success": True, "messages": [payload_preguntar_otro_servicio_onboarding()]}
 
 
 async def normalizar_servicio_onboarding_individual(
@@ -194,6 +263,135 @@ async def normalizar_servicios_onboarding(
     )
 
 
+async def resolver_servicio_onboarding_best_effort(
+    *,
+    texto_mensaje: str,
+    cliente_openai: Optional[Any],
+    servicio_embeddings: Optional[Any] = None,
+    provider_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    texto = limpiar_espacios(texto_mensaje)
+    if not texto:
+        return {
+            "ok": False,
+            "raw_service_text": "",
+            "service_detail": _servicio_crudo_a_meta_servicio(""),
+            "error_reason": "empty_service",
+        }
+
+    resultado = await normalizar_servicios_onboarding(
+        texto_mensaje=texto,
+        cliente_openai=cliente_openai,
+        servicio_embeddings=servicio_embeddings,
+    )
+    if resultado.get("ok"):
+        detalle = dict(resultado.get("service_detail") or {})
+        detalle["raw_service_text"] = texto
+        if provider_id and _requiere_revision_catalogo(detalle):
+            supabase = _resolver_supabase_runtime()
+            dominios_catalogo = await obtener_catalogo_dominios_liviano(supabase)
+            sugerencia = {}
+            if cliente_openai:
+                sugerencia = await generar_sugerencia_revision_catalogo_servicio(
+                    cliente_openai=cliente_openai,
+                    raw_service_text=texto,
+                    service_name=str(
+                        detalle.get("service_name")
+                        or detalle.get("normalized_service")
+                        or texto
+                    ).strip()
+                    or texto,
+                    dominios_catalogo=dominios_catalogo,
+                )
+            await registrar_revision_catalogo_servicio(
+                supabase=supabase,
+                provider_id=provider_id,
+                raw_service_text=texto,
+                service_name=str(detalle.get("service_name") or detalle.get("normalized_service") or texto).strip()
+                or texto,
+                suggested_domain_code=(
+                    sugerencia.get("suggested_domain_code")
+                    or detalle.get("domain_code")
+                ),
+                proposed_category_name=(
+                    sugerencia.get("proposed_category_name")
+                    or detalle.get("category_name")
+                ),
+                proposed_service_summary=(
+                    sugerencia.get("proposed_service_summary")
+                    or detalle.get("service_summary")
+                ),
+                review_reason=(
+                    sugerencia.get("review_reason")
+                    or str(
+                        detalle.get("review_reason")
+                        or "catalog_review_required"
+                    ).strip()
+                    or "catalog_review_required"
+                ),
+                source="provider_onboarding",
+            )
+        return {
+            "ok": True,
+            "raw_service_text": texto,
+            "service_detail": detalle,
+        }
+
+    detalle = _servicio_crudo_a_meta_servicio(texto)
+    detalle["review_reason"] = str(resultado.get("response") or "resolution_fallback")
+    if provider_id:
+        supabase = _resolver_supabase_runtime()
+        dominios_catalogo = await obtener_catalogo_dominios_liviano(supabase)
+        sugerencia = {}
+        if cliente_openai:
+            sugerencia = await generar_sugerencia_revision_catalogo_servicio(
+                cliente_openai=cliente_openai,
+                raw_service_text=texto,
+                service_name=str(detalle.get("service_name") or texto).strip() or texto,
+                dominios_catalogo=dominios_catalogo,
+            )
+        await registrar_revision_catalogo_servicio(
+            supabase=supabase,
+            provider_id=provider_id,
+            raw_service_text=texto,
+            service_name=str(detalle.get("service_name") or detalle.get("normalized_service") or texto).strip()
+            or texto,
+            suggested_domain_code=(
+                sugerencia.get("suggested_domain_code") or detalle.get("domain_code")
+            ),
+            proposed_category_name=(
+                sugerencia.get("proposed_category_name") or detalle.get("category_name")
+            ),
+            proposed_service_summary=(
+                sugerencia.get("proposed_service_summary")
+                or detalle.get("service_summary")
+            ),
+            review_reason=(
+                sugerencia.get("review_reason")
+                or str(detalle.get("review_reason") or "resolution_fallback").strip()
+                or "resolution_fallback"
+            ),
+            source="provider_onboarding",
+        )
+    return {
+        "ok": True,
+        "raw_service_text": texto,
+        "service_detail": detalle,
+        "used_fallback": True,
+    }
+
+
+def _requiere_revision_catalogo(detalle: Dict[str, Any]) -> bool:
+    """Detecta si la IA dejó una sugerencia que debe pasar por revisión."""
+    confidence = float(detalle.get("classification_confidence") or 0.0)
+    return bool(
+        detalle.get("requires_review")
+        or confidence < 0.7
+        or not str(detalle.get("domain_code") or "").strip()
+        or not str(detalle.get("category_name") or "").strip()
+    )
+
+
 async def manejar_espera_servicios_onboarding(
     flujo: Dict[str, Any],
     texto_mensaje: Optional[str],
@@ -202,7 +400,8 @@ async def manejar_espera_servicios_onboarding(
     selected_option: Optional[str] = None,
 ) -> Dict[str, Any]:
     servicios_temporales: List[str] = _lista_servicios_temporales(flujo)
-    texto_limpio = limpiar_espacios(texto_mensaje or "").lower()
+    texto_normalizado = limpiar_espacios(texto_mensaje or "")
+    texto_limpio = texto_normalizado.lower()
 
     if texto_limpio in {"menu", "volver", "salir"}:
         return {
@@ -210,32 +409,29 @@ async def manejar_espera_servicios_onboarding(
             "messages": [_payload_prompt_servicio_onboarding(flujo)],
         }
 
-    resultado = await normalizar_servicios_onboarding(
-        texto_mensaje=texto_mensaje or "",
-        cliente_openai=cliente_openai,
-        servicio_embeddings=servicio_embeddings,
-    )
-    if not resultado.get("ok"):
+    if len(texto_normalizado) < 2:
         flujo["state"] = "onboarding_specialty"
         return {
             "success": True,
             "messages": [
-                {"response": resultado["response"]},
+                {"response": mensaje_servicio_muy_corto()},
+                _payload_prompt_servicio_onboarding(flujo),
+            ],
+        }
+    if len(texto_normalizado) > 300:
+        flujo["state"] = "onboarding_specialty"
+        return {
+            "success": True,
+            "messages": [
+                {"response": mensaje_servicio_muy_largo()},
                 _payload_prompt_servicio_onboarding(flujo),
             ],
         }
 
-    servicio = str(resultado.get("service") or "").strip()
-    service_detail = resultado.get("service_detail") or {}
-    if not servicio:
-        flujo["state"] = "onboarding_specialty"
-        return {
-            "success": True,
-            "messages": [{"response": mensaje_no_pude_guardar_servicio()}],
-        }
-
-    llaves_existentes = {serv.lower() for serv in servicios_temporales}
-    if servicio.lower() in llaves_existentes:
+    llaves_existentes = {
+        limpiar_espacios(serv).lower() for serv in servicios_temporales
+    }
+    if texto_limpio in llaves_existentes:
         flujo["state"] = "onboarding_specialty"
         return {
             "success": True,
@@ -246,13 +442,13 @@ async def manejar_espera_servicios_onboarding(
         }
 
     detalles = list(flujo.get("servicios_detallados") or [])
-    detalles.append(service_detail)
+    detalles.append(_servicio_crudo_a_meta_servicio(texto_normalizado))
     detalles = detalles[:SERVICIOS_MAXIMOS_ONBOARDING]
     flujo["servicios_detallados"] = detalles
     flujo["servicios_temporales"] = [
-        str(item.get("service_name") or "").strip()
+        str(item.get("raw_service_text") or item.get("service_name") or "").strip()
         for item in detalles
-        if str(item.get("service_name") or "").strip()
+        if str(item.get("raw_service_text") or item.get("service_name") or "").strip()
     ]
     flujo["services"] = list(flujo["servicios_temporales"])
     flujo["specialty"] = ", ".join(flujo["servicios_temporales"])

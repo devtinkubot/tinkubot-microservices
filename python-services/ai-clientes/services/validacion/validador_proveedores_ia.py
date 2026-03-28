@@ -6,9 +6,8 @@ import logging
 import re
 from typing import Any, Dict, List, Optional
 
-from openai import AsyncOpenAI
 from config.configuracion import configuracion
-
+from openai import AsyncOpenAI
 
 EJEMPLO_RESPUESTA_JSON_VALIDACION = """{
   "results": [
@@ -159,7 +158,9 @@ class ValidadorProveedoresIA:
             # Extraer información relevante del proveedor
             servicios = p.get("services", "N/A")
             lista_servicios = p.get("services_list", [])
-            experiencia = p.get("experience_years") or p.get("years_of_experience", "N/A")
+            experiencia = p.get("experience_range") or p.get(
+                "years_of_experience", "N/A"
+            )
             calificacion = p.get("rating", "N/A")
 
             # Si services_list está disponible, usarlo, si no, usar services
@@ -170,7 +171,7 @@ class ValidadorProveedoresIA:
 
             texto_proveedor = f"""Proveedor {i+1}:
 - Servicios: {texto_servicios}
-- Experiencia: {experiencia} años
+- Experiencia: {experiencia}
 - Rating: {calificacion}"""
             proveedores_info.append(texto_proveedor)
 
@@ -204,7 +205,9 @@ Responde SOLO con JSON válido, usando exactamente este formato:
 
 NO incluyas markdown, fences ni explicaciones fuera del JSON."""
 
-        self.logger.info(f"📋 Prompt enviado a IA de validación:\n{prompt_sistema[:1000]}...")
+        self.logger.info(
+            f"📋 Prompt enviado a IA de validación:\n{prompt_sistema[:1000]}..."
+        )
 
         try:
             async with self.semaforo_openai:
@@ -224,13 +227,17 @@ NO incluyas markdown, fences ni explicaciones fuera del JSON."""
                 )
 
             if not respuesta.choices:
-                self.logger.warning("⚠️ OpenAI respondió sin choices en validar_proveedores")
+                self.logger.warning(
+                    "⚠️ OpenAI respondió sin choices en validar_proveedores"
+                )
                 return []
 
             contenido = (respuesta.choices[0].message.content or "").strip()
             self.logger.debug(f"🤖 Respuesta validación IA: {contenido[:200]}")
             payload = self._extraer_json_parseable(contenido)
-            lista_validacion = self._normalizar_lista_validacion(payload, len(proveedores))
+            lista_validacion = self._normalizar_lista_validacion(
+                payload, len(proveedores)
+            )
 
             if lista_validacion is None:
                 self.logger.warning("validator_parse_error stage=primary")
@@ -300,6 +307,7 @@ NO incluyas markdown, fences ni explicaciones fuera del JSON."""
         except Exception as exc:
             self.logger.warning(f"⚠️ Error en validación IA, fail-closed: {exc}")
             return []
+
     MODELO_VALIDACION = (
         configuracion.modelo_validacion
         or configuracion.openai_chat_model

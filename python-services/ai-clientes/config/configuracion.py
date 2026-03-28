@@ -67,7 +67,7 @@ class ConfiguracionServicio(BaseSettings):
     taxonomy_cache_ttl_seconds: int = 300
 
     # OpenAI Model Configuration (chat/completions)
-    openai_chat_model: str = "gpt-4o-mini"
+    openai_chat_model: str = "gpt-5-mini"
     # Overrides opcionales por proceso (prioridad sobre openai_chat_model)
     modelo_extraccion: Optional[str] = None  # Para extracción de necesidades
     modelo_validacion: Optional[str] = None  # Para validación de contenido

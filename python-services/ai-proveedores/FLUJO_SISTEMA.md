@@ -33,6 +33,7 @@ Este documento describe el recorrido operativo del servicio con la arquitectura 
 4. Cada contexto usa su route, flow, service y templates correspondientes
 5. Los mensajes visibles salen desde templates/
 6. Las reglas compartidas salen desde services/shared/
+7. El paso de servicios publica un evento crudo a Redis y deja la normalización/persistencia al worker async
 ```
 
 ## Onboarding
@@ -52,7 +53,7 @@ Pasos principales:
 2. Ciudad o ubicación.
 3. Cédula frontal.
 4. Foto de perfil.
-5. Años de experiencia.
+5. Experiencia como `experience_range`.
 6. Servicios del proveedor.
 7. Consentimiento final.
 8. Envío a revisión.
@@ -65,6 +66,8 @@ Regla operativa:
 - Si no hay un JID numérico usable, `real_phone` se pide explícitamente después de consentimiento.
 - `@lid` y `user_id`/BSUID son identidades de continuidad, no teléfonos humanos.
 - Al final del flujo solo se ajusta el estado del proveedor y el checkpoint duradero; no se reinterpreta identidad.
+- El paso de servicios no hace el trabajo pesado en el request path: solo captura el texto crudo y deja la resolución y la persistencia final al worker.
+- La experiencia se lee y muestra como `experience_range`; el entero histórico ya no forma parte del contrato vivo.
 
 ## Review
 
@@ -102,6 +105,11 @@ Responsabilidades:
 - certificados
 - eliminación de registro
 - navegación de menú
+
+Regla operativa:
+
+- si una pantalla muestra experiencia, debe usar `experience_range`
+- el flujo de mantenimiento no debe reintroducir `experience_years` como fuente de verdad
 
 ## Availability
 

@@ -122,6 +122,12 @@ If a state still appears as a bridge, it means we still need compatibility for:
 - legacy router paths
 - reentry from older flows
 
+Frontend note:
+
+- `pending_verification` is owned by backend review/onboarding flows, but it is not a public
+  frontend status anymore.
+- The admin UI should derive "Nuevos" from `onboarding_step`, not from `ProviderStatus`.
+
 ## Folder Guidance
 
 The folder guidance is now a live map of the existing structure:

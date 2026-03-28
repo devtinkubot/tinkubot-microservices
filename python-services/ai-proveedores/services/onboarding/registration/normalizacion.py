@@ -5,17 +5,11 @@ from typing import Any, Dict, List, Optional
 
 from models.proveedores import SolicitudCreacionProveedor
 from services.maintenance.constantes import SERVICIOS_MAXIMOS
-from services.maintenance.estado_operativo import (
-    formatear_rango_experiencia,
-    normalizar_experiencia,
-)
 from services.maintenance.redes_sociales_slots import resolver_redes_sociales
 from utils import (
     normalizar_texto_para_busqueda,
 )
-from utils import (
-    sanitizar_lista_servicios as sanitizar_servicios,
-)
+from utils import sanitizar_lista_servicios as sanitizar_servicios
 
 _CONECTORES_TITULO = {
     "a",
@@ -145,9 +139,7 @@ def normalizar_datos_proveedor(
                     "service_summary": str(entry.get("service_summary") or "").strip(),
                     "domain_code": entry.get("domain_code"),
                     "category_name": entry.get("category_name"),
-                    "classification_confidence": entry.get(
-                        "classification_confidence"
-                    ),
+                    "classification_confidence": entry.get("classification_confidence"),
                     "requires_review": entry.get("requires_review"),
                     "review_reason": entry.get("review_reason"),
                 }
@@ -224,10 +216,7 @@ def normalizar_datos_proveedor(
         # Fase 5: Eliminado campo 'profession'
         "services_normalized": servicios_normalizados,  # Fase 5: Lista, no string
         "service_entries": service_entries,
-        "experience_years": datos_crudos.experience_years or 0,
-        "experience_range": formatear_rango_experiencia(
-            normalizar_experiencia(datos_crudos.experience_years)
-        ),
+        "experience_range": datos_crudos.experience_range,
         "has_consent": datos_crudos.has_consent,
         "verified": False,
         # Arrancamos en 5 para promediar con futuras calificaciones de clientes.
@@ -236,18 +225,16 @@ def normalizar_datos_proveedor(
         "social_media_type": datos_crudos.social_media_type,
         "facebook_username": redes_sociales["facebook_username"],
         "instagram_username": redes_sociales["instagram_username"],
-        "display_name": datos_crudos.display_name.strip()
-        if datos_crudos.display_name
-        else None,
-        "formatted_name": datos_crudos.formatted_name.strip()
-        if datos_crudos.formatted_name
-        else None,
-        "first_name": datos_crudos.first_name.strip()
-        if datos_crudos.first_name
-        else None,
-        "last_name": datos_crudos.last_name.strip()
-        if datos_crudos.last_name
-        else None,
+        "display_name": (
+            datos_crudos.display_name.strip() if datos_crudos.display_name else None
+        ),
+        "formatted_name": (
+            datos_crudos.formatted_name.strip() if datos_crudos.formatted_name else None
+        ),
+        "first_name": (
+            datos_crudos.first_name.strip() if datos_crudos.first_name else None
+        ),
+        "last_name": datos_crudos.last_name.strip() if datos_crudos.last_name else None,
     }
 
 
@@ -277,10 +264,7 @@ def garantizar_campos_obligatorios_proveedor(
     datos["available"] = bool(valor_disponible)
 
     datos["rating"] = float(datos.get("rating") or 5.0)
-    datos["experience_years"] = int(datos.get("experience_years") or 0)
-    datos["experience_range"] = datos.get("experience_range") or formatear_rango_experiencia(
-        datos["experience_years"]
-    )
+    datos["experience_range"] = str(datos.get("experience_range") or "").strip() or None
     datos.setdefault("location_lat", None)
     datos.setdefault("location_lng", None)
     datos.setdefault("location_updated_at", None)

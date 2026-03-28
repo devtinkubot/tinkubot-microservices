@@ -18,7 +18,12 @@ from flows.maintenance.services import (  # noqa: E402
     manejar_confirmacion_agregar_servicios,
 )
 from flows.maintenance.services_confirmation import (  # noqa: E402
+    manejar_accion_edicion_servicios_registro,
     manejar_confirmacion_servicio_perfil,
+    manejar_confirmacion_servicios,
+    manejar_eliminacion_servicio_registro,
+    manejar_reemplazo_servicio_registro,
+    manejar_seleccion_reemplazo_servicio_registro,
 )
 from flows.maintenance.specialty import (  # noqa: E402
     manejar_espera_especialidad,
@@ -27,15 +32,10 @@ from flows.maintenance.specialty import (  # noqa: E402
 from flows.onboarding.handlers.experiencia import (  # noqa: E402
     manejar_espera_experiencia_onboarding,
 )
-from flows.maintenance.services_confirmation import (  # noqa: E402
-    manejar_confirmacion_servicios,
-    manejar_accion_edicion_servicios_registro,
-    manejar_eliminacion_servicio_registro,
-    manejar_reemplazo_servicio_registro,
-    manejar_seleccion_reemplazo_servicio_registro,
-)
-from flows.onboarding.handlers.servicios_confirmacion import (  # noqa: E402
+from flows.onboarding.handlers.servicios import (  # noqa: E402
     manejar_decision_agregar_otro_servicio_onboarding,
+    manejar_espera_servicios_onboarding,
+    resolver_servicio_onboarding_best_effort,
 )
 from flows.onboarding.router import manejar_estado_onboarding  # noqa: E402
 from flows.validators.name import validar_nombre_completo  # noqa: E402
@@ -51,12 +51,12 @@ from services.maintenance.asistente_clarificacion import (  # noqa: E402
 from services.maintenance.validacion_semantica import (  # noqa: E402
     validar_servicio_semanticamente,
 )
+from templates.maintenance import (  # noqa: E402
+    mensaje_correccion_servicios,
+)
 from templates.onboarding import (  # noqa: E402
     payload_servicios_onboarding_con_imagen,
     preguntar_servicios_onboarding,
-)
-from templates.maintenance import (  # noqa: E402
-    mensaje_correccion_servicios,
 )
 from utils import (  # noqa: E402
     dividir_cadena_servicios,
@@ -113,6 +113,139 @@ def test_prompt_servicios_onboarding_usa_env_override(monkeypatch):
 
     assert respuesta["media_type"] == "image"
     assert respuesta["media_url"] == "https://example.com/services-image.png"
+
+
+@pytest.mark.asyncio
+async def test_onboarding_servicios_captura_texto_crudo_sin_llamar_openai(monkeypatch):
+    async def _no_deberia_llamarse(**_kwargs):
+        raise AssertionError("No debe usar OpenAI en el request path")
+
+    monkeypatch.setitem(
+        manejar_espera_servicios_onboarding.__globals__,
+        "normalizar_servicios_onboarding",
+        _no_deberia_llamarse,
+    )
+
+    flujo = {"state": "onboarding_specialty", "servicios_temporales": []}
+
+    respuesta = await manejar_espera_servicios_onboarding(
+        flujo=flujo,
+        texto_mensaje="Gestion de proyectos de tics",
+        cliente_openai=object(),
+    )
+
+    assert flujo["state"] == "onboarding_add_another_service"
+    assert flujo["servicios_temporales"] == ["Gestion de proyectos de tics"]
+    assert (
+        flujo["service_entries"][0]["raw_service_text"]
+        == "Gestion de proyectos de tics"
+    )
+    assert flujo["service_entries"][0]["requires_review"] is True
+    assert (
+        respuesta["messages"][0]["ui"]["header_text"]
+        == "¿Quieres agregar otro servicio?"
+    )
+
+
+@pytest.mark.asyncio
+async def test_resolver_servicio_best_effort_hace_fallback_a_texto_crudo(monkeypatch):
+    async def _falla_normalizacion(**_kwargs):
+        return {"ok": False, "response": "No pude interpretar ese servicio."}
+
+    monkeypatch.setitem(
+        resolver_servicio_onboarding_best_effort.__globals__,
+        "normalizar_servicios_onboarding",
+        _falla_normalizacion,
+    )
+
+    resultado = await resolver_servicio_onboarding_best_effort(
+        texto_mensaje="Servicio raro inventado",
+        cliente_openai=object(),
+    )
+
+    assert resultado["ok"] is True
+    assert resultado["used_fallback"] is True
+    assert resultado["service_detail"]["service_name"] == "Servicio raro inventado"
+    assert resultado["service_detail"]["requires_review"] is True
+
+
+@pytest.mark.asyncio
+async def test_resolver_servicio_best_effort_registra_review_catalogo(
+    monkeypatch,
+):
+    captured = {}
+
+    async def _fake_normalizar(**_kwargs):
+        return {
+            "ok": True,
+            "service_detail": {
+                "raw_service_text": "Gestion de proyectos tics",
+                "service_name": "Gestión de proyectos TIC",
+                "service_summary": "Gestión de proyectos relacionados con tecnologías de la información.",
+                "domain_code": None,
+                "category_name": None,
+                "classification_confidence": 0.52,
+                "requires_review": True,
+                "review_reason": "catalog_review_required",
+            },
+        }
+
+    async def _fake_registrar_revision_catalogo_servicio(**kwargs):
+        captured.update(kwargs)
+        return {"id": "review-1"}
+
+    async def _fake_sugerencia_revision_catalogo_servicio(**_kwargs):
+        return {
+            "suggested_domain_code": "tecnologia",
+            "proposed_category_name": "Servicios tecnológicos",
+            "proposed_service_summary": "Gestión de proyectos tecnológicos con foco en IA.",
+            "review_reason": "best_effort_catalog_suggestion",
+            "confidence": 0.84,
+        }
+
+    async def _fake_obtener_catalogo_dominios_liviano(_supabase):
+        return [{"code": "tecnologia", "display_name": "Tecnología", "description": ""}]
+
+    monkeypatch.setitem(
+        resolver_servicio_onboarding_best_effort.__globals__,
+        "normalizar_servicios_onboarding",
+        _fake_normalizar,
+    )
+    monkeypatch.setitem(
+        resolver_servicio_onboarding_best_effort.__globals__,
+        "registrar_revision_catalogo_servicio",
+        _fake_registrar_revision_catalogo_servicio,
+    )
+    monkeypatch.setitem(
+        resolver_servicio_onboarding_best_effort.__globals__,
+        "generar_sugerencia_revision_catalogo_servicio",
+        _fake_sugerencia_revision_catalogo_servicio,
+    )
+    monkeypatch.setitem(
+        resolver_servicio_onboarding_best_effort.__globals__,
+        "obtener_catalogo_dominios_liviano",
+        _fake_obtener_catalogo_dominios_liviano,
+    )
+    monkeypatch.setitem(
+        resolver_servicio_onboarding_best_effort.__globals__,
+        "_resolver_supabase_runtime",
+        lambda: object(),
+    )
+
+    resultado = await resolver_servicio_onboarding_best_effort(
+        texto_mensaje="Gestion de proyectos tics",
+        cliente_openai=object(),
+        provider_id="prov-1",
+    )
+
+    assert resultado["ok"] is True
+    assert captured["provider_id"] == "prov-1"
+    assert captured["raw_service_text"] == "Gestion de proyectos tics"
+    assert captured["service_name"] == "Gestión de proyectos TIC"
+    assert captured["suggested_domain_code"] == "tecnologia"
+    assert captured["proposed_category_name"] == "Servicios tecnológicos"
+    assert captured["review_reason"] == "best_effort_catalog_suggestion"
+    assert captured["source"] == "provider_onboarding"
 
 
 @pytest.mark.asyncio

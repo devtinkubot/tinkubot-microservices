@@ -26,16 +26,7 @@ from templates.onboarding.telefono import preguntar_real_phone  # noqa: E402
 
 
 @pytest.mark.asyncio
-async def test_ciudad_onboarding_avanza_a_documentos(monkeypatch):
-    async def _fake_resolver_ciudad_desde_texto(texto):
-        assert texto == "Cuenca"
-        return "Cuenca"
-
-    monkeypatch.setattr(
-        "flows.onboarding.handlers.ciudad._resolver_ciudad_desde_texto",
-        _fake_resolver_ciudad_desde_texto,
-    )
-
+async def test_ciudad_onboarding_avanza_a_documentos():
     flujo = {"state": "onboarding_city"}
     respuesta = await manejar_espera_ciudad_onboarding(
         flujo=flujo,

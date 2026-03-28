@@ -123,7 +123,7 @@ def manejar_espera_red_social(
                 "messages": [
                     payload_confirmacion_resumen(
                         construir_resumen_confirmacion_perfil_profesional(
-                            experience_years=flujo.get("experience_years"),
+                            experience_range=flujo.get("experience_range"),
                             social_media_url=flujo.get("social_media_url"),
                             social_media_type=flujo.get("social_media_type"),
                             facebook_username=flujo.get("facebook_username"),
@@ -175,7 +175,7 @@ def manejar_espera_red_social(
                     "messages": [
                         payload_confirmacion_resumen(
                             construir_resumen_confirmacion_perfil_profesional(
-                                experience_years=flujo.get("experience_years"),
+                                experience_range=flujo.get("experience_range"),
                                 social_media_url=flujo.get("social_media_url"),
                                 social_media_type=flujo.get("social_media_type"),
                                 facebook_username=flujo.get("facebook_username"),
@@ -262,7 +262,7 @@ def manejar_espera_red_social(
             "messages": [
                 payload_confirmacion_resumen(
                     construir_resumen_confirmacion_perfil_profesional(
-                        experience_years=flujo.get("experience_years"),
+                        experience_range=flujo.get("experience_range"),
                         social_media_url=flujo.get("social_media_url"),
                         social_media_type=flujo.get("social_media_type"),
                         facebook_username=flujo.get("facebook_username"),

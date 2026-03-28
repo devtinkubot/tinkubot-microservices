@@ -21,7 +21,7 @@ from services.onboarding.redes_sociales import (
 from services.onboarding.servicios import (
     manejar_espera_servicios_onboarding,
 )
-from flows.onboarding.handlers.servicios_confirmacion import (
+from flows.onboarding.handlers.servicios import (
     manejar_decision_agregar_otro_servicio_onboarding,
 )
 

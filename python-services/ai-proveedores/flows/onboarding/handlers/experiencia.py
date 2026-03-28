@@ -5,6 +5,12 @@ from typing import Any, Dict, Optional
 from services.maintenance.estado_operativo import (
     formatear_rango_experiencia,
 )
+from services.onboarding.event_payloads import payload_experiencia
+from services.onboarding.event_publisher import (
+    EVENT_TYPE_EXPERIENCE,
+    onboarding_async_persistence_enabled,
+    publicar_evento_onboarding,
+)
 from utils import (
     extraer_anios_experiencia as parsear_anios_experiencia,
 )
@@ -16,7 +22,6 @@ def _resolver_anios_experiencia_onboarding(
     texto_mensaje: Optional[str], selected_option: Optional[str]
 ) -> Optional[int]:
     seleccion = str(selected_option or "").strip().lower()
-    texto = str(texto_mensaje or "").strip().lower()
 
     mapping = {
         "provider_experience_under_1": 0,
@@ -43,10 +48,18 @@ async def manejar_espera_experiencia_onboarding(
     if anios is None:
         return {"success": True, "messages": [payload_experiencia_onboarding()]}
 
-    flujo["experience_years"] = anios
     flujo["experience_range"] = formatear_rango_experiencia(anios)
     flujo["state"] = "onboarding_specialty"
     flujo["services_guide_shown"] = True
+    if onboarding_async_persistence_enabled():
+        await publicar_evento_onboarding(
+            event_type=EVENT_TYPE_EXPERIENCE,
+            flujo=flujo,
+            payload=payload_experiencia(
+                experience_range=flujo["experience_range"],
+                checkpoint="onboarding_specialty",
+            ),
+        )
 
     respuesta_servicio = payload_servicios_onboarding_con_imagen()
     return {

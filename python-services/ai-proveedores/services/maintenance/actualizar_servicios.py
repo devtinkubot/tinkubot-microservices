@@ -13,6 +13,9 @@ from infrastructure.database import run_supabase
 from services.maintenance.estado_operativo import (
     perfil_profesional_completo,
 )
+from services.maintenance.revision_catalogo import (
+    eliminar_revisiones_catalogo_asociadas_servicio,
+)
 from utils import sanitizar_lista_servicios as sanitizar_servicios
 
 logger = logging.getLogger(__name__)
@@ -26,7 +29,7 @@ async def _sincronizar_estado_operativo_proveedor(
 ) -> None:
     perfil = await run_supabase(
         lambda: supabase.table("providers")
-        .select("experience_years")
+        .select("experience_range")
         .eq("id", proveedor_id)
         .single()
         .execute(),
@@ -38,7 +41,7 @@ async def _sincronizar_estado_operativo_proveedor(
         .update(
             {
                 "verified": perfil_profesional_completo(
-                    experience_years=data.get("experience_years"),
+                    experience_range=data.get("experience_range"),
                     servicios=servicios,
                 )
             }
@@ -392,6 +395,11 @@ async def _eliminar_fila_servicio(
     await run_supabase(
         lambda: supabase.table("provider_services").delete().eq("id", row_id).execute(),
         label="provider_services.delete_single",
+    )
+    await eliminar_revisiones_catalogo_asociadas_servicio(
+        supabase=supabase,
+        provider_id=proveedor_id,
+        published_provider_service_id=str(row_id),
     )
     logger.info(
         "🧹 Servicio eliminado de provider_services (provider_id=%s, row_id=%s)",

@@ -8,6 +8,7 @@ Uso:
   python3 validate_quality.py
   python3 validate_quality.py --scope all
   python3 validate_quality.py --service ai-clientes
+  python3 validate_quality.py --service ai-search
   python3 validate_quality.py --fix
   python3 validate_quality.py --strict
 
@@ -39,6 +40,8 @@ class Colors:
     BOLD = "\033[1m"
     END = "\033[0m"
 
+
+DEFAULT_PYTHON_SERVICES = ["ai-clientes", "ai-proveedores", "ai-search"]
 
 SERVICE_PATH_ALIASES = {
     "search-token": "ai-search",
@@ -142,6 +145,19 @@ def resolve_service_path(service: str) -> Path:
     if nested.exists():
         return nested
     return direct
+
+
+def normalize_service_name(service: str) -> str:
+    return SERVICE_PATH_ALIASES.get(service, service)
+
+
+def parse_service_name(value: str) -> str:
+    normalized = normalize_service_name(value)
+    if normalized in DEFAULT_PYTHON_SERVICES:
+        return normalized
+    raise argparse.ArgumentTypeError(
+        "Servicio inválido. Usa ai-clientes, ai-proveedores o ai-search."
+    )
 
 
 def _git_lines(cmd: Sequence[str]) -> List[str]:
@@ -486,8 +502,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--service",
-        choices=["ai-clientes", "ai-proveedores", "search-token"],
-        help="Valida solo un servicio específico",
+        type=parse_service_name,
+        metavar="{ai-clientes,ai-proveedores,ai-search}",
+        help="Valida solo un servicio específico (search-token sigue como alias)",
     )
     parser.add_argument(
         "--scope",
@@ -514,9 +531,9 @@ def main() -> int:
     print_banner()
 
     services = (
-        [args.service]
+        [normalize_service_name(args.service)]
         if args.service
-        else ["ai-clientes", "ai-proveedores", "search-token"]
+        else DEFAULT_PYTHON_SERVICES
     )
     print_info(f"Servicios: {', '.join(services)}")
     print_info(f"Scope: {args.scope}")

@@ -4,9 +4,10 @@ Servicio de actualización de redes sociales de proveedores.
 
 import logging
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 from infrastructure.database import run_supabase
+
 from .estado_operativo import perfil_profesional_completo
 from .redes_sociales_slots import construir_payload_legacy_red_social
 
@@ -66,7 +67,7 @@ async def actualizar_redes_sociales(
     try:
         registro_actual = await run_supabase(
             lambda: cliente_supabase.table("providers")
-            .select("experience_years,provider_services(service_name)")
+            .select("experience_range,provider_services(service_name)")
             .eq("id", proveedor_id)
             .single()
             .execute(),
@@ -79,7 +80,7 @@ async def actualizar_redes_sociales(
             if str(item.get("service_name") or "").strip()
         ]
         datos_actualizacion["verified"] = perfil_profesional_completo(
-            experience_years=registro.get("experience_years"),
+            experience_range=registro.get("experience_range"),
             servicios=servicios_actuales,
         )
 
@@ -88,7 +89,7 @@ async def actualizar_redes_sociales(
             .update(datos_actualizacion)
             .eq("id", proveedor_id)
             .execute(),
-            label="providers.update_social_media"
+            label="providers.update_social_media",
         )
 
         logger.info(f"✅ Redes sociales actualizadas para proveedor {proveedor_id}")

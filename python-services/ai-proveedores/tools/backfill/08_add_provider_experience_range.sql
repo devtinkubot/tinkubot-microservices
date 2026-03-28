@@ -1,5 +1,6 @@
 -- Campo derivado para rango legible de experiencia.
--- Se mantiene experience_years como fuente numérica y experience_range como texto.
+-- Migración histórica: en este punto experience_years todavía existía.
+-- La fuente viva actual es experience_range; experience_years se elimina después.
 
 alter table public.providers
   add column if not exists experience_range text null;

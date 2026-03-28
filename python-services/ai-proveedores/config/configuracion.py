@@ -53,7 +53,7 @@ class ConfiguracionServicio(BaseSettings):
     tiempo_espera_embeddings: int = 5  # segundos para llamadas a OpenAI
 
     # Modelo global de chat/completions (fallback)
-    openai_chat_model: str = "gpt-4o-mini"
+    openai_chat_model: str = "gpt-5-mini"
     openai_transform_timeout_seconds: float = Field(
         default=10.0,
         validation_alias="PROVIDER_OPENAI_TRANSFORM_TIMEOUT_SECONDS",
@@ -130,6 +130,22 @@ class ConfiguracionServicio(BaseSettings):
     provider_onboarding_expiry_hours: int = Field(
         default=72,
         validation_alias="PROVIDER_ONBOARDING_EXPIRY_HOURS",
+    )
+    provider_onboarding_async_persistence_enabled: bool = Field(
+        default=False,
+        validation_alias="PROVIDER_ONBOARDING_ASYNC_PERSISTENCE_ENABLED",
+    )
+    provider_onboarding_stream_key: str = Field(
+        default="provider_onboarding_events",
+        validation_alias="PROVIDER_ONBOARDING_STREAM_KEY",
+    )
+    provider_onboarding_stream_group: str = Field(
+        default="provider-onboarding-workers",
+        validation_alias="PROVIDER_ONBOARDING_STREAM_GROUP",
+    )
+    provider_onboarding_stream_maxlen: int = Field(
+        default=10000,
+        validation_alias="PROVIDER_ONBOARDING_STREAM_MAXLEN",
     )
 
     class Config:

@@ -2,7 +2,6 @@ from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
-
 from services.search_service import SearchService
 
 
@@ -14,6 +13,7 @@ async def test_search_by_embeddings_envia_threshold_y_mapea_resultados(monkeypat
     monkeypatch.setattr(
         "services.search_service.settings.vector_similarity_threshold", 0.73
     )
+
     async def fake_generate_embedding(_text):
         return [0.1, 0.2, 0.3]
 
@@ -40,7 +40,7 @@ async def test_search_by_embeddings_envia_threshold_y_mapea_resultados(monkeypat
                         "city": "quito",
                         "rating": 4.8,
                         "verified": True,
-                        "experience_years": 8,
+                        "experience_range": "5 a 10 años",
                         "created_at": datetime(2026, 3, 8),
                         "services": ["capitan de barco"],
                         "matched_service_summary": "Servicio especializado en capitan de barco para embarcaciones turisticas.",
@@ -89,5 +89,7 @@ def test_build_effective_query_preserva_contexto_existente():
 
     effective_query = service._build_effective_query(request)
 
-    assert "Necesito un capitan de barco para una embarcacion turistica" in effective_query
+    assert (
+        "Necesito un capitan de barco para una embarcacion turistica" in effective_query
+    )
     assert "capitan de barco" in effective_query

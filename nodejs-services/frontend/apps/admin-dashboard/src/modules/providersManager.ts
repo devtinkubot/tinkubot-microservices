@@ -208,9 +208,7 @@ function formatearAntiguedadAprobacion(
   return `Aprobado hace ${diffDias} ${diffDias === 1 ? "día" : "días"}`;
 }
 
-function resolverAntiguedadOnboarding(
-  timestamp: string | null | undefined,
-): {
+function resolverAntiguedadOnboarding(timestamp: string | null | undefined): {
   horas: number | null;
   etiqueta: string | null;
   nivel: OnboardingAgeLevel;
@@ -300,30 +298,6 @@ function formatearFechaLarga(valor?: string | null): string {
   const fecha = new Date(valor);
   if (Number.isNaN(fecha.getTime())) return valor;
   return formateadorFecha.format(fecha);
-}
-
-function formatearRangoExperiencia(
-  experiencia?: number | string | null,
-): string | null {
-  if (typeof experiencia === "string" && experiencia.trim().length > 0) {
-    return experiencia.trim();
-  }
-  if (typeof experiencia !== "number" || !Number.isFinite(experiencia)) {
-    return null;
-  }
-  if (experiencia < 1) {
-    return "Menos de 1 año";
-  }
-  if (experiencia < 3) {
-    return "1 a 3 años";
-  }
-  if (experiencia < 5) {
-    return "3 a 5 años";
-  }
-  if (experiencia < 10) {
-    return "5 a 10 años";
-  }
-  return "Más de 10 años";
 }
 
 function obtenerEtiquetaEstadoListado(
@@ -686,9 +660,7 @@ function actualizarPerfilProfesional(proveedor: ProviderRecord) {
     lista.length - serviciosPrincipales.length,
     0,
   );
-  const experienciaValor = formatearRangoExperiencia(
-    proveedor.experienceRange ?? proveedor.experienceYears,
-  );
+  const experienciaValor = proveedor.experienceRange?.trim() || "Sin definir";
   const urlRedSocial = proveedor.socialMediaUrl?.trim();
   const tipoRedSocial = proveedor.socialMediaType?.trim();
   const etiquetaRedSocial = urlRedSocial

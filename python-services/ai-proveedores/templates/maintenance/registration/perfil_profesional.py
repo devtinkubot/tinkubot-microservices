@@ -171,7 +171,6 @@ def payload_agregar_otro_servicio(
 
 def construir_resumen_confirmacion_perfil_profesional(
     *,
-    experience_years: Any,
     experience_range: Any = None,
     social_media_url: Any,
     social_media_type: Any = None,
@@ -182,11 +181,7 @@ def construir_resumen_confirmacion_perfil_profesional(
 ) -> str:
     experiencia = str(experience_range or "").strip()
     if not experiencia:
-        experiencia = (
-            f"{experience_years} año{'s' if int(experience_years) != 1 else ''}"
-            if isinstance(experience_years, int) and experience_years >= 0
-            else estado_no_registrada()
-        )
+        experiencia = estado_no_registrada()
     redes = resolver_redes_sociales(
         {
             "social_media_url": social_media_url,

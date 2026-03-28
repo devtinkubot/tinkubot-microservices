@@ -36,16 +36,7 @@ def test_solicitar_ciudad_registro_incluye_location_request():
 
 
 @pytest.mark.asyncio
-async def test_manejar_espera_ciudad_acepta_ubicacion_y_resuelve_ciudad(monkeypatch):
-    async def _resolver(_lat, _lng):
-        return "Cuenca"
-
-    monkeypatch.setattr(
-        "flows.onboarding.handlers.ciudad."
-        "_resolver_ciudad_desde_coordenadas",
-        _resolver,
-    )
-
+async def test_manejar_espera_ciudad_acepta_ubicacion_y_avanza_estado():
     flujo = {"state": "onboarding_city"}
     respuesta = await manejar_espera_ciudad(
         flujo,
@@ -56,7 +47,7 @@ async def test_manejar_espera_ciudad_acepta_ubicacion_y_resuelve_ciudad(monkeypa
     )
 
     assert respuesta["success"] is True
-    assert flujo["city"] == "cuenca"
+    assert flujo.get("city") is None
     assert flujo["location_lat"] == -2.9039
     assert flujo["location_lng"] == -78.9838
     assert flujo["state"] == "onboarding_dni_front_photo"
@@ -66,46 +57,23 @@ async def test_manejar_espera_ciudad_acepta_ubicacion_y_resuelve_ciudad(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_manejar_espera_ciudad_si_no_resuelve_repregunta_manual(monkeypatch):
-    async def _resolver(_lat, _lng):
-        return None
-
-    monkeypatch.setattr(
-        "flows.onboarding.handlers.ciudad."
-        "_resolver_ciudad_desde_coordenadas",
-        _resolver,
-    )
-
+async def test_manejar_espera_ciudad_sin_datos_pide_ciudad():
     flujo = {"state": "onboarding_city"}
     respuesta = await manejar_espera_ciudad(
         flujo,
         "",
-        carga={"location": {"latitude": -2.9039, "longitude": -78.9838}},
+        carga={},
         supabase=None,
         proveedor_id=None,
     )
 
     assert flujo["state"] == "onboarding_city"
-    assert respuesta["messages"][1]["ui"]["type"] == "location_request"
-    assert (
-        "No pude identificar la ciudad exacta"
-        in respuesta["messages"][0]["response"]
-    )
+    assert respuesta["messages"][0]["ui"]["type"] == "location_request"
+    assert "ubicación" in respuesta["messages"][0]["response"].lower()
 
 
 @pytest.mark.asyncio
-async def test_manejar_espera_ciudad_prioriza_ubicacion_estructurada_sobre_texto_ambiguo(
-    monkeypatch,
-):
-    async def _resolver(_lat, _lng):
-        return "Cuenca"
-
-    monkeypatch.setattr(
-        "flows.onboarding.handlers.ciudad."
-        "_resolver_ciudad_desde_coordenadas",
-        _resolver,
-    )
-
+async def test_manejar_espera_ciudad_prioriza_texto_y_avanza():
     flujo = {"state": "onboarding_city"}
     respuesta = await manejar_espera_ciudad(
         flujo,
@@ -116,22 +84,15 @@ async def test_manejar_espera_ciudad_prioriza_ubicacion_estructurada_sobre_texto
     )
 
     assert respuesta["success"] is True
-    assert flujo["city"] == "cuenca"
+    assert flujo["city"] == "centrosur, max uhle y pumapungo , cuenca, 016, a, ec"
+    assert flujo["location_lat"] == -2.9039
+    assert flujo["location_lng"] == -78.9838
     assert flujo["state"] == "onboarding_dni_front_photo"
     assert "cédula" in respuesta["messages"][0]["response"].lower()
 
 
 @pytest.mark.asyncio
-async def test_manejar_espera_ciudad_acepta_referencia_cercana_en_texto(monkeypatch):
-    async def _resolver_texto(_texto):
-        return "Cuenca"
-
-    monkeypatch.setattr(
-        "flows.onboarding.handlers.ciudad."
-        "_resolver_ciudad_desde_texto",
-        _resolver_texto,
-    )
-
+async def test_manejar_espera_ciudad_acepta_texto_ligero():
     flujo = {"state": "onboarding_city"}
     respuesta = await manejar_espera_ciudad(
         flujo,
@@ -142,7 +103,7 @@ async def test_manejar_espera_ciudad_acepta_referencia_cercana_en_texto(monkeypa
     )
 
     assert respuesta["success"] is True
-    assert flujo["city"] == "cuenca"
+    assert flujo["city"] == "polideportivo de la ciudad"
     assert flujo["state"] == "onboarding_dni_front_photo"
 
 

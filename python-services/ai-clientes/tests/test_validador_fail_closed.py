@@ -2,7 +2,6 @@ import asyncio
 import logging
 
 import pytest
-
 from services.validacion.validador_proveedores_ia import ValidadorProveedoresIA
 
 
@@ -124,7 +123,7 @@ async def test_validador_acepta_respuesta_json_estructurada_y_no_falla_por_promp
                     "desarrollo de aplicaciones móviles",
                     "desarrollo de software a medida",
                 ],
-                "experience_years": 5,
+                "experience_range": "5 a 10 años",
                 "rating": 5,
             }
         ],
@@ -152,7 +151,7 @@ async def test_validador_reintenta_si_openai_devuelve_json_malformado():
             {
                 "id": "p1",
                 "services_list": ["asesoría contratación pública"],
-                "experience_years": 8,
+                "experience_range": "5 a 10 años",
                 "rating": 5,
             }
         ],

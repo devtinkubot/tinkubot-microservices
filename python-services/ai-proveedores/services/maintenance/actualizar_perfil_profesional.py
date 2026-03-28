@@ -9,8 +9,6 @@ from infrastructure.database import run_supabase
 from .actualizar_servicios import actualizar_servicios
 from .actualizar_servicios import _obtener_telefono_proveedor
 from .estado_operativo import (
-    formatear_rango_experiencia,
-    normalizar_experiencia,
     perfil_profesional_completo,
 )
 from .redes_sociales_slots import resolver_redes_sociales
@@ -22,7 +20,7 @@ async def actualizar_perfil_profesional(
     *,
     proveedor_id: str,
     servicios: List[str],
-    experience_years: Optional[int],
+    experience_range: Optional[str],
     social_media_url: Optional[str],
     social_media_type: Optional[str],
     facebook_username: Optional[str] = None,
@@ -35,7 +33,6 @@ async def actualizar_perfil_profesional(
         raise ValueError("proveedor_id es requerido")
 
     servicios_actualizados = await actualizar_servicios(proveedor_id, servicios)
-    experiencia_normalizada = normalizar_experiencia(experience_years)
     if not supabase:
         redes_sociales = resolver_redes_sociales(
             {
@@ -48,13 +45,13 @@ async def actualizar_perfil_profesional(
         return {
             "success": True,
             "services": servicios_actualizados,
-            "experience_years": experiencia_normalizada,
+            "experience_range": experience_range,
             "social_media_url": social_media_url,
             "social_media_type": social_media_type,
             "facebook_username": redes_sociales["facebook_username"],
             "instagram_username": redes_sociales["instagram_username"],
             "verified": perfil_profesional_completo(
-                experience_years=experiencia_normalizada,
+                experience_range=experience_range,
                 servicios=servicios_actualizados,
             ),
         }
@@ -68,13 +65,12 @@ async def actualizar_perfil_profesional(
         }
     )
     perfil_completo = perfil_profesional_completo(
-        experience_years=experiencia_normalizada,
+        experience_range=experience_range,
         servicios=servicios_actualizados,
     )
     payload_actualizacion = {
         "updated_at": datetime.utcnow().isoformat(),
-        "experience_years": experiencia_normalizada,
-        "experience_range": formatear_rango_experiencia(experiencia_normalizada),
+        "experience_range": experience_range,
         "social_media_url": social_media_url,
         "social_media_type": social_media_type,
         "facebook_username": redes_sociales["facebook_username"],
@@ -112,8 +108,7 @@ async def actualizar_perfil_profesional(
     return {
         "success": True,
         "services": servicios_actualizados,
-        "experience_years": experiencia_normalizada,
-        "experience_range": formatear_rango_experiencia(experiencia_normalizada),
+        "experience_range": experience_range,
         "social_media_url": social_media_url,
         "social_media_type": social_media_type,
         "facebook_username": redes_sociales["facebook_username"],

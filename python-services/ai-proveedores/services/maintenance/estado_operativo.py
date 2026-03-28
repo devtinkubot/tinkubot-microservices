@@ -11,18 +11,18 @@ EXPERIENCE_RANGE_5_10 = "5 a 10 años"
 EXPERIENCE_RANGE_10_PLUS = "Más de 10 años"
 
 
-def normalizar_experiencia(experience_years: Optional[int]) -> int:
+def normalizar_experiencia(experience_value: Optional[int]) -> int:
     """Convierte la experiencia a entero no negativo."""
     try:
-        valor = int(experience_years or 0)
+        valor = int(experience_value or 0)
     except (TypeError, ValueError):
         return 0
     return max(valor, 0)
 
 
-def formatear_rango_experiencia(experience_years: Optional[int]) -> str:
+def formatear_rango_experiencia(experience_value: Optional[int]) -> str:
     """Convierte años de experiencia en un rango legible."""
-    valor = normalizar_experiencia(experience_years)
+    valor = normalizar_experiencia(experience_value)
     if valor < 1:
         return EXPERIENCE_RANGE_UNDER_1
     if valor < 3:
@@ -41,11 +41,11 @@ def contar_servicios_validos(servicios: Optional[Iterable[str]]) -> int:
 
 def perfil_profesional_completo(
     *,
-    experience_years: Optional[int],
+    experience_range: Optional[str],
     servicios: Optional[Iterable[str]],
 ) -> bool:
     """Indica si el proveedor ya cumple el mínimo para recibir solicitudes."""
     return (
-        normalizar_experiencia(experience_years) > 0
+        bool(str(experience_range or "").strip())
         and contar_servicios_validos(servicios) >= MINIMO_SERVICIOS_OPERATIVOS
     )

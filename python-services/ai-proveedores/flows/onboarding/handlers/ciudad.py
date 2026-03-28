@@ -3,29 +3,18 @@
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-import httpx
-from config.configuracion import configuracion
 from infrastructure.database import run_supabase
-from services.onboarding.registration.parser_ubicacion import (
-    VALIDATION_ERROR_INVALID_CHARS,
-    VALIDATION_ERROR_MULTIPLE,
-    VALIDATION_ERROR_TOO_LONG,
-    VALIDATION_ERROR_TOO_SHORT,
-    validar_y_normalizar_ubicacion,
+from services.onboarding.event_payloads import payload_ciudad
+from services.onboarding.event_publisher import (
+    EVENT_TYPE_CITY,
+    onboarding_async_persistence_enabled,
+    publicar_evento_onboarding,
 )
 from templates.onboarding.ciudad import (
-    error_ciudad_caracteres_invalidos,
-    error_ciudad_corta,
-    error_ciudad_larga,
-    error_ciudad_multiple,
-    error_ciudad_no_reconocida,
-    mensaje_error_resolviendo_ubicacion,
     solicitar_ciudad_registro,
 )
 from templates.onboarding.documentos import payload_onboarding_dni_frontal
 from utils import limpiar_espacios
-
-NOMINATIM_USER_AGENT = "tinkubot-ai-proveedores/1.0 (support@tinkubot.com)"
 
 
 def _parsear_coordenada(valor: Any) -> Optional[float]:
@@ -38,10 +27,7 @@ def _parsear_coordenada(valor: Any) -> Optional[float]:
 
 
 def _normalizar_ciudad_desde_texto(texto: Optional[str]) -> Optional[str]:
-    canonica, estado = validar_y_normalizar_ubicacion(limpiar_espacios(texto))
-    if estado == "ok" and canonica:
-        return canonica
-    return None
+    return limpiar_espacios(texto).lower() or None
 
 
 def _extraer_ciudad_desde_payload_ubicacion(
@@ -53,88 +39,6 @@ def _extraer_ciudad_desde_payload_ubicacion(
         ciudad = _normalizar_ciudad_desde_texto(ubicacion.get(campo))
         if ciudad:
             return ciudad
-    return None
-
-
-async def _resolver_ciudad_desde_coordenadas(
-    latitud: float, longitud: float
-) -> Optional[str]:
-    params = httpx.QueryParams(
-        {
-            "format": "jsonv2",
-            "lat": latitud,
-            "lon": longitud,
-            "zoom": 10,
-            "addressdetails": 1,
-            "accept-language": "es",
-        }
-    )
-    headers = {"User-Agent": NOMINATIM_USER_AGENT}
-    timeout = httpx.Timeout(configuracion.nominatim_timeout_seconds)
-
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            respuesta = await client.get(
-                configuracion.nominatim_reverse_url,
-                params=params,
-                headers=headers,
-            )
-        if respuesta.status_code != 200:
-            return None
-        payload = respuesta.json()
-        direccion = payload.get("address") or {}
-        for campo in ("city", "town", "village", "municipality", "county"):
-            ciudad = _normalizar_ciudad_desde_texto(direccion.get(campo))
-            if ciudad:
-                return ciudad
-        return _normalizar_ciudad_desde_texto(payload.get("display_name"))
-    except Exception:
-        return None
-
-
-async def _resolver_ciudad_desde_texto(texto: str) -> Optional[str]:
-    consulta = limpiar_espacios(texto)
-    if not consulta:
-        return None
-
-    params = httpx.QueryParams(
-        {
-            "format": "jsonv2",
-            "q": consulta,
-            "countrycodes": "ec",
-            "limit": 5,
-            "addressdetails": 1,
-            "accept-language": "es",
-        }
-    )
-    headers = {"User-Agent": NOMINATIM_USER_AGENT}
-    timeout = httpx.Timeout(configuracion.nominatim_timeout_seconds)
-
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            respuesta = await client.get(
-                configuracion.nominatim_search_url,
-                params=params,
-                headers=headers,
-            )
-        if respuesta.status_code != 200:
-            return None
-        payload = respuesta.json()
-        if not isinstance(payload, list):
-            return None
-        for item in payload:
-            if not isinstance(item, dict):
-                continue
-            direccion = item.get("address") or {}
-            for campo in ("city", "town", "village", "municipality", "county"):
-                ciudad = _normalizar_ciudad_desde_texto(direccion.get(campo))
-                if ciudad:
-                    return ciudad
-            ciudad = _normalizar_ciudad_desde_texto(item.get("display_name"))
-            if ciudad:
-                return ciudad
-    except Exception:
-        return None
     return None
 
 
@@ -186,20 +90,10 @@ async def manejar_espera_ciudad_onboarding(  # noqa: C901
     latitud = _parsear_coordenada((ubicacion or {}).get("latitude"))
     longitud = _parsear_coordenada((ubicacion or {}).get("longitude"))
     ciudad_desde_payload = _extraer_ciudad_desde_payload_ubicacion(ubicacion)
-    ciudad_resuelta = ciudad_desde_payload
-    ciudad_resuelta_texto = None
-
-    if not ciudad_resuelta and latitud is not None and longitud is not None:
-        ciudad_resuelta = await _resolver_ciudad_desde_coordenadas(latitud, longitud)
-    if not ciudad_resuelta and ciudad:
-        ciudad_resuelta_texto = await _resolver_ciudad_desde_texto(ciudad)
-        ciudad_resuelta = ciudad_resuelta_texto
-
+    ciudad_candidata = ciudad_desde_payload or ciudad
     tiene_ubicacion_estructurada = bool(
         ciudad_desde_payload or (latitud is not None and longitud is not None)
     )
-    if tiene_ubicacion_estructurada and ciudad_resuelta:
-        ciudad = ciudad_resuelta
 
     if latitud is not None:
         flujo["location_lat"] = latitud
@@ -207,70 +101,17 @@ async def manejar_espera_ciudad_onboarding(  # noqa: C901
         flujo["location_lng"] = longitud
     if latitud is not None or longitud is not None:
         flujo["location_updated_at"] = datetime.now(timezone.utc).isoformat()
-    if proveedor_id and (latitud is not None or longitud is not None):
-        try:
-            await _persistir_ubicacion_proveedor(
-                supabase,
-                proveedor_id,
-                latitud=latitud,
-                longitud=longitud,
-            )
-        except Exception:
-            return None
-
-    if not ciudad and ciudad_resuelta:
-        ciudad = ciudad_resuelta
-
-    if not ciudad:
-        if latitud is not None and longitud is not None:
-            return {
-                "success": True,
-                "messages": [
-                    {"response": mensaje_error_resolviendo_ubicacion()},
-                    solicitar_ciudad_registro(),
-                ],
-            }
-        if not ciudad_resuelta_texto:
-            return {
-                "success": True,
-                "messages": [solicitar_ciudad_registro()],
-            }
-
-    canonica, estado_validacion = validar_y_normalizar_ubicacion(ciudad)
-    if not canonica and ciudad_resuelta_texto:
-        canonica, estado_validacion = validar_y_normalizar_ubicacion(
-            ciudad_resuelta_texto
-        )
-    if estado_validacion == VALIDATION_ERROR_TOO_SHORT:
+    if not ciudad_candidata and not tiene_ubicacion_estructurada:
         return {
             "success": True,
-            "messages": [{"response": error_ciudad_corta()}],
-        }
-    if estado_validacion == VALIDATION_ERROR_TOO_LONG:
-        return {
-            "success": True,
-            "messages": [{"response": error_ciudad_larga()}],
-        }
-    if estado_validacion == VALIDATION_ERROR_INVALID_CHARS:
-        return {
-            "success": True,
-            "messages": [{"response": error_ciudad_caracteres_invalidos()}],
-        }
-    if estado_validacion == VALIDATION_ERROR_MULTIPLE:
-        return {
-            "success": True,
-            "messages": [{"response": error_ciudad_multiple()}],
-        }
-    if not canonica:
-        return {
-            "success": True,
-            "messages": [{"response": error_ciudad_no_reconocida()}],
+            "messages": [solicitar_ciudad_registro()],
         }
 
-    ciudad_normalizada = canonica.lower().strip()
-    flujo["city"] = ciudad_normalizada
+    ciudad_normalizada = ciudad_candidata.lower().strip() if ciudad_candidata else None
+    if ciudad_normalizada:
+        flujo["city"] = ciudad_normalizada
     flujo["city_confirmed_at"] = datetime.now(timezone.utc).isoformat()
-    if proveedor_id:
+    if proveedor_id and not onboarding_async_persistence_enabled():
         try:
             await _persistir_ubicacion_proveedor(
                 supabase,
@@ -283,6 +124,22 @@ async def manejar_espera_ciudad_onboarding(  # noqa: C901
             return None
 
     flujo["state"] = "onboarding_dni_front_photo"
+    if onboarding_async_persistence_enabled():
+        await publicar_evento_onboarding(
+            event_type=EVENT_TYPE_CITY,
+            flujo=flujo,
+            payload=payload_ciudad(
+                city=ciudad_normalizada or "",
+                raw_city_text=ciudad or None,
+                location_name=(ubicacion or {}).get("name"),
+                location_address=(ubicacion or {}).get("address"),
+                checkpoint="onboarding_dni_front_photo",
+                location_lat=flujo.get("location_lat"),
+                location_lng=flujo.get("location_lng"),
+                city_confirmed_at=flujo.get("city_confirmed_at"),
+                location_updated_at=flujo.get("location_updated_at"),
+            ),
+        )
     return {
         "success": True,
         "messages": [payload_onboarding_dni_frontal()],

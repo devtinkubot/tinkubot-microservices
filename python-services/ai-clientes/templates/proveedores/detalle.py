@@ -65,11 +65,7 @@ def _experiencia_proveedor(proveedor: Dict[str, Any]) -> str:
     )
     if isinstance(experiencia_rango, str) and experiencia_rango.strip():
         return experiencia_rango.strip()
-    experiencia = (
-        proveedor.get("experience_years")
-        or proveedor.get("experienceYears")
-        or proveedor.get("years_of_experience")
-    )
+    experiencia = proveedor.get("years_of_experience")
     if isinstance(experiencia, (int, float)):
         return f"{int(experiencia)} año(s)"
     return str(experiencia).strip() if experiencia is not None else ""

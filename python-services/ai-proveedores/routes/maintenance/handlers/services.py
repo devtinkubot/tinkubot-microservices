@@ -84,7 +84,7 @@ async def _finalizar_perfil_completado(
     await actualizar_perfil_profesional(
         proveedor_id=str(flujo.get("provider_id") or ""),
         servicios=servicios_temporales,
-        experience_years=flujo.get("experience_years"),
+        experience_range=flujo.get("experience_range"),
         social_media_url=flujo.get("social_media_url"),
         social_media_type=flujo.get("social_media_type"),
         facebook_username=flujo.get("facebook_username"),

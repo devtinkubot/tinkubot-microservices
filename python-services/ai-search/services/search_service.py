@@ -13,9 +13,6 @@ from datetime import datetime
 from time import perf_counter
 from typing import Any, Dict, List, Optional
 
-from openai import AsyncOpenAI
-from supabase import Client, create_client
-
 from app.config import settings
 from models.schemas import (
     ProviderInfo,
@@ -24,7 +21,9 @@ from models.schemas import (
     SearchRequest,
     SearchResult,
 )
+from openai import AsyncOpenAI
 from services.cache_service import cache_service
+from supabase import Client, create_client
 from utils.text_processor import TextProcessor, analyze_query
 
 logger = logging.getLogger(__name__)
@@ -98,7 +97,9 @@ class SearchService:
         if not text:
             return ""
         normalized = unicodedata.normalize("NFD", text.lower().strip())
-        no_accents = "".join(ch for ch in normalized if unicodedata.category(ch) != "Mn")
+        no_accents = "".join(
+            ch for ch in normalized if unicodedata.category(ch) != "Mn"
+        )
         clean = re.sub(r"[^a-z0-9\s]", " ", no_accents)
         return re.sub(r"\s+", " ", clean).strip()
 
@@ -128,9 +129,7 @@ class SearchService:
 
         return " ".join(deduped_parts) if deduped_parts else request.query
 
-    def _generate_query_hash(
-        self, request: SearchRequest, effective_query: str
-    ) -> str:
+    def _generate_query_hash(self, request: SearchRequest, effective_query: str) -> str:
         """Generar hash único para consulta."""
         canonical = f"{effective_query.lower().strip()}"
         if request.filters:
@@ -350,7 +349,7 @@ class SearchService:
             ),
             verified=row.get("verified", False),
             services=services,
-            years_of_experience=row.get("experience_years"),
+            years_of_experience=None,
             experience_range=row.get("experience_range"),
             created_at=row.get("created_at", datetime.now()),
             similarity_score=similarity_score,
@@ -383,7 +382,11 @@ class SearchService:
             if provider.rating < filters.min_rating:
                 continue
 
-            if filters.city and provider.city and provider.city.lower() != filters.city.lower():
+            if (
+                filters.city
+                and provider.city
+                and provider.city.lower() != filters.city.lower()
+            ):
                 continue
 
             filtered_providers.append(provider)
@@ -425,9 +428,7 @@ class SearchService:
         similarity = float(similarity_score or 0.0)
         rating_score = max(0.0, min(1.0, rating / 5.0))
         try:
-            classification = max(
-                0.0, min(1.0, float(classification_confidence or 0.0))
-            )
+            classification = max(0.0, min(1.0, float(classification_confidence or 0.0)))
         except (TypeError, ValueError):
             classification = 0.0
         verified_score = 1.0 if verified else 0.0
@@ -505,7 +506,10 @@ class SearchService:
         if self.supabase:
             try:
                 await self._run_supabase(
-                    lambda: self.supabase.table("providers").select("id").limit(1).execute(),
+                    lambda: self.supabase.table("providers")
+                    .select("id")
+                    .limit(1)
+                    .execute(),
                     label="providers.health_check",
                 )
                 health_info["database_connected"] = True

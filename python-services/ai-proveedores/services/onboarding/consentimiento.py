@@ -5,9 +5,18 @@ import re
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any, Dict, Optional
+from uuid import uuid4
 
 from infrastructure.database import run_supabase
 from services.onboarding import session as onboarding_session
+from services.onboarding.event_payloads import (
+    payload_consentimiento,
+)
+from services.onboarding.event_publisher import (
+    EVENT_TYPE_CONSENT,
+    onboarding_async_persistence_enabled,
+    publicar_evento_onboarding,
+)
 from services.onboarding.messages import (
     construir_respuesta_solicitud_consentimiento,
 )
@@ -294,6 +303,47 @@ async def procesar_respuesta_consentimiento_onboarding(
     proveedor_id = perfil_proveedor.get("id") if perfil_proveedor else None
 
     flujo["has_consent"] = True
+
+    if onboarding_async_persistence_enabled():
+        proveedor_id = str(proveedor_id or flujo.get("provider_id") or uuid4()).strip()
+        flujo["provider_id"] = proveedor_id
+
+        real_phone = _extraer_real_phone_desde_telefono(flujo.get("phone") or telefono)
+        if real_phone:
+            flujo["real_phone"] = real_phone
+            flujo["requires_real_phone"] = False
+            nuevo_estado = "onboarding_city"
+            respuesta_siguiente = solicitar_ciudad_registro()
+        else:
+            flujo["requires_real_phone"] = True
+            nuevo_estado = "onboarding_real_phone"
+            respuesta_siguiente = preguntar_real_phone()
+
+        flujo.update(
+            {
+                "state": nuevo_estado,
+                "has_consent": True,
+            }
+        )
+        await onboarding_session.establecer_flujo(telefono, flujo)
+        await publicar_evento_onboarding(
+            event_type=EVENT_TYPE_CONSENT,
+            flujo=flujo,
+            source_message_id=carga.get("id") or carga.get("message_id"),
+            payload=payload_consentimiento(
+                flujo=flujo,
+                telefono=telefono,
+                carga=carga,
+                next_state=nuevo_estado,
+                real_phone=real_phone,
+                requires_real_phone=not bool(real_phone),
+            ),
+        )
+        logger.info("Consentimiento aceptado por proveedor %s en modo async", telefono)
+        return {
+            "success": True,
+            "messages": [respuesta_siguiente],
+        }
 
     perfil_proveedor, proveedor_id = (
         await asegurar_proveedor_persistido_tras_consentimiento_onboarding(

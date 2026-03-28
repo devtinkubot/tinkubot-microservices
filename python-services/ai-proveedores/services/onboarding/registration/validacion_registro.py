@@ -18,7 +18,9 @@ from typing import Any, Dict, List, Optional, Tuple, cast
 
 from models.proveedores import SolicitudCreacionProveedor
 from pydantic import ValidationError
-from services.onboarding.registration.parser_ubicacion import validar_y_normalizar_ubicacion
+from services.onboarding.registration.parser_ubicacion import (
+    validar_y_normalizar_ubicacion,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -79,11 +81,8 @@ def validar_y_construir_proveedor(
             # Fase 4: Eliminado campo profession - ya no existe en el modelo
             services_list=servicios_lista,
             service_entries=list(
-                flujo.get("servicios_detallados")
-                or flujo.get("service_entries")
-                or []
+                flujo.get("servicios_detallados") or flujo.get("service_entries") or []
             ),
-            experience_years=flujo.get("experience_years"),
             experience_range=flujo.get("experience_range"),
             has_consent=flujo.get("has_consent", False),
             social_media_url=flujo.get("social_media_url"),
@@ -163,7 +162,6 @@ def _formatear_mensaje_error_validacion(error: Dict[str, Any]) -> str:
         "city": "ciudad",
         # Fase 4: Eliminada referencia a profession del mapeo
         "services_list": "servicios",
-        "experience_years": "años de experiencia",
         "has_consent": "consentimiento",
     }
 

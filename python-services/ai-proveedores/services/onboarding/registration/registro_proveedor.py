@@ -95,7 +95,6 @@ async def asegurar_proveedor_borrador(
         "status": "pending",
         "has_consent": False,
         "verified": False,
-        "experience_years": 0,
         "experience_range": None,
         "updated_at": datetime.utcnow().isoformat(),
     }
@@ -539,9 +538,6 @@ async def registrar_proveedor_en_base_datos(
                 # Fase 6: Eliminado campo 'profession'
                 "services_normalized": servicios_normalizados,
                 "service_entries": service_entries,
-                "experience_years": registro_insertado.get(
-                    "experience_years", datos_normalizados["experience_years"]
-                ),
                 "experience_range": registro_insertado.get(
                     "experience_range", datos_normalizados.get("experience_range")
                 ),

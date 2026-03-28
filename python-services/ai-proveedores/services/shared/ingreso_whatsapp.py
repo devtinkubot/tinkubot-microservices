@@ -6,6 +6,12 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from infrastructure.redis import cliente_redis
+from services.onboarding.event_payloads import payload_servicios
+from services.onboarding.event_publisher import (
+    EVENT_TYPE_SERVICES,
+    onboarding_async_persistence_enabled,
+    publicar_evento_onboarding,
+)
 from services.availability.estados import (
     MEDIA_STATES,
     MENU_STATES,
@@ -138,10 +144,29 @@ async def sincronizar_servicios_si_cambiaron(
         return False
 
     try:
-        servicios_persistidos = await actualizar_servicios(
-            provider_id,
-            servicios_actuales,
-        )
+        if onboarding_async_persistence_enabled():
+            raw_service_text = ""
+            if len(servicios_actuales) > len(servicios_previos):
+                raw_service_text = str(servicios_actuales[-1] or "").strip()
+            elif servicios_actuales:
+                raw_service_text = str(servicios_actuales[-1] or "").strip()
+
+            await publicar_evento_onboarding(
+                event_type=EVENT_TYPE_SERVICES,
+                flujo=flujo_actual,
+                payload=payload_servicios(
+                    services=servicios_actuales,
+                    raw_service_text=raw_service_text,
+                    service_position=max(len(servicios_actuales) - 1, 0),
+                    checkpoint=str(flujo_actual.get("state") or "").strip(),
+                ),
+            )
+            servicios_persistidos = list(servicios_actuales)
+        else:
+            servicios_persistidos = await actualizar_servicios(
+                provider_id,
+                servicios_actuales,
+            )
     except Exception as exc:
         logger.warning(
             "No se pudieron sincronizar los servicios persistidos para %s: %s",

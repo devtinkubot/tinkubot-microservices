@@ -200,7 +200,10 @@ const resolverNombreVisibleProveedor = (registro) => {
   const formattedName = limpiarTexto(registro?.formatted_name);
   const firstName = limpiarTexto(registro?.first_name);
   const lastName = limpiarTexto(registro?.last_name);
-  const nombreCompuesto = [firstName, lastName].filter(Boolean).join(" ").trim();
+  const nombreCompuesto = [firstName, lastName]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
   const telefonoVisible = formatearTelefonoVisible(
     registro?.contact_phone || registro?.phone || registro?.real_phone,
   );
@@ -264,18 +267,16 @@ const tienePerfilProfesionalCompleto = (proveedor) => {
       )
     : [];
   const experiencia =
-    typeof proveedor.experienceYears === "number" &&
-    Number.isFinite(proveedor.experienceYears)
-      ? proveedor.experienceYears
-      : 0;
-  return experiencia > 0 && serviciosValidos.length >= MINIMO_SERVICIOS_OPERATIVOS;
+    typeof proveedor.experienceRange === "string" &&
+    proveedor.experienceRange.trim().length > 0;
+  return experiencia && serviciosValidos.length >= MINIMO_SERVICIOS_OPERATIVOS;
 };
 
 const esProveedorPerfilProfesionalPendiente = (proveedor) =>
   Boolean(
     proveedor &&
-      proveedor.status === "approved" &&
-      !tienePerfilProfesionalCompleto(proveedor),
+    proveedor.status === "approved" &&
+    !tienePerfilProfesionalCompleto(proveedor),
   );
 
 const extraerUrlDocumento = (valor) => {
@@ -344,14 +345,6 @@ const construirMensajeAprobacion = (nombre) => {
   };
 };
 
-const construirMensajeAprobacionPerfil = (nombre) => {
-  const safeName = limpiarTexto(nombre);
-  if (safeName) {
-    return `✅ Hola *${safeName}*, tu perfil fue aprobado y ya puedes recibir solicitudes de clientes.`;
-  }
-  return "✅ Tu perfil fue aprobado y ya puedes recibir solicitudes de clientes.";
-};
-
 const construirMenuProveedorAprobado = () => ({
   message: "*TinkuBot Proveedores*\n\nElige la opción de interés.",
   ui: {
@@ -384,14 +377,6 @@ const construirMenuProveedorAprobado = () => ({
   },
 });
 
-const construirMensajeRevisionPerfilProfesional = (nombre) => {
-  const safeName = limpiarTexto(nombre);
-  if (safeName) {
-    return `✅ Hola *${safeName}*, tu perfil profesional fue enviado a revisión. Te notificaremos cuando quede aprobado.`;
-  }
-  return "✅ Tu perfil profesional fue enviado a revisión. Te notificaremos cuando quede aprobado.";
-};
-
 const construirMensajeRechazo = (nombre, motivo) => {
   const safeName = limpiarTexto(nombre);
   const safeReason = limpiarTexto(motivo);
@@ -405,14 +390,6 @@ const construirMensajeRechazo = (nombre, motivo) => {
     return `❌ No pudimos aprobar tu registro básico. Motivo: ${safeReason}. Revisa tus datos y documentos y vuelve a intentarlo.`;
   }
   return "❌ No pudimos aprobar tu registro básico con la información enviada. Revisa tus datos y documentos y vuelve a intentarlo.";
-};
-
-const construirMensajeEntrevista = (nombre) => {
-  const safeName = limpiarTexto(nombre);
-  if (safeName) {
-    return `Hola ${safeName}, necesitamos una validación adicional para continuar con tu registro básico. Responde a este mensaje para coordinar el siguiente paso.`;
-  }
-  return "Necesitamos una validación adicional para continuar con tu registro básico. Responde a este mensaje para coordinar el siguiente paso.";
 };
 
 /**
@@ -502,7 +479,7 @@ const prepararUrlDocumento = (...valores) => {
 };
 
 const normalizarEstadoProveedor = (registro) => {
-  // Si la tabla ya no tiene verification_status, derivar desde verified/status
+  // Derivar el estado visible desde status/verified y tolerar aliases legacy.
   const estadoCrudo = limpiarTexto(registro?.status);
   const estado = estadoCrudo ? estadoCrudo.toLowerCase() : "";
 
@@ -527,7 +504,7 @@ const normalizarEstadoProveedor = (registro) => {
     return "approved";
   }
   if (estado === "pending_verification") {
-    return "pending_verification";
+    return "pending";
   }
   if (["approved", "aprobado", "ok"].includes(estado)) {
     return "approved";
@@ -580,7 +557,8 @@ const normalizarProveedorSupabase = (registro) => {
         .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
         .map((item) => ({
           serviceName: limpiarTexto(item.service_name) || null,
-          serviceNameNormalized: limpiarTexto(item.service_name_normalized) || null,
+          serviceNameNormalized:
+            limpiarTexto(item.service_name_normalized) || null,
           rawServiceText: limpiarTexto(item.raw_service_text) || null,
           serviceSummary: limpiarTexto(item.service_summary) || null,
           domainCode: limpiarTexto(item.domain_code) || null,
@@ -615,32 +593,16 @@ const normalizarProveedorSupabase = (registro) => {
         ? registro.services_list.filter(
             (item) => typeof item === "string" && item.trim().length > 0,
           )
-    : servicesRaw
+        : servicesRaw
           ? servicesRaw
               .split("|")
               .map((item) => item.trim())
               .filter((item) => item.length > 0)
           : [];
-  const experienceYears =
-    typeof registro?.experience_years === "number"
-      ? registro.experience_years
-      : Number.isFinite(Number(registro?.experience_years))
-        ? Number(registro?.experience_years)
-        : null;
   const experienceRange =
     limpiarTexto(registro?.experience_range) ||
     limpiarTexto(registro?.experienceRange) ||
-    (typeof experienceYears === "number"
-      ? experienceYears < 1
-        ? "Menos de 1 año"
-        : experienceYears < 3
-          ? "1 a 3 años"
-          : experienceYears < 5
-            ? "3 a 5 años"
-            : experienceYears < 10
-              ? "5 a 10 años"
-              : "Más de 10 años"
-      : null);
+    null;
   const socialMediaUrl =
     limpiarTexto(registro?.social_media_url) ||
     limpiarTexto(registro?.social_media_link) ||
@@ -764,7 +726,6 @@ const normalizarProveedorSupabase = (registro) => {
     servicesRaw,
     servicesList,
     servicesAudit: providerServicesDetailed,
-    experienceYears,
     experienceRange,
     socialMediaUrl,
     socialMediaType,
@@ -786,7 +747,7 @@ const normalizarProveedorSupabase = (registro) => {
     approvedBasicAt,
     professionalProfileComplete: tienePerfilProfesionalCompleto({
       servicesList,
-      experienceYears,
+      experienceRange,
     }),
     identityNotes: identityNotes || null,
   };
@@ -859,7 +820,7 @@ const construirRutaSupabasePendientes = (incluirEstado = true) => {
   ];
 
   if (incluirEstado) {
-    parametrosBase.push("status=eq.pending_verification");
+    parametrosBase.push("onboarding_step=eq.pending_verification");
   }
 
   return `${supabaseProvidersTable}?${parametrosBase.join("&")}`;
@@ -870,7 +831,7 @@ const construirRutaSupabaseOnboarding = () => {
     `limit=${pendingLimit}`,
     `order=onboarding_step_updated_at.desc.nullslast,created_at.desc`,
     "select=*,provider_services(service_name,service_name_normalized,raw_service_text,service_summary,domain_code,category_name,classification_confidence,display_order),provider_certificates(id,file_url,display_order,status,created_at,updated_at)",
-    "or=(status.is.null,status.in.(new,pending))",
+    "or=(status.is.null,status.eq.pending)",
     `onboarding_step=in.(${ONBOARDING_STEPS.join(",")})`,
   ];
 
@@ -903,37 +864,18 @@ const obtenerProveedoresPendientesSupabase = async () => {
     return [];
   }
 
-  try {
-    const ruta = construirRutaSupabasePendientes(true);
-    const response = await supabaseClient.get(ruta, {
-      headers: {
-        Accept: "application/json",
-      },
-    });
-    const lista = Array.isArray(response.data)
-      ? response.data.map((item) => normalizarProveedorSupabase(item))
-      : normalizarListaProveedores(response.data).map((item) =>
-          normalizarProveedorSupabase(item),
-        );
-    return lista;
-  } catch (error) {
-    if (error.response?.status === 400) {
-      // Columna verification_status podría no existir; reintentar sin filtro.
-      const rutaFallback = construirRutaSupabasePendientes(false);
-      const response = await supabaseClient.get(rutaFallback, {
-        headers: {
-          Accept: "application/json",
-        },
-      });
-      const lista = Array.isArray(response.data)
-        ? response.data.map((item) => normalizarProveedorSupabase(item))
-        : normalizarListaProveedores(response.data).map((item) =>
-            normalizarProveedorSupabase(item),
-          );
-      return lista;
-    }
-    throw error;
-  }
+  const ruta = construirRutaSupabasePendientes(true);
+  const response = await supabaseClient.get(ruta, {
+    headers: {
+      Accept: "application/json",
+    },
+  });
+  const lista = Array.isArray(response.data)
+    ? response.data.map((item) => normalizarProveedorSupabase(item))
+    : normalizarListaProveedores(response.data).map((item) =>
+        normalizarProveedorSupabase(item),
+      );
+  return lista;
 };
 
 const construirRutaSupabasePostRevision = () => {
@@ -971,7 +913,7 @@ const construirRutaSupabaseResumenEstadosProveedores = () => {
     "limit=5000",
     "order=created_at.asc",
     "select=*,provider_services(service_name,service_name_normalized,raw_service_text,service_summary,domain_code,category_name,classification_confidence,display_order)",
-    "status=in.(pending,pending_verification,approved,rejected)",
+    "status=in.(pending,approved,rejected)",
   ];
 
   return `${supabaseProvidersTable}?${parametrosBase.join("&")}`;
@@ -1005,7 +947,7 @@ const obtenerResumenEstadosProveedoresSupabase = async () => {
   };
 
   for (const provider of lista) {
-    if (provider.status === "pending_verification") {
+    if (provider.onboardingStep === "pending_verification") {
       summary.newPending += 1;
       continue;
     }
@@ -1048,19 +990,17 @@ const obtenerProveedoresPerfilProfesionalIncompletoSupabase = async () => {
         normalizarProveedorSupabase(item),
       );
 
-  return lista
-    .filter(esProveedorPerfilProfesionalPendiente)
-    .sort((a, b) => {
-      const fechaA =
-        obtenerFechaNormalizada(a.approvedBasicAt) ||
-        obtenerFechaNormalizada(a.registeredAt) ||
-        new Date(0);
-      const fechaB =
-        obtenerFechaNormalizada(b.approvedBasicAt) ||
-        obtenerFechaNormalizada(b.registeredAt) ||
-        new Date(0);
-      return fechaA.getTime() - fechaB.getTime();
-    });
+  return lista.filter(esProveedorPerfilProfesionalPendiente).sort((a, b) => {
+    const fechaA =
+      obtenerFechaNormalizada(a.approvedBasicAt) ||
+      obtenerFechaNormalizada(a.registeredAt) ||
+      new Date(0);
+    const fechaB =
+      obtenerFechaNormalizada(b.approvedBasicAt) ||
+      obtenerFechaNormalizada(b.registeredAt) ||
+      new Date(0);
+    return fechaA.getTime() - fechaB.getTime();
+  });
 };
 
 const construirRutaSupabasePorId = (providerId) => {
@@ -1137,7 +1077,9 @@ async function obtenerProveedoresPostRevision(_requestId = null) {
   }
 }
 
-async function obtenerProveedoresPerfilProfesionalIncompleto(_requestId = null) {
+async function obtenerProveedoresPerfilProfesionalIncompleto(
+  _requestId = null,
+) {
   try {
     return await obtenerProveedoresPerfilProfesionalIncompletoSupabase();
   } catch (error) {
@@ -1200,12 +1142,7 @@ async function aprobarProveedor(providerId, _payload = {}, requestId = null) {
 
     await invalidarCacheProveedor(registro?.phone, requestId);
 
-    return construirRespuestaAccion(
-      providerId,
-      "approved",
-      mensaje,
-      registro,
-    );
+    return construirRespuestaAccion(providerId, "approved", mensaje, registro);
   } catch (error) {
     throw gestionarErrorAxios(error);
   }
@@ -1260,11 +1197,7 @@ async function revisarProveedor(providerId, payload = {}, requestId = null) {
   try {
     const estadoSolicitado = limpiarTexto(payload.status);
     const estadoFinal =
-      estadoSolicitado &&
-      [
-        "approved",
-        "rejected",
-      ].includes(estadoSolicitado)
+      estadoSolicitado && ["approved", "rejected"].includes(estadoSolicitado)
         ? estadoSolicitado
         : null;
 

@@ -1,5 +1,5 @@
-"""Infraestructura de cliente Redis con fallback a memoria local."""
+"""Infraestructura de cliente Redis del servicio."""
 
-from .cliente_redis import cliente_redis
+from .cliente_redis import cliente_redis, get_redis_client
 
-__all__ = ["cliente_redis"]
+__all__ = ["cliente_redis", "get_redis_client"]

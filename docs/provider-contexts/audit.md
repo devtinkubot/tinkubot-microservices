@@ -7,7 +7,9 @@ Audit focused only on `python-services/ai-proveedores`.
 Identify wrappers, facades, legacy bridges, and true state values that should be kept, migrated, or retired.
 
 ## Summary
-Most of the apparent "flags" in `ai-proveedores` are not feature flags. They are domain state:
+Most of the apparent "flags" in `ai-proveedores` are not feature flags. They are domain state or
+internal compatibility labels. The public frontend status contract is narrower and only exposes
+`pending`, `approved`, and `rejected`.
 
 - `pending_verification`
 - `approved_basic`
@@ -16,7 +18,13 @@ Most of the apparent "flags" in `ai-proveedores` are not feature flags. They are
 - `review_silenced`
 - `pending_review_attempts`
 
-These should stay because they represent business state, not deployment toggles.
+These should stay in backend runtime paths because they represent business state, not deployment
+toggles. They should not be reintroduced as frontend statuses.
+
+Frontend note:
+
+- `pending_verification` remains a backend checkpoint for onboarding/review.
+- `approved_basic` and `profile_pending_review` are compatibility labels used by the backend only.
 
 ## Findings
 
@@ -42,7 +50,7 @@ These are not pure wrappers, but they still support live runtime paths and shoul
 - [flows/maintenance/wait_social.py](/home/du/produccion/tinkubot-microservices/python-services/ai-proveedores/flows/maintenance/wait_social.py)
 
 ### Keep: state flags, not feature flags
-These are business states and should not be removed as cleanup:
+These are backend business states and should not be removed as cleanup:
 
 - `pending_verification`
 - `approved_basic`
@@ -51,6 +59,11 @@ These are business states and should not be removed as cleanup:
 - `review_silenced`
 - `pending_review_attempts`
 - `onboarding_add_another_service`
+
+Frontend note:
+
+- `pending_verification` is no longer a public `ProviderStatus`.
+- `approved_basic` and `profile_pending_review` are backend-only compatibility labels.
 
 ### Keep: runtime configuration
 These are configuration knobs, not feature flags:

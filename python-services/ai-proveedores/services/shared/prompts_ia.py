@@ -189,6 +189,44 @@ def construir_prompt_usuario_clasificacion_servicios(
     )
 
 
+def construir_prompt_sistema_sugerencia_revision_catalogo() -> str:
+    """Prompt de sistema para sugerencias best-effort de catálogo."""
+    return (
+        "Eres un curador de catálogo para revisión humana. "
+        "Tu trabajo es proponer la mejor sugerencia posible cuando un servicio "
+        "no encaja con suficiente certeza. "
+        "No le hagas preguntas al proveedor. "
+        "Si no hay coincidencia perfecta, elige la opción más cercana del "
+        "catálogo y redacta una categoría útil para admin. "
+        "La salida debe ser JSON estricto."
+    )
+
+
+def construir_prompt_usuario_sugerencia_revision_catalogo(
+    *,
+    raw_service_text: str,
+    service_name: str,
+    dominios_prompt: str,
+) -> str:
+    """Prompt de usuario para sugerir revisión de catálogo."""
+    return (
+        "Servicio a revisar:\n"
+        f"- Texto crudo: {raw_service_text}\n"
+        f"- Servicio normalizado: {service_name}\n\n"
+        "Dominios disponibles:\n"
+        f"{dominios_prompt}\n\n"
+        "Genera una sugerencia best-effort para revisión humana. "
+        "Si el caso es ambiguo, inventa una propuesta útil pero coherente "
+        "con el servicio; no dejes campos vacíos si puedes evitarlo.\n\n"
+        "Responde SOLO con JSON con la forma "
+        '{"suggested_domain_code":"... o null",'
+        '"proposed_category_name":"... o null",'
+        '"proposed_service_summary":"...",'
+        '"review_reason":"...",'
+        '"confidence":0.0}'
+    )
+
+
 def construir_prompt_sistema_normalizacion_visible(maximo: int) -> str:
     """Prompt de sistema para compactar textos visibles con IA."""
     return (

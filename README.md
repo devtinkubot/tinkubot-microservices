@@ -176,15 +176,28 @@ Antes de subir cambios a GitHub, ejecutar la validación de calidad.
 ### Ejecutar Validación
 
 ```bash
-# Validar todos los servicios (recomendado)
-python python-services/validate_quality.py
+# Validar todo el repo (recomendado)
+./validate_all.sh
+make validate
 
-# Validar solo un servicio específico
-python python-services/validate_quality.py --service ai-clientes
+# Validar solo Python
+python validate_quality.py
+
+# Validar solo Elixir
+./validate_elixir.sh
+make validate-elixir
+make format-elixir
+
+# Validar solo un servicio específico de Python
+python validate_quality.py --service ai-clientes
+python validate_quality.py --service ai-search
 
 # Validar y corregir automáticamente (formato e importaciones)
-python python-services/validate_quality.py --fix
+python validate_quality.py --fix
 ```
+
+`validate_elixir.sh` usa `mix` local si está disponible y, si no, ejecuta la validación dentro de Docker con la imagen oficial de Elixir.
+`make validate`, `make validate-elixir` y `make format-elixir` son atajos sobre esos scripts.
 
 ### Herramientas de Validación
 
@@ -365,7 +378,7 @@ Los servicios exponen health checks en `/health` para monitoreo.
 1. Hacer fork del repositorio
 2. Crear feature branch
 3. Implementar cambios
-4. Ejecutar validación de calidad: `python python-services/validate_quality.py`
+4. Ejecutar validación de calidad: `python validate_quality.py`
 5. Hacer pull request
 
 ## Licencia

@@ -3,6 +3,12 @@
 import re
 from typing import Any, Dict, Optional
 
+from services.onboarding.event_payloads import payload_real_phone
+from services.onboarding.event_publisher import (
+    EVENT_TYPE_REAL_PHONE,
+    onboarding_async_persistence_enabled,
+    publicar_evento_onboarding,
+)
 from services.onboarding.registration.normalizacion import _normalizar_telefono_ecuador
 from utils import limpiar_espacios
 from templates.onboarding.ciudad import preguntar_ciudad
@@ -47,6 +53,15 @@ async def manejar_espera_real_phone_onboarding(
     flujo["real_phone"] = real_phone
     flujo["requires_real_phone"] = False
     flujo["state"] = "onboarding_city"
+    if onboarding_async_persistence_enabled():
+        await publicar_evento_onboarding(
+            event_type=EVENT_TYPE_REAL_PHONE,
+            flujo=flujo,
+            payload=payload_real_phone(
+                real_phone=real_phone,
+                checkpoint="onboarding_city",
+            ),
+        )
 
     return {
         "success": True,
