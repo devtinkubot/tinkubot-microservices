@@ -89,6 +89,18 @@ The initial review entrypoint now lives behind `routes/review`, and it is the on
 ### Why
 This keeps the review decision in one place while still delegating the actual menu rendering to maintenance.
 
+## Decision 10c: Approval advances the onboarding checkpoint
+When a provider is approved, the persisted provider record should advance `onboarding_step` to `awaiting_menu_option` instead of leaving `pending_verification` behind.
+
+### Why
+This keeps Supabase aligned with the real operational state: approved providers should not remain labeled as if they were still waiting for review.
+
+## Decision 10d: Operatives show document names first
+The `Operativos` bucket should display `document_first_names + document_last_names` as the primary name. `full_name` is a legacy fallback only for rows that still have not been backfilled.
+
+### Why
+Administrative review already validates DNI data, so the operational view should prefer the document-verified name and avoid showing the WhatsApp alias used during onboarding.
+
 ## Decision 11: Registered menu routing belongs to maintenance
 The `awaiting_menu_option` entry path is a shared orchestration gate: registered providers are routed into maintenance or review, while the shared router uses it to reopen onboarding consent only when Supabase says the provider is not yet registered.
 

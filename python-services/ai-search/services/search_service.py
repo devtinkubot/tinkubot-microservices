@@ -104,19 +104,26 @@ class SearchService:
         return re.sub(r"\s+", " ", clean).strip()
 
     def _build_effective_query(self, request: SearchRequest) -> str:
-        context = request.context or {}
-        problem_description = str(context.get("problem_description") or "").strip()
-        service_candidate = str(context.get("service_candidate") or "").strip()
-
-        primary_text = problem_description or request.query
+        context = getattr(request, "context", None) or {}
+        service_candidate = str(
+            context.get("normalized_service") or context.get("service_candidate") or ""
+        ).strip()
+        domain_text = str(
+            context.get("domain_code") or context.get("domain") or ""
+        ).strip()
+        category_text = str(
+            context.get("category_name") or context.get("category") or ""
+        ).strip()
 
         query_parts: List[str] = []
-        if primary_text.strip():
-            query_parts.append(primary_text.strip())
-        if request.query.strip():
-            query_parts.append(request.query.strip())
         if service_candidate:
             query_parts.append(service_candidate)
+        if domain_text:
+            query_parts.append(domain_text)
+        if category_text:
+            query_parts.append(category_text)
+        if not query_parts and request.query.strip():
+            query_parts.append(request.query.strip())
 
         deduped_parts: List[str] = []
         seen = set()
@@ -129,6 +136,203 @@ class SearchService:
 
         return " ".join(deduped_parts) if deduped_parts else request.query
 
+    @staticmethod
+    def _tokenize_text(value: Optional[str]) -> set[str]:
+        if not value:
+            return set()
+        normalized = SearchService._normalize_text(value)
+        return {token for token in normalized.split() if len(token) >= 3}
+
+    @staticmethod
+    def _token_overlap(left: set[str], right: set[str]) -> float:
+        if not left or not right:
+            return 0.0
+        union = left | right
+        if not union:
+            return 0.0
+        return len(left & right) / len(union)
+
+    def _build_context_profile(self, request: SearchRequest) -> Dict[str, Any]:
+        context = getattr(request, "context", None) or {}
+        service_candidate = str(
+            context.get("normalized_service")
+            or context.get("service_candidate")
+            or request.query
+            or ""
+        ).strip()
+        problem_description = str(context.get("problem_description") or "").strip()
+        domain_text = str(
+            context.get("domain_code") or context.get("domain") or ""
+        ).strip()
+        category_text = str(
+            context.get("category_name") or context.get("category") or ""
+        ).strip()
+
+        query_text = " ".join(
+            part
+            for part in [
+                service_candidate,
+                domain_text,
+                category_text,
+            ]
+            if part
+        )
+
+        return {
+            "service_candidate": service_candidate,
+            "problem_description": problem_description,
+            "domain_text": domain_text,
+            "category_text": category_text,
+            "service_tokens": self._tokenize_text(service_candidate),
+            "problem_tokens": self._tokenize_text(problem_description),
+            "domain_tokens": self._tokenize_text(domain_text),
+            "category_tokens": self._tokenize_text(category_text),
+            "query_tokens": self._tokenize_text(query_text),
+        }
+
+    def _compute_semantic_alignment_score(
+        self,
+        *,
+        request: SearchRequest,
+        row: Dict[str, Any],
+        similarity_score: Optional[float],
+        retrieval_score: Optional[float],
+    ) -> float:
+        context_profile = self._build_context_profile(request)
+
+        provider_service_text = " ".join(
+            part.strip()
+            for part in [
+                str(row.get("matched_service_name") or "").strip(),
+                str(row.get("matched_service_summary") or "").strip(),
+                " ".join(str(service).strip() for service in (row.get("services") or [])),
+            ]
+            if part.strip()
+        )
+        provider_domain_text = str(row.get("domain_code") or "").strip()
+        provider_category_text = str(row.get("category_name") or "").strip()
+
+        provider_service_tokens = self._tokenize_text(provider_service_text)
+        provider_domain_tokens = self._tokenize_text(provider_domain_text)
+        provider_category_tokens = self._tokenize_text(provider_category_text)
+        provider_query_tokens = self._tokenize_text(
+            " ".join(
+                part
+                for part in [
+                    provider_service_text,
+                    provider_domain_text,
+                    provider_category_text,
+                ]
+                if part
+            )
+        )
+
+        service_overlap = self._token_overlap(
+            context_profile["service_tokens"], provider_service_tokens
+        )
+        problem_overlap = self._token_overlap(
+            context_profile["problem_tokens"], provider_service_tokens
+        )
+        domain_overlap = self._token_overlap(
+            context_profile["domain_tokens"], provider_domain_tokens
+        )
+        category_overlap = self._token_overlap(
+            context_profile["category_tokens"], provider_category_tokens
+        )
+        query_overlap = self._token_overlap(
+            context_profile["query_tokens"], provider_query_tokens
+        )
+
+        taxonomy_overlap = max(
+            domain_overlap,
+            category_overlap,
+            (domain_overlap + category_overlap) / 2.0
+            if (context_profile["domain_tokens"] or context_profile["category_tokens"])
+            else 0.0,
+        )
+
+        compatibility_score = (
+            service_overlap * 0.42
+            + problem_overlap * 0.22
+            + taxonomy_overlap * 0.21
+            + query_overlap * 0.10
+        )
+
+        normalized_service_candidate = self._normalize_text(
+            context_profile["service_candidate"]
+        )
+        if normalized_service_candidate and normalized_service_candidate in self._normalize_text(
+            provider_service_text
+        ):
+            compatibility_score = max(compatibility_score, 0.88)
+
+        if context_profile["domain_tokens"] and provider_domain_tokens and domain_overlap == 0:
+            compatibility_score -= 0.08
+        if (
+            context_profile["category_tokens"]
+            and provider_category_tokens
+            and category_overlap == 0
+        ):
+            compatibility_score -= 0.05
+        if (
+            context_profile["service_tokens"]
+            and provider_service_tokens
+            and service_overlap == 0
+            and problem_overlap == 0
+            and taxonomy_overlap == 0
+        ):
+            compatibility_score -= 0.12
+
+        compatibility_score = max(0.0, min(1.0, compatibility_score))
+        similarity = max(0.0, min(1.0, float(similarity_score or 0.0)))
+        retrieval = max(0.0, min(1.0, float(retrieval_score or 0.0)))
+
+        semantic_alignment_score = (
+            retrieval * 0.52 + similarity * 0.18 + compatibility_score * 0.30
+        )
+        return max(0.0, min(1.0, semantic_alignment_score))
+
+    def _rank_by_semantic_alignment(
+        self, request: SearchRequest, providers: List[ProviderInfo]
+    ) -> List[ProviderInfo]:
+        if not providers:
+            return providers
+
+        context = getattr(request, "context", None) or {}
+        has_structured_context = bool(
+            context.get("service_candidate")
+            or context.get("normalized_service")
+            or context.get("domain_code")
+            or context.get("domain")
+            or context.get("category_name")
+            or context.get("category")
+        )
+
+        ranked = providers
+        if has_structured_context:
+            filtered = [
+                provider
+                for provider in ranked
+                if (
+                    provider.semantic_alignment_score is None
+                    or provider.semantic_alignment_score >= 0.30
+                )
+            ]
+            if filtered:
+                ranked = filtered
+
+        return sorted(
+            ranked,
+            key=lambda provider: (
+                float(provider.semantic_alignment_score or 0.0),
+                float(provider.retrieval_score or 0.0),
+                float(provider.similarity_score or 0.0),
+                float(provider.rating or 0.0),
+                1.0 if provider.verified else 0.0,
+            ),
+            reverse=True,
+        )
+
     def _generate_query_hash(self, request: SearchRequest, effective_query: str) -> str:
         """Generar hash único para consulta."""
         canonical = f"{effective_query.lower().strip()}"
@@ -139,8 +343,9 @@ class SearchService:
             )
         context = request.context or {}
         canonical += (
-            f":{str(context.get('problem_description') or '').lower().strip()}:"
-            f"{str(context.get('service_candidate') or '').lower().strip()}"
+            f":{str(context.get('normalized_service') or context.get('service_candidate') or '').lower().strip()}:"
+            f"{str(context.get('domain_code') or context.get('domain') or '').lower().strip()}:"
+            f"{str(context.get('category_name') or context.get('category') or '').lower().strip()}"
         )
 
         return hashlib.sha256(canonical.encode()).hexdigest()[:16]
@@ -298,19 +503,21 @@ class SearchService:
             "similarity_threshold": settings.vector_similarity_threshold,
         }
 
+        providers: List[ProviderInfo] = []
+        distances: List[float] = []
         response = await self._run_supabase(
             lambda: self.supabase.rpc("match_provider_services", params).execute(),
             label="providers.search_embeddings",
         )
 
-        providers: List[ProviderInfo] = []
-        distances: List[float] = []
         if response and response.data:
             for row in response.data:
                 distance = row.get("distance")
                 if isinstance(distance, (int, float)):
                     distances.append(float(distance))
-                providers.append(self._dict_to_provider_info_from_vector(row))
+                providers.append(
+                    self._dict_to_provider_info_from_vector(row, request=request)
+                )
 
         min_distance = min(distances) if distances else None
         max_distance = max(distances) if distances else None
@@ -325,9 +532,31 @@ class SearchService:
             f"{min_distance:.4f}" if min_distance is not None else "n/a",
             f"{max_distance:.4f}" if max_distance is not None else "n/a",
         )
-        return providers
+        return self._rank_by_semantic_alignment(request, providers)
 
-    def _dict_to_provider_info_from_vector(self, row: Dict[str, Any]) -> ProviderInfo:
+    def _coerce_embedding(self, embedding: Any) -> List[float]:
+        """Normaliza distintos formatos de embedding devueltos por Supabase."""
+        if embedding is None:
+            return []
+        if isinstance(embedding, list):
+            try:
+                return [float(value) for value in embedding]
+            except (TypeError, ValueError):
+                return []
+        if isinstance(embedding, str):
+            raw = embedding.strip().strip("[]")
+            if not raw:
+                return []
+            parts = [part.strip() for part in raw.split(",") if part.strip()]
+            try:
+                return [float(part) for part in parts]
+            except (TypeError, ValueError):
+                return []
+        return []
+
+    def _dict_to_provider_info_from_vector(
+        self, row: Dict[str, Any], request: Optional[SearchRequest] = None
+    ) -> ProviderInfo:
         """Convertir resultado vectorial a ProviderInfo."""
         services = row.get("services") or []
         distance_raw = row.get("distance")
@@ -337,6 +566,22 @@ class SearchService:
                 similarity_score = max(0.0, min(1.0, 1.0 - float(distance_raw)))
         except (TypeError, ValueError):
             similarity_score = None
+        retrieval_score = self._calculate_retrieval_score(
+            similarity_score=similarity_score,
+            rating=float(row.get("rating", 0.0)),
+            verified=bool(row.get("verified", False)),
+            classification_confidence=row.get("classification_confidence"),
+        )
+        semantic_alignment_score = (
+            self._compute_semantic_alignment_score(
+                request=request,
+                row=row,
+                similarity_score=similarity_score,
+                retrieval_score=retrieval_score,
+            )
+            if request is not None
+            else None
+        )
         return ProviderInfo(
             id=str(row.get("provider_id") or row.get("id")),
             phone_number=row.get("phone", ""),
@@ -353,17 +598,13 @@ class SearchService:
             experience_range=row.get("experience_range"),
             created_at=row.get("created_at", datetime.now()),
             similarity_score=similarity_score,
+            semantic_alignment_score=semantic_alignment_score,
             matched_service_name=row.get("matched_service_name"),
             matched_service_summary=row.get("matched_service_summary"),
             domain_code=row.get("domain_code"),
             category_name=row.get("category_name"),
             classification_confidence=row.get("classification_confidence"),
-            retrieval_score=self._calculate_retrieval_score(
-                similarity_score=similarity_score,
-                rating=float(row.get("rating", 0.0)),
-                verified=bool(row.get("verified", False)),
-                classification_confidence=row.get("classification_confidence"),
-            ),
+            retrieval_score=retrieval_score,
             social_media_url=row.get("social_media_url"),
             social_media_type=row.get("social_media_type"),
             face_photo_url=row.get("face_photo_url"),

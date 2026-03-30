@@ -53,7 +53,8 @@ class ConfiguracionServicio(BaseSettings):
     tiempo_espera_embeddings: int = 5  # segundos para llamadas a OpenAI
 
     # Modelo global de chat/completions (fallback)
-    openai_chat_model: str = "gpt-5-mini"
+    # Modelo de chat por defecto. Debe ser accesible para este proyecto.
+    openai_chat_model: str = "gpt-4o-mini"
     openai_transform_timeout_seconds: float = Field(
         default=10.0,
         validation_alias="PROVIDER_OPENAI_TRANSFORM_TIMEOUT_SECONDS",

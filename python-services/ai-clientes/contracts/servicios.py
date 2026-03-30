@@ -53,15 +53,15 @@ class IExtractorNecesidad(Protocol):
 
     async def extraer_servicio_con_ia_pura(
         self, texto_usuario: str
-    ) -> Tuple[Optional[str], Optional[str]]:
+    ) -> Optional[Dict[str, Any]]:
         """
-        Extrae servicio y ciudad del texto del usuario usando IA.
+        Extrae el perfil de búsqueda del texto del usuario usando IA.
 
         Args:
             texto_usuario: Texto del mensaje del usuario
 
         Returns:
-            Tupla (servicio, ciudad) donde cualquiera puede ser None
+            Dict con normalized_service, domain, category y derivados
         """
         ...
 

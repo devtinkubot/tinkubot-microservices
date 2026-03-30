@@ -82,6 +82,9 @@ def test_registro_inicial_persiste_servicios_normalizados_sin_taxonomia_runtime(
     async def _fake_limpiar_marca_perfil_eliminado(_telefono):
         return None
 
+    async def _fake_persistir_identities_whatsapp(*_args, **_kwargs):
+        return None
+
     monkeypatch.setattr(
         "services.onboarding.session.cachear_perfil_proveedor",
         _fake_cachear_perfil_proveedor,
@@ -89,6 +92,13 @@ def test_registro_inicial_persiste_servicios_normalizados_sin_taxonomia_runtime(
     monkeypatch.setattr(
         "services.onboarding.session.limpiar_marca_perfil_eliminado",
         _fake_limpiar_marca_perfil_eliminado,
+    )
+    monkeypatch.setattr(
+        (
+            "services.onboarding.registration.registro_proveedor."
+            "persistir_identities_whatsapp"
+        ),
+        _fake_persistir_identities_whatsapp,
     )
 
     solicitud = SolicitudCreacionProveedor(
@@ -202,6 +212,9 @@ def test_insertar_servicios_persiste_taxonomia_sugerida_sin_revision(
             assert table_name == "provider_services"
             return _ProviderServicesQuery()
 
+    async def _fake_run_supabase(operation, **_kwargs):
+        return operation()
+
     async def _fake_clasificar_servicios_livianos(**_kwargs):
         return [
             {
@@ -221,6 +234,10 @@ def test_insertar_servicios_persiste_taxonomia_sugerida_sin_revision(
             }
         ]
 
+    monkeypatch.setattr(
+        "services.onboarding.registration.registro_proveedor.run_supabase",
+        _fake_run_supabase,
+    )
     monkeypatch.setattr(
         (
             "services.onboarding.registration.registro_proveedor."

@@ -2,7 +2,7 @@
 
 from typing import Iterable, Optional
 
-MINIMO_SERVICIOS_OPERATIVOS = 3
+MINIMO_SERVICIOS_OPERATIVOS = 1
 
 EXPERIENCE_RANGE_UNDER_1 = "Menos de 1 año"
 EXPERIENCE_RANGE_1_3 = "1 a 3 años"

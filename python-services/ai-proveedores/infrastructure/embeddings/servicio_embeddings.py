@@ -141,6 +141,9 @@ class ServicioEmbeddings:
                     clave_cache = self._generar_clave_cache(texto)
                     cachado = await redis.get(clave_cache)
                     if cachado:
+                        if isinstance(cachado, list):
+                            logger.debug(f"✅ Cache hit para: {texto[:50]}...")
+                            return cachado
                         logger.debug(f"✅ Cache hit para: {texto[:50]}...")
                         return json.loads(cachado)
             except Exception as e:

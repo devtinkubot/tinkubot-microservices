@@ -39,6 +39,10 @@ class BuscadorProveedores:
         ciudad: str,
         radio_km: float = 10.0,
         descripcion_problema: Optional[str] = None,
+        domain: Optional[str] = None,
+        domain_code: Optional[str] = None,
+        category: Optional[str] = None,
+        category_name: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Buscar proveedores usando Search Service + validación IA.
@@ -61,7 +65,14 @@ class BuscadorProveedores:
                 - total: cantidad de proveedores
                 - search_scope: ámbito de búsqueda
         """
-        consulta = (descripcion_problema or profesion or "").strip() or profesion
+        consulta = self._build_canonical_query(
+            profesion=profesion,
+            descripcion_problema=descripcion_problema,
+            domain=domain,
+            domain_code=domain_code,
+            category=category,
+            category_name=category_name,
+        )
         self.logger.info(
             "🔍 Búsqueda embeddings + validación IA: service='%s', query='%s', location='%s'",
             profesion,
@@ -76,6 +87,10 @@ class BuscadorProveedores:
                 ciudad=ciudad,
                 descripcion_problema=descripcion_problema or profesion,
                 service_candidate=profesion,
+                domain=domain,
+                category=category,
+                domain_code=domain_code,
+                category_name=category_name,
                 limite=configuracion.search_candidate_limit,
             )
 
@@ -114,16 +129,24 @@ class BuscadorProveedores:
             if not proveedores:
                 return {"ok": True, "providers": [], "total": 0}
 
+            candidatos_a_validar = self._priorizar_candidatos_para_validacion(
+                proveedores
+            )
+
             # NUEVO: Validar con IA antes de devolver
             proveedores_validados = await self.validador_ia.validar_proveedores(
                 necesidad_usuario=profesion,
                 descripcion_problema=descripcion_problema or profesion,
-                proveedores=proveedores,
+                proveedores=candidatos_a_validar,
             )
             proveedores_rankeados = self._rankear_proveedores(
                 proveedores=proveedores_validados,
                 necesidad_usuario=profesion,
                 descripcion_problema=descripcion_problema or profesion,
+                domain=domain,
+                domain_code=domain_code,
+                category=category,
+                category_name=category_name,
             )
 
             self.logger.info(
@@ -142,17 +165,82 @@ class BuscadorProveedores:
             self.logger.error(f"❌ Error en búsqueda: {exc}")
             return {"ok": False, "providers": [], "total": 0}
 
+    @staticmethod
+    def _build_canonical_query(
+        *,
+        profesion: str,
+        descripcion_problema: Optional[str],
+        domain: Optional[str],
+        domain_code: Optional[str],
+        category: Optional[str],
+        category_name: Optional[str],
+    ) -> str:
+        """Construye la consulta canónica priorizando servicio y taxonomía."""
+        query_parts = [
+            str(profesion or "").strip(),
+            str(domain_code or domain or "").strip(),
+            str(category_name or category or "").strip(),
+        ]
+        deduped_parts = []
+        seen = set()
+        for part in query_parts:
+            normalized = part.lower().strip()
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            deduped_parts.append(part)
+
+        if deduped_parts:
+            return " ".join(deduped_parts)
+
+        fallback = str(descripcion_problema or "").strip()
+        return fallback or str(profesion or "").strip()
+
+    def _priorizar_candidatos_para_validacion(
+        self, proveedores: list[Dict[str, Any]]
+    ) -> list[Dict[str, Any]]:
+        """Reduce el universo a validar priorizando compatibilidad semántica."""
+        if not proveedores:
+            return []
+
+        candidatos = sorted(
+            proveedores,
+            key=lambda proveedor: (
+                float(proveedor.get("semantic_alignment_score") or 0.0),
+                float(proveedor.get("retrieval_score") or 0.0),
+                float(proveedor.get("similarity_score") or 0.0),
+                float(proveedor.get("classification_confidence") or 0.0),
+                float(proveedor.get("rating") or 0.0),
+                1.0 if proveedor.get("verified") else 0.0,
+            ),
+            reverse=True,
+        )
+
+        limite = max(1, int(configuracion.search_validation_limit or 0))
+        return candidatos[: min(len(candidatos), limite)]
+
     def _rankear_proveedores(
         self,
         *,
         proveedores: list[Dict[str, Any]],
         necesidad_usuario: str,
         descripcion_problema: str,
+        domain: Optional[str] = None,
+        domain_code: Optional[str] = None,
+        category: Optional[str] = None,
+        category_name: Optional[str] = None,
     ) -> list[Dict[str, Any]]:
         """Aplica un ranking híbrido y deja trazabilidad humana en los resultados."""
         query_text = " ".join(
             part.strip()
-            for part in [necesidad_usuario, descripcion_problema]
+            for part in [
+                necesidad_usuario,
+                descripcion_problema,
+                domain,
+                domain_code,
+                category,
+                category_name,
+            ]
             if str(part or "").strip()
         ).lower()
         query_tokens = {token for token in query_text.split() if len(token) >= 4}

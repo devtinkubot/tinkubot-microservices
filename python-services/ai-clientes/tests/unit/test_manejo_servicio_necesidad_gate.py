@@ -43,7 +43,11 @@ async def test_acepta_necesidad_concreta_y_pasa_a_confirmacion():
     flujo = {"state": "awaiting_service"}
 
     async def extraer_fn(_texto: str):
-        return "reparación de lavadoras"
+        return {
+            "normalized_service": "reparación de lavadoras",
+            "domain": "servicios del hogar",
+            "category": "electrodomésticos",
+        }
 
     async def validar_necesidad_fn(_texto: str):
         return True
@@ -59,9 +63,14 @@ async def test_acepta_necesidad_concreta_y_pasa_a_confirmacion():
 
     assert flujo_actualizado["state"] == "confirm_service"
     assert flujo_actualizado["service_candidate"] == "reparación de lavadoras"
-    assert (
-        flujo_actualizado["descripcion_problema"] == "mi lavadora no enciende"
-    )
+    assert flujo_actualizado["service_domain"] == "servicios del hogar"
+    assert flujo_actualizado["service_category"] == "electrodomésticos"
+    assert flujo_actualizado["descripcion_problema"] == "mi lavadora no enciende"
+    assert "Servicio normalizado: reparación de lavadoras" in flujo_actualizado[
+        "service_full"
+    ]
+    assert "Dominio: servicios del hogar" in flujo_actualizado["service_full"]
+    assert "Categoría: electrodomésticos" in flujo_actualizado["service_full"]
     assert "¿Es este el servicio que buscas:" in respuesta["response"]
     assert respuesta["ui"]["type"] == "buttons"
 
@@ -144,6 +153,36 @@ async def test_entrada_generica_usa_hint_limpio_y_no_repite_texto_crudo():
 
 
 @pytest.mark.asyncio
+async def test_asesor_contable_pasa_a_confirmacion_sin_bloqueo_local():
+    flujo = {"state": "awaiting_service"}
+
+    async def extraer_fn(_texto: str):
+        return {
+            "normalized_service": "asesoría contable",
+            "domain": "servicios legales y contables",
+            "category": "contabilidad",
+        }
+
+    async def validar_necesidad_fn(_texto: str):
+        return True
+
+    flujo_actualizado, respuesta = await procesar_estado_esperando_servicio(
+        flujo=flujo,
+        texto="necesito un asesor contable",
+        saludos=set(),
+        prompt_inicial="¿Qué necesitas resolver?",
+        extraer_fn=extraer_fn,
+        validar_necesidad_fn=validar_necesidad_fn,
+    )
+
+    assert flujo_actualizado["state"] == "confirm_service"
+    assert flujo_actualizado["service_candidate"] == "asesoría contable"
+    assert flujo_actualizado["service_domain"] == "servicios legales y contables"
+    assert flujo_actualizado["service_category"] == "contabilidad"
+    assert "¿Es este el servicio que buscas:" in respuesta["response"]
+
+
+@pytest.mark.asyncio
 async def test_hint_previsto_se_combina_con_detalle_para_extraer_servicio():
     flujo = {
         "state": "awaiting_service",
@@ -173,8 +212,18 @@ async def test_hint_previsto_se_combina_con_detalle_para_extraer_servicio():
     assert flujo_actualizado["service_candidate"] == "fabricación de clóset a medida"
     assert "Servicio de referencia: carpintero." in llamadas[0]
     assert (
+        "Servicio de referencia: carpintero."
+        in flujo_actualizado["service_full"]
+    )
+    assert "Servicio normalizado: fabricación de clóset a medida" in flujo_actualizado[
+        "service_full"
+    ]
+    assert "Necesidad del usuario: quiero hacer un clóset a medida para mi cuarto" in flujo_actualizado[
+        "service_full"
+    ]
+    assert (
         flujo_actualizado["descripcion_problema"]
-        == "Servicio de referencia: carpintero. Necesidad del usuario: quiero hacer un clóset a medida para mi cuarto"
+        == "quiero hacer un clóset a medida para mi cuarto"
     )
     assert "service_candidate_hint" not in flujo_actualizado
     assert "¿Es este el servicio que buscas:" in respuesta["response"]

@@ -76,6 +76,13 @@ La resolución interna puede devolver:
 - El onboarding y los consumidores deben leer y persistir solo `experience_range`.
 - Si un flujo necesita mostrar experiencia, debe mostrar el rango legible, no un entero.
 
+## Política de completitud del perfil
+
+Para considerar un perfil profesional como completo, el sistema requiere:
+
+- `experience_range` informado
+- al menos `1` servicio válido asociado al proveedor
+
 ## Redis y DLQ
 
 - `Redis Streams` es la cola principal del onboarding async.

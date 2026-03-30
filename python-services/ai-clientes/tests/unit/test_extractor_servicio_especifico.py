@@ -42,8 +42,9 @@ class _FakeOpenAI:
 async def test_prompt_extraccion_prioriza_servicio_especifico():
     fake = _FakeOpenAI(
         [
-            "elaboracion de pliegos de contratacion publica",
-            "elaboración de pliegos de contratación pública",
+            '{"normalized_service":"elaboración de pliegos de contratación pública",'
+            '"domain":"servicios legales",'
+            '"category":"contratación pública"}',
         ]
     )
     extractor = ExtractorNecesidadIA(
@@ -53,16 +54,19 @@ async def test_prompt_extraccion_prioriza_servicio_especifico():
         logger=logging.getLogger(__name__),
     )
 
-    servicio = await extractor.extraer_servicio_con_ia(
+    perfil = await extractor.extraer_servicio_con_ia(
         "necesito apoyo para levantar un pliegos de compras publicas para una contratacion de servicios profesionales"
     )
 
-    assert servicio == "elaboración de pliegos de contratación pública"
+    assert perfil["normalized_service"] == "elaboración de pliegos de contratación pública"
+    assert perfil["domain"] == "servicios legales"
+    assert perfil["category"] == "contratación pública"
 
     llamada_extraccion = fake.completions.llamadas[0]
     prompt_sistema = llamada_extraccion["messages"][0]["content"]
-    assert "servicio MÁS ESPECÍFICO" in prompt_sistema
-    assert "sobre categorías amplias" in prompt_sistema
+    assert "necesidades de clientes en Ecuador" in prompt_sistema
+    assert "normalized_service" in prompt_sistema
+    assert "category" in prompt_sistema
 
 
 @pytest.mark.asyncio
@@ -88,7 +92,12 @@ async def test_prompt_normalizacion_evita_generalizacion():
 
 @pytest.mark.asyncio
 async def test_extraer_servicio_generico_no_inventa_especialidad():
-    fake = _FakeOpenAI(["carpintería personalizada"])
+    fake = _FakeOpenAI(
+        [
+            '{"normalized_service":"carpintero","domain":"servicios del hogar",'
+            '"category":"carpintería"}'
+        ]
+    )
     extractor = ExtractorNecesidadIA(
         cliente_openai=fake,
         semaforo_openai=asyncio.Semaphore(1),
@@ -96,10 +105,33 @@ async def test_extraer_servicio_generico_no_inventa_especialidad():
         logger=logging.getLogger(__name__),
     )
 
-    servicio = await extractor.extraer_servicio_con_ia("Necesito un carpintero")
+    perfil = await extractor.extraer_servicio_con_ia("Necesito un carpintero")
 
-    assert servicio == "carpintero"
+    assert perfil["normalized_service"] == "carpintero"
     assert fake.completions.llamadas == []
+
+
+@pytest.mark.asyncio
+async def test_extraer_asesor_contable_usa_prompt_y_no_hint_local():
+    fake = _FakeOpenAI(
+        [
+            '{"normalized_service":"asesoría contable","domain":"servicios contables",'
+            '"category":"contabilidad"}'
+        ]
+    )
+    extractor = ExtractorNecesidadIA(
+        cliente_openai=fake,
+        semaforo_openai=asyncio.Semaphore(1),
+        tiempo_espera_openai=2.0,
+        logger=logging.getLogger(__name__),
+    )
+
+    perfil = await extractor.extraer_servicio_con_ia("Necesito un asesor contable")
+
+    assert perfil["normalized_service"] == "asesoría contable"
+    assert perfil["domain"] == "servicios contables"
+    assert perfil["category"] == "contabilidad"
+    assert len(fake.completions.llamadas) == 1
 
 
 @pytest.mark.asyncio
@@ -112,9 +144,9 @@ async def test_regla_local_mapea_reparacion_de_mueble_a_restauracion():
         logger=logging.getLogger(__name__),
     )
 
-    servicio = await extractor.extraer_servicio_con_ia(
+    perfil = await extractor.extraer_servicio_con_ia(
         "Servicio de referencia: carpintero. Necesidad del usuario: arreglar un mueble de comedor"
     )
 
-    assert servicio == "restauración de muebles"
+    assert perfil["normalized_service"] == "restauración de muebles"
     assert fake.completions.llamadas == []

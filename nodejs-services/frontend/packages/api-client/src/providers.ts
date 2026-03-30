@@ -7,6 +7,8 @@ import type {
   ProviderActionResponse,
   ProviderOnboardingResetResponse,
   ProviderRecord,
+  ProviderServiceReviewActionPayload,
+  ProviderServiceReviewActionResponse,
   ProviderStatusOverviewResponse,
 } from "./types";
 
@@ -14,6 +16,10 @@ const RUTA_BASE = "/admin/providers";
 
 interface RespuestaProveedoresPendientes {
   providers: ProviderRecord[];
+}
+
+interface RespuestaDetalleProveedor {
+  provider: ProviderRecord;
 }
 
 export async function obtenerProveedoresPendientes(): Promise<
@@ -50,6 +56,18 @@ export async function obtenerProveedoresOnboarding(): Promise<
   return [];
 }
 
+export async function obtenerProveedoresOperativos(): Promise<
+  ProviderRecord[]
+> {
+  const datos = await realizarSolicitudHttp<RespuestaProveedoresPendientes>(
+    `${RUTA_BASE}/operativos`,
+  );
+  if (Array.isArray(datos.providers)) {
+    return datos.providers;
+  }
+  return [];
+}
+
 export async function obtenerProveedoresPostRevision(): Promise<
   ProviderRecord[]
 > {
@@ -72,6 +90,15 @@ export async function obtenerProveedoresPerfilProfesionalIncompleto(): Promise<
     return datos.providers;
   }
   return [];
+}
+
+export async function obtenerDetalleProveedor(
+  proveedorId: string,
+): Promise<ProviderRecord> {
+  const datos = await realizarSolicitudHttp<RespuestaDetalleProveedor>(
+    `${RUTA_BASE}/${proveedorId}`,
+  );
+  return datos.provider;
 }
 
 export async function aprobarProveedor(
@@ -112,6 +139,40 @@ export async function revisarProveedor(
 ): Promise<ProviderActionResponse> {
   return realizarSolicitudHttp<ProviderActionResponse>(
     `${RUTA_BASE}/${proveedorId}/review`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(carga),
+    },
+  );
+}
+
+export async function aprobarReviewServicioCatalogo(
+  reviewId: string,
+  carga: ProviderServiceReviewActionPayload,
+): Promise<ProviderServiceReviewActionResponse> {
+  return realizarSolicitudHttp<ProviderServiceReviewActionResponse>(
+    `${RUTA_BASE}/service-reviews/${reviewId}/approve`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(carga),
+    },
+  );
+}
+
+export async function rechazarReviewServicioCatalogo(
+  reviewId: string,
+  carga: {
+    reviewer?: string;
+  } = {},
+): Promise<ProviderServiceReviewActionResponse> {
+  return realizarSolicitudHttp<ProviderServiceReviewActionResponse>(
+    `${RUTA_BASE}/service-reviews/${reviewId}/reject`,
     {
       method: "POST",
       headers: {

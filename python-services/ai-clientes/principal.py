@@ -184,6 +184,10 @@ async def buscar_proveedores(
     ciudad: str,
     radio_km: float = 10.0,
     descripcion_problema: str | None = None,
+    domain: str | None = None,
+    domain_code: str | None = None,
+    category: str | None = None,
+    category_name: str | None = None,
 ):
     """Wrapper de búsqueda para flujos en segundo plano."""
     if orquestador.buscador:
@@ -192,6 +196,10 @@ async def buscar_proveedores(
             ciudad=ciudad,
             radio_km=radio_km,
             descripcion_problema=descripcion_problema or servicio,
+            domain=domain,
+            domain_code=domain_code,
+            category=category,
+            category_name=category_name,
         )
     return {"ok": False, "providers": [], "total": 0}
 

@@ -48,6 +48,7 @@ class ConfiguracionServicio(BaseSettings):
     clientes_service_port: int = 8001
     ai_search_port: int = 8000
     search_candidate_limit: int = 15
+    search_validation_limit: int = 6
 
     # Supabase Configuration (opcional para persistencia)
     supabase_url: Optional[str] = None

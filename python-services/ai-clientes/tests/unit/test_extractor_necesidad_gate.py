@@ -33,6 +33,33 @@ async def test_es_necesidad_rechaza_ocupacion_generica_sin_openai():
 
 
 @pytest.mark.asyncio
+async def test_es_necesidad_permite_ocupacion_de_dos_palabras_sin_openai():
+    extractor = ExtractorNecesidadIA(
+        cliente_openai=None,
+        semaforo_openai=asyncio.Semaphore(1),
+        tiempo_espera_openai=1.0,
+        logger=logging.getLogger(__name__),
+    )
+
+    assert await extractor.es_necesidad_o_problema("Necesito un asesor contable") is True
+
+
+@pytest.mark.asyncio
+async def test_es_necesidad_permite_solicitud_explicita_de_servicio_sin_openai():
+    extractor = ExtractorNecesidadIA(
+        cliente_openai=None,
+        semaforo_openai=asyncio.Semaphore(1),
+        tiempo_espera_openai=1.0,
+        logger=logging.getLogger(__name__),
+    )
+
+    assert (
+        await extractor.es_necesidad_o_problema("requiere un administrador de proyectos de tics")
+        is True
+    )
+
+
+@pytest.mark.asyncio
 async def test_es_necesidad_rechaza_texto_vacio():
     extractor = ExtractorNecesidadIA(
         cliente_openai=None,

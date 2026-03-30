@@ -98,8 +98,10 @@ GET /api/v1/health
 ## 🎯 Estrategia de Búsqueda
 
 ### Embeddings (única estrategia)
-- **Cómo funciona**: genera embedding de la consulta y hace match vectorial en base de datos.
-- **Comportamiento ante falla de embeddings**: fail-fast (error controlado, sin fallback a estrategias legacy).
+- **Cómo funciona**: genera embedding de una consulta canónica y hace match vectorial en base de datos.
+- **Consulta canónica**: se construye desde `service_candidate` / `normalized_service` + `domain_code` / `domain` + `category_name` / `category`.
+- **Contexto auxiliar**: `problem_description` se conserva para trazabilidad y ranking, pero no forma parte del texto principal que se embebe.
+- **Comportamiento ante falla de RPC o embeddings**: fail-fast, sin fallback local a búsquedas legacy.
 
 ## 🗃️ Base de Datos Optimizada
 

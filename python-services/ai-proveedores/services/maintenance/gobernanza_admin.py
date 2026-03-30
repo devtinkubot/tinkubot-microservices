@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional
 from infrastructure.database import run_supabase
 from services.maintenance.clasificacion_semantica import (
     construir_service_summary,
+    construir_texto_embedding_canonico,
     normalizar_display_name_dominio,
     normalizar_domain_code_operativo,
 )
@@ -162,7 +163,11 @@ async def aprobar_review_catalogo_servicio(
         category_name=categoria,
         domain_code=codigo_dominio,
     )
-    texto_embedding = f"{nombre_servicio}. {resumen}".strip()
+    texto_embedding = construir_texto_embedding_canonico(
+        service_name_normalized=normalizar_texto_para_busqueda(nombre_servicio),
+        domain_code=codigo_dominio,
+        category_name=categoria,
+    )
     embedding = None
     if servicio_embeddings:
         embedding = await servicio_embeddings.generar_embedding(texto_embedding)

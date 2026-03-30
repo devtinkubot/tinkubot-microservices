@@ -14,13 +14,13 @@ from services.maintenance.clasificacion_semantica import (
 )
 from services.shared import (
     PROMPT_CATALOGO_SIN_DOMINIO,
-    construir_prompt_sistema_validacion_servicio,
-    construir_prompt_usuario_validacion_servicio,
+    construir_prompt_sistema_enriquecimiento_servicios,
+    construir_prompt_usuario_enriquecimiento_servicios,
 )
 from utils import (
     limpiar_texto_servicio,
     normalizar_texto_para_busqueda,
-    normalizar_texto_visible_con_ia,
+    normalizar_texto_visible_corto,
 )
 
 logger = logging.getLogger(__name__)
@@ -223,7 +223,7 @@ def _validacion_heuristica(
     )
 
 
-async def validar_servicio_semanticamente(
+async def enriquecer_servicio_semanticamente(
     *,
     cliente_openai: Optional[Any],
     supabase: Any,
@@ -231,7 +231,7 @@ async def validar_servicio_semanticamente(
     service_name: str,
     timeout: float = 8.0,
 ) -> Dict[str, Any]:
-    """Valida si un texto representa un servicio útil y suficientemente específico."""
+    """Enriquece un servicio crudo con dominio, categoría y resumen."""
     heuristico = _validacion_heuristica(
         raw_service_text=raw_service_text,
         service_name=service_name,
@@ -267,28 +267,30 @@ async def validar_servicio_semanticamente(
             messages=[
                 {
                     "role": "system",
-                    "content": construir_prompt_sistema_validacion_servicio(
-                        configuracion.maximo_servicio_visible
-                    ),
+                    "content": construir_prompt_sistema_enriquecimiento_servicios(),
                 },
                 {
                     "role": "user",
-                    "content": construir_prompt_usuario_validacion_servicio(
+                    "content": construir_prompt_usuario_enriquecimiento_servicios(
                         raw_service_text,
-                        service_name,
                         dominios_prompt,
-                        maximo=configuracion.maximo_servicio_visible,
                     ),
                 },
             ],
             response_format={
                 "type": "json_schema",
                 "json_schema": {
-                    "name": "service_validation",
+                    "name": "service_enrichment",
                     "strict": True,
                     "schema": {
                         "type": "object",
                         "properties": {
+                            "normalized_service": {"type": "string"},
+                            "domain": {"type": ["string", "null"]},
+                            "category": {"type": ["string", "null"]},
+                            "service_summary": {"type": "string"},
+                            "confidence": {"type": "number"},
+                            "reason": {"type": "string"},
                             "status": {
                                 "type": "string",
                                 "enum": [
@@ -298,23 +300,15 @@ async def validar_servicio_semanticamente(
                                     "rejected",
                                 ],
                             },
-                            "normalized_service": {"type": "string"},
-                            "domain_code": {"type": ["string", "null"]},
-                            "category_name": {"type": ["string", "null"]},
-                            "service_summary": {"type": "string"},
-                            "confidence": {"type": "number"},
-                            "reason": {"type": "string"},
-                            "clarification_question": {"type": ["string", "null"]},
                         },
                         "required": [
-                            "status",
                             "normalized_service",
-                            "domain_code",
-                            "category_name",
+                            "domain",
+                            "category",
                             "service_summary",
                             "confidence",
                             "reason",
-                            "clarification_question",
+                            "status",
                         ],
                         "additionalProperties": False,
                     },
@@ -330,15 +324,18 @@ async def validar_servicio_semanticamente(
         return heuristico
 
     status = str(data.get("status") or "").strip().lower()
-    normalized_service = await normalizar_texto_visible_con_ia(
-        cliente_openai,
-        str(data.get("normalized_service") or service_name).strip() or service_name,
+    normalized_service = normalizar_texto_visible_corto(
+        str(data.get("normalized_service") or service_name).strip() or service_name
     )
-    clarification_question = data.get("clarification_question")
-    domain_code = data.get("domain_code")
-    category_name = data.get("category_name")
-    service_summary = data.get("service_summary")
+    domain_name = str(data.get("domain") or "").strip() or None
+    category_name = str(data.get("category") or "").strip() or None
+    service_summary = str(data.get("service_summary") or "").strip() or None
     reason = str(data.get("reason") or "ai_validation").strip() or "ai_validation"
+    confidence = float(data.get("confidence") or 0.0)
+    domain_code = normalizar_domain_code_operativo(domain_name)
+    resolved_domain_code = (
+        domain_code if domain_code and domain_code in codigos_catalogo else None
+    )
 
     if status == "rejected":
         return _resultado(
@@ -347,7 +344,7 @@ async def validar_servicio_semanticamente(
             normalized_service=normalized_service,
             reason=reason,
             domain_resolution_status="rejected",
-            confidence=float(data.get("confidence") or 0.0),
+            confidence=confidence,
         )
 
     if status == "clarification_required":
@@ -357,22 +354,14 @@ async def validar_servicio_semanticamente(
             normalized_service=normalized_service,
             reason=reason,
             domain_resolution_status="clarification_required",
-            clarification_question=str(
-                clarification_question
-                or _pregunta_aclaracion(
-                    normalizar_texto_para_busqueda(normalized_service)
-                )
+            clarification_question=_pregunta_aclaracion(
+                normalizar_texto_para_busqueda(normalized_service)
             ),
-            domain_code=normalizar_domain_code_operativo(domain_code),
-            category_name=str(category_name).strip() if category_name else None,
-            service_summary=str(service_summary or "").strip() or None,
-            confidence=float(data.get("confidence") or 0.0),
+            domain_code=domain_code,
+            category_name=category_name,
+            service_summary=service_summary,
+            confidence=confidence,
         )
-
-    suggested_domain_code = normalizar_domain_code_operativo(domain_code)
-    resolved_domain_code = (
-        suggested_domain_code if suggested_domain_code in codigos_catalogo else None
-    )
 
     if status == "catalog_review_required" or not resolved_domain_code:
         return _resultado(
@@ -381,15 +370,15 @@ async def validar_servicio_semanticamente(
             normalized_service=normalized_service,
             reason=(
                 reason
-                if suggested_domain_code or status == "catalog_review_required"
+                if domain_code or status == "catalog_review_required"
                 else "domain_not_resolved"
             ),
             domain_resolution_status="catalog_review_required",
-            domain_code=suggested_domain_code,
+            domain_code=domain_code,
             resolved_domain_code=None,
-            category_name=str(category_name).strip() if category_name else None,
-            service_summary=str(service_summary or "").strip() or None,
-            confidence=float(data.get("confidence") or heuristico["confidence"]),
+            category_name=category_name,
+            service_summary=service_summary,
+            confidence=confidence or heuristico["confidence"],
         )
 
     return _resultado(
@@ -400,7 +389,25 @@ async def validar_servicio_semanticamente(
         domain_resolution_status="matched",
         domain_code=resolved_domain_code,
         resolved_domain_code=resolved_domain_code,
-        category_name=str(category_name).strip() if category_name else None,
-        service_summary=str(service_summary or "").strip() or None,
-        confidence=float(data.get("confidence") or heuristico["confidence"]),
+        category_name=category_name,
+        service_summary=service_summary,
+        confidence=confidence or heuristico["confidence"],
+    )
+
+
+async def validar_servicio_semanticamente(
+    *,
+    cliente_openai: Optional[Any],
+    supabase: Any,
+    raw_service_text: str,
+    service_name: str,
+    timeout: float = 8.0,
+) -> Dict[str, Any]:
+    """Compatibilidad: devuelve el resultado enriquecido con forma legacy."""
+    return await enriquecer_servicio_semanticamente(
+        cliente_openai=cliente_openai,
+        supabase=supabase,
+        raw_service_text=raw_service_text,
+        service_name=service_name,
+        timeout=timeout,
     )

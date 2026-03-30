@@ -55,6 +55,38 @@ async def _prompt_inicial_servicio(orquestador) -> Dict[str, Any]:
     return construir_prompt_lista_servicios()
 
 
+async def _parece_nueva_solicitud_servicio(orquestador, texto: str) -> bool:
+    """Detecta si un texto en confirm_new_search ya es una nueva solicitud."""
+    limpio = (texto or "").strip()
+    if not limpio:
+        return False
+
+    if len(limpio.split()) <= 1:
+        return False
+
+    from services.orquestador_conversacion import interpretar_si_no
+
+    if interpretar_si_no(limpio) is not None:
+        return False
+
+    extractor = getattr(orquestador, "extractor_ia", None)
+    if not extractor:
+        return False
+
+    try:
+        perfil = await extractor.extraer_servicio_con_ia(limpio)
+    except Exception:
+        return False
+
+    if isinstance(perfil, str):
+        return bool(perfil.strip())
+    if not isinstance(perfil, dict):
+        return False
+
+    servicio = str(perfil.get("normalized_service") or "").strip()
+    return bool(servicio)
+
+
 def _listado_proveedores_expirado(flujo: Dict[str, Any], ahora_utc: datetime) -> bool:
     expires_raw = flujo.get("provider_results_expires_at")
     if not expires_raw:
@@ -681,6 +713,25 @@ async def enrutar_estado(  # noqa: C901
         )
 
     if estado == "confirm_new_search":
+        if texto and not seleccionado and await _parece_nueva_solicitud_servicio(
+            orquestador, texto
+        ):
+            ciudad_preservada = flujo.get("city")
+            ciudad_confirmada_preservada = flujo.get("city_confirmed")
+            await orquestador.resetear_flujo(telefono)
+            nuevo_flujo: Dict[str, Any] = {"state": "awaiting_service"}
+            if ciudad_preservada:
+                nuevo_flujo["city"] = ciudad_preservada
+                if ciudad_confirmada_preservada is not None:
+                    nuevo_flujo["city_confirmed"] = ciudad_confirmada_preservada
+            return await orquestador._procesar_awaiting_service(
+                telefono,
+                nuevo_flujo,
+                texto,
+                responder,
+                cliente_id,
+            )
+
         prompt_servicio = await _prompt_inicial_servicio(orquestador)
         return await procesar_estado_confirmar_nueva_busqueda(
             flujo,
@@ -704,6 +755,25 @@ async def enrutar_estado(  # noqa: C901
 
     if estado == "confirm_service":
         from services.orquestador_conversacion import interpretar_si_no
+
+        if texto and not seleccionado and await _parece_nueva_solicitud_servicio(
+            orquestador, texto
+        ):
+            ciudad_preservada = flujo.get("city")
+            ciudad_confirmada_preservada = flujo.get("city_confirmed")
+            await orquestador.resetear_flujo(telefono)
+            nuevo_flujo: Dict[str, Any] = {"state": "awaiting_service"}
+            if ciudad_preservada:
+                nuevo_flujo["city"] = ciudad_preservada
+                if ciudad_confirmada_preservada is not None:
+                    nuevo_flujo["city_confirmed"] = ciudad_confirmada_preservada
+            return await orquestador._procesar_awaiting_service(
+                telefono,
+                nuevo_flujo,
+                texto,
+                responder,
+                cliente_id,
+            )
 
         async def iniciar_busqueda_desde_confirmacion(data: Dict[str, Any]):
             if orquestador.repositorio_clientes:

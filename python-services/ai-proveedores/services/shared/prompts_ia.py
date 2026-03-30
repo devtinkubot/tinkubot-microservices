@@ -169,6 +169,47 @@ def construir_prompt_sistema_clasificacion_servicios() -> str:
     )
 
 
+def construir_prompt_sistema_enriquecimiento_servicios() -> str:
+    """Prompt de sistema para enriquecer texto crudo en un solo paso."""
+    return (
+        "Eres un asistente que enriquece textos de servicios para mejorar "
+        "búsquedas semánticas en Ecuador. "
+        "El usuario envía un servicio por WhatsApp y el texto ya pasó por "
+        "filtros básicos, así que no respondas con basura ni con oficios puros. "
+        "Tu trabajo es convertirlo en una propuesta clara, natural y útil para "
+        "un marketplace B2B. "
+        "Piensa en la lógica jerárquica de UNSPSC solo como guía conceptual, "
+        "sin usar códigos numéricos. "
+        "Devuelve dominio y categoría en español neutro, cortos y entendibles. "
+        "Nunca devuelvas una profesión pura como normalized_service. "
+        "Si el texto es genérico, conviértelo a una acción real. "
+        "Si está muy ambiguo, marca status como clarification_required o "
+        "catalog_review_required en lugar de inventar sin control. "
+        "La salida debe ser JSON estricto."
+    )
+
+
+def construir_prompt_usuario_enriquecimiento_servicios(
+    texto_whatsapp: str,
+    dominios_prompt: str,
+) -> str:
+    """Prompt de usuario para enriquecer un texto crudo de servicio."""
+    return (
+        "Extrae y enriquece este servicio:\n"
+        f'"{texto_whatsapp}"\n\n'
+        "Dominios disponibles:\n"
+        f"{dominios_prompt}\n\n"
+        "Responde SOLO con JSON con la forma "
+        '{"normalized_service":"...",'
+        '"domain":"...",'
+        '"category":"...",'
+        '"service_summary":"...",'
+        '"confidence":0.0,'
+        '"reason":"...",'
+        '"status":"accepted|clarification_required|catalog_review_required|rejected"}'
+    )
+
+
 def construir_prompt_usuario_clasificacion_servicios(
     servicios_limpios: list[str],
     dominios_prompt: str,

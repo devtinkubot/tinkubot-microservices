@@ -12,6 +12,12 @@
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
       rel="stylesheet"
     />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&family=Source+Sans+3:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <style>
       :root {
         --primary-color: #6366f1;
@@ -26,7 +32,9 @@
 
       body {
         background-color: var(--light-bg);
-        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        font-family: "Source Sans 3", "Segoe UI", sans-serif;
+        font-size: 0.96rem;
+        color: #1f2937;
       }
 
       .dashboard-shell {
@@ -378,37 +386,102 @@
       }
 
       .provider-detail-modal .modal-title {
-        font-weight: 600;
+        font-family: "Libre Baskerville", Georgia, serif;
+        font-weight: 700;
+        font-size: 1.05rem;
+        letter-spacing: 0;
       }
 
       .provider-detail-subtitle {
-        font-size: 0.9rem;
-        color: #6b7280;
+        font-size: 0.85rem;
+        color: #64748b;
       }
 
       .provider-detail-section {
-        margin-bottom: 1.5rem;
+        margin-bottom: 1.2rem;
       }
 
       .provider-detail-section h6 {
-        font-size: 0.95rem;
-        text-transform: uppercase;
-        letter-spacing: 0.02em;
-        color: var(--primary-color);
-        margin-bottom: 0.75rem;
+        font-family: "Libre Baskerville", Georgia, serif;
+        font-size: 0.9rem;
+        text-transform: none;
+        letter-spacing: 0;
+        color: #334155;
+        margin-bottom: 0.7rem;
       }
 
       .provider-detail-item {
-        margin-bottom: 0.6rem;
+        margin-bottom: 0.5rem;
         display: flex;
         gap: 0.5rem;
         flex-wrap: wrap;
+        align-items: baseline;
       }
 
       .provider-detail-label {
         font-weight: 600;
-        min-width: 140px;
-        color: var(--dark-color);
+        min-width: 130px;
+        color: #475569;
+      }
+
+      .provider-detail-label--inline {
+        min-width: 0;
+        white-space: nowrap;
+      }
+
+      .provider-professional-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.65rem 1.1rem;
+        align-items: start;
+      }
+
+      .provider-professional-summary {
+        display: grid;
+        gap: 0.25rem;
+      }
+
+      .provider-professional-services-section {
+        margin-top: 1.05rem;
+      }
+
+      .provider-professional-services-panel {
+        min-width: 0;
+      }
+
+      .provider-professional-services-panel .provider-detail-item {
+        align-items: flex-start;
+      }
+
+      .provider-professional-services-panel .provider-detail-label {
+        padding-top: 0.1rem;
+      }
+
+      .provider-professional-services-value {
+        min-width: 0;
+        width: 100%;
+      }
+
+      .provider-service-inline-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem 0.45rem;
+      }
+
+      .provider-service-inline-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.28rem 0.6rem;
+        border-radius: 999px;
+        background: rgba(99, 102, 241, 0.1);
+        color: #3730a3;
+        font-size: 0.84rem;
+        line-height: 1.2;
+      }
+
+      .provider-service-inline-pill i {
+        font-size: 0.72rem;
       }
 
       .provider-service-badge {
@@ -419,6 +492,143 @@
         border-radius: 20px;
         font-size: 0.8rem;
         margin: 0 0.35rem 0.35rem 0;
+      }
+
+      .provider-service-list {
+        display: grid;
+        gap: 0.8rem;
+      }
+
+      .provider-service-card {
+        background: white;
+        border-radius: 0.95rem;
+        border: 1px solid rgba(15, 23, 42, 0.08);
+        padding: 0.95rem 1rem;
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+      }
+
+      .provider-service-card--review {
+        border-color: rgba(99, 102, 241, 0.22);
+        background: linear-gradient(180deg, rgba(99, 102, 241, 0.04) 0%, #ffffff 34%);
+      }
+
+      .provider-service-card-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.75rem;
+        align-items: flex-start;
+      }
+
+      .provider-service-name {
+        font-weight: 700;
+        color: #111827;
+        line-height: 1.35;
+      }
+
+      .provider-service-raw {
+        font-size: 0.84rem;
+        color: #64748b;
+        margin-top: 0.18rem;
+      }
+
+      .provider-service-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+        margin-top: 0.75rem;
+      }
+
+      .provider-service-tag {
+        display: inline-flex;
+        align-items: center;
+        border: 1px solid rgba(148, 163, 184, 0.35);
+        background: #f8fafc;
+        color: #334155;
+        border-radius: 999px;
+        padding: 0.28rem 0.6rem;
+        font-size: 0.8rem;
+      }
+
+      .provider-service-suggestion {
+        margin-top: 0.8rem;
+        padding: 0.85rem;
+        border-radius: 0.85rem;
+        background: #f8fafc;
+        border: 1px solid rgba(99, 102, 241, 0.14);
+      }
+
+      .provider-service-suggestion-title {
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #64748b;
+        margin-bottom: 0.45rem;
+      }
+
+      .provider-service-suggestion-grid {
+        display: grid;
+        gap: 0.35rem;
+      }
+
+      .provider-service-suggestion-line {
+        font-size: 0.9rem;
+      }
+
+      .provider-service-suggestion-line strong {
+        color: #111827;
+      }
+
+      .provider-service-actions {
+        margin-top: 0.9rem;
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+      }
+
+      .provider-service-empty {
+        color: #64748b;
+      }
+
+      .provider-service-table {
+        min-width: 52rem;
+      }
+
+      .provider-service-table thead th {
+        font-size: 0.74rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #64748b;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.28);
+        padding-bottom: 0.7rem;
+      }
+
+      .provider-service-table tbody td {
+        vertical-align: top;
+        padding-top: 0.9rem;
+        padding-bottom: 0.9rem;
+        border-color: rgba(148, 163, 184, 0.12);
+      }
+
+      .provider-service-table tbody tr.provider-service-card--review > td {
+        background: rgba(99, 102, 241, 0.03);
+      }
+
+      .provider-service-table .provider-service-meta {
+        margin-top: 0.35rem;
+      }
+
+      .provider-service-table .provider-service-suggestion {
+        margin-top: 0.55rem;
+        padding: 0.7rem;
+      }
+
+      .provider-service-table .provider-service-actions {
+        justify-content: flex-end;
+        margin-top: 0.6rem;
+      }
+
+      .provider-service-table .badge {
+        font-size: 0.72rem;
       }
 
       .provider-document-card {
@@ -679,8 +889,35 @@
         }
       }
 
-      .provider-review-form textarea {
-        min-height: 110px;
+      .provider-review-form,
+      .provider-service-review-form {
+        font-size: 0.95rem;
+      }
+
+      @media (max-width: 991.98px) {
+        .provider-professional-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .provider-service-review-form .form-label,
+      .provider-service-review-form .form-text {
+        font-size: 0.88rem;
+      }
+
+      .provider-service-review-modal .modal-title {
+        font-family: "Libre Baskerville", Georgia, serif;
+        font-size: 1.02rem;
+      }
+
+      .provider-service-review-context {
+        font-size: 0.85rem;
+        color: #64748b;
+        margin-top: 0.2rem;
+      }
+
+      .provider-service-review-context-line + .provider-service-review-context-line {
+        margin-top: 0.15rem;
       }
 
       .provider-review-processing {
@@ -1179,6 +1416,14 @@
                   <button
                     type="button"
                     class="btn btn-outline-primary"
+                    data-provider-bucket="operativos"
+                    id="providers-tab-operativos"
+                  >
+                    Operativos
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-outline-primary"
                     data-provider-bucket="profile_incomplete"
                     id="providers-tab-profile-incomplete"
                   >
@@ -1226,7 +1471,6 @@
                       <th>Ciudad</th>
                       <th>Contacto</th>
                       <th>Registrado</th>
-                      <th>Notas</th>
                       <th class="text-end">Revisión</th>
                     </tr>
                   </thead>
@@ -1312,12 +1556,14 @@
 
                   <div class="provider-detail-section">
                     <h6>Información profesional</h6>
-                    <div class="row g-3">
-                      <div class="col-md-4">
+                    <div class="provider-professional-grid">
+                      <div class="provider-professional-summary">
                         <div class="provider-detail-item">
-                          <span class="provider-detail-label"
-                            >Años de experiencia</span
+                          <span
+                            class="provider-detail-label provider-detail-label--inline"
                           >
+                            Años de experiencia
+                          </span>
                           <span
                             id="provider-detail-experience"
                             class="text-muted"
@@ -1325,22 +1571,13 @@
                           >
                         </div>
                       </div>
-                      <div class="col-md-4">
+                      <div class="provider-professional-summary">
                         <div class="provider-detail-item">
                           <span
-                            class="provider-detail-label"
-                            id="provider-professional-title"
+                            class="provider-detail-label provider-detail-label--inline"
                           >
-                            Servicios principales
+                            Red social
                           </span>
-                          <div id="provider-detail-services" class="text-muted">
-                            Sin servicios registrados
-                          </div>
-                        </div>
-                      </div>
-                      <div class="col-md-4">
-                        <div class="provider-detail-item">
-                          <span class="provider-detail-label">Red social</span>
                           <span
                             id="provider-detail-social-media"
                             class="text-muted"
@@ -1349,23 +1586,17 @@
                         </div>
                       </div>
                     </div>
-                    <div class="row g-3 mt-1">
-                      <div class="col-12">
-                        <div class="provider-detail-item">
-                          <span class="provider-detail-label"
-                            >Auditoría de servicios</span
-                          >
-                          <div
-                            id="provider-detail-services-audit"
-                            class="mt-2"
-                          ></div>
-                          <div
-                            id="provider-detail-services-audit-empty"
-                            class="alert alert-light border mt-2"
-                            role="alert"
-                          >
-                            Sin datos de auditoría de servicios.
-                          </div>
+                  </div>
+
+                  <div class="provider-detail-section provider-professional-services-section">
+                    <h6>Servicios profesionales</h6>
+                    <div class="provider-professional-services-panel">
+                      <div class="provider-detail-item">
+                        <div
+                          id="provider-detail-services"
+                          class="provider-professional-services-value text-muted"
+                        >
+                          Sin servicios registrados
                         </div>
                       </div>
                     </div>
@@ -1414,14 +1645,6 @@
                         </div>
                       </div>
                     </div>
-                  </div>
-
-                  <div class="provider-detail-section">
-                    <h6>Observaciones previas</h6>
-                    <div
-                      class="alert alert-secondary"
-                      id="provider-detail-existing-notes"
-                    ></div>
                   </div>
 
                   <div class="provider-detail-section">
@@ -1489,42 +1712,6 @@
                     </div>
                   </div>
 
-                  <div class="provider-detail-section">
-                    <h6>Identidad leída del documento</h6>
-                    <div class="row g-3">
-                      <div class="col-md-5">
-                        <div class="provider-detail-item">
-                          <span class="provider-detail-label">Nombres</span>
-                          <span
-                            id="provider-detail-document-first-names"
-                            class="text-muted"
-                            >—</span
-                          >
-                        </div>
-                      </div>
-                      <div class="col-md-5">
-                        <div class="provider-detail-item">
-                          <span class="provider-detail-label">Apellidos</span>
-                          <span
-                            id="provider-detail-document-last-names"
-                            class="text-muted"
-                            >—</span
-                          >
-                        </div>
-                      </div>
-                      <div class="col-md-2">
-                        <div class="provider-detail-item">
-                          <span class="provider-detail-label">Cédula</span>
-                          <span
-                            id="provider-detail-document-id-number"
-                            class="text-muted"
-                            >—</span
-                          >
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
                   <div class="provider-detail-section provider-review-form">
                     <h6 id="provider-review-section-title">
                       Revisión administrativa del onboarding
@@ -1567,30 +1754,6 @@
                         </span>
                       </label>
                     </div>
-                    <div class="mb-3">
-                      <label class="form-label" for="provider-review-notes">
-                        Notas para registro interno
-                      </label>
-                      <textarea
-                        class="form-control"
-                        id="provider-review-notes"
-                        placeholder="Legibilidad de cédula, coherencia de nombre, observaciones de identidad, motivos de rechazo o validación adicional..."
-                      ></textarea>
-                    </div>
-                    <div class="mb-3" id="provider-review-message-group">
-                      <label class="form-label" for="provider-review-message">
-                        Mensaje al proveedor (WhatsApp)
-                      </label>
-                      <textarea
-                        class="form-control"
-                        id="provider-review-message"
-                        placeholder="Ej. Tu perfil profesional fue aprobado. Ya puedes operar como proveedor en TinkuBot."
-                      ></textarea>
-                      <div class="form-text" id="provider-review-message-help">
-                        Se enviará este mensaje al proveedor junto con el
-                        resultado del onboarding básico.
-                      </div>
-                    </div>
                     <div
                       class="alert alert-warning d-none"
                       id="provider-review-error"
@@ -1628,6 +1791,120 @@
                       Guardar y notificar
                     </button>
                   </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Service Review Modal -->
+          <div
+            class="modal fade"
+            id="provider-service-review-modal"
+            tabindex="-1"
+            aria-labelledby="provider-service-review-modal-title"
+            aria-hidden="true"
+          >
+            <div class="modal-dialog modal-lg modal-dialog-centered">
+              <div class="modal-content provider-detail-modal provider-service-review-modal">
+                <div class="modal-header">
+                  <div>
+                    <h5
+                      class="modal-title"
+                      id="provider-service-review-modal-title"
+                    >
+                      Ajustar sugerencia de servicio
+                    </h5>
+                    <div
+                      class="provider-detail-subtitle provider-service-review-context"
+                      id="provider-service-review-context"
+                    ></div>
+                  </div>
+                  <button
+                    type="button"
+                    class="btn-close"
+                    data-bs-dismiss="modal"
+                    aria-label="Cerrar"
+                  ></button>
+                </div>
+                <div class="modal-body">
+                  <input type="hidden" id="provider-service-review-id" />
+                  <input type="hidden" id="provider-service-review-provider-id" />
+                  <div class="row g-3">
+                    <div class="col-md-4">
+                      <label class="form-label" for="provider-service-review-domain-code">
+                        Dominio
+                      </label>
+                      <input
+                        type="text"
+                        class="form-control"
+                        id="provider-service-review-domain-code"
+                        placeholder="Ej. tecnologia"
+                      />
+                    </div>
+                    <div class="col-md-4">
+                      <label class="form-label" for="provider-service-review-category-name">
+                        Categoría
+                      </label>
+                      <input
+                        type="text"
+                        class="form-control"
+                        id="provider-service-review-category-name"
+                        placeholder="Ej. Tecnología"
+                      />
+                    </div>
+                    <div class="col-md-4">
+                      <label class="form-label" for="provider-service-review-service-name">
+                        Servicio
+                      </label>
+                      <input
+                        type="text"
+                        class="form-control"
+                        id="provider-service-review-service-name"
+                        placeholder="Ej. Desarrollo de software"
+                      />
+                    </div>
+                  </div>
+                  <div class="mt-3">
+                    <label class="form-label" for="provider-service-review-service-summary">
+                      Resumen
+                    </label>
+                    <textarea
+                      class="form-control"
+                      id="provider-service-review-service-summary"
+                      placeholder="Resumen claro y breve del servicio"
+                    ></textarea>
+                  </div>
+                  <div class="form-check mt-3">
+                    <input
+                      class="form-check-input"
+                      type="checkbox"
+                      id="provider-service-review-create-domain"
+                    />
+                    <label
+                      class="form-check-label"
+                      for="provider-service-review-create-domain"
+                    >
+                      Crear dominio si no existe
+                    </label>
+                  </div>
+                  <div class="alert alert-warning d-none mt-3" id="provider-service-review-error" role="alert"></div>
+                  <div class="provider-review-processing mt-3" id="provider-service-review-processing">
+                    <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                    <span>Guardando sugerencia...</span>
+                  </div>
+                </div>
+                <div class="modal-footer justify-content-between">
+                  <div class="text-muted small">
+                    Ajusta solo lo necesario. La aprobación se guardará en el catálogo.
+                  </div>
+                  <button
+                    type="button"
+                    class="btn btn-primary"
+                    id="provider-service-review-save-btn"
+                  >
+                    <i class="fas fa-check me-1"></i>
+                    Guardar y aprobar
+                  </button>
                 </div>
               </div>
             </div>

@@ -3,7 +3,7 @@
 import logging
 
 import pytest
-from flows.enrutador import enrutar_estado
+from flows.enrutador import _parece_nueva_solicitud_servicio, enrutar_estado
 from flows.mensajes import solicitar_ciudad
 
 
@@ -41,6 +41,9 @@ class _OrquestadorStub:
         self.logger = logging.getLogger("test-enrutador-city-first")
 
     async def guardar_flujo(self, telefono: str, datos: dict):
+        return None
+
+    async def resetear_flujo(self, telefono: str):
         return None
 
     async def obtener_o_crear(self, telefono: str):
@@ -93,6 +96,13 @@ class _OrquestadorStub:
                 validar_necesidad_fn=self.extractor_ia.es_necesidad_o_problema,
             )
         )[1]
+
+
+@pytest.mark.asyncio
+async def test_detector_nueva_solicitud_ignora_si():
+    orquestador = _OrquestadorStub()
+
+    assert await _parece_nueva_solicitud_servicio(orquestador, "sí") is False
 
 
 @pytest.mark.asyncio
@@ -202,3 +212,84 @@ async def test_awaiting_service_texto_libre_sigue_flujo_normal():
     assert flujo["state"] == "confirm_service"
     assert flujo["descripcion_problema"] == "quiero pintar la sala de mi casa"
     assert "¿Es este el servicio que buscas:" in respuesta["response"]
+
+
+@pytest.mark.asyncio
+async def test_confirm_new_search_texto_nuevo_reinicia_busqueda():
+    orquestador = _OrquestadorStub()
+    orquestador.farewell_message = "Hasta luego"
+    orquestador.max_confirm_attempts = 3
+    flujo = {
+        "state": "confirm_new_search",
+        "city": "Cuenca",
+        "city_confirmed": True,
+    }
+
+    llamado = {"hit": False}
+
+    async def fake_procesar_awaiting_service(
+        telefono, flujo_nuevo, texto, _responder, _cliente_id
+    ):
+        llamado["hit"] = True
+        assert telefono == "+593999000666"
+        assert flujo_nuevo["state"] == "awaiting_service"
+        assert flujo_nuevo["city"] == "Cuenca"
+        assert flujo_nuevo["city_confirmed"] is True
+        assert texto == "necesito un asesor contable"
+        return {"response": "RUTA NUEVA"}
+
+    orquestador._procesar_awaiting_service = fake_procesar_awaiting_service
+
+    respuesta = await enrutar_estado(
+        orquestador,
+        telefono="+593999000666",
+        flujo=flujo,
+        texto="necesito un asesor contable",
+        seleccionado=None,
+        tipo_mensaje="text",
+        ubicacion={},
+        cliente_id="cust-6",
+    )
+
+    assert llamado["hit"] is True
+    assert respuesta["response"] == "RUTA NUEVA"
+
+
+@pytest.mark.asyncio
+async def test_confirm_service_texto_nuevo_reinicia_busqueda():
+    orquestador = _OrquestadorStub()
+    orquestador.farewell_message = "Hasta luego"
+    flujo = {
+        "state": "confirm_service",
+        "city": "Cuenca",
+        "city_confirmed": True,
+        "service_candidate": "plomero",
+    }
+
+    llamado = {"hit": False}
+
+    async def fake_procesar_awaiting_service(
+        telefono, flujo_nuevo, texto, _responder, _cliente_id
+    ):
+        llamado["hit"] = True
+        assert telefono == "+593999000777"
+        assert flujo_nuevo["state"] == "awaiting_service"
+        assert flujo_nuevo["city"] == "Cuenca"
+        assert texto == "necesito un asesor contable"
+        return {"response": "RUTA NUEVA CONFIRM"}
+
+    orquestador._procesar_awaiting_service = fake_procesar_awaiting_service
+
+    respuesta = await enrutar_estado(
+        orquestador,
+        telefono="+593999000777",
+        flujo=flujo,
+        texto="necesito un asesor contable",
+        seleccionado=None,
+        tipo_mensaje="text",
+        ubicacion={},
+        cliente_id="cust-7",
+    )
+
+    assert llamado["hit"] is True
+    assert respuesta["response"] == "RUTA NUEVA CONFIRM"

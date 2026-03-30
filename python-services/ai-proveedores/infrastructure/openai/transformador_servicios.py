@@ -1,18 +1,12 @@
 """
-Transformador de títulos profesionales a servicios usando OpenAI.
+Transformador liviano de entradas de servicios.
 
-Este módulo utiliza GPT-4o con Structured Outputs para transformar
-títulos profesionales y descripciones genéricas en servicios específicos
-y optimizados para búsquedas semánticas.
-
-Características:
-- Transforma "ingeniero de sistemas" → "desarrollo de software"
-- Transforma "plomero" → "instalación de tuberías, reparación de fugas"
-- Mantiene consistencia con JSON schema estricto
-- Funciona para cualquier tipo de proveedor de servicios
+Este módulo ya no depende de una llamada de IA para extraer servicios.
+Su trabajo es separar y limpiar el texto crudo para que el enriquecimiento
+semántico posterior se encargue de normalizar, clasificar y resumir cada
+servicio con el prompt unificado.
 """
 
-import json
 import logging
 import os
 import re
@@ -20,9 +14,10 @@ from typing import List, Optional
 
 from config.configuracion import configuracion
 from openai import AsyncOpenAI
-from services.shared import (
-    construir_prompt_sistema_transformacion_servicios,
-    construir_prompt_usuario_transformacion_servicios,
+from utils import (
+    dividir_cadena_servicios,
+    parsear_servicios_numerados_con_limite,
+    sanitizar_lista_servicios,
 )
 
 MAX_SERVICES = 10
@@ -43,10 +38,10 @@ _CONECTORES_DIVISION = re.compile(r"\s*(?:;|/|\n)\s*")
 
 class TransformadorServicios:
     """
-    Transformador de títulos profesionales a servicios optimizados.
+    Transformador de texto crudo a una lista limpia de servicios.
 
-    Usa OpenAI GPT-4o-mini con structured outputs para garantizar respuestas
-    en formato JSON consistente, optimizadas para embeddings y búsquedas.
+    La normalización semántica real se hace en el paso posterior con el
+    prompt unificado de enriquecimiento.
     """
 
     # Modelo configurable vía env para transformación (NO embeddings)
@@ -70,127 +65,55 @@ class TransformadorServicios:
         entrada_usuario: str,
         max_servicios: int = MAX_SERVICES,
     ) -> Optional[List[str]]:
-        """
-        Transforma entrada de usuario en lista de servicios optimizados.
-
-        Args:
-            entrada_usuario: Texto del usuario (ej: "ingeniero de sistemas, plomería")
-            max_servicios: Máximo de servicios a extraer.
-
-        Returns:
-            Lista de servicios optimizados, o None si falló
-
-        Ejemplo:
-            >>> entrada = "ingeniero de sistemas, ethical hacking, desarrollo apps"
-            >>> servicios = await transformador.transformar_a_servicios(entrada)
-            >>> print(servicios)
-            ["desarrollo de software", "pruebas de penetración",
-             "auditoría de seguridad", "desarrollo de aplicaciones móviles"]
-        """
+        """Devuelve una lista limpia de servicios candidatos."""
         if not entrada_usuario or not entrada_usuario.strip():
             logger.warning("⚠️ Entrada vacía, no se puede transformar")
             return None
 
         try:
-            logger.info(
-                "🔄 Transformando entrada a servicios: %s...",
-                entrada_usuario[:50],
+            logger.info("🔄 Normalizando entrada a servicios: %s...", entrada_usuario[:50])
+
+            candidatos = parsear_servicios_numerados_con_limite(
+                entrada_usuario,
+                maximos=max_servicios,
             )
-
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": construir_prompt_sistema_transformacion_servicios(
-                            configuracion.pais_operativo
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": construir_prompt_usuario_transformacion_servicios(
-                            entrada_usuario,
-                            max_servicios,
-                        ),
-                    },
-                ],
-                response_format={
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "extraccion_servicios",
-                        "strict": True,
-                        "schema": {
-                            "type": "object",
-                            "properties": {
-                                "servicios": {
-                                    "type": "array",
-                                    "items": {"type": "string"},
-                                    "description": (
-                                        "Lista de servicios específicos extraídos"
-                                    ),
-                                }
-                            },
-                            "required": ["servicios"],
-                            "additionalProperties": False,
-                        },
-                    },
-                },
-                temperature=configuracion.openai_temperature_consistente,
-                timeout=configuracion.openai_transform_timeout_seconds,
-            )
-
-            # Extraer JSON de la respuesta
-            contenido = response.choices[0].message.content
-            if not contenido:
-                logger.error("❌ Respuesta de OpenAI vacía")
-                return None
-
-            datos = json.loads(contenido)
-            servicios = datos.get("servicios", [])
-
-            if not servicios:
-                logger.warning("⚠️ No se extrajeron servicios de la respuesta")
-                return None
+            if not candidatos:
+                candidatos = dividir_cadena_servicios(entrada_usuario)
+            if not candidatos:
+                candidatos = [entrada_usuario.strip()]
 
             servicios = _normalizar_y_limitar_servicios(
-                servicios,
+                candidatos,
                 max_servicios,
                 entrada_usuario=entrada_usuario,
             )
+            servicios = sanitizar_lista_servicios(servicios)
             if not servicios:
                 logger.warning("⚠️ Servicios inválidos tras normalización")
                 return None
 
-            logger.info(
-                "✅ Transformación exitosa: %s servicios extraídos",
-                len(servicios),
-            )
+            logger.info("✅ Normalización exitosa: %s servicios detectados", len(servicios))
             for idx, servicio in enumerate(servicios, 1):
                 logger.debug(f"  {idx}. {servicio}")
 
             return servicios
 
-        except json.JSONDecodeError as e:
-            logger.error(f"❌ Error parseando JSON de OpenAI: {e}")
-            return None
         except Exception as e:
-            logger.error(f"❌ Error transformando servicios: {e}")
+            logger.error(f"❌ Error normalizando servicios: {e}")
             return None
 
 
 def _crear_prompt_sistema() -> str:
     """Compatibilidad con tests y consumidores internos."""
-    return construir_prompt_sistema_transformacion_servicios(
-        configuracion.pais_operativo
+    return (
+        "Normaliza texto de servicios en una lista breve y limpia. "
+        "No uses IA para inventar servicios nuevos."
     )
 
 
 def _crear_prompt_usuario(entrada: str, max_servicios: int) -> str:
     """Compatibilidad con tests y consumidores internos."""
-    return construir_prompt_usuario_transformacion_servicios(
-        entrada,
-        max_servicios,
-    )
+    return f"Entrada: {entrada}\nMáximo de servicios: {max_servicios}"
 
 
 def _tokenizar_texto(texto: str) -> set[str]:

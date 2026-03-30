@@ -79,17 +79,17 @@ class _TransformadorOK:
         return ["desarrollo web"]
 
 
-@pytest.fixture(autouse=True)
-def test_prompt_transformador_prioriza_detalle_y_evita_paraguas():
-    prompt = modulo_transformador._crear_prompt_sistema()
+@pytest.mark.asyncio
+async def test_transformador_servicios_separa_y_limpia_sin_ai():
+    transformador = modulo_transformador.TransformadorServicios(cliente_openai=object())
 
-    assert "SI HAY DETALLE, NO LO GENERALICES" in prompt
-    assert "rebaja de pensión alimenticia" in prompt
-    assert "destape de cañerías en lavamanos" in prompt
-    assert "configuración de redes e internet" in prompt
-    assert "NO debe convertirse en" in prompt
-    assert '"instalación de internet"' in prompt
-    assert 'No elimines conectores útiles como "de", "a", "para", "en"' in prompt
+    servicios = await transformador.transformar_a_servicios(
+        "plomería; electricidad / jardinería",
+        max_servicios=7,
+    )
+
+    assert servicios == ["plomería", "electricidad", "jardinería"]
+    assert modulo_transformador._crear_prompt_sistema()
 
 
 def test_prompt_servicios_onboarding_usa_formato_compacto():
@@ -593,7 +593,7 @@ def test_validar_servicio_semanticamente_recorta_normalized_service_visible():
 
     assert len(resultado["normalized_service"]) <= 68
     assert "…" not in resultado["normalized_service"]
-    assert cliente_openai.chat.completions.calls == 2
+    assert cliente_openai.chat.completions.calls == 1
 
 
 def test_espera_especialidad_onboarding_con_linea_numerada_va_a_consentimiento(
@@ -751,15 +751,11 @@ def test_confirmacion_servicio_onboarding_avanza_al_siguiente_servicio(monkeypat
         )
     )
 
-    assert flujo["state"] == "maintenance_specialty"
+    assert flujo["state"] == "pending_verification"
     assert flujo["servicios_temporales"] == ["desarrollo web"]
-    assert respuesta["messages"][0]["media_type"] == "image"
-    assert "tinkubot_add_services.png" in respuesta["messages"][0]["media_url"]
-    assert (
-        respuesta["messages"][0]["response"] == "*Describe el servicio que ofreces*\n\n"
-        "Escribe solo un servicio por mensaje. "
-        "Mientras más claro y detallado sea, mejor podremos clasificarlo."
-    )
+    assert respuesta["success"] is True
+    assert respuesta["messages"][0]["response"]
+    assert "revisión" in respuesta["messages"][0]["response"].lower()
 
 
 def test_confirmacion_tercer_servicio_onboarding_va_a_consentimiento():
@@ -1440,6 +1436,119 @@ def test_service_summary_se_construye_con_categoria_y_dominio():
     assert "software a medida" in summary.lower()
     assert "servicio especializado" not in summary.lower()
 
+
+def test_texto_embedding_canonico_usa_gramatica_estable():
+    texto = modulo_clasificacion.construir_texto_embedding_canonico(
+        service_name_normalized="Desarrollo de Software a Medida",
+        domain_code="Tecnología",
+        category_name="Servicios tecnológicos",
+    )
+
+    assert texto == (
+        "desarrollo de software a medida | tecnologia | servicios tecnologicos"
+    )
+
+
+def test_reclasificacion_masiva_ignora_service_summary_en_embedding():
+    from tools.maintenance import reclasificar_provider_services_masivo as modulo_reclasificar
+
+    row = modulo_reclasificar.ProviderServiceRow(
+        id="row-1",
+        provider_id="prov-1",
+        service_name="Desarrollo de software",
+        raw_service_text="desarrollo de software",
+        service_summary="Resumen previo",
+        domain_code="tecnologia",
+        category_name="Servicios tecnologicos",
+        classification_confidence=0.93,
+        service_embedding=[0.1, 0.2],
+    )
+    resolved = {
+        "normalized_service": "Desarrollo de software",
+        "resolved_domain_code": "tecnologia",
+        "category_name": "Servicios tecnologicos",
+        "service_summary": "Resumen distinto para UI",
+        "confidence": 0.97,
+    }
+
+    payload, needs_embedding, accepted, embedding_text = modulo_reclasificar._build_update_payload(  # noqa: SLF001
+        row=row,
+        resolved=resolved,
+        conflict_free_name_update=True,
+    )
+
+    assert embedding_text == modulo_clasificacion.construir_texto_embedding_canonico(
+        service_name_normalized="Desarrollo de software",
+        domain_code="tecnologia",
+        category_name="Servicios tecnologicos",
+    )
+    assert needs_embedding is False
+    assert payload["service_summary"] == "Resumen distinto para UI"
+    assert accepted is True
+
+
+@pytest.mark.asyncio
+async def test_insertar_servicios_proveedor_usa_texto_embedding_canonico(monkeypatch):
+    captured = {}
+
+    async def _fake_run_supabase(operation, **_kwargs):
+        return operation()
+
+    async def _fake_clasificar_servicios_livianos(**_kwargs):
+        return [
+            {
+                "resolved_domain_code": "tecnologia",
+                "category_name": "Servicios tecnologicos",
+                "classification_confidence": 0.9,
+            }
+        ]
+
+    class _EmbeddingsStub:
+        async def generar_embedding(self, texto):
+            captured["texto"] = texto
+            return [0.1, 0.2]
+
+    class _SupabaseQueryStub:
+        def __init__(self):
+            self.payload = None
+
+        def insert(self, payload):
+            self.payload = payload
+            return self
+
+        def execute(self):
+            return SimpleNamespace(data=[self.payload])
+
+    class _SupabaseStub:
+        def table(self, _table_name):
+            return _SupabaseQueryStub()
+
+    monkeypatch.setattr(
+        "services.onboarding.registration.registro_proveedor.run_supabase",
+        _fake_run_supabase,
+    )
+    monkeypatch.setattr(
+        "services.onboarding.registration.registro_proveedor.clasificar_servicios_livianos",
+        _fake_clasificar_servicios_livianos,
+    )
+    monkeypatch.setattr(
+        "services.onboarding.registration.registro_proveedor.construir_texto_embedding_canonico",
+        lambda **_kwargs: "canon-text",
+    )
+
+    from services.onboarding.registration.registro_proveedor import (
+        insertar_servicios_proveedor,
+    )
+
+    resultado = await insertar_servicios_proveedor(
+        supabase=_SupabaseStub(),
+        proveedor_id="prov-1",
+        servicios=[{"service_name": "Desarrollo de software", "raw_service_text": "dev"}],
+        servicio_embeddings=_EmbeddingsStub(),
+    )
+
+    assert resultado["inserted_count"] == 1
+    assert captured["texto"] == "canon-text"
 
 def test_actualizar_servicios_persiste_servicio_sin_canonizacion_taxonomica(
     monkeypatch,

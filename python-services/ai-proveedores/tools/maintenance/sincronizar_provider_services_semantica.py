@@ -20,6 +20,7 @@ if str(ROOT) not in sys.path:
 from infrastructure.embeddings.servicio_embeddings import ServicioEmbeddings  # noqa: E402
 from services.maintenance.clasificacion_semantica import (  # noqa: E402
     construir_service_summary,
+    construir_texto_embedding_canonico,
     normalizar_domain_code_operativo,
 )
 from utils import normalizar_texto_para_busqueda  # noqa: E402
@@ -177,7 +178,11 @@ async def main() -> None:
             )
         )
 
-        embedding_text = f"{approved_name}. {service_summary}".strip()
+        embedding_text = construir_texto_embedding_canonico(
+            service_name_normalized=normalizar_texto_para_busqueda(approved_name),
+            domain_code=domain_code,
+            category_name=category_name,
+        )
         embedding = await embeddings.generar_embedding(embedding_text)
         payload = {
             "service_name": approved_name,

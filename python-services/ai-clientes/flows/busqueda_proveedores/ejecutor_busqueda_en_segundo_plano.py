@@ -70,6 +70,10 @@ async def ejecutar_busqueda_y_notificar_en_segundo_plano(
         servicio = (flujo.get("service") or "").strip()
         ciudad = (flujo.get("city") or "").strip()
         servicio_completo = flujo.get("service_full") or servicio
+        dominio = (flujo.get("service_domain") or "").strip()
+        dominio_code = (flujo.get("service_domain_code") or "").strip()
+        categoria = (flujo.get("service_category") or "").strip()
+        categoria_name = (flujo.get("service_category_name") or "").strip()
 
         logger.info(
             f"🚀 ejecutar_busqueda_y_notificar_en_segundo_plano INICIADO: phone={telefono}, service='{servicio}', city='{ciudad}'"
@@ -98,6 +102,10 @@ async def ejecutar_busqueda_y_notificar_en_segundo_plano(
             ciudad,
             radio_km=10.0,
             descripcion_problema=descripcion_problema,
+            domain=dominio or None,
+            domain_code=dominio_code or None,
+            category=categoria or None,
+            category_name=categoria_name or None,
         )
         proveedores = resultado_busqueda.get("providers") or []
 

@@ -46,6 +46,9 @@ class ProviderInfo(BaseModel):
     experience_range: Optional[str] = None
     created_at: datetime
     similarity_score: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    semantic_alignment_score: Optional[float] = Field(
+        default=None, ge=0.0, le=1.0
+    )
     matched_service_name: Optional[str] = None
     matched_service_summary: Optional[str] = None
     domain_code: Optional[str] = None

@@ -29,6 +29,8 @@ Frontend note:
 - `pending_verification` is still a live backend checkpoint in `ai-proveedores`.
 - It is no longer part of the public frontend `ProviderStatus` contract.
 - The frontend now classifies "Nuevos" from `onboarding_step = pending_verification`.
+- When a provider is approved, the operational checkpoint should advance to `awaiting_menu_option`.
+- In `Operativos`, the visible name should come from `document_first_names + document_last_names`; `full_name` is only a legacy fallback until those rows are backfilled.
 
 ## Onboarding States
 These belong to the initial provider journey and should stay in the onboarding context:

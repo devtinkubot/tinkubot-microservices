@@ -63,6 +63,10 @@ class ClienteBusqueda:
         ciudad: Optional[str] = None,
         descripcion_problema: Optional[str] = None,
         service_candidate: Optional[str] = None,
+        domain: Optional[str] = None,
+        category: Optional[str] = None,
+        domain_code: Optional[str] = None,
+        category_name: Optional[str] = None,
         limite: int = 10,
     ) -> Dict[str, Any]:
         """
@@ -108,6 +112,15 @@ class ClienteBusqueda:
                 context_payload["problem_description"] = descripcion_problema
             if service_candidate:
                 context_payload["service_candidate"] = service_candidate
+                context_payload["normalized_service"] = service_candidate
+            if domain:
+                context_payload["domain"] = domain
+            if category:
+                context_payload["category"] = category
+            if domain_code:
+                context_payload["domain_code"] = domain_code
+            if category_name:
+                context_payload["category_name"] = category_name
             if context_payload:
                 context_payload["language_hint"] = "es"
                 carga["context"] = context_payload
@@ -198,6 +211,9 @@ class ClienteBusqueda:
                 "experience_range": proveedor.get("experience_range"),
                 "created_at": proveedor.get("created_at"),
                 "similarity_score": proveedor.get("similarity_score"),
+                "semantic_alignment_score": proveedor.get(
+                    "semantic_alignment_score"
+                ),
                 "matched_service_name": proveedor.get("matched_service_name"),
                 "matched_service_summary": proveedor.get("matched_service_summary"),
                 "domain_code": proveedor.get("domain_code"),

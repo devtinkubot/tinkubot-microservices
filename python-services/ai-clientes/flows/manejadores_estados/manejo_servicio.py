@@ -87,7 +87,10 @@ def _es_solicitud_generica_ocupacion(
     tokens = _tokens_relevantes(texto)
     if any(token in _VERBOS_ACCION_USUARIO for token in tokens):
         return False
-    return 0 < len(tokens) <= 2
+    # Solo bloqueamos ocupaciones de una sola palabra.
+    # Frases de 2+ palabras como "asesor contable" ya deben avanzar
+    # porque el prompt/IA puede convertirlas en una necesidad accionable.
+    return len(tokens) == 1
 
 
 def _es_respuesta_seguimiento_concreta(
@@ -156,12 +159,80 @@ def _hint_usuario_legible(
     return hint
 
 
+def _normalizar_codigo_taxonomia(texto: Optional[str]) -> Optional[str]:
+    valor = _normalizar_texto(texto or "")
+    if not valor:
+        return None
+    return re.sub(r"\s+", "_", valor).strip("_") or None
+
+
+def _extraer_perfil_servicio(
+    valor: Any,
+) -> Dict[str, Optional[str]]:
+    if isinstance(valor, dict):
+        normalized_service = str(
+            valor.get("normalized_service")
+            or valor.get("service")
+            or valor.get("service_name")
+            or ""
+        ).strip()
+        domain = str(valor.get("domain") or "").strip() or None
+        category = str(valor.get("category") or "").strip() or None
+        domain_code = str(valor.get("domain_code") or "").strip() or None
+        category_name = str(valor.get("category_name") or "").strip() or None
+
+        if domain and not domain_code:
+            domain_code = _normalizar_codigo_taxonomia(domain)
+        if category and not category_name:
+            category_name = _normalizar_texto(category) or category
+
+        return {
+            "normalized_service": normalized_service or None,
+            "domain": domain,
+            "category": category,
+            "domain_code": domain_code,
+            "category_name": category_name,
+        }
+
+    servicio = str(valor or "").strip()
+    return {
+        "normalized_service": servicio or None,
+        "domain": None,
+        "category": None,
+        "domain_code": None,
+        "category_name": None,
+    }
+
+
+def _construir_contexto_busqueda_enriquecido(
+    *,
+    texto: str,
+    servicio: Optional[str],
+    domain: Optional[str],
+    category: Optional[str],
+    hint: Optional[str] = None,
+) -> str:
+    partes = []
+    if ref := (hint or "").strip():
+        partes.append(f"Servicio de referencia: {ref}")
+    if service := (servicio or "").strip():
+        partes.append(f"Servicio normalizado: {service}")
+    if dom := (domain or "").strip():
+        partes.append(f"Dominio: {dom}")
+    if cat := (category or "").strip():
+        partes.append(f"Categoría: {cat}")
+    detalle = (texto or "").strip()
+    if detalle:
+        partes.append(f"Necesidad del usuario: {detalle}")
+    return ". ".join(partes) if partes else detalle
+
+
 async def procesar_estado_esperando_servicio(
     flujo: Dict[str, Any],
     texto: Optional[str],
     saludos: set[str],
     prompt_inicial: str,
-    extraer_fn: Callable[[str], Awaitable[Optional[str]]],
+    extraer_fn: Callable[[str], Awaitable[Optional[Any]]],
     validar_necesidad_fn: Optional[Callable[[str], Awaitable[bool]]] = None,
     detectar_dominio_generico_fn: Optional[
         Callable[[Optional[str]], Awaitable[Optional[str]]]
@@ -238,7 +309,12 @@ async def procesar_estado_esperando_servicio(
         logger.warning(f"⚠️ Error en extraer_fn: {exc}")
         profesion = None
 
-    valor_servicio = (profesion or "").strip()
+    perfil_servicio = _extraer_perfil_servicio(profesion)
+    valor_servicio = (perfil_servicio.get("normalized_service") or "").strip()
+    dominio_servicio = (perfil_servicio.get("domain") or "").strip()
+    categoria_servicio = (perfil_servicio.get("category") or "").strip()
+    dominio_code_servicio = (perfil_servicio.get("domain_code") or "").strip()
+    categoria_name_servicio = (perfil_servicio.get("category_name") or "").strip()
     dominio_generico = None
     dominio_generico_origen = None
     if detectar_dominio_generico_fn:
@@ -261,6 +337,14 @@ async def procesar_estado_esperando_servicio(
         flujo["state"] = "awaiting_service"
         flujo["service_candidate_hint"] = hint
         flujo["service_candidate_hint_label"] = hint_usuario
+        if dominio_servicio:
+            flujo["service_domain"] = dominio_servicio
+        if categoria_servicio:
+            flujo["service_category"] = categoria_servicio
+        if dominio_code_servicio:
+            flujo["service_domain_code"] = dominio_code_servicio
+        if categoria_name_servicio:
+            flujo["service_category_name"] = categoria_name_servicio
         flujo.pop("service_candidate", None)
         flujo.pop("service", None)
         flujo.pop("descripcion_problema", None)
@@ -298,6 +382,14 @@ async def procesar_estado_esperando_servicio(
         flujo["state"] = "awaiting_service"
         flujo["service_candidate_hint"] = valor_servicio
         flujo["service_candidate_hint_label"] = valor_servicio
+        if dominio_servicio:
+            flujo["service_domain"] = dominio_servicio
+        if categoria_servicio:
+            flujo["service_category"] = categoria_servicio
+        if dominio_code_servicio:
+            flujo["service_domain_code"] = dominio_code_servicio
+        if categoria_name_servicio:
+            flujo["service_category_name"] = categoria_name_servicio
         flujo.pop("service_candidate", None)
         flujo.pop("service", None)
         flujo.pop("descripcion_problema", None)
@@ -350,12 +442,22 @@ async def procesar_estado_esperando_servicio(
             valor_servicio,
         )
 
-    contexto_busqueda = _construir_contexto_con_hint(texto or limpio, servicio_hint_existente)
+    contexto_busqueda = _construir_contexto_busqueda_enriquecido(
+        texto=texto or limpio,
+        servicio=valor_servicio,
+        domain=dominio_servicio,
+        category=categoria_servicio,
+        hint=servicio_hint_existente or None,
+    )
     flujo.update(
         {
             "service_candidate": valor_servicio,
             "service_full": contexto_busqueda,
-            "descripcion_problema": contexto_busqueda,
+            "descripcion_problema": texto or limpio,
+            "service_domain": dominio_servicio or None,
+            "service_domain_code": dominio_code_servicio or None,
+            "service_category": categoria_servicio or None,
+            "service_category_name": categoria_name_servicio or None,
             "state": "confirm_service",
         }
     )

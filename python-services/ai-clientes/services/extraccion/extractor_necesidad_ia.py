@@ -1,10 +1,11 @@
 """Extractor de necesidad y ciudad usando IA."""
 
 import asyncio
+import json
 import logging
 import re
 import unicodedata
-from typing import Optional
+from typing import Any, Optional
 
 from config.configuracion import configuracion
 from openai import AsyncOpenAI
@@ -150,7 +151,10 @@ class ExtractorNecesidadIA:
     @classmethod
     def _extraer_hint_ocupacion_generica(cls, texto: str) -> Optional[str]:
         tokens = cls._tokens_relevantes(texto)
-        if not tokens or len(tokens) > 2:
+        # Solo tratamos como ocupación genérica las solicitudes de una sola palabra.
+        # Frases de dos o más palabras como "asesor contable" deben avanzar
+        # para que el extractor las normalice y el flujo llegue a búsqueda.
+        if len(tokens) != 1:
             return None
         return " ".join(tokens)
 
@@ -169,6 +173,115 @@ class ExtractorNecesidadIA:
         if tokens & cls.VERBOS_RESTAURACION_MUEBLES:
             return "restauración de muebles"
         return None
+
+    @classmethod
+    def _normalizar_codigo_taxonomia(cls, texto: Optional[str]) -> Optional[str]:
+        valor = cls._normalizar_texto_local(texto or "")
+        if not valor:
+            return None
+        return re.sub(r"\s+", "_", valor).strip("_") or None
+
+    @classmethod
+    def _normalizar_categoria_taxonomia(cls, texto: Optional[str]) -> Optional[str]:
+        valor = cls._normalizar_texto_local(texto or "")
+        return valor or None
+
+    @staticmethod
+    def _extraer_json_parseable(contenido: str) -> Optional[Any]:
+        texto = (contenido or "").strip()
+        if not texto:
+            return None
+
+        if texto.startswith("```"):
+            texto = re.sub(r"^```(?:json)?", "", texto, flags=re.IGNORECASE).strip()
+            texto = re.sub(r"```$", "", texto).strip()
+
+        candidatos = [texto]
+        inicio_objeto = texto.find("{")
+        fin_objeto = texto.rfind("}")
+        if inicio_objeto != -1 and fin_objeto > inicio_objeto:
+            candidatos.append(texto[inicio_objeto : fin_objeto + 1])
+
+        for candidato in candidatos:
+            try:
+                return json.loads(candidato)
+            except json.JSONDecodeError:
+                continue
+        return None
+
+    @classmethod
+    def _normalizar_respuesta_busqueda_cliente(
+        cls, data: Any
+    ) -> Optional[dict[str, Optional[str]]]:
+        if not isinstance(data, dict):
+            return None
+
+        normalized_service = (
+            str(
+                data.get("normalized_service")
+                or data.get("service")
+                or data.get("service_name")
+                or ""
+            )
+            .strip()
+        )
+        domain = (
+            str(data.get("domain") or data.get("domain_code") or "").strip()
+        )
+        category = (
+            str(data.get("category") or data.get("category_name") or "").strip()
+        )
+
+        if not normalized_service:
+            return None
+
+        return {
+            "normalized_service": normalized_service,
+            "domain": domain or None,
+            "category": category or None,
+            "domain_code": cls._normalizar_codigo_taxonomia(domain),
+            "category_name": cls._normalizar_categoria_taxonomia(category),
+        }
+
+    @classmethod
+    def _construir_prompt_sistema_busqueda_cliente(cls) -> str:
+        return (
+            "Eres un experto en entender necesidades de clientes en Ecuador "
+            "y traducirlas a perfiles de búsqueda semántica.\n\n"
+            "MARCO DE REFERENCIA (Lógica UNSPSC): "
+            "Usa la jerarquía mental del estándar UNSPSC para deducir el dominio "
+            "y la categoría de la necesidad del usuario, pero NUNCA uses códigos, "
+            "solo texto.\n\n"
+            "TU TAREA:\n"
+            "Extraer exactamente 3 campos de la necesidad del cliente:\n"
+            "- normalized_service: La necesidad específica convertida a acción. "
+            "En minúsculas, español neutro, de 4 a 10 palabras. "
+            "Mantén términos técnicos si el usuario los usó (ej: pliegos, licitación).\n"
+            "- domain: Área amplia (ej: 'tecnología', 'servicios legales').\n"
+            "- category: Área específica (ej: 'gestión de proyectos de ti', "
+            "'derecho penal').\n\n"
+            "REGLAS CRÍTICAS:\n"
+            "1. ANTI-PROFESIÓN: Si el usuario pide un oficio genérico "
+            "(ej: 'necesito un abogado' o 'busco carpintero'), "
+            "NO pongas el oficio en normalized_service. Pon la acción "
+            "('asesoría legal', 'carpintería de madera').\n"
+            "2. ESPECIFICIDAD: Prioriza lo más específico sobre lo general.\n"
+            "3. MULTIPLES NECESIDADES: Si el usuario pide varias cosas distintas "
+            "no relacionadas, elige la que tenga más peso o detalle en su frase.\n"
+            "4. No uses términos en inglés.\n\n"
+            "Responde SOLO con este JSON:\n"
+            "{"
+            '"normalized_service":"...",'
+            '"domain":"...",'
+            '"category":"..."'
+            "}"
+        )
+
+    @staticmethod
+    def _construir_prompt_usuario_busqueda_cliente(texto_cliente: str) -> str:
+        return (
+            f'Convierte esta necesidad de usuario en un perfil de búsqueda: "{texto_cliente}"'
+        )
 
     async def _normalizar_servicio_a_espanol(
         self, servicio_detectado: str
@@ -220,8 +333,10 @@ Responde SOLO con el nombre del servicio."""
             self.logger.warning(f"⚠️ Error normalizando servicio a español: {exc}")
             return servicio_detectado
 
-    async def extraer_servicio_con_ia(self, mensaje_usuario: str) -> Optional[str]:
-        """Extrae el servicio requerido por el cliente usando IA."""
+    async def extraer_servicio_con_ia(
+        self, mensaje_usuario: str
+    ) -> Optional[dict[str, Optional[str]]]:
+        """Extrae el perfil de búsqueda requerido por el cliente usando IA."""
         hint_ocupacion = self._extraer_hint_ocupacion_generica(mensaje_usuario)
         if hint_ocupacion:
             self.logger.info(
@@ -229,7 +344,13 @@ Responde SOLO con el nombre del servicio."""
                 normalizar_texto_para_coincidencia(mensaje_usuario)[:120],
                 hint_ocupacion,
             )
-            return hint_ocupacion
+            return {
+                "normalized_service": hint_ocupacion,
+                "domain": None,
+                "category": None,
+                "domain_code": None,
+                "category_name": None,
+            }
 
         servicio_local = self._resolver_servicio_por_reglas_locales(mensaje_usuario)
         if servicio_local:
@@ -238,7 +359,13 @@ Responde SOLO con el nombre del servicio."""
                 normalizar_texto_para_coincidencia(mensaje_usuario)[:120],
                 servicio_local,
             )
-            return servicio_local
+            return {
+                "normalized_service": servicio_local,
+                "domain": None,
+                "category": None,
+                "domain_code": None,
+                "category_name": None,
+            }
 
         if not self.cliente_openai:
             self.logger.warning("⚠️ extraer_servicio_con_ia: sin cliente OpenAI")
@@ -247,27 +374,9 @@ Responde SOLO con el nombre del servicio."""
         if not mensaje_usuario or not mensaje_usuario.strip():
             return None
 
-        prompt_sistema = """Eres un experto en servicios profesionales en Ecuador.
-Tu tarea es identificar el servicio MÁS ESPECÍFICO y accionable que necesita el usuario.
-
-REGLAS CRÍTICAS:
-1. Devuelve SIEMPRE el nombre del servicio en minúsculas y en español.
-2. Prioriza subservicios concretos
-   (ej: "elaboración de pliegos de contratación pública")
-   sobre categorías amplias (ej: "asesoría legal").
-3. Solo usa categoría general si el usuario fue ambiguo y no dio detalle suficiente.
-4. Conserva términos de dominio relevantes del usuario
-   (pliegos, licitación, contratación pública, etc.).
-5. No uses términos en inglés cuando exista equivalente claro en español.
-6. Responde con una frase corta de 4 a 10 palabras.
-7. Si el usuario solo menciona una ocupación genérica
-   (ej: "carpintero", "abogado", "plomero"), devuelve esa ocupación tal cual,
-   no inventes especialidades ni categorías más sofisticadas.
-
-Responde SOLO con el nombre del servicio, sin explicaciones."""
-
-        prompt_usuario = (
-            f'¿Qué servicio necesita este usuario: "{mensaje_usuario[:200]}"'
+        prompt_sistema = self._construir_prompt_sistema_busqueda_cliente()
+        prompt_usuario = self._construir_prompt_usuario_busqueda_cliente(
+            mensaje_usuario[:250]
         )
 
         try:
@@ -279,8 +388,9 @@ Responde SOLO con el nombre del servicio, sin explicaciones."""
                             {"role": "system", "content": prompt_sistema},
                             {"role": "user", "content": prompt_usuario},
                         ],
-                        temperature=0.1,
-                        max_tokens=30,
+                        response_format={"type": "json_object"},
+                        temperature=0.0,
+                        max_tokens=120,
                     ),
                     timeout=self.tiempo_espera_openai,
                 )
@@ -288,17 +398,24 @@ Responde SOLO con el nombre del servicio, sin explicaciones."""
             if not respuesta.choices:
                 return None
 
-            servicio = (respuesta.choices[0].message.content or "").strip()
-            servicio = servicio.strip('"').strip("'").strip()
-
-            servicio = await self._normalizar_servicio_a_espanol(servicio)
+            contenido = (respuesta.choices[0].message.content or "").strip()
+            payload = self._extraer_json_parseable(contenido)
+            perfil = self._normalizar_respuesta_busqueda_cliente(payload)
+            if not perfil:
+                self.logger.warning(
+                    "⚠️ Respuesta de IA de búsqueda inválida: %s",
+                    contenido[:200],
+                )
+                return None
 
             self.logger.info(
-                "✅ IA detectó servicio: '%s' de: '%s...'",
-                servicio,
+                "✅ IA detectó perfil: service='%s', domain='%s', category='%s' de: '%s...'",
+                perfil["normalized_service"],
+                perfil.get("domain"),
+                perfil.get("category"),
                 mensaje_usuario[:50],
             )
-            return servicio if servicio else None
+            return perfil
 
         except asyncio.TimeoutError:
             self.logger.warning("⚠️ Timeout extrayendo servicio con IA")
@@ -310,7 +427,7 @@ Responde SOLO con el nombre del servicio, sin explicaciones."""
     async def extraer_servicio_con_ia_pura(
         self,
         mensaje_usuario: str,
-    ) -> Optional[str]:
+    ) -> Optional[dict[str, Optional[str]]]:
         """Alias de compatibilidad para extraer servicio con IA."""
         return await self.extraer_servicio_con_ia(mensaje_usuario)
 
@@ -332,6 +449,24 @@ Responde SOLO con el nombre del servicio, sin explicaciones."""
             )
             return False
 
+        tokens = self._tokens_relevantes(texto)
+        if tokens:
+            verbos_solicitud = {
+                "necesito",
+                "necesita",
+                "necesitan",
+                "busco",
+                "quiero",
+                "requiero",
+                "requiere",
+                "requerimos",
+                "solicito",
+                "contratar",
+                "contrato",
+            }
+            if tokens[0] in verbos_solicitud and len(tokens) >= 2:
+                return True
+
         if not self.cliente_openai:
             return True
 
@@ -342,6 +477,10 @@ Responde SOLO "si" o "no".
 
 Responde "si" cuando:
 - Explica qué pasó, qué necesita resolver o qué quiere lograr.
+- También responde "si" cuando el usuario pide contratar o encontrar
+  un servicio de forma explícita, por ejemplo:
+  "necesito un asesor contable", "requiere un administrador de proyectos",
+  "busco un abogado".
 - Ejemplos: "mi lavadora no enciende", "necesito arreglar una tubería rota".
 
 Responde "no" cuando:

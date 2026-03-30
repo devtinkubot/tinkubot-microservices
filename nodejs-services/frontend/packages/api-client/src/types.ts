@@ -26,6 +26,29 @@ export interface ProviderServiceAudit {
   requiresReview?: boolean | null;
 }
 
+export interface ProviderServiceReview {
+  id: string;
+  providerId?: string | null;
+  rawServiceText?: string | null;
+  serviceName?: string | null;
+  serviceNameNormalized?: string | null;
+  suggestedDomainCode?: string | null;
+  proposedCategoryName?: string | null;
+  proposedServiceSummary?: string | null;
+  reviewReason?: string | null;
+  reviewStatus?: string | null;
+  assignedDomainCode?: string | null;
+  assignedCategoryName?: string | null;
+  assignedServiceName?: string | null;
+  assignedServiceSummary?: string | null;
+  reviewedBy?: string | null;
+  reviewedAt?: string | null;
+  reviewNotes?: string | null;
+  publishedProviderServiceId?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
 export interface ProviderRecord {
   id: string;
   name: string;
@@ -47,11 +70,13 @@ export interface ProviderRecord {
   servicesRaw?: string | null;
   servicesList?: string[];
   servicesAudit?: ProviderServiceAudit[];
+  serviceReviews?: ProviderServiceReview[];
   experienceRange?: string | null;
   socialMediaUrl?: string | null;
   socialMediaType?: string | null;
   displayName?: string | null;
   formattedName?: string | null;
+  fullName?: string | null;
   firstName?: string | null;
   lastName?: string | null;
   onboardingStep?: string | null;
@@ -84,6 +109,26 @@ export interface ProviderActionResponse {
   providerId: string;
   status: ProviderStatus;
   updatedAt?: string;
+  message?: string;
+}
+
+export interface ProviderServiceReviewActionPayload {
+  domain_code: string;
+  category_name: string;
+  service_name: string;
+  service_summary?: string;
+  reviewer?: string;
+  notes?: string;
+  create_domain_if_missing?: boolean;
+}
+
+export interface ProviderServiceReviewActionResponse {
+  reviewId: string;
+  providerId?: string;
+  reviewStatus?: string;
+  publishedProviderServiceId?: string;
+  domainCode?: string;
+  createdDomain?: boolean;
   message?: string;
 }
 

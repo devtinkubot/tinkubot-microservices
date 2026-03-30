@@ -103,8 +103,9 @@ def mensaje_servicio_duplicado_registro(servicio: str) -> str:
 
 
 def mensaje_maximo_servicios_registro(maximo: int) -> str:
+    etiqueta_servicio = "servicio" if maximo == 1 else "servicios"
     return (
-        f"Ya completaste tus {maximo} servicios principales para esta revisión. "
+        f"Ya completaste tus {maximo} {etiqueta_servicio} principales para esta revisión. "
         "Revisemos la lista final."
     )
 
@@ -114,8 +115,9 @@ def mensaje_debes_registrar_al_menos_un_servicio() -> str:
 
 
 def mensaje_debes_registrar_mas_servicios(minimo: int) -> str:
+    etiqueta_servicio = "servicio" if minimo == 1 else "servicios"
     return (
-        f"Necesitas registrar al menos *{minimo} servicios* "
+        f"Necesitas registrar al menos *{minimo} {etiqueta_servicio}* "
         "para completar tu perfil profesional."
     )
 

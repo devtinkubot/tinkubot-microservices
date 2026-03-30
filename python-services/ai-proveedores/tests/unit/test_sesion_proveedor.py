@@ -14,6 +14,9 @@ from services.onboarding.progress import (  # noqa: E402
     es_perfil_onboarding_completo,
     inferir_checkpoint_onboarding_desde_perfil,
 )
+from services.maintenance.estado_operativo import (  # noqa: E402
+    perfil_profesional_completo,
+)
 from services.onboarding.registration.normalizacion import (  # noqa: E402
     garantizar_campos_obligatorios_proveedor,
 )
@@ -472,7 +475,26 @@ def test_sincronizar_flujo_perfil_pending_review_marca_aprobado_basico():
     sincronizar_flujo_con_perfil(flujo, perfil)
 
     assert flujo["approved_basic"] is True
-    assert flujo["profile_pending_review"] is False
+
+
+def test_perfil_profesional_completo_con_un_servicio_es_suficiente():
+    assert (
+        perfil_profesional_completo(
+            experience_range="3 a 5 años",
+            servicios=["Plomeria"],
+        )
+        is True
+    )
+
+
+def test_perfil_profesional_completo_sin_servicios_no_es_completo():
+    assert (
+        perfil_profesional_completo(
+            experience_range="3 a 5 años",
+            servicios=[],
+        )
+        is False
+    )
 
 
 def test_garantizar_campos_obligatorios_preserva_status_existente():

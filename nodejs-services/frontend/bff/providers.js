@@ -1,4 +1,8 @@
 const axios = require("axios");
+const {
+  construirMensajeAprobacionProveedor,
+  construirMensajeRechazoProveedor,
+} = require("./provider_messaging");
 
 const toPositiveInt = (value) => {
   const parsed = Number(value);
@@ -198,29 +202,16 @@ const formatearTelefonoVisible = (valor) => {
 const resolverNombreVisibleProveedor = (registro) => {
   const displayName = limpiarTexto(registro?.display_name);
   const formattedName = limpiarTexto(registro?.formatted_name);
-  const firstName = limpiarTexto(registro?.first_name);
-  const lastName = limpiarTexto(registro?.last_name);
-  const nombreCompuesto = [firstName, lastName]
+  const nombreDocumento = [
+    limpiarTexto(registro?.document_first_names),
+    limpiarTexto(registro?.document_last_names),
+  ]
     .filter(Boolean)
     .join(" ")
     .trim();
-  const telefonoVisible = formatearTelefonoVisible(
-    registro?.contact_phone || registro?.phone || registro?.real_phone,
-  );
-  const nombreVisible = formatearTelefonoVisible(registro?.name);
 
   return (
-    formattedName ||
-    nombreCompuesto ||
-    displayName ||
-    telefonoVisible ||
-    nombreVisible ||
-    limpiarTexto(registro?.full_name) ||
-    limpiarTexto(registro?.contact_name) ||
-    limpiarTexto(registro?.contact_phone) ||
-    limpiarTexto(registro?.phone) ||
-    limpiarTexto(registro?.real_phone) ||
-    "Proveedor sin nombre"
+    nombreDocumento || formattedName || displayName || "Proveedor sin nombre"
   );
 };
 
@@ -258,7 +249,7 @@ const obtenerFechaNormalizada = (valor) => {
   return Number.isNaN(fecha.getTime()) ? null : fecha;
 };
 
-const MINIMO_SERVICIOS_OPERATIVOS = 3;
+const MINIMO_SERVICIOS_OPERATIVOS = 1;
 const tienePerfilProfesionalCompleto = (proveedor) => {
   if (!proveedor) return false;
   const serviciosValidos = Array.isArray(proveedor.servicesList)
@@ -271,6 +262,30 @@ const tienePerfilProfesionalCompleto = (proveedor) => {
     proveedor.experienceRange.trim().length > 0;
   return experiencia && serviciosValidos.length >= MINIMO_SERVICIOS_OPERATIVOS;
 };
+
+const tieneNombreLegibleProveedor = (proveedor) => {
+  if (!proveedor) return false;
+  const nombreCompuesto = [proveedor.firstName, proveedor.lastName]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  return Boolean(
+    proveedor.displayName?.trim() ||
+    proveedor.formattedName?.trim() ||
+    nombreCompuesto,
+  );
+};
+
+const esProveedorOperativo = (proveedor) =>
+  Boolean(
+    proveedor &&
+    proveedor.status === "approved" &&
+    tienePerfilProfesionalCompleto(proveedor) &&
+    tieneNombreLegibleProveedor(proveedor) &&
+    typeof proveedor.city === "string" &&
+    proveedor.city.trim().length > 0 &&
+    proveedor.hasConsent === true,
+  );
 
 const esProveedorPerfilProfesionalPendiente = (proveedor) =>
   Boolean(
@@ -317,34 +332,6 @@ const extraerUrlDocumento = (valor) => {
   return recopilar(valor) || recopilar(valor.data);
 };
 
-const construirMensajeAprobacion = (nombre) => {
-  const safeName = limpiarTexto(nombre);
-  const primerNombre = safeName.split(/\s+/)[0] || "";
-
-  return {
-    message: [
-      `¡Hola ${primerNombre || "proveedor"}, ya puedes trabajar!`,
-      "",
-      "Tu información fue aprobada y ya puedes recibir solicitudes de clientes.",
-      "",
-      "Si después quieres completar más detalles de tu perfil, podrás hacerlo desde el menú.",
-    ].join("\n"),
-    ui: {
-      type: "buttons",
-      id: "provider_basic_approval_v2",
-      header_type: "text",
-      header_text: "✅ Aprobado",
-      footer_text: "Empezar a recibir solicitudes →",
-      options: [
-        {
-          id: "provider_menu_info_profesional",
-          title: "Ir al menú",
-        },
-      ],
-    },
-  };
-};
-
 const construirMenuProveedorAprobado = () => ({
   message: "*TinkuBot Proveedores*\n\nElige la opción de interés.",
   ui: {
@@ -376,21 +363,6 @@ const construirMenuProveedorAprobado = () => ({
     ],
   },
 });
-
-const construirMensajeRechazo = (nombre, motivo) => {
-  const safeName = limpiarTexto(nombre);
-  const safeReason = limpiarTexto(motivo);
-  if (safeName && safeReason) {
-    return `❌ Hola ${safeName}, no pudimos aprobar tu registro básico. Motivo: ${safeReason}. Revisa tus datos y documentos y vuelve a intentarlo.`;
-  }
-  if (safeName) {
-    return `❌ Hola ${safeName}, no pudimos aprobar tu registro básico con la información enviada. Revisa tus datos y documentos y vuelve a intentarlo.`;
-  }
-  if (safeReason) {
-    return `❌ No pudimos aprobar tu registro básico. Motivo: ${safeReason}. Revisa tus datos y documentos y vuelve a intentarlo.`;
-  }
-  return "❌ No pudimos aprobar tu registro básico con la información enviada. Revisa tus datos y documentos y vuelve a intentarlo.";
-};
 
 /**
  * Formatea teléfono para WhatsApp basándose en el patrón:
@@ -521,25 +493,10 @@ const normalizarEstadoProveedor = (registro) => {
 const normalizarProveedorSupabase = (registro) => {
   const displayName = resolverNombreVisibleProveedor(registro);
   const formattedName = limpiarTexto(registro?.formatted_name) || null;
-  const firstName = limpiarTexto(registro?.first_name) || null;
-  const lastName = limpiarTexto(registro?.last_name) || null;
   const onboardingStep = limpiarTexto(registro?.onboarding_step) || null;
   const onboardingStepUpdatedAt =
     normalizarTimestampComoUtc(registro?.onboarding_step_updated_at) || null;
-  const telefonoVisible =
-    formatearTelefonoVisible(registro?.contact_phone) ||
-    formatearTelefonoVisible(registro?.phone) ||
-    formatearTelefonoVisible(registro?.real_phone) ||
-    formatearTelefonoVisible(registro?.name);
-  const nombre =
-    limpiarTexto(registro?.full_name) ||
-    displayName ||
-    telefonoVisible ||
-    limpiarTexto(registro?.name) ||
-    limpiarTexto(registro?.contact_phone) ||
-    limpiarTexto(registro?.phone) ||
-    limpiarTexto(registro?.real_phone) ||
-    "Proveedor sin nombre";
+  const nombre = displayName || "Proveedor sin nombre";
   const businessName = limpiarTexto(registro?.business_name) || null;
   const contact =
     limpiarTexto(registro?.contact_name) || nombre || "Contacto no definido";
@@ -613,15 +570,9 @@ const normalizarProveedorSupabase = (registro) => {
     null;
   const documentFirstNames = limpiarTextoIdentidad(
     registro?.document_first_names,
-    registro?.identity_first_names,
-    registro?.first_names,
-    registro?.document_names,
   );
   const documentLastNames = limpiarTextoIdentidad(
     registro?.document_last_names,
-    registro?.identity_last_names,
-    registro?.last_names,
-    registro?.document_surnames,
   );
   const documentIdNumber = limpiarTextoIdentidad(
     registro?.document_id_number,
@@ -710,6 +661,7 @@ const normalizarProveedorSupabase = (registro) => {
     name: nombre,
     displayName,
     formattedName,
+    fullName,
     firstName,
     lastName,
     businessName,
@@ -750,6 +702,103 @@ const normalizarProveedorSupabase = (registro) => {
       experienceRange,
     }),
     identityNotes: identityNotes || null,
+  };
+};
+
+const normalizarReviewServicioCatalogo = (registro) => {
+  if (!registro || typeof registro !== "object") {
+    return null;
+  }
+
+  const reviewStatus = limpiarTexto(registro?.review_status) || null;
+  return {
+    id: limpiarTexto(registro?.id) || null,
+    providerId: limpiarTexto(registro?.provider_id) || null,
+    rawServiceText: limpiarTexto(registro?.raw_service_text) || null,
+    serviceName: limpiarTexto(registro?.service_name) || null,
+    serviceNameNormalized:
+      limpiarTexto(registro?.service_name_normalized) || null,
+    suggestedDomainCode: limpiarTexto(registro?.suggested_domain_code) || null,
+    proposedCategoryName:
+      limpiarTexto(registro?.proposed_category_name) || null,
+    proposedServiceSummary:
+      limpiarTexto(registro?.proposed_service_summary) || null,
+    reviewReason: limpiarTexto(registro?.review_reason) || null,
+    reviewStatus,
+    assignedDomainCode: limpiarTexto(registro?.assigned_domain_code) || null,
+    assignedCategoryName:
+      limpiarTexto(registro?.assigned_category_name) || null,
+    assignedServiceName: limpiarTexto(registro?.assigned_service_name) || null,
+    assignedServiceSummary:
+      limpiarTexto(registro?.assigned_service_summary) || null,
+    reviewedBy: limpiarTexto(registro?.reviewed_by) || null,
+    reviewedAt: normalizarTimestampComoUtc(registro?.reviewed_at) || null,
+    reviewNotes: limpiarTexto(registro?.review_notes) || null,
+    publishedProviderServiceId:
+      limpiarTexto(registro?.published_provider_service_id) || null,
+    createdAt: normalizarTimestampComoUtc(registro?.created_at) || null,
+    updatedAt: normalizarTimestampComoUtc(registro?.updated_at) || null,
+  };
+};
+
+const obtenerReviewsServicioCatalogoPorProveedorSupabase = async (
+  providerId,
+) => {
+  if (!supabaseClient || !providerId) {
+    return [];
+  }
+
+  const encodedId = encodeURIComponent(providerId);
+  const ruta = [
+    "select=id,provider_id,raw_service_text,service_name,service_name_normalized,suggested_domain_code,proposed_category_name,proposed_service_summary,review_reason,review_status,assigned_domain_code,assigned_category_name,assigned_service_name,assigned_service_summary,reviewed_by,reviewed_at,review_notes,published_provider_service_id,created_at,updated_at",
+    `provider_id=eq.${encodedId}`,
+    "review_status=eq.pending",
+    "order=created_at.desc",
+  ].join("&");
+
+  const response = await supabaseClient.get(
+    `provider_service_catalog_reviews?${ruta}`,
+    {
+      headers: {
+        Accept: "application/json",
+      },
+    },
+  );
+
+  return Array.isArray(response.data)
+    ? response.data
+        .map((item) => normalizarReviewServicioCatalogo(item))
+        .filter(Boolean)
+    : [];
+};
+
+const obtenerDetalleProveedorSupabase = async (providerId) => {
+  if (!supabaseClient) {
+    return null;
+  }
+
+  const ruta = construirRutaSupabasePorId(providerId);
+  const response = await supabaseClient.get(ruta, {
+    headers: {
+      Accept: "application/json",
+    },
+  });
+  const registro = Array.isArray(response.data)
+    ? response.data[0]
+    : normalizarListaProveedores(response.data)[0];
+
+  if (!registro) {
+    return null;
+  }
+
+  const provider = normalizarProveedorSupabase(registro);
+  const serviceReviews =
+    provider.id != null
+      ? await obtenerReviewsServicioCatalogoPorProveedorSupabase(provider.id)
+      : [];
+  return {
+    ...provider,
+    serviceReviews,
   };
 };
 
@@ -1003,6 +1052,47 @@ const obtenerProveedoresPerfilProfesionalIncompletoSupabase = async () => {
   });
 };
 
+const construirRutaSupabaseOperativos = () => {
+  const parametrosBase = [
+    `limit=${pendingLimit}`,
+    `order=approved_notified_at.desc.nullslast,created_at.desc`,
+    "select=*,provider_services(service_name,service_name_normalized,raw_service_text,service_summary,domain_code,category_name,classification_confidence,display_order),provider_certificates(id,file_url,display_order,status,created_at,updated_at)",
+    "status=eq.approved",
+  ];
+
+  return `${supabaseProvidersTable}?${parametrosBase.join("&")}`;
+};
+
+const obtenerProveedoresOperativosSupabase = async () => {
+  if (!supabaseClient) {
+    return [];
+  }
+
+  const ruta = construirRutaSupabaseOperativos();
+  const response = await supabaseClient.get(ruta, {
+    headers: {
+      Accept: "application/json",
+    },
+  });
+  const lista = Array.isArray(response.data)
+    ? response.data.map((item) => normalizarProveedorSupabase(item))
+    : normalizarListaProveedores(response.data).map((item) =>
+        normalizarProveedorSupabase(item),
+      );
+
+  return lista.filter(esProveedorOperativo).sort((a, b) => {
+    const fechaA =
+      obtenerFechaNormalizada(a.approvedBasicAt) ||
+      obtenerFechaNormalizada(a.registeredAt) ||
+      new Date(0);
+    const fechaB =
+      obtenerFechaNormalizada(b.approvedBasicAt) ||
+      obtenerFechaNormalizada(b.registeredAt) ||
+      new Date(0);
+    return fechaB.getTime() - fechaA.getTime();
+  });
+};
+
 const construirRutaSupabasePorId = (providerId) => {
   const encodedId = encodeURIComponent(providerId);
   return `${supabaseProvidersTable}?id=eq.${encodedId}&select=*,provider_services(service_name,service_name_normalized,raw_service_text,service_summary,domain_code,category_name,classification_confidence,display_order),provider_certificates(id,file_url,display_order,status,created_at,updated_at)`;
@@ -1077,11 +1167,32 @@ async function obtenerProveedoresPostRevision(_requestId = null) {
   }
 }
 
+async function obtenerProveedoresOperativos(_requestId = null) {
+  try {
+    return await obtenerProveedoresOperativosSupabase();
+  } catch (error) {
+    throw gestionarErrorAxios(error);
+  }
+}
+
 async function obtenerProveedoresPerfilProfesionalIncompleto(
   _requestId = null,
 ) {
   try {
     return await obtenerProveedoresPerfilProfesionalIncompletoSupabase();
+  } catch (error) {
+    throw gestionarErrorAxios(error);
+  }
+}
+
+async function obtenerDetalleProveedor(providerId, _requestId = null) {
+  try {
+    const id = limpiarTexto(providerId);
+    if (!id) {
+      return null;
+    }
+
+    return await obtenerDetalleProveedorSupabase(id);
   } catch (error) {
     throw gestionarErrorAxios(error);
   }
@@ -1111,6 +1222,8 @@ async function aprobarProveedor(providerId, _payload = {}, requestId = null) {
       status: "approved",
       updated_at: timestamp,
       approved_notified_at: timestamp,
+      onboarding_step: "awaiting_menu_option",
+      onboarding_step_updated_at: timestamp,
     };
 
     const datosActualizados = await intentarActualizacionSupabase(
@@ -1120,6 +1233,8 @@ async function aprobarProveedor(providerId, _payload = {}, requestId = null) {
         verified: false,
         updated_at: timestamp,
         approved_notified_at: timestamp,
+        onboarding_step: "awaiting_menu_option",
+        onboarding_step_updated_at: timestamp,
       },
     );
 
@@ -1130,15 +1245,17 @@ async function aprobarProveedor(providerId, _payload = {}, requestId = null) {
 
     const mensaje = "Proveedor aprobado correctamente.";
 
-    const approvalResult = construirMensajeAprobacion(registro?.full_name);
+    const approvalResult = construirMensajeAprobacionProveedor(registro || {});
     const telefonoBruto = registro?.real_phone || registro?.phone;
     const telefonoNotificacion = formatearTelefonoWhatsApp(telefonoBruto);
-    await enviarNotificacionWhatsapp({
-      to: telefonoNotificacion,
-      message: approvalResult.message,
-      ui: approvalResult.ui,
-      requestId,
-    });
+    if (telefonoNotificacion) {
+      await enviarNotificacionWhatsapp({
+        to: telefonoNotificacion,
+        message: approvalResult.message,
+        ui: approvalResult.ui,
+        requestId,
+      });
+    }
 
     await invalidarCacheProveedor(registro?.phone, requestId);
 
@@ -1175,17 +1292,19 @@ async function rechazarProveedor(providerId, payload = {}, requestId = null) {
 
     const mensaje = "Onboarding básico rechazado correctamente.";
 
-    const rejectionMessage = construirMensajeRechazo(
-      registro?.full_name,
+    const rejectionMessage = construirMensajeRechazoProveedor(
+      registro || {},
       payload.notes,
     );
     const telefonoRechazoBruto = registro?.real_phone || registro?.phone;
     const telefonoRechazo = formatearTelefonoWhatsApp(telefonoRechazoBruto);
-    await enviarNotificacionWhatsapp({
-      to: telefonoRechazo,
-      message: rejectionMessage,
-      requestId,
-    });
+    if (telefonoRechazo) {
+      await enviarNotificacionWhatsapp({
+        to: telefonoRechazo,
+        message: rejectionMessage,
+        requestId,
+      });
+    }
 
     return construirRespuestaAccion(providerId, "rejected", mensaje, registro);
   } catch (error) {
@@ -1247,6 +1366,8 @@ async function revisarProveedor(providerId, payload = {}, requestId = null) {
 
     if (estadoFinal === "approved") {
       payloadBase.approved_notified_at = timestamp;
+      payloadBase.onboarding_step = "awaiting_menu_option";
+      payloadBase.onboarding_step_updated_at = timestamp;
     } else if (estadoFinal === "rejected") {
       payloadBase.rejected_notified_at = timestamp;
     }
@@ -1275,6 +1396,10 @@ async function revisarProveedor(providerId, payload = {}, requestId = null) {
       updated_at: timestamp,
       verified: estadoFinal === "approved",
     };
+    if (estadoFinal === "approved") {
+      payloadFallback.onboarding_step = "awaiting_menu_option";
+      payloadFallback.onboarding_step_updated_at = timestamp;
+    }
     if (identityNotes) {
       payloadFallback.notes = payloadBase.notes
         ? `${payloadBase.notes}\n${identityNotes}`
@@ -1297,12 +1422,20 @@ async function revisarProveedor(providerId, payload = {}, requestId = null) {
     let mensajeProveedor = limpiarTexto(payload.message);
     let uiProveedor = null;
     if (estadoFinal === "approved") {
-      const resultado = construirMensajeAprobacion(registro?.full_name);
+      const resultado = construirMensajeAprobacionProveedor(
+        registro || {
+          document_first_names: documentFirstNames,
+          document_last_names: documentLastNames,
+        },
+      );
       mensajeProveedor = resultado.message;
       uiProveedor = resultado.ui;
     } else if (!mensajeProveedor) {
-      mensajeProveedor = construirMensajeRechazo(
-        registro?.full_name,
+      mensajeProveedor = construirMensajeRechazoProveedor(
+        registro || {
+          document_first_names: documentFirstNames,
+          document_last_names: documentLastNames,
+        },
         payload.notes,
       );
     }
@@ -1310,21 +1443,25 @@ async function revisarProveedor(providerId, payload = {}, requestId = null) {
     const telefonoRevisarBruto =
       registro?.real_phone || registro?.phone || payload.phone;
     const telefonoRevisar = formatearTelefonoWhatsApp(telefonoRevisarBruto);
-    await enviarNotificacionWhatsapp({
-      to: telefonoRevisar,
-      message: mensajeProveedor,
-      ui: uiProveedor,
-      requestId,
-    });
+    if (telefonoRevisar) {
+      await enviarNotificacionWhatsapp({
+        to: telefonoRevisar,
+        message: mensajeProveedor,
+        ui: uiProveedor,
+        requestId,
+      });
+    }
 
     if (estadoFinal === "approved") {
       const menuProveedor = construirMenuProveedorAprobado();
-      await enviarNotificacionWhatsapp({
-        to: telefonoRevisar,
-        message: menuProveedor.message,
-        ui: menuProveedor.ui,
-        requestId,
-      });
+      if (telefonoRevisar) {
+        await enviarNotificacionWhatsapp({
+          to: telefonoRevisar,
+          message: menuProveedor.message,
+          ui: menuProveedor.ui,
+          requestId,
+        });
+      }
     }
 
     if (estadoFinal === "approved") {
@@ -1373,6 +1510,96 @@ async function resetearProveedorOnboarding(providerId, requestId = null) {
     const response = await axios.post(
       `${aiProveedoresUrl.replace(/\/$/, "")}/admin/provider-onboarding/${encodeURIComponent(id)}/reset`,
       { headers },
+    );
+    return response.data;
+  } catch (error) {
+    throw gestionarErrorAxios(error);
+  }
+}
+
+async function aprobarReviewServicioCatalogo(
+  reviewId,
+  payload = {},
+  requestId = null,
+) {
+  try {
+    const id = limpiarTexto(reviewId);
+    if (!id) {
+      return {
+        reviewId: "",
+        providerId: null,
+        reviewStatus: "pending",
+        message: "reviewId es requerido",
+      };
+    }
+
+    if (!aiProveedoresUrl) {
+      return {
+        reviewId: id,
+        providerId: null,
+        reviewStatus: "pending",
+        message: "Servicio de proveedores no configurado.",
+      };
+    }
+
+    const headers = { "Content-Type": "application/json" };
+    if (requestId) headers["x-request-id"] = requestId;
+    if (aiProveedoresInternalToken) {
+      headers["x-internal-token"] = aiProveedoresInternalToken;
+    }
+
+    const response = await axios.post(
+      `${aiProveedoresUrl.replace(/\/$/, "")}/admin/service-governance/reviews/${encodeURIComponent(id)}/approve`,
+      payload,
+      {
+        headers,
+        timeout: requestTimeoutMs,
+      },
+    );
+    return response.data;
+  } catch (error) {
+    throw gestionarErrorAxios(error);
+  }
+}
+
+async function rechazarReviewServicioCatalogo(
+  reviewId,
+  payload = {},
+  requestId = null,
+) {
+  try {
+    const id = limpiarTexto(reviewId);
+    if (!id) {
+      return {
+        reviewId: "",
+        providerId: null,
+        reviewStatus: "pending",
+        message: "reviewId es requerido",
+      };
+    }
+
+    if (!aiProveedoresUrl) {
+      return {
+        reviewId: id,
+        providerId: null,
+        reviewStatus: "pending",
+        message: "Servicio de proveedores no configurado.",
+      };
+    }
+
+    const headers = { "Content-Type": "application/json" };
+    if (requestId) headers["x-request-id"] = requestId;
+    if (aiProveedoresInternalToken) {
+      headers["x-internal-token"] = aiProveedoresInternalToken;
+    }
+
+    const response = await axios.post(
+      `${aiProveedoresUrl.replace(/\/$/, "")}/admin/service-governance/reviews/${encodeURIComponent(id)}/reject`,
+      payload,
+      {
+        headers,
+        timeout: requestTimeoutMs,
+      },
     );
     return response.data;
   } catch (error) {
@@ -1475,7 +1702,7 @@ const obtenerProveedoresPorIds = async (providerIds) => {
     return [];
   const encodedIds = providerIds.map((id) => `"${id}"`).join(",");
   const response = await supabaseClient.get(
-    `${supabaseProvidersTable}?select=id,full_name,phone,city&limit=500&id=in.(${encodedIds})`,
+    `${supabaseProvidersTable}?select=id,display_name,document_first_names,document_last_names,phone,city&limit=500&id=in.(${encodedIds})`,
     {
       headers: { Accept: "application/json" },
     },
@@ -1511,7 +1738,9 @@ const normalizarProveedorMonetizacion = ({
   return {
     providerId: String(wallet?.provider_id || provider?.id || ""),
     name:
-      limpiarTexto(provider?.full_name) ||
+      limpiarTexto(provider?.document_first_names) ||
+      limpiarTexto(provider?.document_last_names) ||
+      limpiarTexto(provider?.display_name) ||
       limpiarTexto(provider?.name) ||
       "Proveedor sin nombre",
     phone: limpiarTexto(provider?.phone) || null,
@@ -1685,13 +1914,17 @@ module.exports = {
   obtenerProveedoresOnboarding,
   obtenerProveedoresPendientes,
   obtenerProveedoresNuevos,
+  obtenerProveedoresOperativos,
   obtenerProveedoresPostRevision,
   obtenerProveedoresPerfilProfesionalIncompleto,
+  obtenerDetalleProveedor,
   obtenerResumenEstadosProveedores,
   aprobarProveedor,
   rechazarProveedor,
   revisarProveedor,
   resetearProveedorOnboarding,
+  aprobarReviewServicioCatalogo,
+  rechazarReviewServicioCatalogo,
   obtenerMonetizacionResumen,
   obtenerMonetizacionProveedores,
   obtenerMonetizacionProveedor,

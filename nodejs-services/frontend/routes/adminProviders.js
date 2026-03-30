@@ -68,6 +68,19 @@ async function obtenerPerfilProfesionalIncompleto(req, res) {
   }
 }
 
+async function obtenerOperativos(req, res) {
+  try {
+    const providers = await proveedoresBff.obtenerProveedoresOperativos();
+    res.json({ providers });
+  } catch (error) {
+    const status = error?.status ?? 500;
+    const payload = error?.data ?? {
+      error: "No se pudo obtener la lista de proveedores operativos.",
+    };
+    res.status(status).json(payload);
+  }
+}
+
 async function obtenerPostRevision(req, res) {
   try {
     const providers = await proveedoresBff.obtenerProveedoresPostRevision();
@@ -76,6 +89,25 @@ async function obtenerPostRevision(req, res) {
     const status = error?.status ?? 500;
     const payload = error?.data ?? {
       error: "No se pudo obtener la lista de proveedores post-revisión.",
+    };
+    res.status(status).json(payload);
+  }
+}
+
+async function obtenerDetalleProveedor(req, res) {
+  try {
+    const { providerId } = req.params;
+    const provider = await proveedoresBff.obtenerDetalleProveedor(providerId);
+    if (!provider) {
+      return res.status(404).json({
+        error: "No se encontró el proveedor solicitado.",
+      });
+    }
+    res.json({ provider });
+  } catch (error) {
+    const status = error?.status ?? 500;
+    const payload = error?.data ?? {
+      error: "No se pudo obtener el detalle del proveedor.",
     };
     res.status(status).json(payload);
   }
@@ -136,6 +168,46 @@ async function revisarProveedor(req, res) {
     const status = error?.status ?? 500;
     const payload = error?.data ?? {
       error: "No se pudo procesar la revisión del proveedor.",
+    };
+    res.status(status).json(payload);
+  }
+}
+
+async function aprobarReviewServicioCatalogo(req, res) {
+  try {
+    const { reviewId } = req.params;
+    const requestId =
+      req.headers["x-request-id"] || req.headers["x-correlation-id"] || null;
+    const resultado = await proveedoresBff.aprobarReviewServicioCatalogo(
+      reviewId,
+      req.body ?? {},
+      requestId,
+    );
+    res.json(resultado);
+  } catch (error) {
+    const status = error?.status ?? 500;
+    const payload = error?.data ?? {
+      error: "No se pudo aprobar la revisión de servicio.",
+    };
+    res.status(status).json(payload);
+  }
+}
+
+async function rechazarReviewServicioCatalogo(req, res) {
+  try {
+    const { reviewId } = req.params;
+    const requestId =
+      req.headers["x-request-id"] || req.headers["x-correlation-id"] || null;
+    const resultado = await proveedoresBff.rechazarReviewServicioCatalogo(
+      reviewId,
+      req.body ?? {},
+      requestId,
+    );
+    res.json(resultado);
+  } catch (error) {
+    const status = error?.status ?? 500;
+    const payload = error?.data ?? {
+      error: "No se pudo rechazar la revisión de servicio.",
     };
     res.status(status).json(payload);
   }
@@ -269,11 +341,15 @@ async function servirImagen(req, res) {
 router.get("/pending", obtenerPendientes);
 router.get("/onboarding", obtenerOnboarding);
 router.get("/new", obtenerNuevos);
+router.get("/operativos", obtenerOperativos);
 router.get("/profile-incomplete", obtenerPerfilProfesionalIncompleto);
 router.get("/post-review", obtenerPostRevision);
+router.get("/:providerId", obtenerDetalleProveedor);
 router.post("/:providerId/approve", aprobarProveedor);
 router.post("/:providerId/reject", rechazarProveedor);
 router.post("/:providerId/review", revisarProveedor);
+router.post("/service-reviews/:reviewId/approve", aprobarReviewServicioCatalogo);
+router.post("/service-reviews/:reviewId/reject", rechazarReviewServicioCatalogo);
 router.post("/:providerId/reset", resetearProveedorOnboarding);
 router.get("/monetization/overview", obtenerMonetizacionResumen);
 router.get("/summary", obtenerResumenEstados);

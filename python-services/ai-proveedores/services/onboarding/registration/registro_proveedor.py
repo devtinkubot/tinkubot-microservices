@@ -10,6 +10,7 @@ from models.proveedores import SolicitudCreacionProveedor
 from services.maintenance.clasificacion_semantica import (
     clasificar_servicios_livianos,
     construir_service_summary,
+    construir_texto_embedding_canonico,
 )
 from services.maintenance.constantes import DISPLAY_ORDER_MAX_DB
 from services.onboarding.whatsapp_identity import persistir_identities_whatsapp
@@ -284,6 +285,7 @@ async def insertar_servicios_proveedor(
     for idx, entry in enumerate(service_entries):
         try:
             servicio = entry["service_name"]
+            servicio_normalizado = normalizar_texto_para_busqueda(servicio)
             metadata_base = (
                 clasificaciones_semanticas[idx]
                 if idx < len(clasificaciones_semanticas)
@@ -308,7 +310,11 @@ async def insertar_servicios_proveedor(
             # Generar embedding individual para este servicio
             logger.info(f"🔄 Generando embedding para servicio: {servicio}")
             embedding = await servicio_embeddings.generar_embedding(
-                f"{servicio}. {service_summary}".strip()
+                construir_texto_embedding_canonico(
+                    service_name_normalized=servicio_normalizado,
+                    domain_code=domain_code_to_use,
+                    category_name=metadata.get("category_name"),
+                )
             )
 
             if not embedding:
@@ -316,9 +322,6 @@ async def insertar_servicios_proveedor(
                     f"⚠️ No se pudo generar embedding para servicio: {servicio}"
                 )
                 embedding = None
-
-            # Normalizar nombre para búsqueda
-            servicio_normalizado = normalizar_texto_para_busqueda(servicio)
 
             # Insertar en provider_services
             resultado = await run_supabase(

@@ -230,10 +230,12 @@ def mensaje_minimo_servicios_pendiente(
     minimo_requerido: int,
 ) -> str:
     faltan = max(minimo_requerido - cantidad_actual, 0)
+    etiqueta_requerida = "servicio" if minimo_requerido == 1 else "servicios"
+    etiqueta_faltante = "servicio" if faltan == 1 else "servicios"
     return (
-        f"Necesitas al menos *{minimo_requerido} servicios* para completar tu perfil. "
+        f"Necesitas al menos *{minimo_requerido} {etiqueta_requerida}* para completar tu perfil. "
         f"Por ahora llevas *{cantidad_actual}*. "
-        f"Agrega {faltan} servicio{'s' if faltan != 1 else ''} más."
+        f"Agrega {faltan} {etiqueta_faltante} más."
     )
 
 
@@ -242,9 +244,10 @@ def mensaje_minimo_servicios_perfil_profesional(
     minimo_requerido: int,
 ) -> str:
     """Pide completar la cantidad mínima de servicios para el perfil."""
+    etiqueta_requerida = "servicio" if minimo_requerido == 1 else "servicios"
     return (
         f"Ya capturé {cantidad_actual} servicio(s), pero necesitamos "
-        f"al menos {minimo_requerido} para continuar.\n\n"
+        f"al menos {minimo_requerido} {etiqueta_requerida} para continuar.\n\n"
         "Escribe los que faltan en la misma línea, por ejemplo:\n"
         "1 Albañilería general 2 Plomería y fontanería 3 Jardinería"
     )

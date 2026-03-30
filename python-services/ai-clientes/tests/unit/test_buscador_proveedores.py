@@ -42,8 +42,97 @@ async def test_buscador_usa_search_candidate_limit(monkeypatch):
         profesion="capitan de barco",
         ciudad="cuenca",
         descripcion_problema="Necesito capitan de barco",
+        domain="transporte",
+        category="navegación marítima",
     )
 
     cliente_busqueda.buscar_proveedores.assert_awaited_once()
+    assert (
+        cliente_busqueda.buscar_proveedores.await_args.kwargs["consulta"]
+        == "capitan de barco transporte navegación marítima"
+    )
     assert cliente_busqueda.buscar_proveedores.await_args.kwargs["limite"] == 15
+    assert (
+        cliente_busqueda.buscar_proveedores.await_args.kwargs["descripcion_problema"]
+        == "Necesito capitan de barco"
+    )
+    assert cliente_busqueda.buscar_proveedores.await_args.kwargs["domain"] == "transporte"
+    assert (
+        cliente_busqueda.buscar_proveedores.await_args.kwargs["category"]
+        == "navegación marítima"
+    )
     validador_ia.validar_proveedores.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_buscador_limita_validacion_a_candidatos_mas_relevantes(monkeypatch):
+    monkeypatch.setattr(
+        "services.buscador.buscador_proveedores.configuracion.search_validation_limit",
+        2,
+    )
+
+    cliente_busqueda = AsyncMock()
+    cliente_busqueda.buscar_proveedores = AsyncMock(
+        return_value={
+            "ok": True,
+            "providers": [
+                {
+                    "id": "prov-1",
+                    "full_name": "Proveedor Uno",
+                    "services": ["desarrollo de software"],
+                    "semantic_alignment_score": 0.91,
+                    "retrieval_score": 0.83,
+                    "similarity_score": 0.80,
+                    "classification_confidence": 1.0,
+                    "rating": 4.8,
+                    "verified": True,
+                },
+                {
+                    "id": "prov-2",
+                    "full_name": "Proveedor Dos",
+                    "services": ["renta de departamentos"],
+                    "semantic_alignment_score": 0.12,
+                    "retrieval_score": 0.79,
+                    "similarity_score": 0.76,
+                    "classification_confidence": 1.0,
+                    "rating": 5.0,
+                    "verified": True,
+                },
+                {
+                    "id": "prov-3",
+                    "full_name": "Proveedor Tres",
+                    "services": ["asesoría en tecnología de la información"],
+                    "semantic_alignment_score": 0.74,
+                    "retrieval_score": 0.81,
+                    "similarity_score": 0.78,
+                    "classification_confidence": 1.0,
+                    "rating": 4.9,
+                    "verified": True,
+                },
+            ],
+            "total": 3,
+            "search_metadata": {"strategy": "embeddings", "search_time_ms": 250},
+        }
+    )
+    validador_ia = AsyncMock()
+    validador_ia.validar_proveedores = AsyncMock(return_value=[])
+
+    buscador = BuscadorProveedores(
+        cliente_busqueda=cliente_busqueda,
+        validador_ia=validador_ia,
+        logger=logging.getLogger("test_buscador"),
+    )
+
+    await buscador.buscar(
+        profesion="desarrollo de aplicación móvil",
+        ciudad="cuenca",
+        descripcion_problema="Necesito construir una aplicación móvil",
+        domain="tecnología",
+        category="desarrollo de software",
+    )
+
+    proveedores_enviados = validador_ia.validar_proveedores.await_args.kwargs[
+        "proveedores"
+    ]
+    assert len(proveedores_enviados) == 2
+    assert [p["id"] for p in proveedores_enviados] == ["prov-1", "prov-3"]

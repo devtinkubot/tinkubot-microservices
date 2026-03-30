@@ -2,22 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 import unicodedata
 from typing import Any, Dict, List, Optional
 
-from config.configuracion import configuracion
 from infrastructure.database import run_supabase
-from services.shared import (
-    PROMPT_CATALOGO_SIN_DOMINIO,
-    construir_prompt_sistema_clasificacion_servicios,
-    construir_prompt_usuario_clasificacion_servicios,
-)
-from utils import (
-    normalizar_texto_visible_con_ia,
-)
+from utils import normalizar_texto_para_busqueda
 
 logger = logging.getLogger(__name__)
 
@@ -231,6 +222,30 @@ def construir_service_summary(  # noqa: C901
     return f"Ofrezco {service_lower} según la necesidad del cliente."
 
 
+def construir_texto_embedding_canonico(
+    *,
+    service_name_normalized: str,
+    domain_code: Optional[str] = None,
+    category_name: Optional[str] = None,
+) -> str:
+    """Construye el texto canónico para embeddings de servicios."""
+    componentes: List[str] = []
+
+    nombre_normalizado = normalizar_texto_para_busqueda(service_name_normalized)
+    if nombre_normalizado:
+        componentes.append(nombre_normalizado)
+
+    domain = normalizar_domain_code_operativo(domain_code)
+    if domain:
+        componentes.append(domain)
+
+    category = normalizar_texto_para_busqueda(category_name)
+    if category:
+        componentes.append(category)
+
+    return " | ".join(componentes)
+
+
 async def obtener_catalogo_dominios_liviano(supabase: Any) -> List[Dict[str, str]]:
     """Lee un catálogo liviano de dominios desde `service_domains`."""
     if not supabase:
@@ -288,7 +303,6 @@ async def clasificar_servicios_livianos(
     if not servicios_limpios:
         return []
 
-    catalogo_dominios = await obtener_catalogo_dominios_liviano(supabase)
     fallback = [
         {
             "normalized_service": servicio,
@@ -307,129 +321,73 @@ async def clasificar_servicios_livianos(
     ]
     if not cliente_openai:
         return fallback
-
-    dominios_prompt = "\n".join(
-        f"- {item['code']}: {item['display_name']}"
-        + (f" ({item['description']})" if item.get("description") else "")
-        for item in catalogo_dominios[:40]
-    )
-    if not dominios_prompt:
-        dominios_prompt = PROMPT_CATALOGO_SIN_DOMINIO
-    codigos_catalogo = {item["code"] for item in catalogo_dominios if item.get("code")}
-
-    try:
-        respuesta = await cliente_openai.chat.completions.create(
-            model=configuracion.openai_chat_model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": construir_prompt_sistema_clasificacion_servicios(),
-                },
-                {
-                    "role": "user",
-                    "content": construir_prompt_usuario_clasificacion_servicios(
-                        servicios_limpios,
-                        dominios_prompt,
-                    ),
-                },
-            ],
-            response_format={
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "service_semantic_classification",
-                    "strict": True,
-                    "schema": {
-                        "type": "object",
-                        "properties": {
-                            "services": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "normalized_service": {"type": "string"},
-                                        "domain_code": {
-                                            "type": ["string", "null"],
-                                        },
-                                        "category_name": {
-                                            "type": ["string", "null"],
-                                        },
-                                        "service_summary": {"type": "string"},
-                                        "classification_confidence": {
-                                            "type": "number",
-                                        },
-                                    },
-                                    "required": [
-                                        "normalized_service",
-                                        "domain_code",
-                                        "category_name",
-                                        "service_summary",
-                                        "classification_confidence",
-                                    ],
-                                    "additionalProperties": False,
-                                },
-                            }
-                        },
-                        "required": ["services"],
-                        "additionalProperties": False,
-                    },
-                },
-            },
-            temperature=configuracion.openai_temperature_consistente,
-            timeout=timeout,
-        )
-        contenido = (respuesta.choices[0].message.content or "").strip()
-        data = json.loads(contenido)
-        clasificadas = data.get("services") or []
-    except Exception as exc:
-        logger.warning("⚠️ No se pudo clasificar servicios con IA: %s", exc)
-        return fallback
+    catalogo_dominios = await obtener_catalogo_dominios_liviano(supabase)
+    codigos_catalogo = {
+        item["code"] for item in catalogo_dominios if item.get("code")
+    }
 
     resultados: List[Dict[str, Any]] = []
-    for idx, servicio in enumerate(servicios_limpios):
-        fila = clasificadas[idx] if idx < len(clasificadas) else {}
-        normalized_service_visible = await normalizar_texto_visible_con_ia(
-            cliente_openai,
-            str(fila.get("normalized_service") or servicio).strip() or servicio,
+    from services.maintenance.validacion_semantica import (
+        enriquecer_servicio_semanticamente,
+    )
+
+    for servicio in servicios_limpios:
+        try:
+            fila = await enriquecer_servicio_semanticamente(
+                cliente_openai=cliente_openai,
+                supabase=supabase,
+                raw_service_text=servicio,
+                service_name=servicio,
+                timeout=timeout,
+            )
+        except Exception as exc:
+            logger.warning("⚠️ No se pudo enriquecer servicio '%s': %s", servicio, exc)
+            fila = {}
+
+        normalized_service_visible = str(
+            fila.get("normalized_service") or servicio
+        ).strip() or servicio
+        normalized_domain = normalizar_domain_code_operativo(
+            fila.get("resolved_domain_code") or fila.get("domain_code")
         )
+        resolved_domain_code = (
+            normalized_domain if normalized_domain in codigos_catalogo else None
+        )
+        category_name = (
+            str(fila.get("proposed_category_name") or fila.get("category_name") or "")
+            .strip()
+            or None
+        )
+        service_summary = (
+            str(
+                fila.get("proposed_service_summary") or fila.get("service_summary") or ""
+            ).strip()
+            or construir_service_summary(
+                service_name=normalized_service_visible,
+                category_name=category_name,
+                domain_code=normalized_domain,
+            )
+        )
+        confidence = max(0.0, min(1.0, float(fila.get("confidence") or 0.0)))
         resultados.append(
             {
                 "normalized_service": normalized_service_visible,
-                "domain_code": normalizar_domain_code_operativo(
-                    fila.get("domain_code")
-                ),
-                "resolved_domain_code": (
-                    normalizar_domain_code_operativo(fila.get("domain_code"))
-                    if normalizar_domain_code_operativo(fila.get("domain_code"))
-                    in codigos_catalogo
-                    else None
-                ),
+                "domain_code": normalized_domain,
+                "resolved_domain_code": resolved_domain_code,
                 "domain_resolution_status": (
-                    "matched"
-                    if normalizar_domain_code_operativo(fila.get("domain_code"))
-                    in codigos_catalogo
-                    else "catalog_review_required"
+                    fila.get("domain_resolution_status")
+                    if fila.get("domain_resolution_status")
+                    else (
+                        "matched"
+                        if resolved_domain_code
+                        else "catalog_review_required"
+                    )
                 ),
-                "category_name": str(fila.get("category_name") or "").strip() or None,
-                "proposed_category_name": str(fila.get("category_name") or "").strip()
-                or None,
-                "service_summary": str(fila.get("service_summary") or "").strip()
-                or construir_service_summary(
-                    service_name=normalized_service_visible or servicio,
-                    category_name=str(fila.get("category_name") or "").strip() or None,
-                    domain_code=fila.get("domain_code"),
-                ),
-                "proposed_service_summary": str(
-                    fila.get("service_summary") or ""
-                ).strip()
-                or construir_service_summary(
-                    service_name=normalized_service_visible or servicio,
-                    category_name=str(fila.get("category_name") or "").strip() or None,
-                    domain_code=fila.get("domain_code"),
-                ),
-                "classification_confidence": max(
-                    0.0,
-                    min(1.0, float(fila.get("classification_confidence") or 0.0)),
-                ),
+                "category_name": category_name,
+                "proposed_category_name": category_name,
+                "service_summary": service_summary,
+                "proposed_service_summary": service_summary,
+                "classification_confidence": confidence,
             }
         )
     return resultados

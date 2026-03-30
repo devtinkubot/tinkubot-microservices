@@ -3,6 +3,8 @@ import {
   type ProviderOnboardingResetResponse,
   type ProviderActionResponse,
   type ProviderRecord,
+  type ProviderServiceReview,
+  type ProviderServiceReviewActionPayload,
 } from "@tinkubot/api-client";
 import {
   formatearMarcaTemporalEcuador,
@@ -29,7 +31,11 @@ function extraerMensajeError(error: unknown): string {
 
 type TipoAviso = "success" | "error" | "info";
 
-type ProviderBucket = "onboarding" | "new" | "profile_incomplete";
+type ProviderBucket =
+  | "onboarding"
+  | "new"
+  | "operativos"
+  | "profile_incomplete";
 
 type OnboardingColumn = {
   state: string;
@@ -51,13 +57,14 @@ interface EstadoProveedores {
   proveedores: ProviderRecord[];
   estaCargando: boolean;
   idAccionEnProceso: string | null;
+  idReviewEnProceso: string | null;
   proveedorSeleccionado: ProviderRecord | null;
+  reviewSeleccionada: ProviderServiceReview | null;
   bucketActivo: ProviderBucket;
 }
 
 interface AccionProveedorOpciones {
   status?: ProviderRecord["status"];
-  notes?: string;
   reviewer?: string;
   phone?: string;
   message?: string;
@@ -75,7 +82,9 @@ const estado: EstadoProveedores = {
   proveedores: [],
   estaCargando: false,
   idAccionEnProceso: null,
+  idReviewEnProceso: null,
   proveedorSeleccionado: null,
+  reviewSeleccionada: null,
   bucketActivo: "onboarding",
 };
 
@@ -116,6 +125,14 @@ function extraerPrimerNombre(
   return texto.split(/\s+/).filter(Boolean)[0] || "Proveedor";
 }
 
+function normalizarClaveServicio(
+  valor: string | null | undefined,
+): string | null {
+  const texto = valor?.trim();
+  if (!texto) return null;
+  return texto.toLowerCase().replace(/\s+/g, " ");
+}
+
 function esIdentificadorWhatsAppCrudo(valor: string): boolean {
   const texto = valor.trim();
   if (!texto) return false;
@@ -136,27 +153,65 @@ function resolverTextoVisible(valor: string | null | undefined): string | null {
 function resolverNombreVisibleProveedor(proveedor: ProviderRecord): string {
   const displayName = proveedor.displayName?.trim();
   const formattedName = proveedor.formattedName?.trim();
-  const firstName = proveedor.firstName?.trim();
-  const lastName = proveedor.lastName?.trim();
-  const nombreCompuesto = [firstName, lastName]
+  const nombreDocumento = [
+    proveedor.documentFirstNames?.trim(),
+    proveedor.documentLastNames?.trim(),
+  ]
     .filter(Boolean)
     .join(" ")
     .trim();
-  const telefonoPresentable =
-    resolverTextoVisible(proveedor.contactPhone) ??
-    resolverTextoVisible(proveedor.realPhone) ??
-    resolverTextoVisible(proveedor.phone) ??
-    resolverTextoVisible(proveedor.name);
+
+  return nombreDocumento || formattedName || displayName || "Proveedor";
+}
+
+function resolverNombreVisibleOperativoProveedor(
+  proveedor: ProviderRecord,
+): string {
+  const nombreDocumento = [
+    proveedor.documentFirstNames?.trim(),
+    proveedor.documentLastNames?.trim(),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
 
   return (
-    formattedName ||
-    nombreCompuesto ||
-    displayName ||
-    telefonoPresentable ||
-    resolverTextoVisible(proveedor.name) ||
-    resolverTextoVisible(proveedor.contact) ||
+    nombreDocumento ||
+    proveedor.displayName?.trim() ||
+    proveedor.formattedName?.trim() ||
     "Proveedor"
   );
+}
+
+function resolverNombreVisibleSegunBucketActivo(
+  proveedor: ProviderRecord,
+): string {
+  return estado.bucketActivo === "operativos"
+    ? resolverNombreVisibleOperativoProveedor(proveedor)
+    : resolverNombreVisibleProveedor(proveedor);
+}
+
+function resolverTelefonoVisibleOperativoProveedor(
+  proveedor: ProviderRecord,
+): string | null {
+  return (
+    resolverTextoVisible(proveedor.contactPhone) ??
+    resolverTextoVisible(proveedor.realPhone) ??
+    resolverTextoVisible(proveedor.phone)
+  );
+}
+
+function obtenerEtiquetaContactoOperativo(proveedor: ProviderRecord): string {
+  switch (proveedor.contactStatus) {
+    case "lid_with_real_phone":
+      return "LID con número real confirmado";
+    case "lid_missing_real_phone":
+      return "LID sin número real";
+    case "real_phone_available":
+      return "Número real disponible";
+    default:
+      return "Solo teléfono base";
+  }
 }
 
 function normalizarPasoOnboarding(proveedor: ProviderRecord): string | null {
@@ -351,12 +406,24 @@ function actualizarEncabezadoBucket() {
     if (titulo) titulo.textContent = "Incompletos";
     if (subtitulo) {
       subtitulo.textContent =
-        "Proveedores con información personal aprobada que todavía no completan experiencia y 3 servicios principales.";
+        "Proveedores con información personal aprobada que todavía no completan experiencia y al menos 1 servicio.";
     }
     if (vacio) vacio.textContent = "No hay perfiles profesionales incompletos.";
     if (textoCarga)
       textoCarga.textContent =
         "Obteniendo perfiles profesionales incompletos...";
+    return;
+  }
+
+  if (estado.bucketActivo === "operativos") {
+    if (titulo) titulo.textContent = "Operativos";
+    if (subtitulo) {
+      subtitulo.textContent =
+        "Proveedores aprobados con perfil profesional completo y datos mínimos listos para operar.";
+    }
+    if (vacio) vacio.textContent = "No hay proveedores operativos.";
+    if (textoCarga)
+      textoCarga.textContent = "Obteniendo proveedores operativos...";
     return;
   }
 
@@ -470,15 +537,8 @@ function actualizarContacto(proveedor: ProviderRecord) {
   const realPhone = proveedor.realPhone ?? null;
   const telefonoPresentable = formatearTelefonoEcuador(telefono);
   const realPhonePresentable = formatearTelefonoEcuador(realPhone);
-  const nombre = resolverNombreVisibleProveedor(proveedor);
-  const estadoContacto =
-    proveedor.contactStatus === "lid_with_real_phone"
-      ? "LID con número real confirmado"
-      : proveedor.contactStatus === "lid_missing_real_phone"
-        ? "LID sin número real"
-        : proveedor.contactStatus === "real_phone_available"
-          ? "Número real disponible"
-          : "Solo teléfono base";
+  const nombre = resolverNombreVisibleSegunBucketActivo(proveedor);
+  const estadoContacto = obtenerEtiquetaContactoOperativo(proveedor);
 
   establecerTexto("#provider-detail-phone", telefonoPresentable, {
     fallback: "Sin número",
@@ -514,29 +574,6 @@ function actualizarContacto(proveedor: ProviderRecord) {
     } else {
       enlaceWhatsapp.style.display = "none";
     }
-  }
-}
-
-function actualizarNotas(proveedor: ProviderRecord) {
-  const notasPrevias = obtenerElemento<HTMLDivElement>(
-    "#provider-detail-existing-notes",
-  );
-  if (!notasPrevias) return;
-
-  if (proveedor.notes) {
-    notasPrevias.innerHTML = `<i class="fas fa-sticky-note me-2 text-primary"></i>${escaparHtml(
-      proveedor.notes,
-    )}`;
-  } else {
-    notasPrevias.innerHTML =
-      '<span class="text-muted">Sin observaciones previas registradas.</span>';
-  }
-
-  const notasTextarea = obtenerElemento<HTMLTextAreaElement>(
-    "#provider-review-notes",
-  );
-  if (notasTextarea) {
-    notasTextarea.value = proveedor.notes ?? "";
   }
 }
 
@@ -597,19 +634,6 @@ function actualizarFotosIdentidad(proveedor: ProviderRecord) {
 }
 
 function actualizarCamposIdentidad(proveedor: ProviderRecord) {
-  establecerTexto(
-    "#provider-detail-document-first-names",
-    proveedor.documentFirstNames,
-  );
-  establecerTexto(
-    "#provider-detail-document-last-names",
-    proveedor.documentLastNames,
-  );
-  establecerTexto(
-    "#provider-detail-document-id-number",
-    proveedor.documentIdNumber,
-  );
-
   const nombres = obtenerElemento<HTMLInputElement>(
     "#provider-review-document-first-names",
   );
@@ -631,15 +655,233 @@ function actualizarCamposIdentidad(proveedor: ProviderRecord) {
   }
 }
 
+function obtenerReviewServicioProveedor(
+  proveedor: ProviderRecord,
+  servicio: {
+    serviceName?: string | null;
+    serviceNameNormalized?: string | null;
+    rawServiceText?: string | null;
+  },
+): ProviderServiceReview | null {
+  const reviews = Array.isArray(proveedor.serviceReviews)
+    ? proveedor.serviceReviews.filter(
+        (item) => (item.reviewStatus || "").trim().toLowerCase() === "pending",
+      )
+    : [];
+  if (reviews.length === 0) return null;
+
+  const claves = [
+    servicio.serviceNameNormalized,
+    servicio.serviceName,
+    servicio.rawServiceText,
+  ]
+    .map(normalizarClaveServicio)
+    .filter(Boolean) as string[];
+
+  return (
+    reviews.find((review) => {
+      const reviewKey = normalizarClaveServicio(
+        review.serviceNameNormalized ||
+          review.serviceName ||
+          review.rawServiceText,
+      );
+      return Boolean(reviewKey && claves.includes(reviewKey));
+    }) || null
+  );
+}
+
+function construirFilaServicioPerfil(
+  servicio: {
+    serviceName?: string | null;
+    serviceNameNormalized?: string | null;
+    rawServiceText?: string | null;
+    serviceSummary?: string | null;
+    domainCode?: string | null;
+    categoryName?: string | null;
+    classificationConfidence?: number | null;
+    requiresReview?: boolean | null;
+  },
+  indice: number,
+  review?: ProviderServiceReview | null,
+): string {
+  const nombre =
+    servicio.serviceName ||
+    servicio.serviceNameNormalized ||
+    "Servicio sin nombre";
+  const textoCrudo = servicio.rawServiceText || nombre;
+  const confianza =
+    typeof servicio.classificationConfidence === "number" &&
+    Number.isFinite(servicio.classificationConfidence)
+      ? `${Math.round(servicio.classificationConfidence * 100)}%`
+      : "—";
+  const requiereRevision =
+    Boolean(review) ||
+    Boolean(servicio.requiresReview) ||
+    (typeof servicio.classificationConfidence === "number" &&
+      servicio.classificationConfidence < 0.7);
+  const claseTarjeta = requiereRevision ? "provider-service-card--review" : "";
+  const badgeEstado = requiereRevision
+    ? '<span class="badge text-bg-warning">Pendiente</span>'
+    : '<span class="badge text-bg-success">Claro</span>';
+  const dominioActual = servicio.domainCode
+    ? `<span class="provider-service-tag"><i class="fas fa-layer-group me-1"></i>${escaparHtml(
+        servicio.domainCode,
+      )}</span>`
+    : '<span class="provider-service-tag text-muted">Sin dominio</span>';
+  const categoriaActual = servicio.categoryName
+    ? `<span class="provider-service-tag"><i class="fas fa-tags me-1"></i>${escaparHtml(
+        servicio.categoryName,
+      )}</span>`
+    : '<span class="provider-service-tag text-muted">Sin categoría</span>';
+  const resumen = servicio.serviceSummary
+    ? `<div class="provider-service-raw mt-2">${escaparHtml(servicio.serviceSummary)}</div>`
+    : "";
+  const sugerencia = review
+    ? `
+      <div class="provider-service-suggestion mt-2">
+        <div class="provider-service-suggestion-title">Sugerencia IA</div>
+        <div class="provider-service-suggestion-grid">
+          <div class="provider-service-suggestion-line">
+            <strong>Dominio:</strong> ${escaparHtml(review.suggestedDomainCode || review.assignedDomainCode || "Sin sugerencia")}
+          </div>
+          <div class="provider-service-suggestion-line">
+            <strong>Categoría:</strong> ${escaparHtml(review.proposedCategoryName || review.assignedCategoryName || "Sin sugerencia")}
+          </div>
+          ${
+            review.reviewReason
+              ? `<div class="provider-service-suggestion-line text-muted">${escaparHtml(review.reviewReason)}</div>`
+              : ""
+          }
+        </div>
+      </div>
+    `
+    : "";
+
+  return `
+    <tr class="${claseTarjeta}">
+      <td>
+        <div class="provider-service-name">${indice + 1}. ${escaparHtml(nombre)}</div>
+        <div class="provider-service-raw">${escaparHtml(textoCrudo)}</div>
+        ${review ? '<span class="badge text-bg-warning mt-2">Pendiente</span>' : badgeEstado}
+      </td>
+      <td>
+        <div class="provider-service-meta">
+          ${dominioActual}
+          ${categoriaActual}
+        </div>
+      </td>
+      <td>
+        <span class="provider-service-tag">
+          <i class="fas fa-shield-alt me-1"></i>Confianza ${escaparHtml(confianza)}
+        </span>
+        ${resumen}
+      </td>
+      <td>
+        ${sugerencia}
+        ${
+          review
+            ? `
+          <div class="provider-service-actions mt-2">
+            <button
+              type="button"
+              class="btn btn-primary btn-sm"
+              data-service-review-action="accept"
+              data-review-id="${escaparHtml(review.id)}"
+              data-provider-id="${escaparHtml(estado.proveedorSeleccionado?.id || "")}"
+            >
+              <i class="fas fa-check me-1"></i>
+              Aceptar
+            </button>
+            <button
+              type="button"
+              class="btn btn-outline-secondary btn-sm"
+              data-service-review-action="edit"
+              data-review-id="${escaparHtml(review.id)}"
+              data-provider-id="${escaparHtml(estado.proveedorSeleccionado?.id || "")}"
+            >
+              <i class="fas fa-pen me-1"></i>
+              Editar
+            </button>
+          </div>
+        `
+            : ""
+        }
+      </td>
+    </tr>
+  `;
+}
+
+function construirFilaReviewSinEmparejar(
+  review: ProviderServiceReview,
+  indice: number,
+): string {
+  const dominio =
+    review.suggestedDomainCode || review.assignedDomainCode || "Sin dominio";
+  const categoria =
+    review.proposedCategoryName ||
+    review.assignedCategoryName ||
+    "Sin categoría";
+  const resumen =
+    review.proposedServiceSummary ||
+    review.assignedServiceSummary ||
+    review.serviceName ||
+    "Sin resumen";
+  return `
+    <tr class="provider-service-card--review">
+      <td>
+        <div class="provider-service-name">${indice + 1}. ${escaparHtml(
+          review.serviceName ||
+            review.serviceNameNormalized ||
+            "Sugerencia pendiente",
+        )}</div>
+        <div class="provider-service-raw">${escaparHtml(review.rawServiceText || "Sin texto original")}</div>
+        <span class="badge text-bg-warning mt-2">Pendiente</span>
+      </td>
+      <td>
+        <div class="provider-service-meta">
+          <span class="provider-service-tag"><strong>Dominio:</strong>&nbsp;${escaparHtml(dominio)}</span>
+          <span class="provider-service-tag"><strong>Categoría:</strong>&nbsp;${escaparHtml(categoria)}</span>
+        </div>
+      </td>
+      <td>
+        <span class="provider-service-tag"><strong>Resumen:</strong>&nbsp;${escaparHtml(resumen)}</span>
+        ${
+          review.reviewReason
+            ? `<div class="provider-service-raw mt-2">${escaparHtml(review.reviewReason)}</div>`
+            : ""
+        }
+      </td>
+      <td>
+        <div class="provider-service-actions">
+          <button
+            type="button"
+            class="btn btn-primary btn-sm"
+            data-service-review-action="accept"
+            data-review-id="${escaparHtml(review.id)}"
+            data-provider-id="${escaparHtml(review.providerId || estado.proveedorSeleccionado?.id || "")}"
+          >
+            <i class="fas fa-check me-1"></i>
+            Aceptar
+          </button>
+          <button
+            type="button"
+            class="btn btn-outline-secondary btn-sm"
+            data-service-review-action="edit"
+            data-review-id="${escaparHtml(review.id)}"
+            data-provider-id="${escaparHtml(review.providerId || estado.proveedorSeleccionado?.id || "")}"
+          >
+            <i class="fas fa-pen me-1"></i>
+            Editar
+          </button>
+        </div>
+      </td>
+    </tr>
+  `;
+}
+
 function actualizarPerfilProfesional(proveedor: ProviderRecord) {
   const servicios = obtenerElemento<HTMLDivElement>(
     "#provider-detail-services",
-  );
-  const auditoriaServicios = obtenerElemento<HTMLDivElement>(
-    "#provider-detail-services-audit",
-  );
-  const auditoriaServiciosEmpty = obtenerElemento<HTMLDivElement>(
-    "#provider-detail-services-audit-empty",
   );
   const experiencia = obtenerElemento<HTMLElement>(
     "#provider-detail-experience",
@@ -647,111 +889,69 @@ function actualizarPerfilProfesional(proveedor: ProviderRecord) {
   const redSocial = obtenerElemento<HTMLElement>(
     "#provider-detail-social-media",
   );
-  const tituloPerfil = obtenerElemento<HTMLElement>(
-    "#provider-professional-title",
-  );
-  const lista = Array.isArray(proveedor.servicesList)
-    ? proveedor.servicesList.filter(
-        (item) => typeof item === "string" && item.trim().length > 0,
+  const serviciosDetalle = Array.isArray(proveedor.servicesAudit)
+    ? proveedor.servicesAudit.filter(
+        (item) =>
+          typeof item?.serviceName === "string" &&
+          item.serviceName.trim().length > 0,
       )
     : [];
-  const serviciosPrincipales = lista.slice(0, 3);
-  const serviciosAdicionales = Math.max(
-    lista.length - serviciosPrincipales.length,
-    0,
-  );
+  const reviewsPendientes = Array.isArray(proveedor.serviceReviews)
+    ? proveedor.serviceReviews.filter(
+        (item) => (item.reviewStatus || "").trim().toLowerCase() === "pending",
+      )
+    : [];
+  const reviewsUsadas = new Set<string>();
   const experienciaValor = proveedor.experienceRange?.trim() || "Sin definir";
   const urlRedSocial = proveedor.socialMediaUrl?.trim();
   const tipoRedSocial = proveedor.socialMediaType?.trim();
-  const etiquetaRedSocial = urlRedSocial
-    ? tipoRedSocial
-      ? `${tipoRedSocial}: ${urlRedSocial}`
-      : urlRedSocial
-    : null;
-  if (tituloPerfil) {
-    tituloPerfil.textContent = "Servicios del perfil";
-  }
+  const etiquetaRedSocial = [tipoRedSocial, urlRedSocial]
+    .filter((item) => typeof item === "string" && item.trim().length > 0)
+    .join(" / ");
 
   if (servicios) {
-    if (serviciosPrincipales.length > 0) {
+    if (serviciosDetalle.length > 0 || reviewsPendientes.length > 0) {
+      const filasServicios = serviciosDetalle
+        .map((item, index) => {
+          const review = obtenerReviewServicioProveedor(proveedor, item);
+          if (review?.id) {
+            reviewsUsadas.add(review.id);
+          }
+          return construirFilaServicioPerfil(item, index, review);
+        })
+        .join("");
+      const filasSinEmparejar = reviewsPendientes
+        .filter((review) => !reviewsUsadas.has(review.id))
+        .map((review, index) =>
+          construirFilaReviewSinEmparejar(
+            review,
+            serviciosDetalle.length + index,
+          ),
+        )
+        .join("");
       servicios.innerHTML = `
-        <ul class="mb-0 ps-3">
-          ${serviciosPrincipales.map((item) => `<li>${escaparHtml(item)}</li>`).join("")}
-        </ul>
-        ${
-          serviciosAdicionales > 0
-            ? `<div class="small text-muted mt-2">+${serviciosAdicionales} servicio(s) adicional(es) fuera de la revisión principal.</div>`
-            : ""
-        }
+        <div class="table-responsive provider-service-table-wrap">
+          <table class="table table-sm align-middle provider-service-table mb-0">
+            <thead>
+              <tr>
+                <th>Servicio</th>
+                <th>Dominio / categoría</th>
+                <th>Confianza</th>
+                <th class="text-end">Revisión</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filasServicios}
+              ${filasSinEmparejar}
+            </tbody>
+          </table>
+        </div>
       `;
       servicios.classList.remove("text-muted");
     } else {
-      servicios.textContent = "Sin servicios registrados";
+      servicios.innerHTML =
+        '<span class="provider-service-empty">Sin servicios registrados.</span>';
       servicios.classList.add("text-muted");
-    }
-  }
-
-  if (auditoriaServicios && auditoriaServiciosEmpty) {
-    const auditItems = Array.isArray(proveedor.servicesAudit)
-      ? proveedor.servicesAudit
-      : [];
-    if (auditItems.length > 0) {
-      auditoriaServicios.innerHTML = auditItems
-        .map((item, index) => {
-          const crudo = item.rawServiceText || item.serviceName || "Sin texto";
-          const normalizado =
-            item.serviceNameNormalized ||
-            item.serviceName ||
-            item.rawServiceText ||
-            "Sin normalización";
-          const confianza =
-            typeof item.classificationConfidence === "number" &&
-            Number.isFinite(item.classificationConfidence)
-              ? `${Math.round(item.classificationConfidence * 100)}%`
-              : "—";
-          const requiereRevision =
-            Boolean(item.requiresReview) ||
-            (typeof item.classificationConfidence === "number" &&
-              item.classificationConfidence < 0.7);
-          const borde = requiereRevision ? "border-danger" : "border-success";
-          const badge = requiereRevision
-            ? '<span class="badge bg-danger">Revisión</span>'
-            : '<span class="badge bg-success">Claro</span>';
-          const dominio = item.domainCode
-            ? `<span class="badge bg-secondary me-1">${escaparHtml(item.domainCode)}</span>`
-            : "";
-          const categoria = item.categoryName
-            ? `<span class="badge bg-light text-dark border">${escaparHtml(item.categoryName)}</span>`
-            : "";
-          const resumen = item.serviceSummary
-            ? `<div class="small text-muted mt-1">${escaparHtml(item.serviceSummary)}</div>`
-            : "";
-          return `
-            <div class="card mb-2 ${borde}">
-              <div class="card-body py-2">
-                <div class="d-flex justify-content-between align-items-start gap-2">
-                  <div>
-                    <div class="fw-semibold">${index + 1}. ${escaparHtml(normalizado)}</div>
-                    <div class="small text-muted">Crudo: ${escaparHtml(crudo)}</div>
-                  </div>
-                  ${badge}
-                </div>
-                <div class="mt-2 d-flex flex-wrap gap-1">
-                  ${dominio}
-                  ${categoria}
-                  <span class="badge bg-info text-dark">Confianza ${escaparHtml(confianza)}</span>
-                </div>
-                ${resumen}
-              </div>
-            </div>
-          `;
-        })
-        .join("");
-      auditoriaServiciosEmpty.style.display = "none";
-      auditoriaServicios.classList.remove("text-muted");
-    } else {
-      auditoriaServicios.innerHTML = "";
-      auditoriaServiciosEmpty.style.display = "block";
     }
   }
 
@@ -762,10 +962,12 @@ function actualizarPerfilProfesional(proveedor: ProviderRecord) {
   }
 
   if (redSocial) {
-    if (urlRedSocial && etiquetaRedSocial) {
-      redSocial.innerHTML = `<a href="${escaparHtml(urlRedSocial)}" target="_blank" rel="noopener noreferrer">${escaparHtml(
-        etiquetaRedSocial,
-      )}</a>`;
+    if (etiquetaRedSocial) {
+      redSocial.innerHTML = urlRedSocial
+        ? `<a href="${escaparHtml(urlRedSocial)}" target="_blank" rel="noopener noreferrer">${escaparHtml(
+            etiquetaRedSocial,
+          )}</a>`
+        : escaparHtml(etiquetaRedSocial);
       redSocial.classList.remove("text-muted");
     } else {
       redSocial.textContent = "Sin red social registrada";
@@ -798,30 +1000,18 @@ function actualizarCopyRevision(proveedor: ProviderRecord) {
   const tituloBasico = obtenerElemento<HTMLElement>(
     "#provider-basic-section-title",
   );
-  const tituloPerfil = obtenerElemento<HTMLElement>(
-    "#provider-professional-title",
-  );
   const tituloRevision = obtenerElemento<HTMLElement>(
     "#provider-review-section-title",
   );
   const checklist = obtenerElemento<HTMLElement>(
     "#provider-review-check-docs-label",
   );
-  const ayudaMensaje = obtenerElemento<HTMLElement>(
-    "#provider-review-message-help",
-  );
   const ayudaFooter = obtenerElemento<HTMLElement>(
     "#provider-review-footer-help",
-  );
-  const mensajeTextarea = obtenerElemento<HTMLTextAreaElement>(
-    "#provider-review-message",
   );
 
   if (tituloBasico) {
     tituloBasico.textContent = "Información personal";
-  }
-  if (tituloPerfil) {
-    tituloPerfil.textContent = "Servicios del perfil";
   }
   if (tituloRevision) {
     tituloRevision.textContent = "Validación administrativa";
@@ -830,20 +1020,74 @@ function actualizarCopyRevision(proveedor: ProviderRecord) {
     checklist.textContent =
       "Confirmo que revisé la información, identidad y contacto del proveedor.";
   }
-  if (ayudaMensaje) {
-    ayudaMensaje.textContent =
-      "Se enviará este mensaje al proveedor junto con la aprobación o el rechazo.";
-  }
-  if (mensajeTextarea) {
-    mensajeTextarea.placeholder =
-      "Ej. Tu registro fue aprobado. Ya puedes recibir solicitudes de clientes.";
-  }
   if (ayudaFooter) {
     ayudaFooter.textContent =
-      "Se notificará al proveedor vía WhatsApp con el resultado y acceso al menú.";
+      "Se notificará al proveedor vía WhatsApp con el resultado y el siguiente paso.";
+  }
+}
+
+function actualizarVistaOperativo(proveedor: ProviderRecord) {
+  const esOperativo = estado.bucketActivo === "operativos";
+  const seccionRevision = document.querySelector<HTMLElement>(
+    ".provider-review-form",
+  );
+  const botonEnviar = obtenerElemento<HTMLButtonElement>(
+    "#provider-review-submit-btn",
+  );
+  const ayudaFooter = obtenerElemento<HTMLElement>(
+    "#provider-review-footer-help",
+  );
+  const tituloRevision = obtenerElemento<HTMLElement>(
+    "#provider-review-section-title",
+  );
+  const checkboxDocs = obtenerElemento<HTMLInputElement>(
+    "#provider-review-check-docs",
+  );
+  const selectorEstado = obtenerElemento<HTMLSelectElement>(
+    "#provider-review-status",
+  );
+  const inputRevisor = obtenerElemento<HTMLInputElement>(
+    "#provider-reviewer-name",
+  );
+  const inputNombres = obtenerElemento<HTMLInputElement>(
+    "#provider-review-document-first-names",
+  );
+  const inputApellidos = obtenerElemento<HTMLInputElement>(
+    "#provider-review-document-last-names",
+  );
+  const inputCedula = obtenerElemento<HTMLInputElement>(
+    "#provider-review-document-id-number",
+  );
+
+  if (seccionRevision) {
+    seccionRevision.style.display = esOperativo ? "none" : "block";
+  }
+  if (botonEnviar) {
+    botonEnviar.style.display = esOperativo ? "none" : "";
+  }
+  if (ayudaFooter) {
+    ayudaFooter.textContent = esOperativo
+      ? "Detalle operativo de solo lectura."
+      : "Se notificará al proveedor vía WhatsApp con el resultado y el siguiente paso.";
+  }
+  if (tituloRevision) {
+    tituloRevision.textContent = esOperativo
+      ? "Detalle operativo"
+      : "Revisión administrativa del onboarding";
   }
 
-  actualizarVisibilidadMensajeRevision("");
+  [
+    checkboxDocs,
+    selectorEstado,
+    inputRevisor,
+    inputNombres,
+    inputApellidos,
+    inputCedula,
+  ].forEach((elemento) => {
+    if (elemento) {
+      elemento.disabled = esOperativo;
+    }
+  });
 }
 
 function limpiarFormularioRevision() {
@@ -853,12 +1097,6 @@ function limpiarFormularioRevision() {
   );
   if (estadoSelect) {
     estadoSelect.value = "";
-  }
-  const notasTextarea = obtenerElemento<HTMLTextAreaElement>(
-    "#provider-review-notes",
-  );
-  if (notasTextarea) {
-    notasTextarea.value = "";
   }
   const nombresTextarea = obtenerElemento<HTMLInputElement>(
     "#provider-review-document-first-names",
@@ -878,13 +1116,6 @@ function limpiarFormularioRevision() {
   if (cedulaTextarea) {
     cedulaTextarea.value = "";
   }
-  const mensajeTextarea = obtenerElemento<HTMLTextAreaElement>(
-    "#provider-review-message",
-  );
-  if (mensajeTextarea) {
-    mensajeTextarea.value = "";
-  }
-  actualizarVisibilidadMensajeRevision("");
   const revisorInput = obtenerElemento<HTMLInputElement>(
     "#provider-reviewer-name",
   );
@@ -945,7 +1176,7 @@ function actualizarBadgeEstado(status: ProviderRecord["status"]) {
 function actualizarDetalleProveedor(proveedor: ProviderRecord) {
   establecerTexto(
     "#provider-detail-name",
-    resolverNombreVisibleProveedor(proveedor),
+    resolverNombreVisibleSegunBucketActivo(proveedor),
   );
   actualizarBadgeEstado(proveedor.status);
   establecerTexto(
@@ -989,10 +1220,10 @@ function actualizarDetalleProveedor(proveedor: ProviderRecord) {
   actualizarPerfilProfesional(proveedor);
   actualizarFotosIdentidad(proveedor);
   actualizarCertificados(proveedor);
-  actualizarNotas(proveedor);
   actualizarCamposIdentidad(proveedor);
   actualizarCopyRevision(proveedor);
   actualizarOpcionesResultadoRevision(proveedor);
+  actualizarVistaOperativo(proveedor);
 
   const estadoSelect = obtenerElemento<HTMLSelectElement>(
     "#provider-review-status",
@@ -1051,9 +1282,11 @@ async function cargarProveedoresBucket() {
     const proveedores =
       estado.bucketActivo === "onboarding"
         ? await apiProveedores.obtenerProveedoresOnboarding()
-        : estado.bucketActivo === "profile_incomplete"
-          ? await apiProveedores.obtenerProveedoresPerfilProfesionalIncompleto()
-          : await apiProveedores.obtenerProveedoresNuevos();
+        : estado.bucketActivo === "operativos"
+          ? await apiProveedores.obtenerProveedoresOperativos()
+          : estado.bucketActivo === "profile_incomplete"
+            ? await apiProveedores.obtenerProveedoresPerfilProfesionalIncompleto()
+            : await apiProveedores.obtenerProveedoresNuevos();
     estado.proveedores = proveedores;
     renderizarProveedores();
   } catch (error) {
@@ -1077,10 +1310,35 @@ function cerrarModalRevision() {
     modal.hide();
   }
   estado.proveedorSeleccionado = null;
+  estado.reviewSeleccionada = null;
   limpiarFormularioRevision();
 }
 
-function abrirModalRevision(proveedorId: string) {
+async function cargarDetalleProveedorSeleccionado(
+  proveedorId: string,
+): Promise<void> {
+  try {
+    const detalle = await apiProveedores.obtenerDetalleProveedor(proveedorId);
+    if (estado.proveedorSeleccionado?.id === proveedorId && detalle) {
+      estado.proveedorSeleccionado = detalle;
+      actualizarDetalleProveedor(detalle);
+      if (estado.reviewSeleccionada) {
+        const reviewActualizada = Array.isArray(detalle.serviceReviews)
+          ? (detalle.serviceReviews.find(
+              (item) => item.id === estado.reviewSeleccionada?.id,
+            ) ?? null)
+          : null;
+        if (reviewActualizada) {
+          estado.reviewSeleccionada = reviewActualizada;
+        }
+      }
+    }
+  } catch (error) {
+    console.error("No se pudo recargar el detalle del proveedor:", error);
+  }
+}
+
+async function abrirModalRevision(proveedorId: string) {
   const proveedor = estado.proveedores.find((item) => item.id === proveedorId);
   if (!proveedor) {
     mostrarAviso(
@@ -1098,6 +1356,8 @@ function abrirModalRevision(proveedorId: string) {
   if (modal) {
     modal.show();
   }
+
+  await cargarDetalleProveedorSeleccionado(proveedorId);
 }
 
 async function ejecutarAccionSobreProveedor(
@@ -1189,59 +1449,6 @@ function manejarAccionesDeProveedores(evento: Event) {
   }
 }
 
-function construirMensajeSugerido(
-  status: ProviderRecord["status"],
-  proveedor?: ProviderRecord | null,
-): string {
-  const nombreLimpio = extraerPrimerNombre(
-    proveedor?.documentFirstNames ||
-      (proveedor ? resolverNombreVisibleProveedor(proveedor) : null) ||
-      proveedor?.contact ||
-      null,
-  );
-  switch (status) {
-    case "approved":
-      return nombreLimpio
-        ? `✅ Hola *${nombreLimpio}*, tu perfil fue aprobado y ya puedes recibir solicitudes de clientes.`
-        : "✅ Tu perfil fue aprobado y ya puedes recibir solicitudes de clientes.";
-    case "rejected":
-      return nombreLimpio
-        ? `Hola ${nombreLimpio}, no pudimos aprobar tu registro básico con la información enviada. Revisa tus datos y documentos y vuelve a intentarlo.`
-        : "No pudimos aprobar tu registro básico con la información enviada. Revisa tus datos y documentos y vuelve a intentarlo.";
-    default:
-      return "";
-  }
-}
-
-function actualizarVisibilidadMensajeRevision(
-  status: ProviderRecord["status"] | "",
-) {
-  const grupoMensaje = obtenerElemento<HTMLElement>(
-    "#provider-review-message-group",
-  );
-  const ayudaFooter = obtenerElemento<HTMLElement>(
-    "#provider-review-footer-help",
-  );
-  const mensajeTextarea = obtenerElemento<HTMLTextAreaElement>(
-    "#provider-review-message",
-  );
-  const usaMensajeEstandar = status === "approved";
-
-  if (grupoMensaje) {
-    grupoMensaje.style.display = usaMensajeEstandar ? "none" : "";
-  }
-
-  if (mensajeTextarea && usaMensajeEstandar) {
-    mensajeTextarea.value = "";
-  }
-
-  if (ayudaFooter) {
-    ayudaFooter.textContent = usaMensajeEstandar
-      ? "Se notificará al proveedor vía WhatsApp con un mensaje estándar y acceso al menú."
-      : "Se notificará al proveedor vía WhatsApp con el resultado y el siguiente paso.";
-  }
-}
-
 function manejarAccionModal() {
   const proveedor = estado.proveedorSeleccionado;
   if (!proveedor) {
@@ -1251,12 +1458,6 @@ function manejarAccionModal() {
 
   const estadoSelect = obtenerElemento<HTMLSelectElement>(
     "#provider-review-status",
-  );
-  const notasTextarea = obtenerElemento<HTMLTextAreaElement>(
-    "#provider-review-notes",
-  );
-  const mensajeTextarea = obtenerElemento<HTMLTextAreaElement>(
-    "#provider-review-message",
   );
   const revisorInput = obtenerElemento<HTMLInputElement>(
     "#provider-reviewer-name",
@@ -1276,8 +1477,6 @@ function manejarAccionModal() {
 
   const estadoSeleccionado = (estadoSelect?.value ||
     "") as ProviderRecord["status"];
-  const notas = notasTextarea?.value.trim() ?? "";
-  const mensaje = mensajeTextarea?.value.trim() ?? "";
   const reviewer = revisorInput?.value.trim() ?? undefined;
   const documentFirstNames = nombresInput?.value.trim() ?? "";
   const documentLastNames = apellidosInput?.value.trim() ?? "";
@@ -1289,18 +1488,6 @@ function manejarAccionModal() {
   if (!estadoSeleccionado) {
     mostrarErrorModal("Selecciona un resultado antes de continuar.");
     estadoSelect?.focus();
-    return;
-  }
-
-  if (estadoSeleccionado !== "approved" && mensaje.length === 0) {
-    mostrarErrorModal("Ingresa el mensaje que recibirá el proveedor.");
-    mensajeTextarea?.focus();
-    return;
-  }
-
-  if (estadoSeleccionado === "rejected" && notas.length === 0) {
-    mostrarErrorModal("Ingresa un motivo interno de rechazo para continuar.");
-    notasTextarea?.focus();
     return;
   }
 
@@ -1333,7 +1520,6 @@ function manejarAccionModal() {
 
   void ejecutarAccionSobreProveedor(proveedor.id, "review", {
     status: estadoSeleccionado,
-    notes: notas.length > 0 ? notas : undefined,
     reviewer,
     phone: telefono ?? undefined,
     documentFirstNames:
@@ -1342,13 +1528,373 @@ function manejarAccionModal() {
       documentLastNames.length > 0 ? documentLastNames : undefined,
     documentIdNumber:
       documentIdNumber.length > 0 ? documentIdNumber : undefined,
-    message:
-      estadoSeleccionado === "approved"
-        ? undefined
-        : mensaje.length > 0
-          ? mensaje
-          : undefined,
   });
+}
+
+function obtenerReviewServicioPorId(
+  reviewId: string,
+): ProviderServiceReview | null {
+  const proveedor = estado.proveedorSeleccionado;
+  if (!proveedor || !Array.isArray(proveedor.serviceReviews)) {
+    return null;
+  }
+
+  return proveedor.serviceReviews.find((item) => item.id === reviewId) || null;
+}
+
+function obtenerServicioAsociadoAReview(review: ProviderServiceReview) {
+  const proveedor = estado.proveedorSeleccionado;
+  if (!proveedor || !Array.isArray(proveedor.servicesAudit)) {
+    return null;
+  }
+
+  const claveReview = normalizarClaveServicio(
+    review.serviceNameNormalized || review.serviceName || review.rawServiceText,
+  );
+  if (!claveReview) return null;
+
+  return (
+    proveedor.servicesAudit.find((item) => {
+      const claveServicio = normalizarClaveServicio(
+        item.serviceNameNormalized || item.serviceName || item.rawServiceText,
+      );
+      return claveServicio === claveReview;
+    }) || null
+  );
+}
+
+function obtenerModalRevisionServicio(): ModalInstance | null {
+  const modalElement = document.getElementById("provider-service-review-modal");
+  if (!modalElement || !bootstrapGlobal?.Modal) return null;
+  return bootstrapGlobal.Modal.getOrCreateInstance(modalElement);
+}
+
+function limpiarFormularioRevisionServicio() {
+  const reviewId = obtenerElemento<HTMLInputElement>(
+    "#provider-service-review-id",
+  );
+  const providerId = obtenerElemento<HTMLInputElement>(
+    "#provider-service-review-provider-id",
+  );
+  const domainCode = obtenerElemento<HTMLInputElement>(
+    "#provider-service-review-domain-code",
+  );
+  const categoryName = obtenerElemento<HTMLInputElement>(
+    "#provider-service-review-category-name",
+  );
+  const serviceName = obtenerElemento<HTMLInputElement>(
+    "#provider-service-review-service-name",
+  );
+  const serviceSummary = obtenerElemento<HTMLTextAreaElement>(
+    "#provider-service-review-service-summary",
+  );
+  const createDomain = obtenerElemento<HTMLInputElement>(
+    "#provider-service-review-create-domain",
+  );
+  const context = obtenerElemento<HTMLDivElement>(
+    "#provider-service-review-context",
+  );
+  const feedback = obtenerElemento<HTMLDivElement>(
+    "#provider-service-review-error",
+  );
+
+  if (reviewId) reviewId.value = "";
+  if (providerId) providerId.value = "";
+  if (domainCode) domainCode.value = "";
+  if (categoryName) categoryName.value = "";
+  if (serviceName) serviceName.value = "";
+  if (serviceSummary) serviceSummary.value = "";
+  if (createDomain) createDomain.checked = false;
+  if (context) context.innerHTML = "";
+  if (feedback) {
+    feedback.textContent = "";
+    feedback.classList.add("d-none");
+  }
+  estado.reviewSeleccionada = null;
+}
+
+function actualizarFormularioRevisionServicio(review: ProviderServiceReview) {
+  const provider = estado.proveedorSeleccionado;
+  const domainCode = obtenerElemento<HTMLInputElement>(
+    "#provider-service-review-domain-code",
+  );
+  const categoryName = obtenerElemento<HTMLInputElement>(
+    "#provider-service-review-category-name",
+  );
+  const serviceName = obtenerElemento<HTMLInputElement>(
+    "#provider-service-review-service-name",
+  );
+  const serviceSummary = obtenerElemento<HTMLTextAreaElement>(
+    "#provider-service-review-service-summary",
+  );
+  const createDomain = obtenerElemento<HTMLInputElement>(
+    "#provider-service-review-create-domain",
+  );
+  const reviewId = obtenerElemento<HTMLInputElement>(
+    "#provider-service-review-id",
+  );
+  const providerId = obtenerElemento<HTMLInputElement>(
+    "#provider-service-review-provider-id",
+  );
+  const context = obtenerElemento<HTMLDivElement>(
+    "#provider-service-review-context",
+  );
+  const title = obtenerElemento<HTMLElement>(
+    "#provider-service-review-modal-title",
+  );
+
+  if (reviewId) reviewId.value = review.id;
+  if (providerId) providerId.value = provider?.id || review.providerId || "";
+  if (domainCode) {
+    domainCode.value =
+      review.suggestedDomainCode ||
+      review.assignedDomainCode ||
+      obtenerServicioAsociadoAReview(review)?.domainCode ||
+      "";
+  }
+  if (categoryName) {
+    categoryName.value =
+      review.proposedCategoryName ||
+      review.assignedCategoryName ||
+      obtenerServicioAsociadoAReview(review)?.categoryName ||
+      "";
+  }
+  if (serviceName) {
+    serviceName.value =
+      review.assignedServiceName ||
+      review.serviceName ||
+      obtenerServicioAsociadoAReview(review)?.serviceName ||
+      "";
+  }
+  if (serviceSummary) {
+    serviceSummary.value =
+      review.proposedServiceSummary ||
+      review.assignedServiceSummary ||
+      obtenerServicioAsociadoAReview(review)?.serviceSummary ||
+      "";
+  }
+  if (createDomain) {
+    createDomain.checked = false;
+  }
+  if (title) {
+    title.textContent = "Ajustar sugerencia de servicio";
+  }
+  if (context) {
+    const resumenContexto = [
+      review.rawServiceText
+        ? `Texto original: ${escaparHtml(review.rawServiceText)}`
+        : null,
+      review.reviewReason
+        ? `Motivo: ${escaparHtml(review.reviewReason)}`
+        : null,
+    ]
+      .filter(Boolean)
+      .map(
+        (item) =>
+          `<div class="provider-service-review-context-line">${item}</div>`,
+      )
+      .join("");
+    context.innerHTML = resumenContexto;
+  }
+}
+
+function establecerAccionReviewEnProceso(reviewId: string | null) {
+  estado.idReviewEnProceso = reviewId;
+
+  const botones = document.querySelectorAll<HTMLButtonElement>(
+    "[data-service-review-action]",
+  );
+  botones.forEach((boton) => {
+    const id = boton.dataset.reviewId || "";
+    boton.disabled = Boolean(reviewId) && id === reviewId;
+  });
+
+  const botonGuardar = obtenerElemento<HTMLButtonElement>(
+    "#provider-service-review-save-btn",
+  );
+  if (botonGuardar) {
+    botonGuardar.disabled = Boolean(reviewId);
+  }
+
+  const indicador = obtenerElemento<HTMLSpanElement>(
+    "#provider-service-review-processing",
+  );
+  if (indicador) {
+    indicador.style.display = reviewId ? "inline-flex" : "none";
+  }
+}
+
+async function recargarDetalleProveedorEnModal() {
+  const proveedor = estado.proveedorSeleccionado;
+  if (!proveedor) return;
+  await cargarDetalleProveedorSeleccionado(proveedor.id);
+}
+
+function abrirModalRevisionServicio(reviewId: string) {
+  const review = obtenerReviewServicioPorId(reviewId);
+  if (!review) {
+    mostrarAviso("No se encontró la sugerencia seleccionada.", "error");
+    return;
+  }
+
+  limpiarFormularioRevisionServicio();
+  estado.reviewSeleccionada = review;
+  actualizarFormularioRevisionServicio(review);
+
+  const modal = obtenerModalRevisionServicio();
+  if (modal) {
+    modal.show();
+  }
+}
+
+function construirPayloadRevisionServicioDesdeFormulario(): ProviderServiceReviewActionPayload | null {
+  const review = estado.reviewSeleccionada;
+  if (!review) return null;
+
+  const domainCode = obtenerElemento<HTMLInputElement>(
+    "#provider-service-review-domain-code",
+  )?.value.trim();
+  const categoryName = obtenerElemento<HTMLInputElement>(
+    "#provider-service-review-category-name",
+  )?.value.trim();
+  const serviceName = obtenerElemento<HTMLInputElement>(
+    "#provider-service-review-service-name",
+  )?.value.trim();
+  const serviceSummary = obtenerElemento<HTMLTextAreaElement>(
+    "#provider-service-review-service-summary",
+  )?.value.trim();
+  const createDomain = obtenerElemento<HTMLInputElement>(
+    "#provider-service-review-create-domain",
+  )?.checked;
+  const reviewer = obtenerElemento<HTMLInputElement>(
+    "#provider-service-reviewer-name",
+  )?.value.trim();
+
+  if (!domainCode || !categoryName || !serviceName) {
+    return null;
+  }
+
+  return {
+    domain_code: domainCode,
+    category_name: categoryName,
+    service_name: serviceName,
+    service_summary: serviceSummary || undefined,
+    reviewer: reviewer || undefined,
+    create_domain_if_missing: Boolean(createDomain),
+  };
+}
+
+async function manejarGuardadoRevisionServicio() {
+  const review = estado.reviewSeleccionada;
+  if (!review) {
+    mostrarAviso("Selecciona una revisión antes de guardar.", "error");
+    return;
+  }
+
+  const payload = construirPayloadRevisionServicioDesdeFormulario();
+  if (!payload) {
+    mostrarAviso(
+      "Completa dominio, categoría y servicio antes de guardar.",
+      "error",
+    );
+    return;
+  }
+
+  try {
+    establecerAccionReviewEnProceso(review.id);
+    const resultado = await apiProveedores.aprobarReviewServicioCatalogo(
+      review.id,
+      payload,
+    );
+    mostrarAviso(
+      resultado.message ?? "Revisión de servicio aprobada correctamente.",
+      "success",
+    );
+    const modal = obtenerModalRevisionServicio();
+    if (modal) {
+      modal.hide();
+    }
+    limpiarFormularioRevisionServicio();
+    await recargarDetalleProveedorEnModal();
+  } catch (error) {
+    console.error("Error guardando revisión de servicio:", error);
+    mostrarAviso(extraerMensajeError(error), "error");
+  } finally {
+    establecerAccionReviewEnProceso(null);
+  }
+}
+
+async function manejarAccionServicioCatalogo(
+  accion: "accept" | "edit",
+  reviewId: string,
+) {
+  const review = obtenerReviewServicioPorId(reviewId);
+  if (!review) {
+    mostrarAviso("No se encontró la sugerencia seleccionada.", "error");
+    return;
+  }
+
+  if (accion === "edit") {
+    limpiarFormularioRevisionServicio();
+    estado.reviewSeleccionada = review;
+    actualizarFormularioRevisionServicio(review);
+    const modal = obtenerModalRevisionServicio();
+    if (modal) {
+      modal.show();
+    }
+    return;
+  }
+
+  const servicio = obtenerServicioAsociadoAReview(review);
+  const payload: ProviderServiceReviewActionPayload = {
+    domain_code:
+      review.suggestedDomainCode ||
+      review.assignedDomainCode ||
+      servicio?.domainCode ||
+      "",
+    category_name:
+      review.proposedCategoryName ||
+      review.assignedCategoryName ||
+      servicio?.categoryName ||
+      "",
+    service_name:
+      review.assignedServiceName ||
+      review.serviceName ||
+      servicio?.serviceName ||
+      "",
+    service_summary:
+      review.proposedServiceSummary ||
+      review.assignedServiceSummary ||
+      servicio?.serviceSummary ||
+      undefined,
+    create_domain_if_missing: true,
+  };
+
+  if (!payload.domain_code || !payload.category_name || !payload.service_name) {
+    mostrarAviso(
+      "La sugerencia aún no tiene dominio, categoría o servicio completos.",
+      "error",
+    );
+    return;
+  }
+
+  try {
+    establecerAccionReviewEnProceso(reviewId);
+    const resultado = await apiProveedores.aprobarReviewServicioCatalogo(
+      reviewId,
+      payload,
+    );
+    mostrarAviso(
+      resultado.message ?? "Sugerencia de servicio aprobada correctamente.",
+      "success",
+    );
+    await recargarDetalleProveedorEnModal();
+  } catch (error) {
+    console.error("Error procesando sugerencia de servicio:", error);
+    mostrarAviso(extraerMensajeError(error), "error");
+  } finally {
+    establecerAccionReviewEnProceso(null);
+  }
 }
 
 function manejarCopiaTelefono() {
@@ -1430,6 +1976,54 @@ function renderizarFilaProveedorGeneral(proveedor: ProviderRecord): string {
         <div class="fw-semibold">${escaparHtml(nombreVisible)}</div>
       </td>
       <td>${contactoMarkup}</td>
+      <td>${ubicacion}</td>
+      <td>
+        <span class="text-muted small">
+          ${escaparHtml(formatearFechaLarga(registeredAt))}
+        </span>
+      </td>
+      <td class="text-end">
+        <button
+          type="button"
+          class="btn btn-sm btn-primary"
+          data-provider-action="review"
+          data-provider-id="${id}"
+        >
+          <i class="fas fa-eye me-1"></i>
+          Revisar
+        </button>
+      </td>
+    </tr>
+  `;
+}
+
+function renderizarFilaProveedorOperativo(proveedor: ProviderRecord): string {
+  const { id, registeredAt, city } = proveedor;
+  const nombreVisible = resolverNombreVisibleOperativoProveedor(proveedor);
+  const telefonoVisible = resolverTelefonoVisibleOperativoProveedor(proveedor);
+  const estadoContacto = obtenerEtiquetaContactoOperativo(proveedor);
+
+  const telefonoMarkup = telefonoVisible
+    ? `<div class="text-muted small mt-1">${escaparHtml(telefonoVisible)}</div>`
+    : '<div class="text-muted small mt-1">Sin teléfono visible</div>';
+
+  const estadoContactoMarkup = estadoContacto
+    ? `<span class="badge bg-light text-dark border">${escaparHtml(
+        estadoContacto,
+      )}</span>`
+    : '<span class="text-muted">Sin estado</span>';
+
+  const ubicacion = city
+    ? escaparHtml(city)
+    : '<span class="text-muted">Sin ciudad</span>';
+
+  return `
+    <tr data-provider-id="${id}">
+      <td>
+        <div class="fw-semibold">${escaparHtml(nombreVisible)}</div>
+        ${telefonoMarkup}
+      </td>
+      <td>${estadoContactoMarkup}</td>
       <td>${ubicacion}</td>
       <td>
         <span class="text-muted small">
@@ -1678,7 +2272,9 @@ function renderizarProveedores() {
     .map((proveedor) =>
       estado.bucketActivo === "profile_incomplete"
         ? renderizarFilaPerfilProfesionalIncompleto(proveedor)
-        : renderizarFilaProveedorGeneral(proveedor),
+        : estado.bucketActivo === "operativos"
+          ? renderizarFilaProveedorOperativo(proveedor)
+          : renderizarFilaProveedorGeneral(proveedor),
     )
     .join("");
 
@@ -1756,26 +2352,6 @@ function enlazarEventos() {
     botonEnviar.addEventListener("click", () => manejarAccionModal());
   }
 
-  const estadoSelect = obtenerElemento<HTMLSelectElement>(
-    "#provider-review-status",
-  );
-  if (estadoSelect) {
-    estadoSelect.addEventListener("change", () => {
-      const mensajeTextarea = obtenerElemento<HTMLTextAreaElement>(
-        "#provider-review-message",
-      );
-      const status = estadoSelect.value as ProviderRecord["status"];
-      actualizarVisibilidadMensajeRevision(status);
-      if (!mensajeTextarea) {
-        return;
-      }
-      mensajeTextarea.value = construirMensajeSugerido(
-        status,
-        estado.proveedorSeleccionado,
-      );
-    });
-  }
-
   const botonCopiarTelefono = obtenerElemento<HTMLButtonElement>(
     "#provider-detail-copy-phone",
   );
@@ -1783,11 +2359,50 @@ function enlazarEventos() {
     botonCopiarTelefono.addEventListener("click", manejarCopiaTelefono);
   }
 
+  const contenedorServicios = obtenerElemento<HTMLDivElement>(
+    "#provider-detail-services",
+  );
+  if (contenedorServicios) {
+    contenedorServicios.addEventListener("click", (evento) => {
+      const objetivo = evento.target as HTMLElement;
+      const boton = objetivo.closest<HTMLButtonElement>(
+        "[data-service-review-action]",
+      );
+      if (!boton) return;
+      const reviewId = boton.dataset.reviewId;
+      const accion = boton.dataset.serviceReviewAction as
+        | "accept"
+        | "edit"
+        | undefined;
+      if (!reviewId || !accion) return;
+      evento.preventDefault();
+      void manejarAccionServicioCatalogo(accion, reviewId);
+    });
+  }
+
+  const botonGuardarRevisionServicio = obtenerElemento<HTMLButtonElement>(
+    "#provider-service-review-save-btn",
+  );
+  if (botonGuardarRevisionServicio) {
+    botonGuardarRevisionServicio.addEventListener("click", () => {
+      void manejarGuardadoRevisionServicio();
+    });
+  }
+
   const modalElement = document.getElementById("provider-review-modal");
   if (modalElement) {
     modalElement.addEventListener("hidden.bs.modal", () => {
       estado.proveedorSeleccionado = null;
       limpiarFormularioRevision();
+    });
+  }
+
+  const modalServicioElement = document.getElementById(
+    "provider-service-review-modal",
+  );
+  if (modalServicioElement) {
+    modalServicioElement.addEventListener("hidden.bs.modal", () => {
+      limpiarFormularioRevisionServicio();
     });
   }
 }
