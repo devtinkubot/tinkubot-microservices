@@ -59,7 +59,7 @@ def test_resolver_estado_registro_interview_required_aprueba_acceso_basico():
     assert resultado == (True, True, True, False)
 
 
-def test_resolver_estado_registro_approved_basic_habilita_acceso_basico():
+def test_resolver_estado_registro_legacy_habilita_acceso_basico():
     flujo = {"has_consent": True}
     perfil = {
         "id": "prov-basic",
@@ -67,6 +67,21 @@ def test_resolver_estado_registro_approved_basic_habilita_acceso_basico():
         "has_consent": True,
         "verified": False,
         "status": "approved_basic",
+    }
+
+    resultado = resolver_estado_registro(flujo, perfil)
+
+    assert resultado == (True, True, True, False)
+
+
+def test_resolver_estado_registro_aprobado_sin_full_name_sigue_registrado():
+    flujo = {"has_consent": True}
+    perfil = {
+        "id": "prov-approved-empty-name",
+        "full_name": "",
+        "has_consent": True,
+        "verified": True,
+        "status": "approved",
     }
 
     resultado = resolver_estado_registro(flujo, perfil)
@@ -119,7 +134,6 @@ def test_manejar_estado_inicial_en_revision_devuelve_menu_normal():
             tiene_consentimiento=True,
             esta_registrado=True,
             esta_verificado=False,
-            approved_basic=False,
             telefono="593999111240@s.whatsapp.net",
         )
     )
@@ -148,7 +162,6 @@ def test_manejar_estado_inicial_rejected_permanece_en_pending_verification():
             tiene_consentimiento=True,
             esta_registrado=True,
             esta_verificado=False,
-            approved_basic=False,
             telefono="593999111241@s.whatsapp.net",
         )
     )
@@ -161,11 +174,10 @@ def test_manejar_estado_inicial_rejected_permanece_en_pending_verification():
     assert respuesta["messages"][1]["ui"]["type"] == "list"
 
 
-def test_manejar_estado_inicial_approved_basic_muestra_menu_interactivo():
+def test_manejar_estado_inicial_legacy_operativo_muestra_menu_interactivo():
     flujo = {
         "has_consent": True,
         "full_name": "Proveedor Basico",
-        "approved_basic": True,
         "provider_id": "prov-basic",
     }
 
@@ -177,14 +189,12 @@ def test_manejar_estado_inicial_approved_basic_muestra_menu_interactivo():
             tiene_consentimiento=True,
             esta_registrado=True,
             esta_verificado=True,
-            approved_basic=True,
             telefono="593999111299@s.whatsapp.net",
         )
     )
 
     assert respuesta is not None
     assert flujo["state"] == "awaiting_menu_option"
-    assert flujo["approved_basic"] is True
     assert respuesta["messages"][0]["response"] == "Elige la opción de interés."
     assert respuesta["messages"][0]["ui"]["type"] == "list"
     assert respuesta["messages"][0]["ui"]["id"] == "provider_main_menu_v1"
@@ -194,7 +204,6 @@ def test_manejar_estado_inicial_aprobado_muestra_menu_interactivo():
     flujo = {
         "has_consent": True,
         "full_name": "Proveedor Aprobado",
-        "approved_basic": False,
         "provider_id": "prov-approved",
     }
 
@@ -206,7 +215,6 @@ def test_manejar_estado_inicial_aprobado_muestra_menu_interactivo():
             tiene_consentimiento=True,
             esta_registrado=True,
             esta_verificado=True,
-            approved_basic=False,
             telefono="593999111288@s.whatsapp.net",
         )
     )
@@ -229,7 +237,6 @@ def test_manejar_aprobacion_reciente_notifica_una_sola_vez():
     primera_respuesta = manejar_aprobacion_reciente(
         flujo=flujo,
         esta_verificado=True,
-        approved_basic=False,
     )
 
     assert primera_respuesta is not None
@@ -241,7 +248,6 @@ def test_manejar_aprobacion_reciente_notifica_una_sola_vez():
     segunda_respuesta = manejar_aprobacion_reciente(
         flujo=flujo,
         esta_verificado=True,
-        approved_basic=False,
     )
 
     assert segunda_respuesta is None
@@ -438,6 +444,24 @@ def test_checkpoint_onboarding_detecta_perfil_completo():
     assert inferir_checkpoint_onboarding_desde_perfil(perfil) == "awaiting_menu_option"
 
 
+def test_checkpoint_onboarding_aprobado_sin_full_name_sigue_en_menu():
+    perfil = {
+        "id": "prov-approved-empty-name",
+        "full_name": "",
+        "city": "cuenca",
+        "dni_front_photo_url": "https://example.com/dni.jpg",
+        "face_photo_url": "https://example.com/face.jpg",
+        "experience_range": "3 a 5 años",
+        "services_list": ["Plomeria"],
+        "has_consent": True,
+        "verified": True,
+        "status": "approved",
+    }
+
+    assert es_perfil_onboarding_completo(perfil) is True
+    assert inferir_checkpoint_onboarding_desde_perfil(perfil) == "awaiting_menu_option"
+
+
 def test_checkpoint_onboarding_determina_persistencia_solo_en_onboarding():
     flujo = {
         "state": "viewing_personal_name",
@@ -447,7 +471,7 @@ def test_checkpoint_onboarding_determina_persistencia_solo_en_onboarding():
     assert determinar_checkpoint_onboarding(flujo) is None
 
 
-def test_sincronizar_flujo_con_perfil_marca_approved_basic():
+def test_sincronizar_flujo_con_perfil_legacy_aprobado_marca_acceso_operativo():
     flujo = {}
     perfil = {
         "id": "prov-basic",
@@ -459,10 +483,8 @@ def test_sincronizar_flujo_con_perfil_marca_approved_basic():
 
     sincronizar_flujo_con_perfil(flujo, perfil)
 
-    assert flujo["approved_basic"] is True
 
-
-def test_sincronizar_flujo_perfil_pending_review_marca_aprobado_basico():
+def test_sincronizar_flujo_perfil_pending_review_marca_acceso_operativo():
     flujo = {}
     perfil = {
         "id": "prov-review",
@@ -474,7 +496,18 @@ def test_sincronizar_flujo_perfil_pending_review_marca_aprobado_basico():
 
     sincronizar_flujo_con_perfil(flujo, perfil)
 
-    assert flujo["approved_basic"] is True
+
+def test_sincronizar_flujo_con_perfil_aprobado_canonico_marca_acceso_operativo():
+    flujo = {}
+    perfil = {
+        "id": "prov-approved",
+        "full_name": "Proveedor Aprobado",
+        "services_list": [],
+        "status": "approved",
+        "verified": True,
+    }
+
+    sincronizar_flujo_con_perfil(flujo, perfil)
 
 
 def test_perfil_profesional_completo_con_un_servicio_es_suficiente():

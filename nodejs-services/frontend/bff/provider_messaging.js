@@ -18,6 +18,15 @@ const normalizarNombreCompuesto = (...partes) =>
     .join(" ")
     .trim();
 
+const resolverPrimerNombreCanonicoProveedor = (registro = {}) => {
+  const nombreDocumento = normalizarNombreCompuesto(
+    registro.document_first_names,
+    registro.documentFirstNames,
+  );
+  const primerNombre = limpiarTexto(nombreDocumento)?.split(/\s+/)?.[0];
+  return primerNombre || "Proveedor";
+};
+
 const resolverNombreCanonicoProveedor = (registro = {}) => {
   const nombreDocumento = normalizarNombreCompuesto(
     registro.document_first_names,
@@ -35,27 +44,42 @@ const resolverNombreCanonicoProveedor = (registro = {}) => {
 };
 
 const construirMensajeAprobacionProveedor = (registro = {}) => {
-  const nombreCanonico = resolverNombreCanonicoProveedor(registro);
-  const primerNombre = nombreCanonico.split(/\s+/)[0] || "Proveedor";
+  const primerNombre = resolverPrimerNombreCanonicoProveedor(registro);
 
   return {
     message: [
-      `¡Hola ${primerNombre}, ya puedes trabajar!`,
+      `Bienvenido ${primerNombre}.`,
       "",
-      "Tu información fue aprobada y ya puedes recibir solicitudes de clientes.",
+      "*Tu cuenta fue aprobada.*",
+      "El sistema ya habilitó tu acceso para recibir solicitudes.",
       "",
-      "Si después quieres completar más detalles de tu perfil, podrás hacerlo desde el menú.",
+      "Presiona *Menú* para ver opciones.",
     ].join("\n"),
     ui: {
-      type: "buttons",
-      id: "provider_basic_approval_v2",
-      header_type: "text",
-      header_text: "✅ Aprobado",
-      footer_text: "Empezar a recibir solicitudes →",
-      options: [
+      type: "template",
+      id: "provider_approval_v1",
+      template_name: "provider_approval_v1",
+      template_language: "es",
+      template_components: [
         {
-          id: "provider_menu_info_profesional",
-          title: "Ir al menú",
+          type: "header",
+          parameters: [
+            {
+              type: "text",
+              text: primerNombre,
+            },
+          ],
+        },
+        {
+          type: "button",
+          sub_type: "quick_reply",
+          index: "0",
+          parameters: [
+            {
+              type: "payload",
+              payload: "menu",
+            },
+          ],
         },
       ],
     },
@@ -82,4 +106,5 @@ module.exports = {
   construirMensajeAprobacionProveedor,
   construirMensajeRechazoProveedor,
   resolverNombreCanonicoProveedor,
+  resolverPrimerNombreCanonicoProveedor,
 };

@@ -9,6 +9,7 @@ sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import routes.maintenance.router as modulo_router  # noqa: E402
+import flows.maintenance.menu as modulo_menu  # noqa: E402
 
 
 def test_menu_mantenimiento_solo_atiende_registrados(monkeypatch):
@@ -55,3 +56,21 @@ def test_menu_mantenimiento_no_reclama_no_registrados():
 
     assert resultado is None
     assert flujo["state"] == "awaiting_menu_option"
+
+
+def test_menu_principal_texto_libre_reenvia_botones():
+    flujo = {"state": "awaiting_menu_option"}
+
+    resultado = asyncio.run(
+        modulo_menu.manejar_estado_menu(
+            flujo=flujo,
+            texto_mensaje="hola",
+            opcion_menu=None,
+            esta_registrado=True,
+            supabase=None,
+            telefono="593999111299@s.whatsapp.net",
+        )
+    )
+
+    assert resultado["success"] is True
+    assert resultado["messages"][0]["ui"]["id"] == "provider_main_menu_v1"

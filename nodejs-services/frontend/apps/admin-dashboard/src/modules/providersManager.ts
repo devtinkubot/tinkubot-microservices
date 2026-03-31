@@ -3,6 +3,7 @@ import {
   type ProviderOnboardingResetResponse,
   type ProviderActionResponse,
   type ProviderRecord,
+  type ProviderProfessionalProfileUpdatePayload,
   type ProviderServiceReview,
   type ProviderServiceReviewActionPayload,
 } from "@tinkubot/api-client";
@@ -51,6 +52,14 @@ const ONBOARDING_COLUMNS: OnboardingColumn[] = [
   { state: "onboarding_experience", title: "Experiencia" },
   { state: "onboarding_specialty", title: "Servicios" },
   { state: "onboarding_social_media", title: "Redes sociales" },
+];
+
+const EXPERIENCE_RANGE_OPTIONS = [
+  "Menos de 1 año",
+  "1 a 3 años",
+  "3 a 5 años",
+  "5 a 10 años",
+  "Más de 10 años",
 ];
 
 interface EstadoProveedores {
@@ -223,6 +232,140 @@ function normalizarPasoOnboarding(proveedor: ProviderRecord): string | null {
   return ONBOARDING_COLUMNS.some((column) => column.state === estado)
     ? estado
     : null;
+}
+
+function esPerfilProfesionalEditable(): boolean {
+  return estado.bucketActivo === "profile_incomplete";
+}
+
+function normalizarListaServiciosEditable(
+  servicios: Array<string | null | undefined> | undefined,
+): string[] {
+  return (servicios || [])
+    .map((servicio) => servicio?.trim() || "")
+    .filter((servicio) => servicio.length > 0);
+}
+
+function construirFilaServicioEditable(valor: string, indice: number): string {
+  const placeholder = `Servicio ${indice + 1}`;
+  return `
+    <div class="input-group" data-profile-service-row>
+      <input
+        type="text"
+        class="form-control"
+        data-profile-service-input
+        value="${escaparHtml(valor)}"
+        placeholder="${escaparHtml(placeholder)}"
+      />
+      <button
+        type="button"
+        class="btn btn-outline-danger"
+        data-profile-service-remove
+      >
+        <i class="fas fa-trash me-1"></i>
+        Quitar
+      </button>
+    </div>
+  `;
+}
+
+function renderizarEditorServiciosProfesionales(servicios: string[]) {
+  const contenedor = obtenerElemento<HTMLDivElement>(
+    "#provider-profile-services-list",
+  );
+  if (!contenedor) return;
+
+  const serviciosRender = servicios.length > 0 ? servicios : [""];
+  contenedor.innerHTML = serviciosRender
+    .map((valor, indice) => construirFilaServicioEditable(valor, indice))
+    .join("");
+}
+
+function renderizarOpcionesExperienciaProfesional(
+  valorSeleccionado: string | null | undefined,
+) {
+  const selector = obtenerElemento<HTMLSelectElement>(
+    "#provider-profile-experience-range",
+  );
+  if (!selector) return;
+
+  const seleccion = valorSeleccionado?.trim() || "";
+  selector.innerHTML = [
+    '<option value="" disabled>Sin definir</option>',
+    ...EXPERIENCE_RANGE_OPTIONS.map(
+      (option) =>
+        `<option value="${escaparHtml(option)}">${escaparHtml(option)}</option>`,
+    ),
+  ].join("");
+  selector.value = EXPERIENCE_RANGE_OPTIONS.includes(seleccion)
+    ? seleccion
+    : "";
+}
+
+function obtenerValoresServiciosProfesionales(): string[] {
+  const contenedor = obtenerElemento<HTMLDivElement>(
+    "#provider-profile-services-list",
+  );
+  if (!contenedor) {
+    return [];
+  }
+
+  return Array.from(
+    contenedor.querySelectorAll<HTMLInputElement>(
+      "[data-profile-service-input]",
+    ),
+  )
+    .map((input) => input.value.trim())
+    .filter((valor) => valor.length > 0);
+}
+
+function agregarFilaServicioProfesional(valor = "") {
+  const contenedor = obtenerElemento<HTMLDivElement>(
+    "#provider-profile-services-list",
+  );
+  if (!contenedor) return;
+
+  const indice = contenedor.querySelectorAll(
+    "[data-profile-service-row]",
+  ).length;
+  const wrapper = document.createElement("div");
+  wrapper.innerHTML = construirFilaServicioEditable(valor, indice).trim();
+  const fila = wrapper.firstElementChild;
+  if (fila) {
+    contenedor.appendChild(fila);
+  }
+}
+
+function manejarAccionesEditorServiciosProfesionales(evento: Event) {
+  const objetivo = evento.target as HTMLElement;
+  const botonEliminar = objetivo.closest<HTMLButtonElement>(
+    "[data-profile-service-remove]",
+  );
+  if (!botonEliminar) return;
+
+  const contenedor = obtenerElemento<HTMLDivElement>(
+    "#provider-profile-services-list",
+  );
+  if (!contenedor) return;
+
+  const filas = Array.from(
+    contenedor.querySelectorAll<HTMLElement>("[data-profile-service-row]"),
+  );
+  const fila = botonEliminar.closest<HTMLElement>("[data-profile-service-row]");
+  if (!fila) return;
+
+  if (filas.length <= 1) {
+    const input = fila.querySelector<HTMLInputElement>(
+      "[data-profile-service-input]",
+    );
+    if (input) {
+      input.value = "";
+      input.focus();
+    }
+    return;
+  }
+
+  fila.remove();
 }
 
 function construirUrlWhatsApp(
@@ -974,9 +1117,74 @@ function actualizarPerfilProfesional(proveedor: ProviderRecord) {
       redSocial.classList.add("text-muted");
     }
   }
+
+  actualizarFormularioPerfilProfesional(proveedor);
 }
 
-function actualizarOpcionesResultadoRevision(proveedor: ProviderRecord) {
+function actualizarFormularioPerfilProfesional(proveedor: ProviderRecord) {
+  const esEditable = esPerfilProfesionalEditable();
+  const seccionIdentidad = obtenerElemento<HTMLElement>(
+    "#provider-identity-edit-section",
+  );
+  const seccionCompletar = obtenerElemento<HTMLElement>(
+    "#provider-profile-completion-section",
+  );
+  const seccionRevision = document.querySelector<HTMLElement>(
+    "#provider-review-controls-section",
+  );
+  const botonEnviar = obtenerElemento<HTMLButtonElement>(
+    "#provider-review-submit-btn",
+  );
+  const tituloRevision = obtenerElemento<HTMLElement>(
+    "#provider-review-section-title",
+  );
+  const ayudaFooter = obtenerElemento<HTMLElement>(
+    "#provider-review-footer-help",
+  );
+  const checklistLabel = obtenerElemento<HTMLElement>(
+    "#provider-review-check-docs-label",
+  );
+
+  if (seccionIdentidad) {
+    seccionIdentidad.style.display = esEditable ? "none" : "block";
+  }
+  if (seccionCompletar) {
+    seccionCompletar.style.display = esEditable ? "block" : "none";
+  }
+  if (seccionRevision) {
+    seccionRevision.style.display = esEditable ? "none" : "block";
+  }
+  if (botonEnviar) {
+    botonEnviar.innerHTML = esEditable
+      ? '<i class="fas fa-save me-1"></i> Guardar perfil profesional'
+      : '<i class="fas fa-paper-plane me-1"></i> Guardar y notificar';
+    botonEnviar.classList.toggle("btn-primary", !esEditable);
+    botonEnviar.classList.toggle("btn-success", esEditable);
+  }
+  if (tituloRevision) {
+    tituloRevision.textContent = esEditable
+      ? "Completar perfil profesional"
+      : "Revisión administrativa del onboarding";
+  }
+  if (ayudaFooter) {
+    ayudaFooter.textContent = esEditable
+      ? "Completa experiencia y servicios para mover al proveedor a Operativos."
+      : "Se notificará al proveedor vía WhatsApp con el resultado y el siguiente paso.";
+  }
+  if (checklistLabel && esEditable) {
+    checklistLabel.textContent =
+      "La validación de identidad ya está completa. Solo falta completar el perfil profesional.";
+  }
+
+  if (esEditable) {
+    renderizarOpcionesExperienciaProfesional(proveedor.experienceRange);
+    renderizarEditorServiciosProfesionales(
+      normalizarListaServiciosEditable(proveedor.servicesList),
+    );
+  }
+}
+
+function actualizarOpcionesResultadoRevision(_proveedor: ProviderRecord) {
   const estadoSelect = obtenerElemento<HTMLSelectElement>(
     "#provider-review-status",
   );
@@ -996,7 +1204,7 @@ function actualizarOpcionesResultadoRevision(proveedor: ProviderRecord) {
   estadoSelect.value = "";
 }
 
-function actualizarCopyRevision(proveedor: ProviderRecord) {
+function actualizarCopyRevision(_proveedor: ProviderRecord) {
   const tituloBasico = obtenerElemento<HTMLElement>(
     "#provider-basic-section-title",
   );
@@ -1009,25 +1217,31 @@ function actualizarCopyRevision(proveedor: ProviderRecord) {
   const ayudaFooter = obtenerElemento<HTMLElement>(
     "#provider-review-footer-help",
   );
+  const esEditable = esPerfilProfesionalEditable();
 
   if (tituloBasico) {
     tituloBasico.textContent = "Información personal";
   }
   if (tituloRevision) {
-    tituloRevision.textContent = "Validación administrativa";
+    tituloRevision.textContent = esEditable
+      ? "Completar perfil profesional"
+      : "Validación administrativa";
   }
   if (checklist) {
-    checklist.textContent =
-      "Confirmo que revisé la información, identidad y contacto del proveedor.";
+    checklist.textContent = esEditable
+      ? "La validación de identidad ya está completa. Solo falta completar el perfil profesional."
+      : "Confirmo que revisé la información, identidad y contacto del proveedor.";
   }
   if (ayudaFooter) {
-    ayudaFooter.textContent =
-      "Se notificará al proveedor vía WhatsApp con el resultado y el siguiente paso.";
+    ayudaFooter.textContent = esEditable
+      ? "Completa experiencia y servicios para mover al proveedor a Operativos."
+      : "Se notificará al proveedor vía WhatsApp con el resultado y el siguiente paso.";
   }
 }
 
-function actualizarVistaOperativo(proveedor: ProviderRecord) {
+function actualizarVistaOperativo(_proveedor: ProviderRecord) {
   const esOperativo = estado.bucketActivo === "operativos";
+  const esEditable = esPerfilProfesionalEditable();
   const seccionRevision = document.querySelector<HTMLElement>(
     ".provider-review-form",
   );
@@ -1066,14 +1280,18 @@ function actualizarVistaOperativo(proveedor: ProviderRecord) {
     botonEnviar.style.display = esOperativo ? "none" : "";
   }
   if (ayudaFooter) {
-    ayudaFooter.textContent = esOperativo
-      ? "Detalle operativo de solo lectura."
-      : "Se notificará al proveedor vía WhatsApp con el resultado y el siguiente paso.";
+    ayudaFooter.textContent = esEditable
+      ? "Completa experiencia y servicios para mover al proveedor a Operativos."
+      : esOperativo
+        ? "Detalle operativo de solo lectura."
+        : "Se notificará al proveedor vía WhatsApp con el resultado y el siguiente paso.";
   }
   if (tituloRevision) {
-    tituloRevision.textContent = esOperativo
-      ? "Detalle operativo"
-      : "Revisión administrativa del onboarding";
+    tituloRevision.textContent = esEditable
+      ? "Completar perfil profesional"
+      : esOperativo
+        ? "Detalle operativo"
+        : "Revisión administrativa del onboarding";
   }
 
   [
@@ -1139,6 +1357,18 @@ function limpiarFormularioRevision() {
   );
   if (hiddenId) {
     hiddenId.value = "";
+  }
+  const experienciaSelect = obtenerElemento<HTMLSelectElement>(
+    "#provider-profile-experience-range",
+  );
+  if (experienciaSelect) {
+    experienciaSelect.value = "";
+  }
+  const serviciosList = obtenerElemento<HTMLDivElement>(
+    "#provider-profile-services-list",
+  );
+  if (serviciosList) {
+    serviciosList.innerHTML = "";
   }
 }
 
@@ -1338,6 +1568,57 @@ async function cargarDetalleProveedorSeleccionado(
   }
 }
 
+async function guardarPerfilProfesionalCompletado(proveedor: ProviderRecord) {
+  const experienciaSelect = obtenerElemento<HTMLSelectElement>(
+    "#provider-profile-experience-range",
+  );
+  const experienciaSeleccionada = experienciaSelect?.value.trim() ?? "";
+  const servicios = obtenerValoresServiciosProfesionales();
+
+  if (!experienciaSeleccionada) {
+    mostrarErrorModal("Selecciona un rango de experiencia antes de guardar.");
+    experienciaSelect?.focus();
+    return;
+  }
+
+  if (servicios.length === 0) {
+    mostrarErrorModal("Agrega al menos un servicio antes de guardar.");
+    const primerServicio = obtenerElemento<HTMLInputElement>(
+      "[data-profile-service-input]",
+    );
+    primerServicio?.focus();
+    return;
+  }
+
+  const payload: ProviderProfessionalProfileUpdatePayload = {
+    services: servicios,
+    experienceRange: experienciaSeleccionada,
+    socialMediaUrl: proveedor.socialMediaUrl?.trim() || undefined,
+    socialMediaType: proveedor.socialMediaType?.trim() || undefined,
+    facebookUsername: proveedor.facebookUsername?.trim() || undefined,
+    instagramUsername: proveedor.instagramUsername?.trim() || undefined,
+  };
+
+  const respuesta = await apiProveedores.actualizarPerfilProfesional(
+    proveedor.id,
+    payload,
+  );
+
+  if (!respuesta.ok) {
+    throw new Error(
+      respuesta.errorReason ??
+        "No se pudo actualizar el perfil profesional del proveedor.",
+    );
+  }
+
+  mostrarAviso(
+    respuesta.message ?? "Perfil profesional actualizado correctamente.",
+    "success",
+  );
+  cerrarModalRevision();
+  await cargarProveedoresBucket();
+}
+
 async function abrirModalRevision(proveedorId: string) {
   const proveedor = estado.proveedores.find((item) => item.id === proveedorId);
   if (!proveedor) {
@@ -1474,6 +1755,23 @@ function manejarAccionModal() {
   const cedulaInput = obtenerElemento<HTMLInputElement>(
     "#provider-review-document-id-number",
   );
+
+  if (estado.bucketActivo === "profile_incomplete") {
+    void (async () => {
+      try {
+        establecerAccionEnProceso(proveedor.id);
+        await guardarPerfilProfesionalCompletado(proveedor);
+      } catch (error) {
+        console.error("Error actualizando perfil profesional:", error);
+        const mensaje = extraerMensajeError(error);
+        mostrarErrorModal(mensaje);
+        mostrarAviso(mensaje, "error");
+      } finally {
+        establecerAccionEnProceso(null);
+      }
+    })();
+    return;
+  }
 
   const estadoSeleccionado = (estadoSelect?.value ||
     "") as ProviderRecord["status"];
@@ -2386,6 +2684,24 @@ function enlazarEventos() {
   if (botonGuardarRevisionServicio) {
     botonGuardarRevisionServicio.addEventListener("click", () => {
       void manejarGuardadoRevisionServicio();
+    });
+  }
+
+  const botonAgregarServicioProfesional = obtenerElemento<HTMLButtonElement>(
+    "#provider-profile-add-service",
+  );
+  if (botonAgregarServicioProfesional) {
+    botonAgregarServicioProfesional.addEventListener("click", () => {
+      agregarFilaServicioProfesional("");
+    });
+  }
+
+  const contenedorServiciosProfesionales = obtenerElemento<HTMLDivElement>(
+    "#provider-profile-services-list",
+  );
+  if (contenedorServiciosProfesionales) {
+    contenedorServiciosProfesionales.addEventListener("click", (evento) => {
+      manejarAccionesEditorServiciosProfesionales(evento);
     });
   }
 

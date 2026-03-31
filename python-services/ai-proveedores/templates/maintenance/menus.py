@@ -6,6 +6,7 @@ from templates.shared import mensaje_elige_opcion_interes
 
 MENU_ID_INFO_PERSONAL = "provider_menu_info_personal"
 MENU_ID_INFO_PROFESIONAL = "provider_menu_info_profesional"
+MENU_ID_COMPLETAR_PERFIL = "provider_menu_completar_perfil"
 MENU_ID_ELIMINAR_REGISTRO = "provider_menu_eliminar_registro"
 MENU_ID_SALIR = "provider_menu_salir"
 
@@ -74,9 +75,7 @@ def mensaje_menu_principal_proveedor() -> str:
     return f"{MENU_PRINCIPAL_PROVEEDOR}"
 
 
-def mensaje_menu_post_registro_proveedor(
-    approved_basic: bool = False,
-) -> str:
+def mensaje_menu_post_registro_proveedor() -> str:
     """Genera el menú posterior al registro de proveedor."""
     return f"{MENU_POST_REGISTRO_PROVEEDOR}"
 
@@ -104,6 +103,11 @@ def payload_menu_post_registro_proveedor() -> Dict[str, Any]:
                     "description": (
                         "Experiencia, servicios, certificaciones y redes sociales"
                     ),
+                },
+                {
+                    "id": MENU_ID_COMPLETAR_PERFIL,
+                    "title": "Completar perfil",
+                    "description": "Continuar la configuración de tu perfil profesional",
                 },
                 {
                     "id": MENU_ID_ELIMINAR_REGISTRO,

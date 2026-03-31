@@ -10,14 +10,28 @@ from services.onboarding.progress import (
 from services.onboarding.registration import determinar_estado_registro
 
 from .menu import poner_flujo_en_menu_revision
-from .messages import (
-    construir_respuesta_revision,
-    construir_respuesta_verificado,
-)
+from .messages import construir_respuesta_revision, construir_respuesta_verificado
 
-ESTADOS_APROBADOS_OPERATIVOS = {"approved", "approved_basic"}
+ESTADOS_APROBADOS_OPERATIVOS = {"approved"}
 ESTADOS_BLOQUEO_REVISION = {"rejected"}
 MAX_INTENTOS_REVISION_SIN_RESPUESTA = 3
+ESTADOS_APROBADOS_COMPAT = {
+    "approved",
+    "aprobado",
+    "ok",
+    "approved_basic",
+    "aprobado_basico",
+    "basic_approved",
+    "profile_pending_review",
+    "perfil_pendiente_revision",
+    "professional_review_pending",
+    "interview_required",
+    "entrevista",
+    "auditoria",
+    "needs_info",
+    "falta_info",
+    "faltainfo",
+}
 
 
 def _copiar_campo_si_presente(
@@ -119,21 +133,7 @@ def normalizar_estado_administrativo(
         return "pending"
 
     estado_crudo = str(perfil_proveedor.get("status") or "").strip().lower()
-    if estado_crudo in {"approved_basic", "aprobado_basico", "basic_approved"}:
-        return "approved_basic"
-    if estado_crudo in {
-        "profile_pending_review",
-        "perfil_pendiente_revision",
-        "professional_review_pending",
-        "interview_required",
-        "entrevista",
-        "auditoria",
-        "needs_info",
-        "falta_info",
-        "faltainfo",
-    }:
-        return "approved_basic"
-    if estado_crudo in {"approved", "aprobado", "ok"}:
+    if estado_crudo in ESTADOS_APROBADOS_COMPAT:
         return "approved"
     if estado_crudo in {"rejected", "rechazado", "denied"}:
         return "rejected"
@@ -152,9 +152,6 @@ def sincronizar_flujo_con_perfil(
         _sincronizar_campos_ubicacion(flujo, perfil_proveedor)
         _sincronizar_campos_onboarding(flujo, perfil_proveedor)
         _sincronizar_campos_contacto(flujo, perfil_proveedor)
-        flujo["approved_basic"] = normalizar_estado_administrativo(
-            perfil_proveedor
-        ) in {"approved_basic", "approved"}
         flujo["profile_pending_review"] = False
     else:
         flujo.setdefault("services", [])
@@ -163,7 +160,6 @@ def sincronizar_flujo_con_perfil(
         flujo.setdefault("city_confirmed_at", None)
         flujo.setdefault("onboarding_step", None)
         flujo.setdefault("onboarding_step_updated_at", None)
-        flujo["approved_basic"] = False
         flujo["profile_pending_review"] = False
     return flujo
 
@@ -178,12 +174,6 @@ def resolver_estado_registro(
     )
     esta_registrado = bool(
         determinar_estado_registro(perfil_proveedor)
-        or (
-            perfil_proveedor
-            and perfil_proveedor.get("id")
-            and perfil_proveedor.get("full_name")
-            and tiene_consentimiento
-        )
     )
     flujo["esta_registrado"] = esta_registrado
     estado_administrativo = normalizar_estado_administrativo(perfil_proveedor)
@@ -223,24 +213,15 @@ def manejar_pendiente_revision(
 def manejar_aprobacion_reciente(
     flujo: Dict[str, Any],
     esta_verificado: bool,
-    approved_basic: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """Notifica cuando un perfil pasa de pendiente a verificado."""
     if flujo.get("state") != "pending_verification" or not esta_verificado:
         return None
     if flujo.get("verification_notified"):
-        poner_flujo_en_menu_revision(
-            flujo,
-            approved_basic=approved_basic,
-            verification_notified=True,
-        )
+        poner_flujo_en_menu_revision(flujo, verification_notified=True)
         return None
-    poner_flujo_en_menu_revision(
-        flujo,
-        approved_basic=approved_basic,
-        verification_notified=True,
-    )
-    return construir_respuesta_verificado(approved_basic=approved_basic)
+    poner_flujo_en_menu_revision(flujo, verification_notified=True)
+    return construir_respuesta_verificado()
 
 
 def _perfil_sigue_en_revision(

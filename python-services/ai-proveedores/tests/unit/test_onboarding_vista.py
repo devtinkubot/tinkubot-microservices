@@ -12,17 +12,84 @@ from services.onboarding.vista import obtener_vista_onboarding  # noqa: E402
 
 @pytest.mark.asyncio
 async def test_vista_onboarding_reconstruye_estado_desde_supabase(monkeypatch):
-    async def _fake_obtener_perfil(_telefono: str):
+    async def _fake_obtener_perfil(_telefono: str, **_kwargs):
         return {
             "id": "prov-1",
-            "status": "approved_basic",
+            "status": "approved",
             "has_consent": True,
-            "full_name": "Proveedor Demo",
+            "full_name": "",
             "city": "Quito",
             "dni_front_photo_url": "dni-front",
             "face_photo_url": "face-photo",
             "experience_range": "1-3",
             "services_list": ["cerrajería"],
+            "verified": True,
+        }
+
+    monkeypatch.setattr(
+        "services.onboarding.vista.obtener_perfil_proveedor_cacheado",
+        _fake_obtener_perfil,
+    )
+
+    vista = await obtener_vista_onboarding(
+        telefono="593999111222@s.whatsapp.net",
+        flujo={},
+        perfil_proveedor=None,
+    )
+
+    assert vista["flujo"]["state"] == "awaiting_menu_option"
+    assert vista["checkpoint"] == "awaiting_menu_option"
+    assert vista["esta_registrado"] is True
+    assert vista["tiene_consentimiento"] is True
+    assert vista["es_perfil_completo"] is True
+
+
+@pytest.mark.asyncio
+async def test_vista_onboarding_legacy_sigue_rehidratando_menu(
+    monkeypatch,
+):
+    async def _fake_obtener_perfil(_telefono: str, **_kwargs):
+        return {
+            "id": "prov-legacy",
+            "status": "approved_basic",
+            "has_consent": True,
+            "full_name": "",
+            "city": "Quito",
+            "dni_front_photo_url": "dni-front",
+            "face_photo_url": "face-photo",
+            "experience_range": "1-3",
+            "services_list": ["cerrajería"],
+        }
+
+    monkeypatch.setattr(
+        "services.onboarding.vista.obtener_perfil_proveedor_cacheado",
+        _fake_obtener_perfil,
+    )
+
+    vista = await obtener_vista_onboarding(
+        telefono="593999111222@s.whatsapp.net",
+        flujo={},
+        perfil_proveedor=None,
+    )
+
+    assert vista["flujo"]["state"] == "awaiting_menu_option"
+    assert vista["checkpoint"] == "awaiting_menu_option"
+
+
+@pytest.mark.asyncio
+async def test_vista_onboarding_aprobado_sin_full_name_no_regresa_a_registro(monkeypatch):
+    async def _fake_obtener_perfil(_telefono: str, **_kwargs):
+        return {
+            "id": "prov-2",
+            "status": "approved",
+            "has_consent": True,
+            "full_name": "",
+            "city": "Quito",
+            "dni_front_photo_url": "dni-front",
+            "face_photo_url": "face-photo",
+            "experience_range": "1-3",
+            "services_list": ["cerrajería"],
+            "verified": True,
         }
 
     monkeypatch.setattr(
@@ -45,7 +112,7 @@ async def test_vista_onboarding_reconstruye_estado_desde_supabase(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_vista_onboarding_respeta_flujo_proporcionado(monkeypatch):
-    async def _fake_obtener_perfil(_telefono: str):
+    async def _fake_obtener_perfil(_telefono: str, **_kwargs):
         return {
             "id": "prov-1",
             "status": "pending",

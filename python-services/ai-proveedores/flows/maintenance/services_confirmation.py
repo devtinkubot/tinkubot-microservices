@@ -11,10 +11,6 @@ from services.maintenance.constantes import (
     SERVICIOS_MINIMOS_PERFIL_PROFESIONAL,
 )
 from services.shared import (
-    OPCIONES_EDICION_SERVICIOS_AGREGAR,
-    OPCIONES_EDICION_SERVICIOS_ELIMINAR,
-    OPCIONES_EDICION_SERVICIOS_REEMPLAZAR,
-    OPCIONES_EDICION_SERVICIOS_RESUMEN,
     RESPUESTAS_AGREGAR_SERVICIO_AFIRMATIVAS,
     RESPUESTAS_AGREGAR_SERVICIO_NEGATIVAS,
     RESPUESTAS_CONFIRMACION_SERVICIOS_AFIRMATIVAS,
@@ -31,8 +27,6 @@ from templates.maintenance import (
 from templates.maintenance.mensajes_servicios import (
     mensaje_confirmar_o_corregir_servicio,
     mensaje_limite_servicios_temporales,
-    mensaje_numero_valido_eliminar_servicio,
-    mensaje_numero_valido_reemplazo_servicio,
     mensaje_servicio_ya_existe_en_lista,
 )
 from templates.maintenance.registration import (
@@ -40,11 +34,14 @@ from templates.maintenance.registration import (
     SERVICE_ADD_YES_ID,
     SERVICE_CONFIRM_ID,
     SERVICE_CORRECT_ID,
+    SERVICE_EDIT_ADD_ID,
+    SERVICE_EDIT_DELETE_ID,
+    SERVICE_EDIT_REPLACE_ID,
+    SERVICE_EDIT_SUMMARY_ID,
     construir_resumen_confirmacion_perfil_profesional,
     mensaje_debes_registrar_al_menos_un_servicio,
     mensaje_debes_registrar_mas_servicios,
     mensaje_error_opcion_agregar_otro,
-    mensaje_error_opcion_edicion_servicios,
     mensaje_menu_edicion_perfil_profesional,
     mensaje_menu_edicion_servicios_registro,
     mensaje_resumen_servicios_registro,
@@ -57,6 +54,12 @@ from templates.maintenance.registration import (
     preguntar_numero_servicio_eliminar,
     preguntar_numero_servicio_reemplazar,
     preguntar_siguiente_servicio_registro,
+    payload_menu_edicion_servicios_registro,
+)
+from templates.maintenance.menus import (
+    SERVICE_DELETE_PREFIX,
+    SERVICE_SLOT_PREFIX,
+    payload_detalle_servicios,
 )
 from templates.shared import mensaje_perfecto_guardar_perfil_profesional
 
@@ -310,11 +313,13 @@ async def manejar_edicion_perfil_profesional(
     flujo: Dict[str, Any],
     *,
     texto_mensaje: Optional[str],
+    selected_option: Optional[str] = None,
 ) -> Dict[str, Any]:
     texto = (texto_mensaje or "").strip().lower()
+    seleccion = (selected_option or "").strip().lower()
     maximo_visible = _maximo_visible(flujo)
 
-    if texto == "1":
+    if seleccion == "1" or texto == "1":
         flujo["profile_edit_mode"] = "experience"
         flujo["state"] = _estado_contextual(
             flujo,
@@ -324,7 +329,7 @@ async def manejar_edicion_perfil_profesional(
             "success": True,
             "messages": [{"response": preguntar_experiencia_general()}],
         }
-    if texto == "2":
+    if seleccion == "2" or texto == "2":
         flujo["profile_edit_mode"] = "social_media"
         flujo["state"] = _estado_contextual(
             flujo,
@@ -334,15 +339,15 @@ async def manejar_edicion_perfil_profesional(
             "success": True,
             "messages": [payload_red_social_opcional()],
         }
-    if texto == "3":
+    if seleccion == "3" or texto == "3":
         flujo["profile_edit_mode"] = "certificate"
         flujo["state"] = _estado_contextual(
             flujo,
             maintenance="maintenance_certificate",
         )
         return {"success": True, "messages": [payload_certificado_opcional()]}
-    if texto in {"4", "5", "6"}:
-        indice = int(texto) - 4
+    if seleccion in {"4", "5", "6"} or texto in {"4", "5", "6"}:
+        indice = int(seleccion or texto) - 4
         flujo["profile_edit_mode"] = "service"
         flujo["profile_edit_service_index"] = indice
         flujo["state"] = _estado_contextual(
@@ -361,7 +366,7 @@ async def manejar_edicion_perfil_profesional(
                 }
             ],
         }
-    if texto == "7":
+    if seleccion == "7" or texto == "7":
         flujo["state"] = "maintenance_profile_completion_confirmation"
         return {"success": True, "messages": [_payload_resumen_perfil(flujo)]}
 
@@ -397,9 +402,11 @@ def mostrar_confirmacion_servicios(
 async def manejar_decision_agregar_otro_servicio(
     flujo: Dict[str, Any],
     texto_mensaje: Optional[str],
+    selected_option: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Decide si el proveedor agrega otro servicio o pasa al resumen."""
     texto = normalizar_texto_interaccion(texto_mensaje)
+    seleccion = (selected_option or "").strip().lower()
     servicios = list(flujo.get("servicios_temporales") or [])
     maximo_visible = _maximo_visible(flujo)
 
@@ -409,7 +416,7 @@ async def manejar_decision_agregar_otro_servicio(
         RESPUESTAS_AGREGAR_SERVICIO_NEGATIVAS | {SERVICE_ADD_NO_ID},
     )
 
-    if decision is True:
+    if seleccion == SERVICE_ADD_YES_ID or decision is True:
         flujo["state"] = _estado_contextual(
             flujo,
             maintenance="maintenance_specialty",
@@ -431,7 +438,7 @@ async def manejar_decision_agregar_otro_servicio(
             ],
         }
 
-    if decision is False:
+    if seleccion == SERVICE_ADD_NO_ID or decision is False:
         if (
             flujo.get("profile_completion_mode")
             and len(servicios) < SERVICIOS_MINIMOS_PERFIL_PROFESIONAL
@@ -483,9 +490,11 @@ async def manejar_confirmacion_servicios(
     flujo: Dict[str, Any],
     texto_mensaje: Optional[str],
     cliente_openai: Optional[Any] = None,
+    selected_option: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Procesa la confirmación final de la lista de servicios del registro."""
     maximo_visible = _maximo_visible(flujo)
+    seleccion = (selected_option or "").strip().lower()
     if not texto_mensaje:
         return {
             "success": True,
@@ -501,11 +510,16 @@ async def manejar_confirmacion_servicios(
 
     texto_limpio = normalizar_texto_interaccion(texto_mensaje)
 
-    decision = normalizar_respuesta_binaria(
-        texto_limpio,
-        RESPUESTAS_CONFIRMACION_SERVICIOS_AFIRMATIVAS,
-        RESPUESTAS_CONFIRMACION_SERVICIOS_NEGATIVAS,
-    )
+    if seleccion in {SERVICE_CONFIRM_ID, CONFIRM_ACCEPT_ID, "accept"}:
+        decision = True
+    elif seleccion in {SERVICE_CORRECT_ID, CONFIRM_REJECT_ID, "reject"}:
+        decision = False
+    else:
+        decision = normalizar_respuesta_binaria(
+            texto_limpio,
+            RESPUESTAS_CONFIRMACION_SERVICIOS_AFIRMATIVAS,
+            RESPUESTAS_CONFIRMACION_SERVICIOS_NEGATIVAS,
+        )
 
     if decision is True:
         servicios_temporales = list(flujo.get("servicios_temporales") or [])
@@ -584,14 +598,15 @@ async def manejar_confirmacion_servicios(
 async def manejar_accion_edicion_servicios_registro(
     flujo: Dict[str, Any],
     texto_mensaje: Optional[str],
+    selected_option: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Gestiona el menú de corrección final de servicios."""
-    texto = (texto_mensaje or "").strip().lower()
+    seleccion = (selected_option or "").strip().lower()
     servicios = list(flujo.get("servicios_temporales") or [])
     maximo_servicios = _maximo_servicios(flujo)
     maximo_visible = _maximo_visible(flujo)
 
-    if texto in OPCIONES_EDICION_SERVICIOS_REEMPLAZAR:
+    if seleccion == SERVICE_EDIT_REPLACE_ID:
         flujo["state"] = _estado_contextual(
             flujo,
             maintenance="maintenance_services_edit_replace_select",
@@ -599,17 +614,14 @@ async def manejar_accion_edicion_servicios_registro(
         return {
             "success": True,
             "messages": [
-                {
-                    "response": mensaje_menu_edicion_servicios_registro(
-                        servicios,
-                        maximo_visible,
-                    )
-                },
-                {"response": preguntar_numero_servicio_reemplazar()},
+                payload_detalle_servicios(
+                    servicios,
+                    maximo_visible,
+                )
             ],
         }
 
-    if texto in OPCIONES_EDICION_SERVICIOS_ELIMINAR:
+    if seleccion == SERVICE_EDIT_DELETE_ID:
         flujo["state"] = _estado_contextual(
             flujo,
             maintenance="maintenance_services_edit_delete_select",
@@ -617,17 +629,15 @@ async def manejar_accion_edicion_servicios_registro(
         return {
             "success": True,
             "messages": [
-                {
-                    "response": mensaje_menu_edicion_servicios_registro(
-                        servicios,
-                        maximo_visible,
-                    )
-                },
+                payload_menu_edicion_servicios_registro(
+                    servicios,
+                    maximo_visible,
+                ),
                 {"response": preguntar_numero_servicio_eliminar()},
             ],
         }
 
-    if texto in OPCIONES_EDICION_SERVICIOS_AGREGAR:
+    if seleccion == SERVICE_EDIT_ADD_ID:
         if len(servicios) >= maximo_servicios:
             return {
                 "success": True,
@@ -662,7 +672,7 @@ async def manejar_accion_edicion_servicios_registro(
             ],
         }
 
-    if texto in OPCIONES_EDICION_SERVICIOS_RESUMEN:
+    if seleccion == SERVICE_EDIT_SUMMARY_ID:
         flujo["state"] = _estado_contextual(
             flujo,
             maintenance="maintenance_services_confirmation",
@@ -682,13 +692,10 @@ async def manejar_accion_edicion_servicios_registro(
     return {
         "success": True,
         "messages": [
-            {"response": mensaje_error_opcion_edicion_servicios()},
-            {
-                "response": mensaje_menu_edicion_servicios_registro(
-                    servicios,
-                    maximo_visible,
-                )
-            },
+            payload_menu_edicion_servicios_registro(
+                servicios,
+                maximo_visible,
+            )
         ],
     }
 
@@ -708,13 +715,21 @@ def _extraer_indice(texto_mensaje: Optional[str], total: int) -> Optional[int]:
 async def manejar_seleccion_reemplazo_servicio_registro(
     flujo: Dict[str, Any],
     texto_mensaje: Optional[str],
+    selected_option: Optional[str] = None,
 ) -> Dict[str, Any]:
     servicios = list(flujo.get("servicios_temporales") or [])
-    indice = _extraer_indice(texto_mensaje, len(servicios))
+    seleccion = (selected_option or "").strip().lower()
+    if seleccion.startswith(SERVICE_SLOT_PREFIX):
+        try:
+            indice = int(seleccion.removeprefix(SERVICE_SLOT_PREFIX))
+        except ValueError:
+            indice = None
+    else:
+        indice = _extraer_indice(texto_mensaje, len(servicios))
     if indice is None:
         return {
             "success": True,
-            "messages": [{"response": mensaje_numero_valido_reemplazo_servicio()}],
+            "messages": [{"response": preguntar_numero_servicio_reemplazar()}],
         }
 
     flujo[_FLUJO_KEY_EDIT_INDEX] = indice
@@ -791,14 +806,22 @@ async def manejar_reemplazo_servicio_registro(
 async def manejar_eliminacion_servicio_registro(
     flujo: Dict[str, Any],
     texto_mensaje: Optional[str],
+    selected_option: Optional[str] = None,
 ) -> Dict[str, Any]:
     servicios = list(flujo.get("servicios_temporales") or [])
     maximo_visible = _maximo_visible(flujo)
-    indice = _extraer_indice(texto_mensaje, len(servicios))
+    seleccion = (selected_option or "").strip().lower()
+    if seleccion.startswith(SERVICE_DELETE_PREFIX):
+        try:
+            indice = int(seleccion.removeprefix(SERVICE_DELETE_PREFIX))
+        except ValueError:
+            indice = None
+    else:
+        indice = _extraer_indice(texto_mensaje, len(servicios))
     if indice is None:
         return {
             "success": True,
-            "messages": [{"response": mensaje_numero_valido_eliminar_servicio()}],
+            "messages": [{"response": preguntar_numero_servicio_eliminar()}],
         }
 
     eliminado = servicios.pop(indice)

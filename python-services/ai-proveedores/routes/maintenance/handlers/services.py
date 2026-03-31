@@ -93,7 +93,6 @@ async def _finalizar_perfil_completado(
     flujo["services"] = servicios_temporales
     flujo["state"] = "awaiting_menu_option"
     flujo["profile_completion_mode"] = False
-    flujo["approved_basic"] = True
     flujo["profile_pending_review"] = False
     flujo.pop("servicios_temporales", None)
     flujo.pop("pending_certificate_file_url", None)
@@ -112,7 +111,6 @@ async def _finalizar_perfil_completado(
             },
             construir_menu_principal_mantenimiento(
                 esta_registrado=True,
-                approved_basic=True,
             ),
         ],
     }
@@ -125,6 +123,7 @@ async def _manejar_estado_simple(
     texto_mensaje: str,
     carga: Dict[str, Any],
     opcion_menu: Optional[str],
+    selected_option: Optional[str],
     cliente_openai: Any,
     servicio_embeddings: Any,
 ) -> Optional[Dict[str, Any]]:
@@ -134,6 +133,7 @@ async def _manejar_estado_simple(
             flujo=flujo,
             texto_mensaje=texto_mensaje,
             opcion_menu=opcion_menu,
+            selected_option=selected_option,
         )
     elif estado_normalizado == "maintenance_active_service_action":
         _forzar_estado_mantenimiento(flujo, estado_normalizado)
@@ -141,6 +141,7 @@ async def _manejar_estado_simple(
             flujo=flujo,
             texto_mensaje=texto_mensaje,
             opcion_menu=opcion_menu,
+            selected_option=selected_option,
         )
     elif estado_normalizado == "maintenance_service_add":
         _forzar_estado_mantenimiento(flujo, estado_normalizado)
@@ -191,6 +192,7 @@ async def _manejar_estado_simple(
         respuesta = await manejar_decision_agregar_otro_servicio(
             flujo=flujo,
             texto_mensaje=texto_mensaje,
+            selected_option=carga.get("selected_option"),
         )
     else:
         return None
@@ -214,6 +216,7 @@ async def _manejar_estado_confirmacion_perfil(
             flujo=flujo,
             texto_mensaje=texto_mensaje,
             cliente_openai=None,
+            selected_option=carga.get("selected_option"),
         )
     elif estado_normalizado == "maintenance_profile_completion_confirmation":
         _forzar_estado_mantenimiento(flujo, estado_normalizado)
@@ -227,6 +230,7 @@ async def _manejar_estado_confirmacion_perfil(
         respuesta = await manejar_edicion_perfil_profesional(
             flujo=flujo,
             texto_mensaje=texto_mensaje,
+            selected_option=carga.get("selected_option"),
         )
     else:
         return None
@@ -254,6 +258,7 @@ async def _manejar_estado_edicion_servicios(
     estado_normalizado: str,
     flujo: Dict[str, Any],
     texto_mensaje: str,
+    carga: Dict[str, Any],
     cliente_openai: Any,
 ) -> Optional[Dict[str, Any]]:
     if estado_normalizado == "maintenance_services_edit_action":
@@ -261,12 +266,14 @@ async def _manejar_estado_edicion_servicios(
         respuesta = await manejar_accion_edicion_servicios_registro(
             flujo=flujo,
             texto_mensaje=texto_mensaje,
+            selected_option=carga.get("selected_option"),
         )
     elif estado_normalizado == "maintenance_services_edit_replace_select":
         _forzar_estado_mantenimiento(flujo, estado_normalizado)
         respuesta = await manejar_seleccion_reemplazo_servicio_registro(
             flujo=flujo,
             texto_mensaje=texto_mensaje,
+            selected_option=carga.get("selected_option"),
         )
     elif estado_normalizado == "maintenance_services_edit_replace_input":
         _forzar_estado_mantenimiento(flujo, estado_normalizado)
@@ -280,6 +287,7 @@ async def _manejar_estado_edicion_servicios(
         respuesta = await manejar_eliminacion_servicio_registro(
             flujo=flujo,
             texto_mensaje=texto_mensaje,
+            selected_option=carga.get("selected_option"),
         )
     elif estado_normalizado == "maintenance_services_edit_add":
         _forzar_estado_mantenimiento(flujo, estado_normalizado)
@@ -320,6 +328,7 @@ async def manejar_servicios_mantenimiento(
         texto_mensaje=texto_mensaje,
         carga=carga,
         opcion_menu=opcion_menu,
+        selected_option=carga.get("selected_option"),
         cliente_openai=cliente_openai,
         servicio_embeddings=servicio_embeddings,
     )
@@ -341,6 +350,7 @@ async def manejar_servicios_mantenimiento(
         estado_normalizado=estado_normalizado,
         flujo=flujo,
         texto_mensaje=texto_mensaje,
+        carga=carga,
         cliente_openai=cliente_openai,
     )
     if respuesta_edicion is not None:

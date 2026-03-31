@@ -195,8 +195,7 @@ def mensaje_confirmacion_servicios_menu(servicios: List[str]) -> str:
 
 ¿Los agrego a tu perfil?
 
-*1.* Agregar
-*2.* Corregir""".strip()
+Usa los botones para continuar o corregir.""".strip()
 
 
 def payload_confirmacion_servicios_menu(servicios: List[str]) -> Dict[str, Any]:

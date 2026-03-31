@@ -4,6 +4,14 @@ from typing import Any, Dict, List
 
 from .perfil_profesional import SERVICE_CONFIRM_ID, SERVICE_CORRECT_ID
 
+SERVICE_EDIT_REPLACE_ID = "provider_service_edit_replace"
+SERVICE_EDIT_DELETE_ID = "provider_service_edit_delete"
+SERVICE_EDIT_ADD_ID = "provider_service_edit_add"
+SERVICE_EDIT_SUMMARY_ID = "provider_service_edit_summary"
+SERVICE_ACTION_ADD_ID = "provider_service_action_add"
+SERVICE_ACTION_DELETE_ID = "provider_service_action_delete"
+SERVICE_ACTION_BACK_ID = "provider_service_action_back"
+
 
 def _formatear_lista_servicios(servicios: List[str]) -> str:
     return "\n".join([f"{idx + 1}. {servicio}" for idx, servicio in enumerate(servicios)])
@@ -67,20 +75,43 @@ def mensaje_menu_edicion_servicios_registro(
     return (
         f"*Servicios principales capturados ({len(servicios)}/{maximo}):*\n\n"
         f"{servicios_formateados}\n\n"
-        "¿Qué deseas corregir?\n"
-        "*1.* Reemplazar un servicio\n"
-        "*2.* Eliminar un servicio\n"
-        "*3.* Agregar otro servicio\n"
-        "*4.* Volver al resumen"
+        "Usa los botones para corregir la lista o volver al resumen."
     )
 
 
+def payload_menu_edicion_servicios_registro(
+    servicios: List[str],
+    maximo: int,
+) -> Dict[str, Any]:
+    """Muestra acciones de corrección sobre la lista temporal con botones."""
+    servicios_formateados = "\n".join(
+        [f"• {servicio}" for idx, servicio in enumerate(servicios)]
+    )
+    return {
+        "response": (
+            f"*Servicios principales capturados ({len(servicios)}/{maximo}):*\n\n"
+            f"{servicios_formateados}\n\n"
+            "Elige una acción para continuar."
+        ).strip(),
+        "ui": {
+            "type": "buttons",
+            "id": "provider_services_edit_menu_v1",
+            "options": [
+                {"id": SERVICE_EDIT_REPLACE_ID, "title": "Reemplazar"},
+                {"id": SERVICE_EDIT_DELETE_ID, "title": "Eliminar"},
+                {"id": SERVICE_EDIT_ADD_ID, "title": "Agregar"},
+                {"id": SERVICE_EDIT_SUMMARY_ID, "title": "Resumen"},
+            ],
+        },
+    }
+
+
 def preguntar_numero_servicio_reemplazar() -> str:
-    return "Escribe el número del servicio que deseas reemplazar."
+    return "Selecciona el servicio que deseas reemplazar desde la lista."
 
 
 def preguntar_numero_servicio_eliminar() -> str:
-    return "Escribe el número del servicio que deseas eliminar."
+    return "Selecciona el servicio que deseas eliminar desde la lista."
 
 
 def preguntar_nuevo_servicio_reemplazo(numero: int, actual: str) -> str:
@@ -123,11 +154,37 @@ def mensaje_debes_registrar_mas_servicios(minimo: int) -> str:
 
 
 def mensaje_error_opcion_agregar_otro() -> str:
-    return (
-        "Responde *1* para agregar otro servicio o *2* para continuar con el "
-        "resumen."
-    )
+    return "Usa los botones para agregar otro servicio o continuar al resumen."
 
 
 def mensaje_error_opcion_edicion_servicios() -> str:
-    return "Responde con una opción válida del 1 al 4."
+    return "Usa los botones para corregir la lista de servicios."
+
+
+def payload_menu_servicios_acciones(
+    servicios: List[str],
+    max_servicios: int,
+) -> Dict[str, Any]:
+    """Muestra el menú de gestión de servicios con botones."""
+    servicios_formateados = "\n".join([f"• {servicio}" for servicio in servicios])
+    cuerpo = [
+        f"*Gestión de Servicios*",
+        "",
+        f"Registrados: {len(servicios)}",
+        "",
+    ]
+    if servicios_formateados:
+        cuerpo.extend([servicios_formateados, ""])
+    cuerpo.extend(["Elige una acción para continuar."])
+    return {
+        "response": "\n".join(cuerpo).strip(),
+        "ui": {
+            "type": "buttons",
+            "id": "provider_services_menu_v1",
+            "options": [
+                {"id": SERVICE_ACTION_ADD_ID, "title": "Agregar"},
+                {"id": SERVICE_ACTION_DELETE_ID, "title": "Eliminar"},
+                {"id": SERVICE_ACTION_BACK_ID, "title": "Volver"},
+            ],
+        },
+    }

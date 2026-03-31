@@ -211,13 +211,7 @@ def construir_resumen_confirmacion_perfil_profesional(
 def mensaje_menu_edicion_perfil_profesional() -> str:
     return (
         "*Indica qué deseas corregir:*\n"
-        "*1.* Experiencia general\n"
-        "*2.* Red social\n"
-        "*3.* Certificado\n"
-        "*4.* Servicio 1\n"
-        "*5.* Servicio 2\n"
-        "*6.* Servicio 3\n"
-        "*7.* Volver al resumen"
+        "Usa los botones para cambiar experiencia, redes, certificado o servicios."
     )
 
 

@@ -20,6 +20,8 @@ from templates.onboarding.consentimiento import payload_consentimiento_proveedor
 
 def normalizar_estado_administrativo(perfil_proveedor: Optional[Dict[str, Any]]) -> str:
     return _normalizar_estado_administrativo(perfil_proveedor)
+
+
 def sincronizar_flujo_con_perfil(
     flujo: Dict[str, Any],
     perfil_proveedor: Optional[Dict[str, Any]],
@@ -49,12 +51,10 @@ def manejar_pendiente_revision(
 def manejar_aprobacion_reciente(
     flujo: Dict[str, Any],
     esta_verificado: bool,
-    approved_basic: bool = False,
 ):
     return _manejar_aprobacion_reciente(
         flujo,
         esta_verificado,
-        approved_basic=approved_basic,
     )
 
 
@@ -80,7 +80,6 @@ async def manejar_estado_inicial(
     tiene_consentimiento: bool,
     esta_registrado: bool,
     esta_verificado: bool,
-    approved_basic: bool,
     telefono: str,
 ) -> Optional[Dict[str, Any]]:
     """Resuelve la primera interacción cuando no hay estado."""
@@ -142,7 +141,6 @@ async def manejar_estado_inicial(
             "has_consent": True,
             "esta_registrado": True,
             "verification_notified": True,
-            "approved_basic": approved_basic,
             "profile_pending_review": False,
         }
     )
@@ -151,7 +149,6 @@ async def manejar_estado_inicial(
         "messages": [
             construir_payload_menu_principal(
                 esta_registrado=True,
-                approved_basic=approved_basic,
             )
         ],
     }

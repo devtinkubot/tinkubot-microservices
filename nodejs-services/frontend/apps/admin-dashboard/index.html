@@ -509,7 +509,11 @@
 
       .provider-service-card--review {
         border-color: rgba(99, 102, 241, 0.22);
-        background: linear-gradient(180deg, rgba(99, 102, 241, 0.04) 0%, #ffffff 34%);
+        background: linear-gradient(
+          180deg,
+          rgba(99, 102, 241, 0.04) 0%,
+          #ffffff 34%
+        );
       }
 
       .provider-service-card-header {
@@ -916,7 +920,8 @@
         margin-top: 0.2rem;
       }
 
-      .provider-service-review-context-line + .provider-service-review-context-line {
+      .provider-service-review-context-line
+        + .provider-service-review-context-line {
         margin-top: 0.15rem;
       }
 
@@ -1588,7 +1593,9 @@
                     </div>
                   </div>
 
-                  <div class="provider-detail-section provider-professional-services-section">
+                  <div
+                    class="provider-detail-section provider-professional-services-section"
+                  >
                     <h6>Servicios profesionales</h6>
                     <div class="provider-professional-services-panel">
                       <div class="provider-detail-item">
@@ -1664,7 +1671,10 @@
                     </div>
                   </div>
 
-                  <div class="provider-detail-section">
+                  <div
+                    class="provider-detail-section"
+                    id="provider-identity-edit-section"
+                  >
                     <h6>Campos de identidad</h6>
                     <div class="row g-3 mb-0">
                       <div class="col-md-5">
@@ -1712,65 +1722,120 @@
                     </div>
                   </div>
 
+                  <div
+                    class="provider-detail-section provider-profile-completion-section"
+                    id="provider-profile-completion-section"
+                    style="display: none"
+                  >
+                    <h6>Completar perfil profesional</h6>
+                    <p class="text-muted small mb-3">
+                      Completa la experiencia y los servicios para sacar este
+                      proveedor de la pestaña de incompletos.
+                    </p>
+                    <div class="row g-3">
+                      <div class="col-md-4">
+                        <label
+                          class="form-label"
+                          for="provider-profile-experience-range"
+                        >
+                          Años de experiencia
+                        </label>
+                        <select
+                          class="form-select"
+                          id="provider-profile-experience-range"
+                        ></select>
+                      </div>
+                      <div class="col-md-8">
+                        <div
+                          class="d-flex align-items-center justify-content-between gap-2 mb-2"
+                        >
+                          <label
+                            class="form-label mb-0"
+                            for="provider-profile-services-list"
+                          >
+                            Servicios
+                          </label>
+                          <button
+                            type="button"
+                            class="btn btn-outline-primary btn-sm"
+                            id="provider-profile-add-service"
+                          >
+                            <i class="fas fa-plus me-1"></i>
+                            Agregar servicio
+                          </button>
+                        </div>
+                        <div
+                          class="d-grid gap-2"
+                          id="provider-profile-services-list"
+                        ></div>
+                        <div class="form-text">
+                          Agrega al menos un servicio para completar el perfil.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
                   <div class="provider-detail-section provider-review-form">
                     <h6 id="provider-review-section-title">
                       Revisión administrativa del onboarding
                     </h6>
-                    <div class="mb-3">
-                      <label class="form-label" for="provider-review-status"
-                        >Resultado</label
+                    <div id="provider-review-controls-section">
+                      <div class="mb-3">
+                        <label class="form-label" for="provider-review-status"
+                          >Resultado</label
+                        >
+                        <select class="form-select" id="provider-review-status">
+                          <option value="" selected disabled>
+                            Selecciona un resultado
+                          </option>
+                        </select>
+                      </div>
+                      <div class="mb-3">
+                        <label class="form-label" for="provider-reviewer-name"
+                          >Tu nombre</label
+                        >
+                        <input
+                          type="text"
+                          class="form-control"
+                          id="provider-reviewer-name"
+                          placeholder="Ej. María López"
+                        />
+                      </div>
+                      <div class="form-check mb-3">
+                        <input
+                          class="form-check-input"
+                          type="checkbox"
+                          value=""
+                          id="provider-review-check-docs"
+                        />
+                        <label
+                          class="form-check-label"
+                          for="provider-review-check-docs"
+                        >
+                          <span id="provider-review-check-docs-label">
+                            Confirmo que revisé la información, identidad y
+                            contacto del proveedor.
+                          </span>
+                        </label>
+                      </div>
+                      <div
+                        class="alert alert-warning d-none"
+                        id="provider-review-error"
+                        role="alert"
+                      ></div>
+                      <div
+                        class="provider-review-processing"
+                        id="provider-review-processing"
                       >
-                      <select class="form-select" id="provider-review-status">
-                        <option value="" selected disabled>
-                          Selecciona un resultado
-                        </option>
-                      </select>
+                        <span
+                          class="spinner-border spinner-border-sm"
+                          role="status"
+                          aria-hidden="true"
+                        ></span>
+                        <span>Procesando solicitud...</span>
+                      </div>
+                      <input type="hidden" id="provider-review-provider-id" />
                     </div>
-                    <div class="mb-3">
-                      <label class="form-label" for="provider-reviewer-name"
-                        >Tu nombre</label
-                      >
-                      <input
-                        type="text"
-                        class="form-control"
-                        id="provider-reviewer-name"
-                        placeholder="Ej. María López"
-                      />
-                    </div>
-                    <div class="form-check mb-3">
-                      <input
-                        class="form-check-input"
-                        type="checkbox"
-                        value=""
-                        id="provider-review-check-docs"
-                      />
-                      <label
-                        class="form-check-label"
-                        for="provider-review-check-docs"
-                      >
-                        <span id="provider-review-check-docs-label">
-                          Confirmo que revisé la información, identidad y
-                          contacto del proveedor.
-                        </span>
-                      </label>
-                    </div>
-                    <div
-                      class="alert alert-warning d-none"
-                      id="provider-review-error"
-                      role="alert"
-                    ></div>
-                    <div
-                      class="provider-review-processing"
-                      id="provider-review-processing"
-                    >
-                      <span
-                        class="spinner-border spinner-border-sm"
-                        role="status"
-                        aria-hidden="true"
-                      ></span>
-                      <span>Procesando solicitud...</span>
-                    </div>
-                    <input type="hidden" id="provider-review-provider-id" />
                   </div>
                 </div>
                 <div class="modal-footer justify-content-between">
@@ -1805,7 +1870,9 @@
             aria-hidden="true"
           >
             <div class="modal-dialog modal-lg modal-dialog-centered">
-              <div class="modal-content provider-detail-modal provider-service-review-modal">
+              <div
+                class="modal-content provider-detail-modal provider-service-review-modal"
+              >
                 <div class="modal-header">
                   <div>
                     <h5
@@ -1828,10 +1895,16 @@
                 </div>
                 <div class="modal-body">
                   <input type="hidden" id="provider-service-review-id" />
-                  <input type="hidden" id="provider-service-review-provider-id" />
+                  <input
+                    type="hidden"
+                    id="provider-service-review-provider-id"
+                  />
                   <div class="row g-3">
                     <div class="col-md-4">
-                      <label class="form-label" for="provider-service-review-domain-code">
+                      <label
+                        class="form-label"
+                        for="provider-service-review-domain-code"
+                      >
                         Dominio
                       </label>
                       <input
@@ -1842,7 +1915,10 @@
                       />
                     </div>
                     <div class="col-md-4">
-                      <label class="form-label" for="provider-service-review-category-name">
+                      <label
+                        class="form-label"
+                        for="provider-service-review-category-name"
+                      >
                         Categoría
                       </label>
                       <input
@@ -1853,7 +1929,10 @@
                       />
                     </div>
                     <div class="col-md-4">
-                      <label class="form-label" for="provider-service-review-service-name">
+                      <label
+                        class="form-label"
+                        for="provider-service-review-service-name"
+                      >
                         Servicio
                       </label>
                       <input
@@ -1865,7 +1944,10 @@
                     </div>
                   </div>
                   <div class="mt-3">
-                    <label class="form-label" for="provider-service-review-service-summary">
+                    <label
+                      class="form-label"
+                      for="provider-service-review-service-summary"
+                    >
                       Resumen
                     </label>
                     <textarea
@@ -1887,15 +1969,27 @@
                       Crear dominio si no existe
                     </label>
                   </div>
-                  <div class="alert alert-warning d-none mt-3" id="provider-service-review-error" role="alert"></div>
-                  <div class="provider-review-processing mt-3" id="provider-service-review-processing">
-                    <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                  <div
+                    class="alert alert-warning d-none mt-3"
+                    id="provider-service-review-error"
+                    role="alert"
+                  ></div>
+                  <div
+                    class="provider-review-processing mt-3"
+                    id="provider-service-review-processing"
+                  >
+                    <span
+                      class="spinner-border spinner-border-sm"
+                      role="status"
+                      aria-hidden="true"
+                    ></span>
                     <span>Guardando sugerencia...</span>
                   </div>
                 </div>
                 <div class="modal-footer justify-content-between">
                   <div class="text-muted small">
-                    Ajusta solo lo necesario. La aprobación se guardará en el catálogo.
+                    Ajusta solo lo necesario. La aprobación se guardará en el
+                    catálogo.
                   </div>
                   <button
                     type="button"

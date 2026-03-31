@@ -6,6 +6,23 @@ from typing import Any, Dict, Optional
 from infrastructure.database import run_supabase
 
 CHECKPOINT_MENU_FINAL = "awaiting_menu_option"
+ESTADOS_APROBADOS_COMPAT = {
+    "approved",
+    "aprobado",
+    "ok",
+    "approved_basic",
+    "aprobado_basico",
+    "basic_approved",
+    "profile_pending_review",
+    "perfil_pendiente_revision",
+    "professional_review_pending",
+    "interview_required",
+    "entrevista",
+    "auditoria",
+    "needs_info",
+    "falta_info",
+    "faltainfo",
+}
 
 CHECKPOINT_STATES = {
     "awaiting_menu_option",
@@ -64,6 +81,20 @@ def _lista_servicios(perfil_proveedor: Optional[Dict[str, Any]]) -> list[str]:
     return resultado
 
 
+def _estado_administrativo_compatible(
+    perfil_proveedor: Optional[Dict[str, Any]],
+) -> str:
+    if not perfil_proveedor:
+        return "pending"
+
+    estado = _texto_limpio(perfil_proveedor.get("status")).lower()
+    if estado in ESTADOS_APROBADOS_COMPAT:
+        return "approved"
+    if estado in {"rejected", "rechazado", "denied"}:
+        return "rejected"
+    return "approved" if bool(perfil_proveedor.get("verified")) else "pending"
+
+
 def normalizar_checkpoint_onboarding(checkpoint: Optional[str]) -> Optional[str]:
     texto = _texto_limpio(checkpoint)
     if not texto:
@@ -91,15 +122,11 @@ def es_perfil_onboarding_completo(perfil_proveedor: Optional[Dict[str, Any]]) ->
     if not perfil_proveedor:
         return False
 
-    estado = _texto_limpio(perfil_proveedor.get("status")).lower()
-    if estado in {"approved", "approved_basic"}:
-        return True
-    if bool(perfil_proveedor.get("verified")):
+    if _estado_administrativo_compatible(perfil_proveedor) == "approved":
         return True
 
     return all(
         [
-            _texto_limpio(perfil_proveedor.get("full_name")),
             _texto_limpio(perfil_proveedor.get("city")),
             _texto_limpio(perfil_proveedor.get("dni_front_photo_url")),
             _texto_limpio(perfil_proveedor.get("face_photo_url")),
@@ -133,8 +160,8 @@ def inferir_checkpoint_onboarding_desde_perfil(
     if not bool(perfil_proveedor.get("has_consent")):
         return "onboarding_consent"
 
-    estado = _texto_limpio(perfil_proveedor.get("status")).lower()
-    if estado in {"pending", "approved_basic", "rejected"}:
+    estado = _estado_administrativo_compatible(perfil_proveedor)
+    if estado in {"pending", "rejected"}:
         return "pending_verification"
     return CHECKPOINT_MENU_FINAL
 

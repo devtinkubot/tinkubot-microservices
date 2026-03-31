@@ -17,7 +17,6 @@ def construir_respuesta_solicitud_consentimiento() -> Dict[str, Any]:
 
 def construir_respuesta_consentimiento_aceptado(
     esta_registrado: bool = False,
-    approved_basic: bool = False,
 ) -> Dict[str, Any]:
     """Construye respuesta cuando el consentimiento es aceptado.
 

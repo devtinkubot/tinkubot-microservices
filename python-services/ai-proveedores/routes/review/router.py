@@ -14,11 +14,10 @@ from services.review.state import (
 )
 
 
-def _marcar_menu_revision(flujo: Dict[str, Any]) -> None:
-    poner_flujo_en_menu_revision(
-        flujo,
-        approved_basic=bool(flujo.get("approved_basic")),
-    )
+def _marcar_menu_revision(
+    flujo: Dict[str, Any],
+) -> None:
+    poner_flujo_en_menu_revision(flujo)
 
 
 def manejar_contexto_revision(
@@ -52,7 +51,6 @@ def manejar_contexto_revision(
         respuesta_verificacion = manejar_aprobacion_reciente(
             flujo,
             esta_verificado,
-            approved_basic=bool(flujo.get("approved_basic")),
         )
         if respuesta_verificacion:
             return respuesta_verificacion

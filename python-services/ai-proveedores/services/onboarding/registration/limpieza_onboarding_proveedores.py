@@ -130,10 +130,11 @@ async def _cargar_proveedores_candidatos(supabase: Any) -> list[Dict[str, Any]]:
     respuesta = await run_supabase(
         lambda: supabase.table("providers")
         .select(
-            "id,phone,real_phone,full_name,status,approved_notified_at,"
-            "verification_reviewed_at,created_at"
+            "id,phone,real_phone,full_name,status,verified,onboarding_step,"
+            "approved_notified_at,verification_reviewed_at,created_at"
         )
-        .eq("status", "approved_basic")
+        .eq("status", "approved")
+        .eq("verified", False)
         .order("approved_notified_at", desc=False)
         .order("created_at", desc=False)
         .execute(),

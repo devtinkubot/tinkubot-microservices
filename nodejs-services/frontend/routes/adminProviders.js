@@ -173,6 +173,26 @@ async function revisarProveedor(req, res) {
   }
 }
 
+async function actualizarPerfilProfesional(req, res) {
+  try {
+    const { providerId } = req.params;
+    const requestId =
+      req.headers["x-request-id"] || req.headers["x-correlation-id"] || null;
+    const resultado = await proveedoresBff.actualizarPerfilProfesional(
+      providerId,
+      req.body ?? {},
+      requestId,
+    );
+    res.json(resultado);
+  } catch (error) {
+    const status = error?.status ?? 500;
+    const payload = error?.data ?? {
+      error: "No se pudo actualizar el perfil profesional del proveedor.",
+    };
+    res.status(status).json(payload);
+  }
+}
+
 async function aprobarReviewServicioCatalogo(req, res) {
   try {
     const { reviewId } = req.params;
@@ -348,8 +368,15 @@ router.get("/:providerId", obtenerDetalleProveedor);
 router.post("/:providerId/approve", aprobarProveedor);
 router.post("/:providerId/reject", rechazarProveedor);
 router.post("/:providerId/review", revisarProveedor);
-router.post("/service-reviews/:reviewId/approve", aprobarReviewServicioCatalogo);
-router.post("/service-reviews/:reviewId/reject", rechazarReviewServicioCatalogo);
+router.post("/:providerId/professional-profile", actualizarPerfilProfesional);
+router.post(
+  "/service-reviews/:reviewId/approve",
+  aprobarReviewServicioCatalogo,
+);
+router.post(
+  "/service-reviews/:reviewId/reject",
+  rechazarReviewServicioCatalogo,
+);
 router.post("/:providerId/reset", resetearProveedorOnboarding);
 router.get("/monetization/overview", obtenerMonetizacionResumen);
 router.get("/summary", obtenerResumenEstados);

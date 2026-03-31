@@ -119,8 +119,8 @@ async def _cargar_proveedor_por_id(
     respuesta = await run_supabase(
         lambda: supabase.table("providers")
         .select(
-            "id,phone,real_phone,full_name,status,approved_notified_at,"
-            "verification_reviewed_at,created_at"
+            "id,phone,real_phone,full_name,status,verified,onboarding_step,"
+            "approved_notified_at,verification_reviewed_at,created_at"
         )
         .eq("id", provider_id)
         .limit(1)

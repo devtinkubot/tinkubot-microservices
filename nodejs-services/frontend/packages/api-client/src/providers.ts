@@ -10,6 +10,8 @@ import type {
   ProviderServiceReviewActionPayload,
   ProviderServiceReviewActionResponse,
   ProviderStatusOverviewResponse,
+  ProviderProfessionalProfileUpdatePayload,
+  ProviderProfessionalProfileUpdateResponse,
 } from "./types";
 
 const RUTA_BASE = "/admin/providers";
@@ -139,6 +141,22 @@ export async function revisarProveedor(
 ): Promise<ProviderActionResponse> {
   return realizarSolicitudHttp<ProviderActionResponse>(
     `${RUTA_BASE}/${proveedorId}/review`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(carga),
+    },
+  );
+}
+
+export async function actualizarPerfilProfesional(
+  proveedorId: string,
+  carga: ProviderProfessionalProfileUpdatePayload,
+): Promise<ProviderProfessionalProfileUpdateResponse> {
+  return realizarSolicitudHttp<ProviderProfessionalProfileUpdateResponse>(
+    `${RUTA_BASE}/${proveedorId}/professional-profile`,
     {
       method: "POST",
       headers: {

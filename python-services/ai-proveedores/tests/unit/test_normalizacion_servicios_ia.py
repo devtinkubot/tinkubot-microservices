@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import flows.maintenance.services as modulo_services  # noqa: E402
 from flows.maintenance.services import (  # noqa: E402
+    manejar_accion_servicios,
     manejar_agregar_servicios,
     manejar_confirmacion_agregar_servicios,
 )
@@ -54,6 +55,10 @@ from services.maintenance.validacion_semantica import (  # noqa: E402
 from templates.maintenance import (  # noqa: E402
     mensaje_correccion_servicios,
 )
+from templates.maintenance.registration import (  # noqa: E402
+    SERVICE_EDIT_REPLACE_ID,
+)
+from templates.maintenance.menus import SERVICE_SLOT_PREFIX  # noqa: E402
 from templates.onboarding import (  # noqa: E402
     payload_servicios_onboarding_con_imagen,
     preguntar_servicios_onboarding,
@@ -113,6 +118,21 @@ def test_prompt_servicios_onboarding_usa_env_override(monkeypatch):
 
     assert respuesta["media_type"] == "image"
     assert respuesta["media_url"] == "https://example.com/services-image.png"
+
+
+@pytest.mark.asyncio
+async def test_menu_servicios_texto_libre_reenvia_botones():
+    flujo = {"state": "maintenance_service_action", "services": ["Plomería"]}
+
+    resultado = await manejar_accion_servicios(
+        flujo=flujo,
+        texto_mensaje="hola",
+        opcion_menu=None,
+        selected_option=None,
+    )
+
+    assert resultado["success"] is True
+    assert resultado["messages"][0]["response"]["ui"]["id"] == "provider_services_menu_v1"
 
 
 @pytest.mark.asyncio
@@ -1238,7 +1258,7 @@ def test_confirmacion_servicios_abre_menu_edicion():
     )
 
     assert flujo["state"] == "maintenance_services_edit_action"
-    assert "¿Qué deseas corregir?" in respuesta["messages"][1]["response"]
+    assert "Usa los botones" in respuesta["messages"][1]["response"]
 
 
 def test_reemplazo_servicio_en_edicion(monkeypatch):
@@ -1275,13 +1295,21 @@ def test_reemplazo_servicio_en_edicion(monkeypatch):
     }
 
     respuesta_select = asyncio.run(
-        manejar_accion_edicion_servicios_registro(flujo, "1")
+        manejar_accion_edicion_servicios_registro(
+            flujo,
+            "",
+            selected_option=SERVICE_EDIT_REPLACE_ID,
+        )
     )
     assert flujo["state"] == "maintenance_services_edit_replace_select"
-    assert "reemplazar" in respuesta_select["messages"][1]["response"].lower()
+    assert respuesta_select["messages"][0]["ui"]["id"] == "provider_services_v2"
 
     respuesta_indice = asyncio.run(
-        manejar_seleccion_reemplazo_servicio_registro(flujo, "2")
+        manejar_seleccion_reemplazo_servicio_registro(
+            flujo,
+            "",
+            selected_option=f"{SERVICE_SLOT_PREFIX}1",
+        )
     )
     assert flujo["state"] == "maintenance_services_edit_replace_input"
     assert "servicio 2" in respuesta_indice["messages"][0]["response"].lower()

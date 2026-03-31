@@ -199,7 +199,6 @@ async def manejar_espera_certificado(
                 {"response": mensaje_certificado_actualizado_exitosamente()},
                 construir_payload_menu_principal(
                     esta_registrado=True,
-                    approved_basic=bool(flujo.get("approved_basic")),
                 ),
             ],
         }

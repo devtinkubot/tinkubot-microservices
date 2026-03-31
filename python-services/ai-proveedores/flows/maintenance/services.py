@@ -4,10 +4,7 @@ import re
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-from flows.constructors import (
-    construir_menu_servicios,
-    construir_payload_menu_principal,
-)
+from flows.constructors import construir_payload_menu_principal
 from infrastructure.openai import TransformadorServicios
 from infrastructure.redis import cliente_redis
 from services import (
@@ -23,14 +20,10 @@ from services.maintenance.validacion_semantica import (
     validar_servicio_semanticamente,
 )
 from services.shared import (
-    OPCIONES_MENU_SERVICIOS_AGREGAR,
-    OPCIONES_MENU_SERVICIOS_ELIMINAR,
-    OPCIONES_MENU_SERVICIOS_VOLVER,
     RESPUESTAS_AGREGAR_SERVICIO_AFIRMATIVAS,
     RESPUESTAS_AGREGAR_SERVICIO_NEGATIVAS,
     RESPUESTAS_CONFIRMACION_SERVICIOS_AFIRMATIVAS,
     RESPUESTAS_CONFIRMACION_SERVICIOS_NEGATIVAS,
-    es_salida_menu,
     normalizar_respuesta_binaria,
     normalizar_texto_interaccion,
 )
@@ -58,8 +51,13 @@ from templates.maintenance.menus import (
     payload_lista_eliminar_servicios,
 )
 from templates.maintenance.registration import SERVICE_CONFIRM_ID, SERVICE_CORRECT_ID
+from templates.maintenance.registration.servicios import (
+    SERVICE_ACTION_ADD_ID,
+    SERVICE_ACTION_BACK_ID,
+    SERVICE_ACTION_DELETE_ID,
+    payload_menu_servicios_acciones,
+)
 from templates.shared import (
-    error_opcion_no_reconocida,
     mensaje_indica_servicio_exacto,
     mensaje_no_pude_interpretar_servicio_especifico,
 )
@@ -92,18 +90,17 @@ def _resolver_supabase_runtime() -> Any:
 def _menu_principal_desde_flujo(flujo: Dict[str, Any]) -> Dict[str, Any]:
     return construir_payload_menu_principal(
         esta_registrado=True,
-        approved_basic=bool(flujo.get("approved_basic")),
     )
 
 
 def _menu_servicios_desde_flujo(
     flujo: Dict[str, Any],
     servicios: Optional[List[str]] = None,
-) -> str:
+) -> Dict[str, Any]:
     servicios_actuales = (
         servicios if servicios is not None else (flujo.get("services") or [])
     )
-    return construir_menu_servicios(servicios_actuales, SERVICIOS_MAXIMOS)
+    return payload_menu_servicios_acciones(servicios_actuales, SERVICIOS_MAXIMOS)
 
 
 async def _marcar_confirmacion_servicio_consumida(
@@ -361,13 +358,13 @@ async def manejar_accion_servicios(
     flujo: Dict[str, Any],
     texto_mensaje: str,
     opcion_menu: Optional[str],
+    selected_option: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Gestiona el menú único de servicios."""
-    opcion = opcion_menu
-    texto_minusculas = (texto_mensaje or "").strip().lower()
     servicios_actuales = flujo.get("services") or []
+    seleccion = (selected_option or "").strip().lower()
 
-    if opcion in OPCIONES_MENU_SERVICIOS_AGREGAR or "agregar" in texto_minusculas:
+    if seleccion == SERVICE_ACTION_ADD_ID:
         if len(servicios_actuales) >= SERVICIOS_MAXIMOS:
             return {
                 "success": True,
@@ -388,7 +385,7 @@ async def manejar_accion_servicios(
             maximo=SERVICIOS_MAXIMOS,
         )
 
-    if opcion in OPCIONES_MENU_SERVICIOS_ELIMINAR or "eliminar" in texto_minusculas:
+    if seleccion == SERVICE_ACTION_DELETE_ID:
         if not servicios_actuales:
             flujo["state"] = "maintenance_service_action"
             return {
@@ -411,7 +408,7 @@ async def manejar_accion_servicios(
             ],
         }
 
-    if opcion in OPCIONES_MENU_SERVICIOS_VOLVER or es_salida_menu(texto_minusculas):
+    if seleccion == SERVICE_ACTION_BACK_ID:
         flujo["state"] = "awaiting_menu_option"
         return {
             "success": True,
@@ -420,10 +417,7 @@ async def manejar_accion_servicios(
 
     return {
         "success": True,
-        "messages": [
-            {"response": error_opcion_no_reconocida(1, 3)},
-            {"response": _menu_servicios_desde_flujo(flujo, servicios_actuales)},
-        ],
+        "messages": [{"response": _menu_servicios_desde_flujo(flujo, servicios_actuales)}],
     }
 
 
@@ -432,6 +426,7 @@ async def manejar_accion_servicios_activos(
     flujo: Dict[str, Any],
     texto_mensaje: str,
     opcion_menu: Optional[str],
+    selected_option: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Compatibilidad temporal para estados antiguos."""
     flujo["state"] = "maintenance_service_action"
@@ -439,6 +434,7 @@ async def manejar_accion_servicios_activos(
         flujo=flujo,
         texto_mensaje=texto_mensaje,
         opcion_menu=opcion_menu,
+        selected_option=selected_option,
     )
 
 

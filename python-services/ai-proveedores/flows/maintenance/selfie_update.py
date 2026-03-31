@@ -28,7 +28,6 @@ async def manejar_actualizacion_selfie(
                 {
                     **construir_payload_menu_principal(
                         esta_registrado=True,
-                        approved_basic=bool(flujo.get("approved_basic")),
                     )
                 }
             ],
@@ -76,7 +75,6 @@ async def manejar_actualizacion_selfie(
             {"response": confirmar_selfie_actualizada()},
             construir_payload_menu_principal(
                 esta_registrado=True,
-                approved_basic=bool(flujo.get("approved_basic")),
             ),
         ],
     }

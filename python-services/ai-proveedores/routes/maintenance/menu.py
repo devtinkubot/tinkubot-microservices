@@ -38,10 +38,8 @@ def iniciar_flujo_completar_perfil_profesional(
 def construir_menu_principal_mantenimiento(
     *,
     esta_registrado: bool = True,
-    approved_basic: bool = False,
 ) -> Dict[str, Any]:
     """Construye el payload estándar del menú principal de maintenance."""
     return construir_payload_menu_principal(
         esta_registrado=esta_registrado,
-        approved_basic=approved_basic,
     )

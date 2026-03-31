@@ -25,6 +25,7 @@ async def manejar_menu_proveedor(
     esta_registrado: bool,
     supabase: Any,
     telefono: str,
+    selected_option: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """Resuelve el menú operativo del proveedor registrado."""
     if estado != "awaiting_menu_option":
@@ -37,6 +38,7 @@ async def manejar_menu_proveedor(
         flujo=flujo,
         texto_mensaje=texto_mensaje,
         opcion_menu=opcion_menu,
+        selected_option=selected_option,
         esta_registrado=esta_registrado,
         supabase=supabase,
         telefono=telefono,
@@ -59,6 +61,7 @@ async def manejar_contexto_mantenimiento(
     subir_medios_identidad: Any,
     agregar_certificado_proveedor: Any,
     actualizar_perfil_profesional: Any,
+    selected_option: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """Resuelve los estados de maintenance que ya no deben vivir en router global."""
     if estado == "awaiting_personal_info_action":
@@ -66,6 +69,7 @@ async def manejar_contexto_mantenimiento(
             flujo=flujo,
             texto_mensaje=texto_mensaje,
             opcion_menu=opcion_menu,
+            selected_option=selected_option,
         )
         return {"response": respuesta, "persist_flow": True}
 
@@ -74,6 +78,7 @@ async def manejar_contexto_mantenimiento(
             flujo=flujo,
             texto_mensaje=texto_mensaje,
             opcion_menu=opcion_menu,
+            selected_option=selected_option,
         )
         return {"response": respuesta, "persist_flow": True}
 

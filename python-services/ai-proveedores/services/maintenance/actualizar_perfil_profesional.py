@@ -75,7 +75,9 @@ async def actualizar_perfil_profesional(
         "social_media_type": social_media_type,
         "facebook_username": redes_sociales["facebook_username"],
         "instagram_username": redes_sociales["instagram_username"],
-        "status": "approved_basic",
+        "status": "approved",
+        "onboarding_step": "awaiting_menu_option",
+        "onboarding_step_updated_at": datetime.utcnow().isoformat(),
         "verified": perfil_completo,
     }
 

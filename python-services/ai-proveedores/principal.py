@@ -34,6 +34,9 @@ from flows.onboarding.handlers.servicios import (
     resolver_servicio_onboarding_best_effort,
 )
 from services.maintenance.actualizar_servicios import actualizar_servicios
+from services.maintenance.actualizar_perfil_profesional import (
+    actualizar_perfil_profesional,
+)
 from services.shared.ingreso_whatsapp import (
     normalizar_lista_servicios_flujo,
 )
@@ -161,6 +164,29 @@ class RespuestaRegistrarProveedorOnboarding(BaseModel):
 class SolicitudRegistrarProveedorOnboarding(BaseModel):
     provider_data: SolicitudCreacionProveedor
     flow: Dict[str, Any] = Field(default_factory=dict)
+
+
+class SolicitudActualizarPerfilProfesionalProveedor(BaseModel):
+    provider_id: str
+    services: list[str] = Field(default_factory=list)
+    experience_range: Optional[str] = None
+    social_media_url: Optional[str] = None
+    social_media_type: Optional[str] = None
+    facebook_username: Optional[str] = None
+    instagram_username: Optional[str] = None
+
+
+class RespuestaActualizarPerfilProfesionalProveedor(BaseModel):
+    ok: bool
+    provider_id: Optional[str] = None
+    services: list[str] = Field(default_factory=list)
+    experience_range: Optional[str] = None
+    social_media_url: Optional[str] = None
+    social_media_type: Optional[str] = None
+    facebook_username: Optional[str] = None
+    instagram_username: Optional[str] = None
+    verified: Optional[bool] = None
+    error_reason: Optional[str] = None
 
 
 # === FASTAPI LIFECYCLE EVENTS ===
@@ -428,6 +454,105 @@ async def registrar_proveedor_onboarding_interno(
     except Exception as exc:
         return RespuestaRegistrarProveedorOnboarding(
             ok=False,
+            error_reason=str(exc),
+        )
+
+
+@app.post(
+    "/internal/admin/providers/professional-profile/update",
+    response_model=RespuestaActualizarPerfilProfesionalProveedor,
+)
+async def actualizar_perfil_profesional_admin_interno(
+    solicitud: SolicitudActualizarPerfilProfesionalProveedor,
+    token: Optional[str] = Header(default=None, alias="x-internal-token"),
+) -> RespuestaActualizarPerfilProfesionalProveedor:
+    """
+    Actualiza (admin) el perfil profesional de un proveedor ya aprobado.
+
+    Este endpoint existe para completar perfiles aprobados legacy sin alterar el
+    onboarding (por ejemplo: experiencia o lista de servicios faltantes).
+    """
+    token_esperado = configuracion.internal_token
+    if token_esperado and token != token_esperado:
+        return RespuestaActualizarPerfilProfesionalProveedor(
+            ok=False,
+            error_reason="unauthorized",
+        )
+
+    if not supabase:
+        return RespuestaActualizarPerfilProfesionalProveedor(
+            ok=False,
+            error_reason="supabase_not_configured",
+        )
+
+    provider_id = str(solicitud.provider_id or "").strip()
+    if not provider_id:
+        return RespuestaActualizarPerfilProfesionalProveedor(
+            ok=False,
+            error_reason="provider_id_required",
+        )
+
+    try:
+        perfil = await run_supabase(
+            lambda: supabase.table("providers")
+            .select("id,status")
+            .eq("id", provider_id)
+            .single()
+            .execute(),
+            label="providers.select_for_professional_profile_admin_update",
+        )
+        data = getattr(perfil, "data", None) or {}
+        status = str(data.get("status") or "").strip().lower()
+        if status != "approved":
+            return RespuestaActualizarPerfilProfesionalProveedor(
+                ok=False,
+                provider_id=provider_id,
+                error_reason="provider_not_approved",
+            )
+    except Exception as exc:
+        logger.warning(
+            "No se pudo cargar proveedor %s para update profesional: %s",
+            provider_id,
+            exc,
+        )
+        return RespuestaActualizarPerfilProfesionalProveedor(
+            ok=False,
+            provider_id=provider_id,
+            error_reason="provider_not_found",
+        )
+
+    try:
+        resultado = await actualizar_perfil_profesional(
+            proveedor_id=provider_id,
+            servicios=list(solicitud.services or []),
+            experience_range=solicitud.experience_range,
+            social_media_url=solicitud.social_media_url,
+            social_media_type=solicitud.social_media_type,
+            facebook_username=solicitud.facebook_username,
+            instagram_username=solicitud.instagram_username,
+        )
+        return RespuestaActualizarPerfilProfesionalProveedor(
+            ok=bool(resultado.get("success")),
+            provider_id=provider_id,
+            services=list(resultado.get("services") or []),
+            experience_range=resultado.get("experience_range"),
+            social_media_url=resultado.get("social_media_url"),
+            social_media_type=resultado.get("social_media_type"),
+            facebook_username=resultado.get("facebook_username"),
+            instagram_username=resultado.get("instagram_username"),
+            verified=bool(resultado.get("verified"))
+            if "verified" in resultado
+            else None,
+        )
+    except Exception as exc:
+        logger.error(
+            "❌ Error actualizando perfil profesional (provider_id=%s): %s",
+            provider_id,
+            exc,
+        )
+        return RespuestaActualizarPerfilProfesionalProveedor(
+            ok=False,
+            provider_id=provider_id,
             error_reason=str(exc),
         )
 

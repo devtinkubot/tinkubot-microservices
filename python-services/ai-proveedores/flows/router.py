@@ -23,7 +23,6 @@ from services.shared import es_comando_reinicio
 from templates.onboarding import (
     payload_consentimiento_proveedor,
     payload_experiencia_onboarding,
-    payload_menu_registro_proveedor,
     payload_onboarding_dni_frontal,
     payload_onboarding_foto_perfil,
     payload_preguntar_otro_servicio_onboarding,
@@ -84,12 +83,18 @@ def _sesion_expirada_por_inactividad(
     return (ahora_utc - ultima_vista_dt).total_seconds() > umbral_segundos
 
 
-def _construir_reanudacion_onboarding(flujo: Dict[str, Any]) -> Dict[str, Any]:
+def _construir_reanudacion_onboarding(
+    flujo: Dict[str, Any],
+    *,
+    esta_registrado: bool = False,
+) -> Dict[str, Any]:
     estado = str(flujo.get("state") or "").strip()
     if estado == "onboarding_consent":
         prompt = payload_consentimiento_proveedor()["messages"][0]
     elif estado == "awaiting_menu_option":
-        prompt = payload_menu_registro_proveedor()
+        prompt = construir_payload_menu_principal(
+            esta_registrado=esta_registrado,
+        )
     elif estado == "onboarding_city":
         prompt = solicitar_ciudad_registro()
     elif estado == "onboarding_dni_front_photo":
@@ -166,7 +171,6 @@ async def _manejar_timeout_inactividad(
         mensajes_timeout.append(
             construir_payload_menu_principal(
                 esta_registrado=esta_registrado_timeout,
-                approved_basic=bool(flujo.get("approved_basic")),
             )
         )
 
@@ -245,7 +249,6 @@ async def _manejar_flujo_sin_estado(
                 "messages": [
                     construir_payload_menu_principal(
                         esta_registrado=True,
-                        approved_basic=bool(flujo.get("approved_basic")),
                     )
                 ],
             },
@@ -344,11 +347,17 @@ async def manejar_mensaje(
         ahora_utc,
         umbral_segundos=TIEMPO_AVISO_INACTIVIDAD_SEGUNDOS,
     )
+    esta_registrado_contexto = bool(
+        flujo.get("provider_id") or (perfil_proveedor or {}).get("id")
+    )
     if inactividad_reanudable and flujo.get("state") in ONBOARDING_REANUDACION_STATES:
         flujo["last_seen_at_prev"] = flujo.get("last_seen_at") or ahora_iso
         flujo["last_seen_at"] = ahora_iso
         return {
-            "response": _construir_reanudacion_onboarding(flujo),
+            "response": _construir_reanudacion_onboarding(
+                flujo,
+                esta_registrado=esta_registrado_contexto,
+            ),
             "new_flow": flujo,
             "persist_flow": True,
         }
@@ -488,6 +497,7 @@ async def enrutar_estado(  # noqa: C901
         texto_mensaje=texto_mensaje,
         carga=carga,
         opcion_menu=opcion_menu,
+        selected_option=carga.get("selected_option"),
         esta_registrado=esta_registrado,
         supabase=supabase,
         telefono=telefono,

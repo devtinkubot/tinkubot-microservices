@@ -10,7 +10,7 @@ from templates.review.estados import (
 )
 
 
-def construir_respuesta_verificado(approved_basic: bool = False) -> Dict[str, Any]:
+def construir_respuesta_verificado() -> Dict[str, Any]:
     """Construye respuesta para proveedor verificado."""
     mensajes = [{"response": mensaje_proveedor_verificado()}]
     mensajes.append(payload_menu_post_registro_proveedor())

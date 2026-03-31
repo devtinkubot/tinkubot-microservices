@@ -41,11 +41,13 @@ async def manejar_accion_servicios(
     flujo: Dict[str, Any],
     texto_mensaje: str,
     opcion_menu: Optional[str],
+    selected_option: Optional[str] = None,
 ):
     return await legacy_services.manejar_accion_servicios(
         flujo=flujo,
         texto_mensaje=texto_mensaje,
         opcion_menu=opcion_menu,
+        selected_option=selected_option,
     )
 
 
@@ -54,11 +56,13 @@ async def manejar_accion_servicios_activos(
     flujo: Dict[str, Any],
     texto_mensaje: str,
     opcion_menu: Optional[str],
+    selected_option: Optional[str] = None,
 ):
     return await legacy_services.manejar_accion_servicios_activos(
         flujo=flujo,
         texto_mensaje=texto_mensaje,
         opcion_menu=opcion_menu,
+        selected_option=selected_option,
     )
 
 
@@ -135,10 +139,12 @@ async def manejar_espera_especialidad(
 async def manejar_accion_edicion_servicios_registro(
     flujo: Dict[str, Any],
     texto_mensaje: str,
+    selected_option: Optional[str] = None,
 ):
     return await legacy_services_confirmation.manejar_accion_edicion_servicios_registro(
         flujo,
         texto_mensaje,
+        selected_option=selected_option,
     )
 
 
@@ -188,11 +194,13 @@ async def manejar_confirmacion_servicios(
     flujo: Dict[str, Any],
     texto_mensaje: str,
     cliente_openai: Any,
+    selected_option: Optional[str] = None,
 ):
     return await legacy_services_confirmation.manejar_confirmacion_servicios(
         flujo=flujo,
         texto_mensaje=texto_mensaje,
         cliente_openai=cliente_openai,
+        selected_option=selected_option,
     )
 
 
@@ -200,10 +208,12 @@ async def manejar_decision_agregar_otro_servicio(
     *,
     flujo: Dict[str, Any],
     texto_mensaje: str,
+    selected_option: Optional[str] = None,
 ):
     return await legacy_services_confirmation.manejar_decision_agregar_otro_servicio(
         flujo=flujo,
         texto_mensaje=texto_mensaje,
+        selected_option=selected_option,
     )
 
 
@@ -211,20 +221,24 @@ async def manejar_edicion_perfil_profesional(
     *,
     flujo: Dict[str, Any],
     texto_mensaje: str,
+    selected_option: Optional[str] = None,
 ):
     return await legacy_services_confirmation.manejar_edicion_perfil_profesional(
         flujo=flujo,
         texto_mensaje=texto_mensaje,
+        selected_option=selected_option,
     )
 
 
 async def manejar_eliminacion_servicio_registro(
     flujo: Dict[str, Any],
     texto_mensaje: str,
+    selected_option: Optional[str] = None,
 ):
     return await legacy_services_confirmation.manejar_eliminacion_servicio_registro(
         flujo,
         texto_mensaje,
+        selected_option=selected_option,
     )
 
 
@@ -244,9 +258,11 @@ async def manejar_reemplazo_servicio_registro(
 async def manejar_seleccion_reemplazo_servicio_registro(
     flujo: Dict[str, Any],
     texto_mensaje: Optional[str],
+    selected_option: Optional[str] = None,
 ):
     handler = legacy_services_confirmation.manejar_seleccion_reemplazo_servicio_registro
     return await handler(
         flujo,
         texto_mensaje,
+        selected_option=selected_option,
     )

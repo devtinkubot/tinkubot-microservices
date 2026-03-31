@@ -332,38 +332,6 @@ const extraerUrlDocumento = (valor) => {
   return recopilar(valor) || recopilar(valor.data);
 };
 
-const construirMenuProveedorAprobado = () => ({
-  message: "*TinkuBot Proveedores*\n\nElige la opción de interés.",
-  ui: {
-    type: "list",
-    id: "provider_main_menu_v1",
-    list_button_text: "Ver menú",
-    list_section_title: "Menú del Proveedor",
-    options: [
-      {
-        id: "provider_menu_info_personal",
-        title: "Información personal",
-        description: "Nombre, ubicación, documentos y foto de perfil",
-      },
-      {
-        id: "provider_menu_info_profesional",
-        title: "Información profesional",
-        description: "Experiencia, servicios, certificaciones y redes sociales",
-      },
-      {
-        id: "provider_menu_eliminar_registro",
-        title: "Eliminar mi registro",
-        description: "Eliminar permanentemente tu perfil",
-      },
-      {
-        id: "provider_menu_salir",
-        title: "Salir",
-        description: "Cerrar el menú actual",
-      },
-    ],
-  },
-});
-
 /**
  * Formatea teléfono para WhatsApp basándose en el patrón:
  * - Teléfonos normales (ej: 5939xxx) → @s.whatsapp.net
@@ -497,6 +465,21 @@ const normalizarProveedorSupabase = (registro) => {
   const onboardingStepUpdatedAt =
     normalizarTimestampComoUtc(registro?.onboarding_step_updated_at) || null;
   const nombre = displayName || "Proveedor sin nombre";
+  const documentFirstNames = limpiarTextoIdentidad(
+    registro?.document_first_names,
+  );
+  const documentLastNames = limpiarTextoIdentidad(
+    registro?.document_last_names,
+  );
+  const nombreDocumento = [documentFirstNames, documentLastNames]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  const firstName = documentFirstNames
+    ? documentFirstNames.split(/\s+/)[0]
+    : null;
+  const lastName = documentLastNames || null;
+  const fullName = nombreDocumento || formattedName || displayName || null;
   const businessName = limpiarTexto(registro?.business_name) || null;
   const contact =
     limpiarTexto(registro?.contact_name) || nombre || "Contacto no definido";
@@ -568,12 +551,8 @@ const normalizarProveedorSupabase = (registro) => {
     limpiarTexto(registro?.social_media_type) ||
     limpiarTexto(registro?.social_media_platform) ||
     null;
-  const documentFirstNames = limpiarTextoIdentidad(
-    registro?.document_first_names,
-  );
-  const documentLastNames = limpiarTextoIdentidad(
-    registro?.document_last_names,
-  );
+  const facebookUsername = limpiarTexto(registro?.facebook_username) || null;
+  const instagramUsername = limpiarTexto(registro?.instagram_username) || null;
   const documentIdNumber = limpiarTextoIdentidad(
     registro?.document_id_number,
     registro?.identity_document_number,
@@ -681,6 +660,8 @@ const normalizarProveedorSupabase = (registro) => {
     experienceRange,
     socialMediaUrl,
     socialMediaType,
+    facebookUsername,
+    instagramUsername,
     hasConsent,
     rating,
     onboardingStep,
@@ -1453,18 +1434,6 @@ async function revisarProveedor(providerId, payload = {}, requestId = null) {
     }
 
     if (estadoFinal === "approved") {
-      const menuProveedor = construirMenuProveedorAprobado();
-      if (telefonoRevisar) {
-        await enviarNotificacionWhatsapp({
-          to: telefonoRevisar,
-          message: menuProveedor.message,
-          ui: menuProveedor.ui,
-          requestId,
-        });
-      }
-    }
-
-    if (estadoFinal === "approved") {
       await invalidarCacheProveedor(
         registro?.phone || payload.phone,
         requestId,
@@ -1512,6 +1481,76 @@ async function resetearProveedorOnboarding(providerId, requestId = null) {
       { headers },
     );
     return response.data;
+  } catch (error) {
+    throw gestionarErrorAxios(error);
+  }
+}
+
+async function actualizarPerfilProfesional(
+  providerId,
+  payload = {},
+  requestId = null,
+) {
+  try {
+    const id = limpiarTexto(providerId);
+    if (!id) {
+      return {
+        ok: false,
+        providerId: "",
+        errorReason: "providerId es requerido",
+      };
+    }
+
+    if (!aiProveedoresUrl) {
+      return {
+        ok: false,
+        providerId: id,
+        errorReason: "Servicio de proveedores no configurado.",
+      };
+    }
+
+    const headers = { "Content-Type": "application/json" };
+    if (requestId) headers["x-request-id"] = requestId;
+    if (aiProveedoresInternalToken) {
+      headers["x-internal-token"] = aiProveedoresInternalToken;
+    }
+
+    const response = await axios.post(
+      `${aiProveedoresUrl.replace(/\/$/, "")}/internal/admin/providers/professional-profile/update`,
+      {
+        provider_id: id,
+        services: Array.isArray(payload.services) ? payload.services : [],
+        experience_range: payload.experienceRange ?? payload.experience_range,
+        social_media_url: payload.socialMediaUrl ?? payload.social_media_url,
+        social_media_type: payload.socialMediaType ?? payload.social_media_type,
+        facebook_username:
+          payload.facebookUsername ?? payload.facebook_username,
+        instagram_username:
+          payload.instagramUsername ?? payload.instagram_username,
+      },
+      {
+        headers,
+        timeout: requestTimeoutMs,
+      },
+    );
+    const data = response.data || {};
+    return {
+      ok: Boolean(data.ok),
+      providerId: data.provider_id || data.providerId || id,
+      services: Array.isArray(data.services) ? data.services : [],
+      experienceRange: data.experience_range || data.experienceRange || null,
+      socialMediaUrl: data.social_media_url || data.socialMediaUrl || null,
+      socialMediaType: data.social_media_type || data.socialMediaType || null,
+      facebookUsername: data.facebook_username || data.facebookUsername || null,
+      instagramUsername:
+        data.instagram_username || data.instagramUsername || null,
+      verified:
+        typeof data.verified === "boolean"
+          ? data.verified
+          : (data.verified ?? null),
+      message: data.message || null,
+      errorReason: data.error_reason || data.errorReason || null,
+    };
   } catch (error) {
     throw gestionarErrorAxios(error);
   }
@@ -1922,6 +1961,7 @@ module.exports = {
   aprobarProveedor,
   rechazarProveedor,
   revisarProveedor,
+  actualizarPerfilProfesional,
   resetearProveedorOnboarding,
   aprobarReviewServicioCatalogo,
   rechazarReviewServicioCatalogo,

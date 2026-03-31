@@ -52,7 +52,6 @@ def test_estado_inicial_sin_consentimiento_muestra_onboarding():
             tiene_consentimiento=False,
             esta_registrado=False,
             esta_verificado=False,
-            approved_basic=False,
             telefono="593999111250@s.whatsapp.net",
         )
     )
@@ -75,7 +74,6 @@ def test_estado_inicial_sin_provider_id_prioriza_onboarding():
             tiene_consentimiento=True,
             esta_registrado=True,
             esta_verificado=True,
-            approved_basic=True,
             telefono="593999111251@s.whatsapp.net",
         )
     )
