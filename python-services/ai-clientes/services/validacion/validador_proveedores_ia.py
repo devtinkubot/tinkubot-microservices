@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import re
+import unicodedata
 from typing import Any, Dict, List, Optional
 
 from config.configuracion import configuracion
@@ -15,6 +16,38 @@ EJEMPLO_RESPUESTA_JSON_VALIDACION = """{
     {"can_help": false, "confidence": 0.22, "reason": "servicio no aplicable"}
   ]
 }"""
+
+_DOMINIO_FAMILIA_ALIASES = {
+    "automotriz": "vehiculos",
+    "vehiculos": "vehiculos",
+    "transporte": "movilidad",
+    "movilidad": "movilidad",
+    "construccion_hogar": "construccion_hogar",
+    "mantenimiento": "mantenimiento",
+    "tecnologia": "tecnologia",
+    "legal": "legal",
+    "salud": "salud",
+    "marketing": "marketing",
+    "financiero": "financiero",
+    "academico": "academico",
+    "gastronomia_alimentos": "gastronomia_alimentos",
+    "cuidados_asistencia": "cuidados_asistencia",
+    "eventos": "eventos",
+    "inmobiliario": "inmobiliario",
+    "servicios_administrativos": "servicios_administrativos",
+    "belleza": "belleza",
+    "otros": "otros",
+    "general": "general",
+}
+
+_DOMINIOS_GENERICOS = {"otros", "general", "servicios_administrativos"}
+_CATEGORIAS_GENERICAS = {
+    "mantenimiento",
+    "general",
+    "otros",
+    "servicios",
+    "servicios varios",
+}
 
 
 class ValidadorProveedoresIA:
@@ -45,6 +78,109 @@ class ValidadorProveedoresIA:
         self.semaforo_openai = semaforo_openai
         self.tiempo_espera_openai = tiempo_espera_openai
         self.logger = logger
+
+    @staticmethod
+    def _normalizar_texto(texto: Optional[str]) -> str:
+        if not texto:
+            return ""
+        base = unicodedata.normalize("NFD", str(texto).lower().strip())
+        sin_acentos = "".join(ch for ch in base if unicodedata.category(ch) != "Mn")
+        limpio = re.sub(r"[^a-z0-9\s]", " ", sin_acentos)
+        return re.sub(r"\s+", " ", limpio).strip()
+
+    @classmethod
+    def _tokens(cls, texto: Optional[str]) -> set[str]:
+        return {
+            token for token in cls._normalizar_texto(texto).split() if len(token) >= 3
+        }
+
+    @staticmethod
+    def _normalizar_codigo_dominio(texto: Optional[str]) -> str:
+        return ValidadorProveedoresIA._normalizar_texto(texto).replace(" ", "_")
+
+    @staticmethod
+    def _familia_dominio(texto: Optional[str]) -> str:
+        codigo = ValidadorProveedoresIA._normalizar_codigo_dominio(texto)
+        if not codigo:
+            return ""
+        return _DOMINIO_FAMILIA_ALIASES.get(codigo, codigo)
+
+    @classmethod
+    def _overlap(cls, left: set[str], right: set[str]) -> float:
+        if not left or not right:
+            return 0.0
+        union = left | right
+        if not union:
+            return 0.0
+        return len(left & right) / len(union)
+
+    @classmethod
+    def _evaluar_coherencia_taxonomica(
+        cls,
+        *,
+        request_domain_code: Optional[str],
+        request_category_name: Optional[str],
+        request_service_text: str,
+        provider_domain_code: Optional[str],
+        provider_category_name: Optional[str],
+        provider_service_text: str,
+    ) -> Dict[str, Any]:
+        request_domain = cls._normalizar_codigo_dominio(request_domain_code)
+        provider_domain = cls._normalizar_codigo_dominio(provider_domain_code)
+        request_family = cls._familia_dominio(request_domain)
+        provider_family = cls._familia_dominio(provider_domain)
+
+        domain_coherence = False
+        if request_family and provider_family:
+            domain_coherence = request_family == provider_family
+        elif not request_domain or not provider_domain:
+            domain_coherence = True
+        elif (
+            request_domain in _DOMINIOS_GENERICOS
+            or provider_domain in _DOMINIOS_GENERICOS
+        ):
+            domain_coherence = True
+
+        request_category_tokens = cls._tokens(request_category_name)
+        provider_category_tokens = cls._tokens(provider_category_name)
+        category_overlap = cls._overlap(
+            request_category_tokens, provider_category_tokens
+        )
+        category_coherence = category_overlap >= 0.18
+        if not request_category_tokens or not provider_category_tokens:
+            category_coherence = domain_coherence
+        if (
+            request_category_tokens & _CATEGORIAS_GENERICAS
+            or provider_category_tokens & _CATEGORIAS_GENERICAS
+        ):
+            category_coherence = category_coherence or domain_coherence
+
+        request_service_tokens = cls._tokens(request_service_text)
+        provider_service_tokens = cls._tokens(provider_service_text)
+        service_overlap = cls._overlap(request_service_tokens, provider_service_tokens)
+        service_coherence = service_overlap >= 0.12 or domain_coherence
+
+        score = (
+            (1.0 if domain_coherence else 0.0) * 0.55
+            + category_overlap * 0.30
+            + service_overlap * 0.15
+        )
+        if request_domain and provider_domain and not domain_coherence:
+            score = min(score, 0.35)
+
+        final_decision = domain_coherence and (category_coherence or service_coherence)
+        if score >= 0.65 and domain_coherence:
+            final_decision = True
+
+        return {
+            "domain_coherence": domain_coherence,
+            "category_coherence": category_coherence,
+            "service_coherence": service_coherence,
+            "taxonomy_coherence_score": max(0.0, min(1.0, score)),
+            "taxonomy_family_request": request_family or None,
+            "taxonomy_family_provider": provider_family or None,
+            "taxonomy_final_decision": final_decision,
+        }
 
     @staticmethod
     def _extraer_json_parseable(contenido: str) -> Optional[Any]:
@@ -119,11 +255,15 @@ class ValidadorProveedoresIA:
 
         return await self.cliente_openai.chat.completions.create(**parametros)
 
-    async def validar_proveedores(
+    async def validar_proveedores(  # noqa: C901
         self,
         necesidad_usuario: str,
         descripcion_problema: Optional[str],
         proveedores: List[Dict[str, Any]],
+        request_domain_code: Optional[str] = None,
+        request_category_name: Optional[str] = None,
+        request_domain: Optional[str] = None,
+        request_category: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         Usa IA para validar que los proveedores encontrados REALMENTE puedan ayudar
@@ -133,7 +273,8 @@ class ValidadorProveedoresIA:
         si tiene la capacidad y experiencia apropiada.
 
         Args:
-            necesidad_usuario: Necesidad del usuario (ej: "marketing digital", "desarrollo web")
+            necesidad_usuario: Necesidad del usuario (ej: "marketing digital",
+                "desarrollo web")
             descripcion_problema: Descripción completa del problema del cliente
             proveedores: Lista de proveedores a validar
 
@@ -148,9 +289,13 @@ class ValidadorProveedoresIA:
             return []
 
         self.logger.info(
-            f"🤖 Validando {len(proveedores)} proveedores con IA para '{necesidad_usuario}'"
+            "🤖 Validando %s proveedores con IA para '%s'",
+            len(proveedores),
+            necesidad_usuario,
         )
         problema = (descripcion_problema or necesidad_usuario or "").strip()
+        dominio_request = request_domain_code or request_domain
+        categoria_request = request_category_name or request_category
 
         # Construir prompt con información completa de proveedores
         proveedores_info = []
@@ -162,6 +307,15 @@ class ValidadorProveedoresIA:
                 "years_of_experience", "N/A"
             )
             calificacion = p.get("rating", "N/A")
+            dominio_proveedor = p.get("domain_code") or "N/A"
+            categoria_proveedor = p.get("category_name") or "N/A"
+            servicio_matcheado = p.get("matched_service_name") or p.get(
+                "service_name", "N/A"
+            )
+            resumen_servicio = p.get("matched_service_summary") or p.get(
+                "service_summary",
+                "N/A",
+            )
 
             # Si services_list está disponible, usarlo, si no, usar services
             if lista_servicios and isinstance(lista_servicios, list):
@@ -170,6 +324,10 @@ class ValidadorProveedoresIA:
                 texto_servicios = str(servicios)
 
             texto_proveedor = f"""Proveedor {i+1}:
+- Dominio: {dominio_proveedor}
+- Categoria: {categoria_proveedor}
+- Servicio matcheado: {servicio_matcheado}
+- Resumen del servicio: {resumen_servicio}
 - Servicios: {texto_servicios}
 - Experiencia: {experiencia}
 - Rating: {calificacion}"""
@@ -177,12 +335,16 @@ class ValidadorProveedoresIA:
 
         bloque_proveedores = "\n".join(proveedores_info)
 
-        prompt_sistema = f"""Eres un experto en servicios profesionales. Tu tarea es analizar si cada proveedor PUEDE ayudar con esta necesidad del usuario.
+        prompt_sistema = f"""Eres un experto en servicios profesionales. Tu tarea es
+analizar si cada proveedor PUEDE ayudar con esta necesidad del usuario.
 
-IMPORTANTE: Evalúa equivalencia semántica entre términos en distintos idiomas cuando representen el mismo servicio.
+IMPORTANTE: Evalúa equivalencia semántica entre términos en distintos idiomas
+cuando representen el mismo servicio.
 
 NECESIDAD DETECTADA: "{necesidad_usuario}"
 PROBLEMA ESPECÍFICO DEL CLIENTE: "{problema}"
+DOMINIO REQUERIDO: "{dominio_request or 'N/A'}"
+CATEGORIA REQUERIDA: "{categoria_request or 'N/A'}"
 
 {bloque_proveedores}
 
@@ -192,16 +354,36 @@ Criterios importantes:
 1. Los servicios que ofrece deben ser RELEVANTES y APLICABLES
    - No basta con mencionar palabras clave
    - Los servicios deben demostrar capacidad real de atender la necesidad
-   - "Desarrollo Software Backend" NO es automáticamente adecuado para "bugs de página web"
-   - Un desarrollador backend probablemente NO puede ayudar con problemas frontend
+   - "Desarrollo Software Backend" NO es automáticamente adecuado para
+     "bugs de página web"
+   - Un desarrollador backend probablemente NO puede ayudar con problemas
+     frontend
 
 2. Considera el contexto específico proporcionado
    - "Bug en página web" requiere conocimiento de HTML/CSS/JavaScript
    - "Error en base de datos" requiere conocimiento SQL/Base de datos
    - "App no funciona" requiere debugging de aplicaciones
+3. Contrasta la coherencia taxonómica
+   - El dominio del request debe ser coherente con el dominio del proveedor
+   - La categoría del request debe ser coherente con la categoría del proveedor
+   - Si el servicio parece parecido pero el dominio es claramente distinto, rechaza
+   - El dominio pesa más que la categoría y la categoría pesa más que el texto
+     libre
 
 Responde SOLO con JSON válido, usando exactamente este formato:
-{EJEMPLO_RESPUESTA_JSON_VALIDACION}
+{{
+  "results": [
+    {{
+      "can_help": true,
+      "confidence": 0.91,
+      "reason": "experiencia directa",
+      "domain_coherence": true,
+      "category_coherence": true,
+      "service_coherence": true,
+      "taxonomy_coherence_score": 0.91
+    }}
+  ]
+}}
 
 NO incluyas markdown, fences ni explicaciones fuera del JSON."""
 
@@ -244,9 +426,13 @@ NO incluyas markdown, fences ni explicaciones fuera del JSON."""
                 prompt_reintento = (
                     f"Necesidad: {necesidad_usuario}\n"
                     f"Problema: {problema}\n"
+                    f"Dominio requerido: {dominio_request or 'N/A'}\n"
+                    f"Categoria requerida: {categoria_request or 'N/A'}\n"
                     f"Proveedores:\n{bloque_proveedores}\n\n"
                     "Devuelve SOLO un objeto JSON con la clave 'results'. "
-                    "Cada item debe tener can_help, confidence y reason."
+                    "Cada item debe tener can_help, confidence, reason, "
+                    "domain_coherence, category_coherence, service_coherence "
+                    "y taxonomy_coherence_score."
                 )
                 self.logger.info("validator_retry_used providers=%s", len(proveedores))
                 respuesta = await asyncio.wait_for(
@@ -264,7 +450,156 @@ NO incluyas markdown, fences ni explicaciones fuera del JSON."""
                 )
                 if lista_validacion is None:
                     self.logger.warning("validator_parse_error stage=retry")
-                    return []
+                    self.logger.warning(
+                        "validator_fallback_individual providers=%s",
+                        len(proveedores),
+                    )
+                    proveedores_validados = []
+                    for indice, proveedor in enumerate(proveedores):
+                        prompt_individual = prompt_sistema.replace(
+                            bloque_proveedores,
+                            proveedores_info[indice],
+                        )
+                        respuesta_individual = await asyncio.wait_for(
+                            self._solicitar_validacion(
+                                prompt_usuario=prompt_individual,
+                                max_tokens=220,
+                                response_format={"type": "json_object"},
+                            ),
+                            timeout=self.tiempo_espera_openai,
+                        )
+                        if not respuesta_individual.choices:
+                            continue
+
+                        contenido_individual = (
+                            respuesta_individual.choices[0].message.content or ""
+                        ).strip()
+                        payload_individual = self._extraer_json_parseable(
+                            contenido_individual
+                        )
+                        lista_individual = self._normalizar_lista_validacion(
+                            payload_individual, 1
+                        )
+                        if not lista_individual:
+                            continue
+
+                        decision = lista_individual[0]
+                        if isinstance(decision, bool):
+                            can_help = decision
+                            confidence = 1.0 if decision else 0.0
+                            reason = "legacy_boolean_response"
+                            decision_data = {}
+                        else:
+                            can_help = bool((decision or {}).get("can_help"))
+                            try:
+                                confidence = max(
+                                    0.0,
+                                    min(
+                                        1.0,
+                                        float(
+                                            (decision or {}).get("confidence") or 0.0
+                                        ),
+                                    ),
+                                )
+                            except (TypeError, ValueError):
+                                confidence = 0.0
+                            reason = str((decision or {}).get("reason") or "").strip()
+                            decision_data = dict(decision or {})
+
+                        coherencia = self._evaluar_coherencia_taxonomica(
+                            request_domain_code=dominio_request,
+                            request_category_name=categoria_request,
+                            request_service_text=" ".join(
+                                part
+                                for part in [
+                                    necesidad_usuario,
+                                    problema,
+                                ]
+                                if part
+                            ),
+                            provider_domain_code=proveedor.get("domain_code"),
+                            provider_category_name=proveedor.get("category_name"),
+                            provider_service_text=" ".join(
+                                part.strip()
+                                for part in [
+                                    str(
+                                        proveedor.get("matched_service_name") or ""
+                                    ).strip(),
+                                    str(
+                                        proveedor.get("matched_service_summary")
+                                        or proveedor.get("service_summary")
+                                        or ""
+                                    ).strip(),
+                                    " ".join(
+                                        str(service).strip()
+                                        for service in (proveedor.get("services") or [])
+                                    ),
+                                ]
+                                if part.strip()
+                            ),
+                        )
+
+                        if not coherencia["taxonomy_final_decision"]:
+                            can_help = False
+                            confidence = min(
+                                confidence, coherencia["taxonomy_coherence_score"]
+                            )
+                            if not reason:
+                                reason = "taxonomy_incoherent"
+                            if coherencia["domain_coherence"] is False:
+                                reason = "domain_incoherent"
+                            elif coherencia["category_coherence"] is False:
+                                reason = "category_incoherent"
+
+                        if not can_help:
+                            continue
+
+                        proveedor_enriquecido = dict(proveedor)
+                        proveedor_enriquecido["validation_confidence"] = confidence
+                        proveedor_enriquecido["validation_reason"] = reason or None
+                        proveedor_enriquecido["taxonomy_coherence_score"] = coherencia[
+                            "taxonomy_coherence_score"
+                        ]
+                        proveedor_enriquecido["domain_coherence"] = coherencia[
+                            "domain_coherence"
+                        ]
+                        proveedor_enriquecido["category_coherence"] = coherencia[
+                            "category_coherence"
+                        ]
+                        proveedor_enriquecido["service_coherence"] = coherencia[
+                            "service_coherence"
+                        ]
+                        proveedor_enriquecido["taxonomy_family_request"] = coherencia[
+                            "taxonomy_family_request"
+                        ]
+                        proveedor_enriquecido["taxonomy_family_provider"] = coherencia[
+                            "taxonomy_family_provider"
+                        ]
+                        proveedor_enriquecido["taxonomy_final_decision"] = coherencia[
+                            "taxonomy_final_decision"
+                        ]
+                        if decision_data:
+                            proveedor_enriquecido["validation_raw"] = {
+                                key: decision_data.get(key)
+                                for key in (
+                                    "can_help",
+                                    "confidence",
+                                    "reason",
+                                    "domain_coherence",
+                                    "category_coherence",
+                                    "service_coherence",
+                                    "taxonomy_coherence_score",
+                                )
+                                if key in decision_data
+                            }
+                        proveedores_validados.append(proveedor_enriquecido)
+
+                    self.logger.info(
+                        "validator_final_pass_count passed=%s total=%s",
+                        len(proveedores_validados),
+                        len(proveedores),
+                    )
+                    return proveedores_validados
 
             proveedores_validados = []
             for proveedor, decision in zip(proveedores, lista_validacion):
@@ -272,6 +607,7 @@ NO incluyas markdown, fences ni explicaciones fuera del JSON."""
                     can_help = decision
                     confidence = 1.0 if decision else 0.0
                     reason = "legacy_boolean_response"
+                    decision_data = {}
                 else:
                     can_help = bool((decision or {}).get("can_help"))
                     try:
@@ -282,11 +618,89 @@ NO incluyas markdown, fences ni explicaciones fuera del JSON."""
                     except (TypeError, ValueError):
                         confidence = 0.0
                     reason = str((decision or {}).get("reason") or "").strip()
+                    decision_data = dict(decision or {})
+
+                coherencia = self._evaluar_coherencia_taxonomica(
+                    request_domain_code=dominio_request,
+                    request_category_name=categoria_request,
+                    request_service_text=" ".join(
+                        part
+                        for part in [
+                            necesidad_usuario,
+                            problema,
+                        ]
+                        if part
+                    ),
+                    provider_domain_code=proveedor.get("domain_code"),
+                    provider_category_name=proveedor.get("category_name"),
+                    provider_service_text=" ".join(
+                        part.strip()
+                        for part in [
+                            str(proveedor.get("matched_service_name") or "").strip(),
+                            str(
+                                proveedor.get("matched_service_summary")
+                                or proveedor.get("service_summary")
+                                or ""
+                            ).strip(),
+                            " ".join(
+                                str(service).strip()
+                                for service in (proveedor.get("services") or [])
+                            ),
+                        ]
+                        if part.strip()
+                    ),
+                )
+
+                if not coherencia["taxonomy_final_decision"]:
+                    can_help = False
+                    confidence = min(confidence, coherencia["taxonomy_coherence_score"])
+                    if not reason:
+                        reason = "taxonomy_incoherent"
+                    if coherencia["domain_coherence"] is False:
+                        reason = "domain_incoherent"
+                    elif coherencia["category_coherence"] is False:
+                        reason = "category_incoherent"
+
                 if not can_help:
                     continue
                 proveedor_enriquecido = dict(proveedor)
                 proveedor_enriquecido["validation_confidence"] = confidence
                 proveedor_enriquecido["validation_reason"] = reason or None
+                proveedor_enriquecido["taxonomy_coherence_score"] = coherencia[
+                    "taxonomy_coherence_score"
+                ]
+                proveedor_enriquecido["domain_coherence"] = coherencia[
+                    "domain_coherence"
+                ]
+                proveedor_enriquecido["category_coherence"] = coherencia[
+                    "category_coherence"
+                ]
+                proveedor_enriquecido["service_coherence"] = coherencia[
+                    "service_coherence"
+                ]
+                proveedor_enriquecido["taxonomy_family_request"] = coherencia[
+                    "taxonomy_family_request"
+                ]
+                proveedor_enriquecido["taxonomy_family_provider"] = coherencia[
+                    "taxonomy_family_provider"
+                ]
+                proveedor_enriquecido["taxonomy_final_decision"] = coherencia[
+                    "taxonomy_final_decision"
+                ]
+                if decision_data:
+                    proveedor_enriquecido["validation_raw"] = {
+                        key: decision_data.get(key)
+                        for key in (
+                            "can_help",
+                            "confidence",
+                            "reason",
+                            "domain_coherence",
+                            "category_coherence",
+                            "service_coherence",
+                            "taxonomy_coherence_score",
+                        )
+                        if key in decision_data
+                    }
                 proveedores_validados.append(proveedor_enriquecido)
 
             self.logger.info(

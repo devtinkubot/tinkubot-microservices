@@ -2,7 +2,6 @@ import logging
 from unittest.mock import AsyncMock
 
 import pytest
-
 from services.buscador.buscador_proveedores import BuscadorProveedores
 
 
@@ -56,12 +55,22 @@ async def test_buscador_usa_search_candidate_limit(monkeypatch):
         cliente_busqueda.buscar_proveedores.await_args.kwargs["descripcion_problema"]
         == "Necesito capitan de barco"
     )
-    assert cliente_busqueda.buscar_proveedores.await_args.kwargs["domain"] == "transporte"
+    assert (
+        cliente_busqueda.buscar_proveedores.await_args.kwargs["domain"] == "transporte"
+    )
     assert (
         cliente_busqueda.buscar_proveedores.await_args.kwargs["category"]
         == "navegación marítima"
     )
     validador_ia.validar_proveedores.assert_awaited_once()
+    assert (
+        validador_ia.validar_proveedores.await_args.kwargs["request_domain"]
+        == "transporte"
+    )
+    assert (
+        validador_ia.validar_proveedores.await_args.kwargs["request_category"]
+        == "navegación marítima"
+    )
 
 
 @pytest.mark.asyncio

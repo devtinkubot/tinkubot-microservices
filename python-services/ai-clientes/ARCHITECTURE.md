@@ -22,3 +22,11 @@
 - No changes to `flows/*`.
 - No changes to `templates/*`.
 - No user-facing behavior changes.
+
+## Search Result Messaging Policy
+- The customer-facing search flow uses only two outcomes:
+  - `No hay expertos registrados` when no valid expert remains for the requested service in the requested city.
+  - `No hay expertos disponibles` when there are valid experts registered for that service/city, but none of them respond or get accepted during availability.
+- Taxonomy coherence can reject semantically similar but incompatible candidates before availability.
+- If the retrieval layer returns providers that do not fit the request's domain/category well enough, the flow should still collapse to `No hay expertos registrados` instead of exposing internal matching details to the customer.
+- Do not introduce extra customer-facing copies for intermediate validation states unless the product decision explicitly changes.

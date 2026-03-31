@@ -51,7 +51,7 @@ def mensaje_sin_proveedores_registrados(servicio: str, ciudad: str) -> str:
 
 
 def mensaje_sin_disponibilidad(servicio: str, ciudad: str) -> str:
-    """Mensaje cuando no hay disponibilidad inmediata en proveedores aceptados."""
+    """Mensaje cuando hay expertos registrados, pero ninguno respondió."""
     ciudad_texto = (ciudad or "").strip() or "tu ciudad"
     return (
         f"*No hay expertos disponibles* para atender tu solicitud en *{ciudad_texto}*.\n\n"

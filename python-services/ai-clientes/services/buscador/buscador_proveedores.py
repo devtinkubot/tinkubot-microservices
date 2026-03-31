@@ -1,10 +1,23 @@
 """Servicio de búsqueda de proveedores."""
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Protocol
 
 from config.configuracion import configuracion
 from infrastructure.clientes.busqueda import ClienteBusqueda
+
+
+class IValidadorIA(Protocol):
+    async def validar_proveedores(
+        self,
+        necesidad_usuario: str,
+        descripcion_problema: Optional[str],
+        proveedores: list[Dict[str, Any]],
+        request_domain_code: Optional[str] = None,
+        request_category_name: Optional[str] = None,
+        request_domain: Optional[str] = None,
+        request_category: Optional[str] = None,
+    ) -> list[Dict[str, Any]]: ...
 
 
 class BuscadorProveedores:
@@ -18,7 +31,7 @@ class BuscadorProveedores:
     def __init__(
         self,
         cliente_busqueda: ClienteBusqueda,
-        validador_ia: 'IValidadorIA',
+        validador_ia: IValidadorIA,
         logger: logging.Logger,
     ):
         """
@@ -74,7 +87,8 @@ class BuscadorProveedores:
             category_name=category_name,
         )
         self.logger.info(
-            "🔍 Búsqueda embeddings + validación IA: service='%s', query='%s', location='%s'",
+            "🔍 Búsqueda embeddings + validación IA: "
+            "service='%s', query='%s', location='%s'",
             profesion,
             consulta,
             ciudad,
@@ -138,6 +152,10 @@ class BuscadorProveedores:
                 necesidad_usuario=profesion,
                 descripcion_problema=descripcion_problema or profesion,
                 proveedores=candidatos_a_validar,
+                request_domain_code=domain_code,
+                request_category_name=category_name,
+                request_domain=domain,
+                request_category=category,
             )
             proveedores_rankeados = self._rankear_proveedores(
                 proveedores=proveedores_validados,

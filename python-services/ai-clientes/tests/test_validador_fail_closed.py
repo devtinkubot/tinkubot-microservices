@@ -31,11 +31,17 @@ class _Completions:
             if self.calls == 1:
                 return _Response('{"results": [')
             return _Response(
-                '{"results": [{"can_help": true, "confidence": 0.88, "reason": "coincidencia recuperada"}]}'
+                (
+                    '{"results": [{"can_help": true, "confidence": 0.88, '
+                    '"reason": "coincidencia recuperada"}]}'
+                )
             )
         if self.mode == "structured_valid":
             return _Response(
-                '[{"can_help": true, "confidence": 0.91, "reason": "experiencia directa"}]'
+                (
+                    '[{"can_help": true, "confidence": 0.91, '
+                    '"reason": "experiencia directa"}]'
+                )
             )
         return _Response("[true]")
 
@@ -115,7 +121,9 @@ async def test_validador_acepta_respuesta_json_estructurada_y_no_falla_por_promp
 
     resultado = await validador.validar_proveedores(
         necesidad_usuario="desarrollo y mantenimiento de aplicaciones móviles",
-        descripcion_problema="Qué alguien desarrolle la app movil y arregle los errores que tiene",
+        descripcion_problema=(
+            "Qué alguien desarrolle la app movil y arregle los errores que tiene"
+        ),
         proveedores=[
             {
                 "id": "p1",
@@ -133,6 +141,43 @@ async def test_validador_acepta_respuesta_json_estructurada_y_no_falla_por_promp
     assert resultado[0]["id"] == "p1"
     assert resultado[0]["validation_confidence"] == 0.91
     assert resultado[0]["validation_reason"] == "experiencia directa"
+
+
+@pytest.mark.asyncio
+async def test_validador_rechaza_incoherencia_taxonomica_aunque_la_ia_acepte():
+    validador = ValidadorProveedoresIA(
+        cliente_openai=_OpenAIStub(mode="structured_valid"),
+        semaforo_openai=asyncio.Semaphore(1),
+        tiempo_espera_openai=0.5,
+        logger=logging.getLogger("test"),
+    )
+
+    resultado = await validador.validar_proveedores(
+        necesidad_usuario="ayuda con el sistema electrico de mi auto",
+        descripcion_problema=(
+            "Necesito alguien que me ayude con el sistema electrico de mi auto"
+        ),
+        request_domain_code="automotriz",
+        request_category_name="mantenimiento electrico de vehiculos",
+        proveedores=[
+            {
+                "id": "p1",
+                "services_list": [
+                    "mantenimiento de sistemas eléctricos",
+                ],
+                "matched_service_name": "mantenimiento de sistemas eléctricos",
+                "matched_service_summary": (
+                    "Servicios eléctricos para edificaciones y hogares"
+                ),
+                "domain_code": "construccion_hogar",
+                "category_name": "Mantenimiento",
+                "experience_range": "5 a 10 años",
+                "rating": 5,
+            }
+        ],
+    )
+
+    assert resultado == []
 
 
 @pytest.mark.asyncio
