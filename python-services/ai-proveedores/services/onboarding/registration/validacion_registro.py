@@ -18,9 +18,10 @@ from typing import Any, Dict, List, Optional, Tuple, cast
 
 from models.proveedores import SolicitudCreacionProveedor
 from pydantic import ValidationError
-from services.onboarding.registration.parser_ubicacion import (
-    validar_y_normalizar_ubicacion,
+from services.shared.identidad_proveedor import (
+    resolver_nombre_visible_proveedor,
 )
+from services.shared.ubicacion_ecuador import validar_y_normalizar_ubicacion
 
 logger = logging.getLogger(__name__)
 
@@ -63,12 +64,9 @@ def validar_y_construir_proveedor(
         )
 
     try:
-        nombre_visible = (
-            flujo.get("name")
-            or flujo.get("full_name")
-            or flujo.get("real_phone")
-            or flujo.get("phone_user")
-            or telefono
+        nombre_visible = resolver_nombre_visible_proveedor(
+            proveedor=flujo,
+            fallback="",
         )
         proveedor = SolicitudCreacionProveedor(
             phone=telefono,
@@ -76,7 +74,7 @@ def validar_y_construir_proveedor(
             from_number=flujo.get("from_number"),
             user_id=flujo.get("user_id"),
             real_phone=flujo.get("real_phone") or flujo.get("phone_user"),
-            full_name=str(nombre_visible).strip() or "Pendiente de nombre",
+            full_name=nombre_visible,
             city=ciudad_canonica,
             # Fase 4: Eliminado campo profession - ya no existe en el modelo
             services_list=servicios_lista,
@@ -85,8 +83,7 @@ def validar_y_construir_proveedor(
             ),
             experience_range=flujo.get("experience_range"),
             has_consent=flujo.get("has_consent", False),
-            social_media_url=flujo.get("social_media_url"),
-            social_media_type=flujo.get("social_media_type"),
+            onboarding_complete=True,
             display_name=flujo.get("display_name"),
             formatted_name=flujo.get("formatted_name"),
             first_name=flujo.get("first_name"),
@@ -158,7 +155,8 @@ def _formatear_mensaje_error_validacion(error: Dict[str, Any]) -> str:
     nombres_campos = {
         "phone": "teléfono",
         "real_phone": "teléfono real",
-        "full_name": "nombre",
+        "first_name": "nombre",
+        "last_name": "apellido",
         "city": "ciudad",
         # Fase 4: Eliminada referencia a profession del mapeo
         "services_list": "servicios",

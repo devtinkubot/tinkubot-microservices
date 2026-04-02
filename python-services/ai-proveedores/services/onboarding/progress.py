@@ -4,63 +4,12 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from infrastructure.database import run_supabase
-
-CHECKPOINT_MENU_FINAL = "awaiting_menu_option"
-ESTADOS_APROBADOS_COMPAT = {
-    "approved",
-    "aprobado",
-    "ok",
-    "approved_basic",
-    "aprobado_basico",
-    "basic_approved",
-    "profile_pending_review",
-    "perfil_pendiente_revision",
-    "professional_review_pending",
-    "interview_required",
-    "entrevista",
-    "auditoria",
-    "needs_info",
-    "falta_info",
-    "faltainfo",
-}
-
-CHECKPOINT_STATES = {
-    "awaiting_menu_option",
-    "onboarding_city",
-    "onboarding_dni_front_photo",
-    "onboarding_face_photo",
-    "onboarding_experience",
-    "onboarding_specialty",
-    "onboarding_add_another_service",
-    "onboarding_real_phone",
-    "onboarding_consent",
-    "pending_verification",
-    "confirm",
-}
-
-MENU_POST_REGISTRO_STATES = {
-    "awaiting_personal_info_action",
-    "awaiting_professional_info_action",
-    "awaiting_deletion_confirmation",
-    "awaiting_active_service_action",
-    "awaiting_service_remove",
-    "awaiting_face_photo_update",
-    "awaiting_dni_front_photo_update",
-    "awaiting_dni_back_photo_update",
-    "viewing_personal_name",
-    "viewing_personal_city",
-    "viewing_personal_photo",
-    "viewing_personal_dni_front",
-    "viewing_personal_dni_back",
-    "viewing_professional_experience",
-    "viewing_professional_services",
-    "viewing_professional_service",
-    "viewing_professional_social",
-    "viewing_professional_social_facebook",
-    "viewing_professional_social_instagram",
-    "viewing_professional_certificates",
-    "viewing_professional_certificate",
-}
+from services.shared.estados_proveedor import (
+    CHECKPOINT_MENU_FINAL,
+    CHECKPOINTS_ONBOARDING,
+    ESTADOS_APROBADOS_COMPAT,
+    MENU_POST_REGISTRO_STATES,
+)
 
 
 def _texto_limpio(valor: Any) -> str:
@@ -92,7 +41,7 @@ def _estado_administrativo_compatible(
         return "approved"
     if estado in {"rejected", "rechazado", "denied"}:
         return "rejected"
-    return "approved" if bool(perfil_proveedor.get("verified")) else "pending"
+    return "pending"
 
 
 def normalizar_checkpoint_onboarding(checkpoint: Optional[str]) -> Optional[str]:
@@ -112,7 +61,7 @@ def resolver_checkpoint_onboarding_desde_perfil(
     checkpoint = normalizar_checkpoint_onboarding(
         perfil_proveedor.get("onboarding_step")
     )
-    if checkpoint in CHECKPOINT_STATES:
+    if checkpoint in CHECKPOINTS_ONBOARDING:
         return checkpoint
     return inferir_checkpoint_onboarding_desde_perfil(perfil_proveedor)
 
@@ -122,7 +71,7 @@ def es_perfil_onboarding_completo(perfil_proveedor: Optional[Dict[str, Any]]) ->
     if not perfil_proveedor:
         return False
 
-    if _estado_administrativo_compatible(perfil_proveedor) == "approved":
+    if bool(perfil_proveedor.get("onboarding_complete")):
         return True
 
     return all(
@@ -137,6 +86,33 @@ def es_perfil_onboarding_completo(perfil_proveedor: Optional[Dict[str, Any]]) ->
     )
 
 
+def rehidratar_estado_onboarding_desde_supabase(
+    flujo: Dict[str, Any],
+    perfil_proveedor: Optional[Dict[str, Any]],
+) -> bool:
+    """Reconstruye el estado del onboarding si Redis llegó vacío o incompleto."""
+    if flujo.get("state") or not perfil_proveedor:
+        return False
+
+    checkpoint = resolver_checkpoint_onboarding_desde_perfil(perfil_proveedor)
+    if not checkpoint:
+        return False
+
+    flujo["state"] = checkpoint
+    flujo["onboarding_step"] = checkpoint
+    if perfil_proveedor.get("onboarding_step_updated_at") is not None:
+        flujo["onboarding_step_updated_at"] = perfil_proveedor.get(
+            "onboarding_step_updated_at"
+        )
+    if checkpoint == "awaiting_menu_option" and not es_perfil_onboarding_completo(
+        perfil_proveedor
+    ):
+        flujo["mode"] = "registration"
+    elif checkpoint == "awaiting_menu_option":
+        flujo.pop("mode", None)
+    return True
+
+
 def inferir_checkpoint_onboarding_desde_perfil(
     perfil_proveedor: Optional[Dict[str, Any]],
 ) -> Optional[str]:
@@ -144,7 +120,8 @@ def inferir_checkpoint_onboarding_desde_perfil(
     if not perfil_proveedor:
         return None
 
-    if es_perfil_onboarding_completo(perfil_proveedor):
+    estado = _estado_administrativo_compatible(perfil_proveedor)
+    if estado == "approved":
         return CHECKPOINT_MENU_FINAL
 
     if not _texto_limpio(perfil_proveedor.get("city")):
@@ -160,7 +137,6 @@ def inferir_checkpoint_onboarding_desde_perfil(
     if not bool(perfil_proveedor.get("has_consent")):
         return "onboarding_consent"
 
-    estado = _estado_administrativo_compatible(perfil_proveedor)
     if estado in {"pending", "rejected"}:
         return "pending_verification"
     return CHECKPOINT_MENU_FINAL
@@ -185,7 +161,7 @@ def determinar_checkpoint_onboarding(
             return estado
         return None
 
-    if estado in CHECKPOINT_STATES:
+    if estado in CHECKPOINTS_ONBOARDING:
         return estado
 
     return None

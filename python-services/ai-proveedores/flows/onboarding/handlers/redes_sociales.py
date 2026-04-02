@@ -5,10 +5,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 from infrastructure.database import run_supabase
-from services.maintenance.redes_sociales_slots import (
-    construir_payload_legacy_red_social,
-    extraer_redes_sociales_desde_texto,
-)
+from services.shared.redes_sociales_slots import extraer_redes_sociales_desde_texto
 from services.onboarding.event_payloads import payload_redes
 from services.onboarding.event_publisher import (
     EVENT_TYPE_SOCIAL,
@@ -16,7 +13,7 @@ from services.onboarding.event_publisher import (
     publicar_evento_onboarding,
 )
 from services.shared import es_skip_value
-from services.shared.ingreso_whatsapp import normalizar_telefono_canonico
+from services.shared.whatsapp_identity import normalizar_telefono_canonico
 from templates.onboarding.redes_sociales import (
     REDES_SOCIALES_SKIP_ID,
     mensaje_final_redes_sociales_onboarding,
@@ -72,8 +69,6 @@ async def _persistir_redes_sociales_onboarding(
     proveedor_id: Optional[str],
     facebook_username: Optional[str],
     instagram_username: Optional[str],
-    social_media_url: Optional[str],
-    social_media_type: Optional[str],
 ) -> bool:
     if not supabase or not proveedor_id:
         return False
@@ -81,8 +76,6 @@ async def _persistir_redes_sociales_onboarding(
     payload = {
         "facebook_username": facebook_username,
         "instagram_username": instagram_username,
-        "social_media_url": social_media_url,
-        "social_media_type": social_media_type,
         "updated_at": datetime.utcnow().isoformat(),
     }
 
@@ -121,8 +114,6 @@ async def manejar_espera_red_social_onboarding(
                 payload=payload_redes(
                     facebook_username=None,
                     instagram_username=None,
-                    social_media_url=None,
-                    social_media_type=None,
                     checkpoint="pending_verification",
                 ),
             )
@@ -143,13 +134,6 @@ async def manejar_espera_red_social_onboarding(
 
     flujo["facebook_username"] = facebook_username
     flujo["instagram_username"] = instagram_username
-    payload_legacy = construir_payload_legacy_red_social(
-        facebook_username=facebook_username,
-        instagram_username=instagram_username,
-        preferred_type="instagram" if instagram_username else "facebook",
-    )
-    flujo["social_media_url"] = payload_legacy["social_media_url"]
-    flujo["social_media_type"] = payload_legacy["social_media_type"]
 
     if onboarding_async_persistence_enabled():
         _asegurar_phone_en_flujo(flujo)
@@ -159,8 +143,6 @@ async def manejar_espera_red_social_onboarding(
             payload=payload_redes(
                 facebook_username=facebook_username,
                 instagram_username=instagram_username,
-                social_media_url=payload_legacy["social_media_url"],
-                social_media_type=payload_legacy["social_media_type"],
                 checkpoint="pending_verification",
             ),
         )
@@ -170,8 +152,6 @@ async def manejar_espera_red_social_onboarding(
             proveedor_id=str(flujo.get("provider_id") or "").strip() or None,
             facebook_username=facebook_username,
             instagram_username=instagram_username,
-            social_media_url=payload_legacy["social_media_url"],
-            social_media_type=payload_legacy["social_media_type"],
         )
         if not persistido:
             flujo["state"] = "onboarding_social_media"

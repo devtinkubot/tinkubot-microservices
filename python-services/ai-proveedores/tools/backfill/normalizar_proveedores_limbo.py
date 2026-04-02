@@ -7,7 +7,7 @@ Flujo:
 2. Separa proveedores con reviews pendientes y sin servicios visibles.
 3. Inserta servicios placeholder en `provider_services` cuando el proveedor
    tiene reviews pendientes pero quedó sin fila operativa.
-4. Promueve el estado del proveedor a `profile_pending_review` cuando aplica,
+4. Promueve el checkpoint del proveedor a `pending_verification` cuando aplica,
    para que el frontend lo muestre en la cola administrativa correcta.
 """
 
@@ -359,7 +359,7 @@ def main() -> None:
                 )
             )
 
-    # 3. Promover a profile_pending_review los proveedores con servicio pendiente.
+    # 3. Promover a pending_verification los proveedores con servicio pendiente.
     if not args.seed_services_only:
         for provider_id in linked_provider_ids:
             provider = next((item for item in providers if item.id == provider_id), None)
@@ -368,13 +368,16 @@ def main() -> None:
             current_status = (provider.status or "").strip().lower()
             if current_status in {"rejected", "approved"}:
                 continue
-            if current_status != "profile_pending_review":
+            if current_status != "pending":
                 if args.apply:
                     (
                         client.table("providers")
                         .update(
                             {
-                                "status": "profile_pending_review",
+                                "status": "pending",
+                                "onboarding_complete": False,
+                                "onboarding_step": "pending_verification",
+                                "onboarding_step_updated_at": datetime.now(timezone.utc).isoformat(),
                                 "updated_at": datetime.now(timezone.utc).isoformat(),
                             }
                         )
@@ -392,7 +395,7 @@ def main() -> None:
     print(f"  reviews_without_provider={skipped_no_provider_count}")
     print(f"  placeholder_services_created={placeholder_count}")
     print(f"  duplicate_placeholders_skipped={skipped_duplicate_count}")
-    print(f"  providers_promoted_to_profile_pending_review={promoted_count}")
+    print(f"  providers_promoted_to_pending_verification={promoted_count}")
 
 
 if __name__ == "__main__":

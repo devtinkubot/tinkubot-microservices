@@ -4,19 +4,19 @@ import asyncio
 import sys
 import types
 from pathlib import Path
-from typing import Any
 from types import SimpleNamespace
+from typing import Any
 
 imghdr_stub: Any = types.ModuleType("imghdr")
 imghdr_stub.what = lambda *args, **kwargs: None
 sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from services.onboarding.confirmacion import (  # noqa: E402
-    manejar_confirmacion_onboarding,
-    _resolver_opcion_confirmacion,
-)
 from models.proveedores import SolicitudCreacionProveedor  # noqa: E402
+from services.onboarding.confirmacion import (  # noqa: E402
+    _resolver_opcion_confirmacion,
+    manejar_confirmacion_onboarding,
+)
 from templates.maintenance.confirmacion import (  # noqa: E402
     CONFIRM_ACCEPT_ID,
     CONFIRM_REJECT_ID,
@@ -152,10 +152,12 @@ def test_confirmacion_onboarding_async_publica_evento_y_no_ejecuta_registro_sync
     carga = {"selected_option": CONFIRM_ACCEPT_ID, "message_id": "msg-1"}
     datos_proveedor = SolicitudCreacionProveedor(
         phone="593999111222@s.whatsapp.net",
-        full_name="Proveedor Test",
+        full_name="",
         city="Quito",
         services_list=["electricidad"],
         has_consent=True,
+        first_name="Proveedor",
+        last_name="Test",
     )
     published = {}
 
@@ -163,7 +165,9 @@ def test_confirmacion_onboarding_async_publica_evento_y_no_ejecuta_registro_sync
         raise AssertionError("No debe registrar síncronamente cuando async está activo")
 
     async def _subir_no_usar(*_args, **_kwargs):
-        raise AssertionError("No debe subir medios síncronamente cuando async está activo")
+        raise AssertionError(
+            "No debe subir medios síncronamente cuando async está activo"
+        )
 
     async def _publish_mock(**kwargs):
         published.update(kwargs)
@@ -196,11 +200,19 @@ def test_confirmacion_onboarding_async_publica_evento_y_no_ejecuta_registro_sync
             telefono="593999111222@s.whatsapp.net",
             registrar_proveedor_fn=_registrar_no_usar,
             subir_medios_fn=_subir_no_usar,
-            logger=SimpleNamespace(info=lambda *a, **k: None, error=lambda *a, **k: None),
+            logger=SimpleNamespace(
+                info=lambda *a, **k: None, error=lambda *a, **k: None
+            ),
         )
     )
 
-    assert "revisión" in respuesta["messages"][0]["response"].lower()
+    assert "Hola Proveedor Test" in respuesta["messages"][0]["response"]
     assert respuesta["new_flow"]["state"] == "pending_verification"
-    assert published["event_type"] == "provider.onboarding.registration.persist_requested"
-    assert published["payload"]["provider_data"]["full_name"] == "Proveedor Test"
+    assert (
+        published["event_type"] == "provider.onboarding.registration.persist_requested"
+    )
+    assert published["payload"]["provider_data"]["first_name"] == "Proveedor"
+    assert published["payload"]["provider_data"]["last_name"] == "Test"
+    assert published["payload"]["provider_data"]["onboarding_complete"] is True
+    assert "social_media_url" not in published["payload"]["provider_data"]
+    assert "social_media_type" not in published["payload"]["provider_data"]

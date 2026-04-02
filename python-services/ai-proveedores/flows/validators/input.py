@@ -2,7 +2,7 @@
 
 from typing import Dict, List, Optional
 
-from services.maintenance.redes_sociales_slots import (
+from services.shared.redes_sociales_slots import (
     SOCIAL_NETWORK_FACEBOOK,
     SOCIAL_NETWORK_INSTAGRAM,
     SOCIAL_SKIP_VALUES,

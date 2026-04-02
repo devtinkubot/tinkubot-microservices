@@ -54,9 +54,19 @@ ONBOARDING_TO_MAINTENANCE_STATES = {
 }
 
 
+def _debe_traducir_onboarding_a_mantenimiento(
+    flujo: Dict[str, Any],
+    estado: str,
+) -> bool:
+    """Solo traduce estados onboarding cuando el flujo sí está editando perfil."""
+    if estado not in ONBOARDING_TO_MAINTENANCE_STATES:
+        return False
+    return bool(flujo.get("profile_edit_mode") or flujo.get("maintenance_mode"))
+
+
 def _normalizar_estado(flujo: Dict[str, Any]) -> None:
     estado = str(flujo.get("state") or "").strip()
-    if estado in ONBOARDING_TO_MAINTENANCE_STATES:
+    if _debe_traducir_onboarding_a_mantenimiento(flujo, estado):
         flujo["state"] = ONBOARDING_TO_MAINTENANCE_STATES[estado]
         return
     if estado in STATE_ALIAS_TO_MAINTENANCE:
@@ -83,6 +93,15 @@ async def manejar_perfil_mantenimiento(
     if (
         not es_contexto_mantenimiento(flujo)
         and estado_normalizado not in MAINTENANCE_PROFILE_STATES
+    ):
+        return None
+
+    if (
+        estado_original in ONBOARDING_TO_MAINTENANCE_STATES
+        and not _debe_traducir_onboarding_a_mantenimiento(
+            flujo,
+            estado_original,
+        )
     ):
         return None
 

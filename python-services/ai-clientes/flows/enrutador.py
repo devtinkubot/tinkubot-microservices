@@ -21,6 +21,7 @@ from flows.mensajes import (
     solicitar_ciudad,
 )
 from flows.pre_enrutador import pre_enrutar_mensaje
+from services.proveedores.identidad import resolver_nombre_visible_proveedor
 from templates.busqueda.confirmacion import (
     mensaje_sin_disponibilidad,
     mensajes_confirmacion_busqueda,
@@ -488,7 +489,7 @@ async def enrutar_estado(  # noqa: C901
                     {
                         **p,
                         "provider_id": p.get("id") or p.get("provider_id"),
-                        "nombre": p.get("name") or p.get("full_name"),
+                        "nombre": resolver_nombre_visible_proveedor(p),
                         "real_phone": p.get("real_phone") or p.get("phone_number"),
                     }
                     for p in proveedores_para_verificar
@@ -713,20 +714,24 @@ async def enrutar_estado(  # noqa: C901
         )
 
     if estado == "confirm_new_search":
-        if texto and not seleccionado and await _parece_nueva_solicitud_servicio(
-            orquestador, texto
+        if (
+            texto
+            and not seleccionado
+            and await _parece_nueva_solicitud_servicio(orquestador, texto)
         ):
             ciudad_preservada = flujo.get("city")
             ciudad_confirmada_preservada = flujo.get("city_confirmed")
             await orquestador.resetear_flujo(telefono)
-            nuevo_flujo: Dict[str, Any] = {"state": "awaiting_service"}
+            flujo_nuevo_reinicio: Dict[str, Any] = {"state": "awaiting_service"}
             if ciudad_preservada:
-                nuevo_flujo["city"] = ciudad_preservada
+                flujo_nuevo_reinicio["city"] = ciudad_preservada
                 if ciudad_confirmada_preservada is not None:
-                    nuevo_flujo["city_confirmed"] = ciudad_confirmada_preservada
+                    flujo_nuevo_reinicio["city_confirmed"] = (
+                        ciudad_confirmada_preservada
+                    )
             return await orquestador._procesar_awaiting_service(
                 telefono,
-                nuevo_flujo,
+                flujo_nuevo_reinicio,
                 texto,
                 responder,
                 cliente_id,
@@ -756,20 +761,24 @@ async def enrutar_estado(  # noqa: C901
     if estado == "confirm_service":
         from services.orquestador_conversacion import interpretar_si_no
 
-        if texto and not seleccionado and await _parece_nueva_solicitud_servicio(
-            orquestador, texto
+        if (
+            texto
+            and not seleccionado
+            and await _parece_nueva_solicitud_servicio(orquestador, texto)
         ):
             ciudad_preservada = flujo.get("city")
             ciudad_confirmada_preservada = flujo.get("city_confirmed")
             await orquestador.resetear_flujo(telefono)
-            nuevo_flujo: Dict[str, Any] = {"state": "awaiting_service"}
+            flujo_nuevo_confirmacion: Dict[str, Any] = {"state": "awaiting_service"}
             if ciudad_preservada:
-                nuevo_flujo["city"] = ciudad_preservada
+                flujo_nuevo_confirmacion["city"] = ciudad_preservada
                 if ciudad_confirmada_preservada is not None:
-                    nuevo_flujo["city_confirmed"] = ciudad_confirmada_preservada
+                    flujo_nuevo_confirmacion["city_confirmed"] = (
+                        ciudad_confirmada_preservada
+                    )
             return await orquestador._procesar_awaiting_service(
                 telefono,
-                nuevo_flujo,
+                flujo_nuevo_confirmacion,
                 texto,
                 responder,
                 cliente_id,

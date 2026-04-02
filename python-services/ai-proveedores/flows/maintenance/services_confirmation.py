@@ -18,6 +18,9 @@ from services.shared import (
     normalizar_respuesta_binaria,
     normalizar_texto_interaccion,
 )
+from services.shared.identidad_proveedor import (
+    resolver_nombre_visible_proveedor,
+)
 from templates.maintenance import (
     CONFIRM_ACCEPT_ID,
     CONFIRM_REJECT_ID,
@@ -28,6 +31,11 @@ from templates.maintenance.mensajes_servicios import (
     mensaje_confirmar_o_corregir_servicio,
     mensaje_limite_servicios_temporales,
     mensaje_servicio_ya_existe_en_lista,
+)
+from templates.maintenance.menus import (
+    SERVICE_DELETE_PREFIX,
+    SERVICE_SLOT_PREFIX,
+    payload_detalle_servicios,
 )
 from templates.maintenance.registration import (
     SERVICE_ADD_NO_ID,
@@ -48,18 +56,13 @@ from templates.maintenance.registration import (
     mensaje_servicio_actualizado,
     mensaje_servicio_eliminado_registro,
     payload_certificado_opcional,
+    payload_menu_edicion_servicios_registro,
     payload_red_social_opcional,
     preguntar_experiencia_general,
     preguntar_nuevo_servicio_reemplazo,
     preguntar_numero_servicio_eliminar,
     preguntar_numero_servicio_reemplazar,
     preguntar_siguiente_servicio_registro,
-    payload_menu_edicion_servicios_registro,
-)
-from templates.maintenance.menus import (
-    SERVICE_DELETE_PREFIX,
-    SERVICE_SLOT_PREFIX,
-    payload_detalle_servicios,
 )
 from templates.shared import mensaje_perfecto_guardar_perfil_profesional
 
@@ -95,8 +98,6 @@ def _payload_resumen_perfil(flujo: Dict[str, Any]) -> Dict[str, Any]:
     return payload_confirmacion_resumen(
         construir_resumen_confirmacion_perfil_profesional(
             experience_range=flujo.get("experience_range"),
-            social_media_url=flujo.get("social_media_url"),
-            social_media_type=flujo.get("social_media_type"),
             facebook_username=flujo.get("facebook_username"),
             instagram_username=flujo.get("instagram_username"),
             certificate_uploaded=bool(flujo.get("certificate_uploaded")),
@@ -192,7 +193,9 @@ async def manejar_confirmacion_servicio_perfil(
             cantidad = len(flujo.get("servicios_temporales") or [])
             if cantidad >= SERVICIOS_MINIMOS_PERFIL_PROFESIONAL:
                 flujo["state"] = "pending_verification"
-                return construir_respuesta_revision(str(flujo.get("full_name") or ""))
+                return construir_respuesta_revision(
+                    resolver_nombre_visible_proveedor(proveedor=flujo)
+                )
 
             flujo["state"] = _estado_contextual(
                 flujo,
@@ -264,7 +267,9 @@ async def manejar_confirmacion_servicio_perfil(
         cantidad = len(flujo.get("servicios_temporales") or [])
         if cantidad >= SERVICIOS_MINIMOS_PERFIL_PROFESIONAL:
             flujo["state"] = "pending_verification"
-            return construir_respuesta_revision(str(flujo.get("full_name") or ""))
+            return construir_respuesta_revision(
+                resolver_nombre_visible_proveedor(proveedor=flujo)
+            )
 
         flujo["state"] = _estado_contextual(
             flujo,
@@ -562,7 +567,9 @@ async def manejar_confirmacion_servicios(
             }
 
         flujo["state"] = "pending_verification"
-        return construir_respuesta_revision(str(flujo.get("full_name") or ""))
+        return construir_respuesta_revision(
+            resolver_nombre_visible_proveedor(proveedor=flujo)
+        )
 
     if decision is False:
         flujo["state"] = _estado_contextual(

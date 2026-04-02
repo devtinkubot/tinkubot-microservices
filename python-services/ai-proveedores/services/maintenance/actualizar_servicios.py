@@ -7,6 +7,7 @@ ofrecidos por un proveedor en la base de datos.
 
 import logging
 from collections import Counter
+from importlib import import_module
 from typing import Any, List, Optional
 
 from infrastructure.database import run_supabase
@@ -19,6 +20,21 @@ from services.maintenance.revision_catalogo import (
 from utils import sanitizar_lista_servicios as sanitizar_servicios
 
 logger = logging.getLogger(__name__)
+
+
+def _resolver_insertar_servicios_proveedor():
+    """Mantiene compatibilidad con monkeypatches antiguos del paquete onboarding."""
+    try:
+        modulo = import_module("services.onboarding.registration")
+        candidato = getattr(modulo, "insertar_servicios_proveedor", None)
+        if callable(candidato):
+            return candidato
+    except Exception:
+        pass
+
+    from services.maintenance.registro_servicios import insertar_servicios_proveedor
+
+    return insertar_servicios_proveedor
 
 
 async def _sincronizar_estado_operativo_proveedor(
@@ -40,7 +56,7 @@ async def _sincronizar_estado_operativo_proveedor(
         lambda: supabase.table("providers")
         .update(
             {
-                "verified": perfil_profesional_completo(
+                "onboarding_complete": perfil_profesional_completo(
                     experience_range=data.get("experience_range"),
                     servicios=servicios,
                 )
@@ -48,7 +64,7 @@ async def _sincronizar_estado_operativo_proveedor(
         )
         .eq("id", proveedor_id)
         .execute(),
-        label="providers.update_verified_after_service_sync",
+        label="providers.update_onboarding_complete_after_service_sync",
     )
 
 
@@ -87,8 +103,7 @@ async def actualizar_servicios(proveedor_id: str, servicios: List[str]) -> List[
         )
 
         if servicios_limpios:
-            from services.onboarding.registration import insertar_servicios_proveedor
-
+            insertar_servicios_proveedor = _resolver_insertar_servicios_proveedor()
             resultado_insercion = await insertar_servicios_proveedor(
                 supabase=supabase,
                 proveedor_id=proveedor_id,
@@ -184,7 +199,7 @@ async def agregar_servicios_proveedor(
     if not servicios_a_insertar:
         return servicios_existentes
 
-    from services.onboarding.registration import insertar_servicios_proveedor
+    from services.maintenance.registro_servicios import insertar_servicios_proveedor
 
     resultado_insercion = await insertar_servicios_proveedor(
         supabase=supabase,

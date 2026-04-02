@@ -69,6 +69,8 @@ class ProveedorSeleccionado(BaseModel):
     id: str
     phone_number: Optional[str] = None
     real_phone: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
     full_name: Optional[str] = None
     name: Optional[str] = None
     city: Optional[str] = None

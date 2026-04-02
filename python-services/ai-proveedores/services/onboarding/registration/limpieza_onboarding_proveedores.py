@@ -14,6 +14,9 @@ from infrastructure.redis import cliente_redis
 from services.onboarding.registration.eliminacion_proveedor import (
     eliminar_registro_proveedor,
 )
+from services.shared.identidad_proveedor import (
+    resolver_nombre_visible_proveedor,
+)
 from templates.onboarding import (
     payload_baja_onboarding_72h,
     payload_recordatorio_onboarding_48h,
@@ -128,16 +131,20 @@ async def _enviar_whatsapp(
 
 async def _cargar_proveedores_candidatos(supabase: Any) -> list[Dict[str, Any]]:
     respuesta = await run_supabase(
-        lambda: supabase.table("providers")
-        .select(
-            "id,phone,real_phone,full_name,status,verified,onboarding_step,"
-            "approved_notified_at,verification_reviewed_at,created_at"
-        )
-        .eq("status", "approved")
-        .eq("verified", False)
-        .order("approved_notified_at", desc=False)
-        .order("created_at", desc=False)
-        .execute(),
+        lambda: (
+            supabase.table("providers")
+            .select(
+                "id,phone,real_phone,display_name,"
+                "document_first_names,document_last_names,status,verified,"
+                "onboarding_step,approved_notified_at,verification_reviewed_at,"
+                "created_at"
+            )
+            .eq("status", "approved")
+            .eq("verified", False)
+            .order("approved_notified_at", desc=False)
+            .order("created_at", desc=False)
+            .execute()
+        ),
         label="providers.onboarding_cleanup.fetch_candidates",
     )
     return list(respuesta.data or [])
@@ -451,7 +458,7 @@ async def limpiar_onboarding_proveedores(
             resultado["skipped_missing_date"] += 1
             continue
 
-        provider_name = str(registro.get("full_name") or "").strip() or "Proveedor"
+        provider_name = resolver_nombre_visible_proveedor(proveedor=registro)
         provider_phone = _resolver_destino_whatsapp(registro)
         if not provider_phone:
             resultado["skipped_missing_phone"] += 1

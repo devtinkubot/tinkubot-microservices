@@ -4,11 +4,13 @@ Modelos compatibles con el esquema unificado de proveedores
 """
 
 import re
+import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator
-from services.maintenance.constantes import SERVICIOS_MAXIMOS
+
+SERVICIOS_MAXIMOS = int(os.getenv("PROVIDER_MAX_SERVICES", "10"))
 
 
 class ServiceInfo(BaseModel):
@@ -43,12 +45,10 @@ class SolicitudCreacionProveedor(BaseModel):
         from_number: JID observado por Meta en el webhook original
         user_id: BSUID observado por Meta
         real_phone: Número real del proveedor para contacto (opcional)
-        full_name: Nombre completo del proveedor (2-255 caracteres)
+        full_name: Nombre completo legado del proveedor (opcional)
         city: Ciudad donde opera el proveedor (2-100 caracteres)
         services_list: Lista de 0-SERVICIOS_MAXIMOS servicios ofrecidos
         experience_range: Rango legible de experiencia (opcional)
-        social_media_url: URL de red social (opcional)
-        social_media_type: Tipo de red social (opcional)
         document_first_names: Nombres leídos del documento (opcional)
         document_last_names: Apellidos leídos del documento (opcional)
         document_id_number: Número de cédula (opcional)
@@ -69,14 +69,13 @@ class SolicitudCreacionProveedor(BaseModel):
     from_number: Optional[str] = None
     user_id: Optional[str] = None
     real_phone: Optional[str] = None
-    full_name: str = Field(..., min_length=2, max_length=255)
+    full_name: str = Field(default="", max_length=255)
     city: str = Field(..., min_length=2, max_length=100)
     # profession: ELIMINADO - Ahora se usa provider_services
     services_list: List[str] = Field(default_factory=list)
     service_entries: List[Dict[str, Any]] = Field(default_factory=list)
     experience_range: Optional[str] = None
-    social_media_url: Optional[str] = None
-    social_media_type: Optional[str] = None
+    onboarding_complete: bool = False
     facebook_username: Optional[str] = None
     instagram_username: Optional[str] = None
     display_name: Optional[str] = None
@@ -150,7 +149,7 @@ class RespuestaProveedor(BaseModel):
         id: Identificador único del proveedor
         phone: Número de teléfono
         real_phone: Número real del proveedor (opcional)
-        full_name: Nombre completo
+        full_name: Nombre completo legado
         city: Ciudad de operación
         services: Lista de servicios del proveedor (nueva estructura)
         total_services: Total de servicios registrados
@@ -158,8 +157,6 @@ class RespuestaProveedor(BaseModel):
         available: Disponibilidad actual
         verified: Estado de verificación
         experience_range: Rango legible de experiencia
-        social_media_url: URL de red social (opcional)
-        social_media_type: Tipo de red social (opcional)
         document_first_names: Nombres leídos del documento (opcional)
         document_last_names: Apellidos leídos del documento (opcional)
         document_id_number: Número de cédula (opcional)
@@ -178,7 +175,7 @@ class RespuestaProveedor(BaseModel):
     id: str
     phone: str
     real_phone: Optional[str] = None
-    full_name: str
+    full_name: str = ""
     city: str
     # profession: ELIMINADO
     services: Optional[List[ServiceInfo]] = (
@@ -189,8 +186,7 @@ class RespuestaProveedor(BaseModel):
     available: bool
     verified: bool
     experience_range: Optional[str] = None
-    social_media_url: Optional[str] = None
-    social_media_type: Optional[str] = None
+    onboarding_complete: bool = False
     facebook_username: Optional[str] = None
     instagram_username: Optional[str] = None
     display_name: Optional[str] = None

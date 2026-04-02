@@ -2,6 +2,9 @@
 
 from typing import Any, Dict
 
+from services.shared.identidad_proveedor import (
+    resolver_nombre_visible_proveedor,
+)
 from templates.maintenance.menus import (
     mensaje_menu_post_registro_proveedor,
     mensaje_menu_principal_proveedor,
@@ -54,7 +57,7 @@ def construir_payload_menu_desde_flujo(flujo: Dict[str, Any]) -> Dict[str, Any]:
     """Construye el payload del menú principal según el estado del flujo."""
     return construir_payload_menu_principal(
         esta_registrado=bool(flujo.get("esta_registrado")),
-        provider_name=str(flujo.get("full_name") or flujo.get("name") or ""),
+        provider_name=resolver_nombre_visible_proveedor(proveedor=flujo),
     )
 
 

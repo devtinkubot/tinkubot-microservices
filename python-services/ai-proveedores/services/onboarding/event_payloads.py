@@ -109,16 +109,12 @@ def payload_redes(
     *,
     facebook_username: str | None,
     instagram_username: str | None,
-    social_media_url: str | None,
-    social_media_type: str | None,
     checkpoint: str,
 ) -> Dict[str, Any]:
     return {
         "checkpoint": checkpoint,
         "facebook_username": facebook_username,
         "instagram_username": instagram_username,
-        "social_media_url": social_media_url,
-        "social_media_type": social_media_type,
     }
 
 

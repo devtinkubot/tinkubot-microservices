@@ -9,7 +9,6 @@ from typing import Any, Dict, Optional
 from infrastructure.database import run_supabase
 
 from .estado_operativo import perfil_profesional_completo
-from .redes_sociales_slots import construir_payload_legacy_red_social
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +19,7 @@ async def actualizar_redes_sociales(
     *,
     facebook_username: Optional[str],
     instagram_username: Optional[str],
-    preferred_type: Optional[str],
+    preferred_type: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Actualiza las redes sociales de un proveedor.
@@ -30,14 +29,12 @@ async def actualizar_redes_sociales(
         proveedor_id: ID del proveedor
         facebook_username: Usuario de Facebook o None
         instagram_username: Usuario de Instagram o None
-        preferred_type: Red prioritaria para mantener compatibilidad legacy
+        preferred_type: Parámetro legacy ignorado por compatibilidad
 
     Returns:
         Dict con:
             - success (bool): Estado de la operación
             - message (str): Mensaje descriptivo
-            - social_media_url (str): URL legacy actualizada
-            - social_media_type (str): Tipo legacy actualizado
 
     Raises:
         ValueError: Si proveedor_id no está proporcionado
@@ -51,16 +48,9 @@ async def actualizar_redes_sociales(
             "message": "Cliente Supabase no disponible",
         }
 
-    payload_legacy = construir_payload_legacy_red_social(
-        facebook_username=facebook_username,
-        instagram_username=instagram_username,
-        preferred_type=preferred_type,
-    )
     datos_actualizacion: Dict[str, Any] = {
         "facebook_username": facebook_username,
         "instagram_username": instagram_username,
-        "social_media_url": payload_legacy["social_media_url"],
-        "social_media_type": payload_legacy["social_media_type"],
         "updated_at": datetime.utcnow().isoformat(),
     }
 
@@ -79,7 +69,7 @@ async def actualizar_redes_sociales(
             for item in (registro.get("provider_services") or [])
             if str(item.get("service_name") or "").strip()
         ]
-        datos_actualizacion["verified"] = perfil_profesional_completo(
+        datos_actualizacion["onboarding_complete"] = perfil_profesional_completo(
             experience_range=registro.get("experience_range"),
             servicios=servicios_actuales,
         )
@@ -97,10 +87,9 @@ async def actualizar_redes_sociales(
         return {
             "success": True,
             "message": "Redes sociales actualizadas correctamente",
-            "social_media_url": payload_legacy["social_media_url"],
-            "social_media_type": payload_legacy["social_media_type"],
             "facebook_username": facebook_username,
             "instagram_username": instagram_username,
+            "onboarding_complete": datos_actualizacion.get("onboarding_complete", False),
         }
 
     except Exception as exc:

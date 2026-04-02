@@ -91,6 +91,9 @@ Los mensajes comunes ya no viven aislados por flujo:
 - `templates/shared/mensajes_interaccion.py`
 - `services/shared/normalizacion_respuestas.py`
 
+`services/shared/` es una zona de transición y soporte técnico. No debe usarse
+para mover reglas de negocio que pertenezcan a un solo contexto.
+
 ## 7. Compatibilidad y legado
 
 Estos módulos siguen vivos porque todavía hay rutas o tests que los referencian. No se deben borrar sin una pasada de compatibilidad:
@@ -106,11 +109,24 @@ Estos módulos siguen vivos porque todavía hay rutas o tests que los referencia
 
 `wait_social.py` sigue siendo un puente de perfil y completado post-alta, no un paso de onboarding puro.
 
+### Estados canónicos actuales
+
+Los estados que hoy se consideran vivos y con sentido de negocio son:
+
+- administrativos: `pending`, `approved`, `rejected`
+- revisión / corte de alta: `pending_verification`
+- salida operativa / menú: `awaiting_menu_option`
+- onboarding: `onboarding_consent`, `onboarding_city`, `onboarding_dni_front_photo`, `onboarding_face_photo`, `onboarding_experience`, `onboarding_specialty`, `onboarding_add_another_service`, `onboarding_social_media`, `onboarding_real_phone`
+
+Todo estado fuera de esa lista debe tratarse como alias legacy, puente temporal o dato histórico a limpiar en Supabase.
+
 ## 8. Qué no debe volver a mezclarse
 
 - `flows/` no debe recuperar copys inline de usuario.
 - `templates/` no debe depender de lógica de orquestación.
-- `services/shared/` debe ser la fuente única de reglas comunes de interacción.
+- `services/shared/` debe limitarse a compatibilidad y utilidades técnicas.
+- ninguna regla que cambie por ownership de `onboarding`, `maintenance`,
+  `review` o `availability` debe vivir allí.
 - `infrastructure/` no debe volver a pedir prestadas reglas del dominio.
 
 ## 9. Candidatos a limpieza futura

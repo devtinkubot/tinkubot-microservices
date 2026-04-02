@@ -6,7 +6,7 @@ from services.onboarding.consentimiento import (
     asegurar_proveedor_persistido_tras_consentimiento_onboarding,
     procesar_respuesta_consentimiento_onboarding,
 )
-from templates.maintenance.menus import payload_menu_post_registro_proveedor
+from templates.onboarding.menu import payload_menu_post_registro_proveedor
 from templates.onboarding.ciudad import solicitar_ciudad_registro
 from templates.onboarding.telefono import preguntar_real_phone
 

@@ -4,10 +4,9 @@ from typing import Any, Dict, Optional
 
 from flows.maintenance.context import es_contexto_mantenimiento
 from flows.validators.input import parsear_entrada_red_social
-from services.maintenance.redes_sociales_slots import (
+from services.shared.redes_sociales_slots import (
     SOCIAL_NETWORK_FACEBOOK,
     SOCIAL_NETWORK_INSTAGRAM,
-    construir_payload_legacy_red_social,
     parsear_username_red_social,
     resolver_redes_sociales,
 )
@@ -107,14 +106,6 @@ def manejar_espera_red_social(
         else:
             flujo["instagram_username"] = red_social_parseada["username"]
 
-        payload_legacy = construir_payload_legacy_red_social(
-            facebook_username=flujo.get("facebook_username"),
-            instagram_username=flujo.get("instagram_username"),
-            preferred_type=tipo_red,
-        )
-        flujo["social_media_url"] = payload_legacy["social_media_url"]
-        flujo["social_media_type"] = payload_legacy["social_media_type"]
-
         if flujo.get("profile_edit_mode") == "social_media":
             flujo.pop("profile_edit_mode", None)
             flujo["state"] = "maintenance_profile_completion_confirmation"
@@ -124,8 +115,6 @@ def manejar_espera_red_social(
                     payload_confirmacion_resumen(
                         construir_resumen_confirmacion_perfil_profesional(
                             experience_range=flujo.get("experience_range"),
-                            social_media_url=flujo.get("social_media_url"),
-                            social_media_type=flujo.get("social_media_type"),
                             facebook_username=flujo.get("facebook_username"),
                             instagram_username=flujo.get("instagram_username"),
                             certificate_uploaded=bool(
@@ -158,15 +147,8 @@ def manejar_espera_red_social(
     if es_skip_value(texto_normalizado, seleccion) or seleccion == SOCIAL_SKIP_ID:
         redes_actuales = resolver_redes_sociales(flujo)
         if redes_actuales["facebook_username"] or redes_actuales["instagram_username"]:
-            payload_legacy = construir_payload_legacy_red_social(
-                facebook_username=redes_actuales["facebook_username"],
-                instagram_username=redes_actuales["instagram_username"],
-                preferred_type=flujo.get("social_media_type"),
-            )
             flujo["facebook_username"] = redes_actuales["facebook_username"]
             flujo["instagram_username"] = redes_actuales["instagram_username"]
-            flujo["social_media_url"] = payload_legacy["social_media_url"]
-            flujo["social_media_type"] = payload_legacy["social_media_type"]
             if flujo.get("profile_edit_mode") == "social_media":
                 flujo.pop("profile_edit_mode", None)
                 flujo["state"] = "maintenance_profile_completion_confirmation"
@@ -176,8 +158,6 @@ def manejar_espera_red_social(
                         payload_confirmacion_resumen(
                             construir_resumen_confirmacion_perfil_profesional(
                                 experience_range=flujo.get("experience_range"),
-                                social_media_url=flujo.get("social_media_url"),
-                                social_media_type=flujo.get("social_media_type"),
                                 facebook_username=flujo.get("facebook_username"),
                                 instagram_username=flujo.get("instagram_username"),
                                 certificate_uploaded=bool(
@@ -251,8 +231,11 @@ def manejar_espera_red_social(
         }
 
     red_social_parseada = parsear_entrada_red_social(texto_normalizado)
-    flujo["social_media_url"] = red_social_parseada["url"]
-    flujo["social_media_type"] = red_social_parseada["type"]
+    tipo_parsed = str(red_social_parseada.get("type") or "").strip().lower()
+    if tipo_parsed == SOCIAL_NETWORK_FACEBOOK:
+        flujo["facebook_username"] = red_social_parseada.get("username")
+    elif tipo_parsed == SOCIAL_NETWORK_INSTAGRAM:
+        flujo["instagram_username"] = red_social_parseada.get("username")
 
     if flujo.get("profile_edit_mode") == "social_media":
         flujo.pop("profile_edit_mode", None)
@@ -263,8 +246,6 @@ def manejar_espera_red_social(
                 payload_confirmacion_resumen(
                     construir_resumen_confirmacion_perfil_profesional(
                         experience_range=flujo.get("experience_range"),
-                        social_media_url=flujo.get("social_media_url"),
-                        social_media_type=flujo.get("social_media_type"),
                         facebook_username=flujo.get("facebook_username"),
                         instagram_username=flujo.get("instagram_username"),
                         certificate_uploaded=bool(flujo.get("certificate_uploaded")),

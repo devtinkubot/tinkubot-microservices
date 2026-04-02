@@ -1,4 +1,4 @@
-from services.onboarding.registration.parser_ubicacion import (
+from services.shared.ubicacion_ecuador import (
     VALIDATION_ERROR_UNKNOWN,
     VALIDATION_OK,
     validar_y_normalizar_ubicacion,

@@ -364,6 +364,7 @@ router.get("/new", obtenerNuevos);
 router.get("/operativos", obtenerOperativos);
 router.get("/profile-incomplete", obtenerPerfilProfesionalIncompleto);
 router.get("/post-review", obtenerPostRevision);
+router.get("/summary", obtenerResumenEstados);
 router.get("/:providerId", obtenerDetalleProveedor);
 router.post("/:providerId/approve", aprobarProveedor);
 router.post("/:providerId/reject", rechazarProveedor);
@@ -379,7 +380,6 @@ router.post(
 );
 router.post("/:providerId/reset", resetearProveedorOnboarding);
 router.get("/monetization/overview", obtenerMonetizacionResumen);
-router.get("/summary", obtenerResumenEstados);
 router.get("/monetization/providers", obtenerMonetizacionProveedores);
 router.get("/monetization/provider/:providerId", obtenerMonetizacionProveedor);
 router.get("/image/*", servirImagen);

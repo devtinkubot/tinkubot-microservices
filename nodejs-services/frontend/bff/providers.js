@@ -20,7 +20,7 @@ const ONBOARDING_STEPS = [
   "onboarding_experience",
   "onboarding_specialty",
   "onboarding_add_another_service",
-  "onboarding_social_media",
+  "onboarding_real_phone",
 ];
 const monetizationLimit =
   toPositiveInt(process.env.MONETIZATION_PROVIDER_LIMIT) ?? 100;
@@ -167,53 +167,12 @@ const limpiarTextoIdentidad = (...valores) => {
   return null;
 };
 
-const formatearTelefonoVisible = (valor) => {
-  const texto = limpiarTexto(valor);
-  if (!texto) return null;
-
-  const digitos = texto.replace(/\D/g, "");
-  if (!digitos) return null;
-
-  const localDigits = digitos.startsWith("593")
-    ? digitos.slice(3)
-    : digitos.startsWith("0")
-      ? digitos.slice(1)
-      : digitos;
-
-  if (localDigits.length === 9) {
-    return `+593 ${localDigits.slice(0, 2)}-${localDigits.slice(2, 5)}-${localDigits.slice(5)}`;
-  }
-
-  if (localDigits.length === 8) {
-    return `+593 ${localDigits.slice(0, 1)}-${localDigits.slice(1, 4)}-${localDigits.slice(4)}`;
-  }
-
-  if (digitos.startsWith("593")) {
-    return `+${digitos}`;
-  }
-
-  if (digitos.startsWith("0")) {
-    return `+593 ${localDigits}`;
-  }
-
-  return null;
-};
-
-const resolverNombreVisibleProveedor = (registro) => {
-  const displayName = limpiarTexto(registro?.display_name);
-  const formattedName = limpiarTexto(registro?.formatted_name);
-  const nombreDocumento = [
-    limpiarTexto(registro?.document_first_names),
-    limpiarTexto(registro?.document_last_names),
-  ]
+const normalizarNombreCompuesto = (...partes) =>
+  partes
+    .map((parte) => limpiarTexto(parte))
     .filter(Boolean)
     .join(" ")
     .trim();
-
-  return (
-    nombreDocumento || formattedName || displayName || "Proveedor sin nombre"
-  );
-};
 
 const construirNotasIdentidad = ({
   documentFirstNames,
@@ -265,16 +224,28 @@ const tienePerfilProfesionalCompleto = (proveedor) => {
 
 const tieneNombreLegibleProveedor = (proveedor) => {
   if (!proveedor) return false;
-  const nombreCompuesto = [proveedor.firstName, proveedor.lastName]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
   return Boolean(
-    proveedor.displayName?.trim() ||
-    proveedor.formattedName?.trim() ||
-    nombreCompuesto,
+    [
+      proveedor.documentFirstNames,
+      proveedor.documentLastNames,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .trim(),
   );
 };
+
+const esProveedorEnOnboarding = (proveedor) =>
+  Boolean(
+    proveedor &&
+    ONBOARDING_STEPS.includes(limpiarTexto(proveedor.onboardingStep) || ""),
+  );
+
+const esProveedorEnRevisionPendiente = (proveedor) =>
+  Boolean(
+    proveedor &&
+    limpiarTexto(proveedor.onboardingStep) === "pending_verification",
+  );
 
 const esProveedorOperativo = (proveedor) =>
   Boolean(
@@ -290,8 +261,9 @@ const esProveedorOperativo = (proveedor) =>
 const esProveedorPerfilProfesionalPendiente = (proveedor) =>
   Boolean(
     proveedor &&
-    proveedor.status === "approved" &&
-    !tienePerfilProfesionalCompleto(proveedor),
+    !esProveedorEnOnboarding(proveedor) &&
+    !esProveedorEnRevisionPendiente(proveedor) &&
+    !esProveedorOperativo(proveedor),
   );
 
 const extraerUrlDocumento = (valor) => {
@@ -419,67 +391,58 @@ const prepararUrlDocumento = (...valores) => {
 };
 
 const normalizarEstadoProveedor = (registro) => {
-  // Derivar el estado visible desde status/verified y tolerar aliases legacy.
   const estadoCrudo = limpiarTexto(registro?.status);
   const estado = estadoCrudo ? estadoCrudo.toLowerCase() : "";
-
-  if (
-    ["approved_basic", "aprobado_basico", "basic_approved"].includes(estado)
-  ) {
-    return "approved";
-  }
-  if (
-    [
-      "profile_pending_review",
-      "perfil_pendiente_revision",
-      "professional_review_pending",
-      "interview_required",
-      "entrevista",
-      "auditoria",
-      "needs_info",
-      "falta_info",
-      "faltainfo",
-    ].includes(estado)
-  ) {
-    return "approved";
-  }
   if (estado === "pending_verification") {
     return "pending";
   }
-  if (["approved", "aprobado", "ok"].includes(estado)) {
+  if (estado === "approved") {
     return "approved";
   }
-  if (["rejected", "rechazado", "denied"].includes(estado)) {
+  if (estado === "rejected") {
     return "rejected";
   }
-  if (["pending", "pendiente", "new"].includes(estado)) {
+  if (estado === "pending") {
     return "pending";
   }
-  return registro?.verified ? "approved" : "pending";
+  return "pending";
 };
 
 const normalizarProveedorSupabase = (registro) => {
-  const displayName = resolverNombreVisibleProveedor(registro);
-  const formattedName = limpiarTexto(registro?.formatted_name) || null;
+  const estado = normalizarEstadoProveedor(registro);
+  const displayName = limpiarTexto(
+    registro?.display_name || registro?.displayName,
+  ) || null;
+  const formattedName = limpiarTexto(
+    registro?.formatted_name || registro?.formattedName,
+  ) || null;
   const onboardingStep = limpiarTexto(registro?.onboarding_step) || null;
   const onboardingStepUpdatedAt =
     normalizarTimestampComoUtc(registro?.onboarding_step_updated_at) || null;
-  const nombre = displayName || "Proveedor sin nombre";
   const documentFirstNames = limpiarTextoIdentidad(
     registro?.document_first_names,
+    registro?.documentFirstNames,
   );
   const documentLastNames = limpiarTextoIdentidad(
     registro?.document_last_names,
+    registro?.documentLastNames,
   );
   const nombreDocumento = [documentFirstNames, documentLastNames]
     .filter(Boolean)
     .join(" ")
     .trim();
-  const firstName = documentFirstNames
-    ? documentFirstNames.split(/\s+/)[0]
-    : null;
-  const lastName = documentLastNames || null;
-  const fullName = nombreDocumento || formattedName || displayName || null;
+  const nombreGeneral =
+    displayName || formattedName || nombreDocumento || "Proveedor sin nombre";
+  const nombreOperativo =
+    nombreDocumento ||
+    displayName ||
+    formattedName ||
+    "Proveedor sin nombre";
+  const nombre = estado === "approved" ? nombreOperativo : nombreGeneral;
+  const fullName =
+    estado === "approved"
+      ? nombreDocumento || null
+      : displayName || formattedName || nombreDocumento || null;
   const businessName = limpiarTexto(registro?.business_name) || null;
   const contact =
     limpiarTexto(registro?.contact_name) || nombre || "Contacto no definido";
@@ -542,14 +505,6 @@ const normalizarProveedorSupabase = (registro) => {
   const experienceRange =
     limpiarTexto(registro?.experience_range) ||
     limpiarTexto(registro?.experienceRange) ||
-    null;
-  const socialMediaUrl =
-    limpiarTexto(registro?.social_media_url) ||
-    limpiarTexto(registro?.social_media_link) ||
-    null;
-  const socialMediaType =
-    limpiarTexto(registro?.social_media_type) ||
-    limpiarTexto(registro?.social_media_platform) ||
     null;
   const facebookUsername = limpiarTexto(registro?.facebook_username) || null;
   const instagramUsername = limpiarTexto(registro?.instagram_username) || null;
@@ -641,8 +596,6 @@ const normalizarProveedorSupabase = (registro) => {
     displayName,
     formattedName,
     fullName,
-    firstName,
-    lastName,
     businessName,
     contact,
     contactPhone,
@@ -658,10 +611,12 @@ const normalizarProveedorSupabase = (registro) => {
     servicesList,
     servicesAudit: providerServicesDetailed,
     experienceRange,
-    socialMediaUrl,
-    socialMediaType,
     facebookUsername,
     instagramUsername,
+    onboardingComplete:
+      typeof registro?.onboarding_complete === "boolean"
+        ? registro.onboarding_complete
+        : null,
     hasConsent,
     rating,
     onboardingStep,
@@ -938,17 +893,6 @@ const obtenerProveedoresPostRevisionSupabase = async () => {
   return lista;
 };
 
-const construirRutaSupabaseResumenEstadosProveedores = () => {
-  const parametrosBase = [
-    "limit=5000",
-    "order=created_at.asc",
-    "select=*,provider_services(service_name,service_name_normalized,raw_service_text,service_summary,domain_code,category_name,classification_confidence,display_order)",
-    "status=in.(pending,approved,rejected)",
-  ];
-
-  return `${supabaseProvidersTable}?${parametrosBase.join("&")}`;
-};
-
 const obtenerResumenEstadosProveedoresSupabase = async () => {
   if (!supabaseClient) {
     return {
@@ -959,35 +903,28 @@ const obtenerResumenEstadosProveedoresSupabase = async () => {
     };
   }
 
-  const ruta = construirRutaSupabaseResumenEstadosProveedores();
-  const response = await supabaseClient.get(ruta, {
-    headers: {
-      Accept: "application/json",
-    },
-  });
-  const lista = Array.isArray(response.data)
-    ? response.data.map((item) => normalizarProveedorSupabase(item))
-    : normalizarListaProveedores(response.data).map((item) =>
+  const [nuevos, responseOperativos] = await Promise.all([
+    obtenerProveedoresPendientesSupabase(),
+    supabaseClient.get(
+      `${supabaseProvidersTable}?limit=${pendingLimit}&order=approved_notified_at.desc.nullslast,created_at.desc&select=*,provider_services(service_name,service_name_normalized,raw_service_text,service_summary,domain_code,category_name,classification_confidence,display_order),provider_certificates(id,file_url,display_order,status,created_at,updated_at)&status=eq.approved`,
+      {
+        headers: {
+          Accept: "application/json",
+        },
+      },
+    ),
+  ]);
+
+  const operativos = Array.isArray(responseOperativos.data)
+    ? responseOperativos.data.map((item) => normalizarProveedorSupabase(item))
+    : normalizarListaProveedores(responseOperativos.data).map((item) =>
         normalizarProveedorSupabase(item),
       );
 
   const summary = {
-    newPending: 0,
-    profileComplete: 0,
+    newPending: nuevos.length,
+    profileComplete: operativos.filter(esProveedorOperativo).length,
   };
-
-  for (const provider of lista) {
-    if (provider.onboardingStep === "pending_verification") {
-      summary.newPending += 1;
-      continue;
-    }
-
-    if (provider.status === "approved") {
-      if (provider.professionalProfileComplete) {
-        summary.profileComplete += 1;
-      }
-    }
-  }
 
   return { summary };
 };
@@ -995,9 +932,8 @@ const obtenerResumenEstadosProveedoresSupabase = async () => {
 const construirRutaSupabasePerfilProfesionalIncompleto = () => {
   const parametrosBase = [
     `limit=${pendingLimit}`,
-    `order=approved_notified_at.asc.nullslast,created_at.asc`,
+    `order=updated_at.desc.nullslast,created_at.desc`,
     "select=*,provider_services(service_name,service_name_normalized,raw_service_text,service_summary,domain_code,category_name,classification_confidence,display_order),provider_certificates(id,file_url,display_order,status,created_at,updated_at)",
-    "status=eq.approved",
   ];
 
   return `${supabaseProvidersTable}?${parametrosBase.join("&")}`;
@@ -1199,23 +1135,23 @@ async function aprobarProveedor(providerId, _payload = {}, requestId = null) {
   try {
     const timestamp = new Date().toISOString();
     const payloadPrincipal = {
-      verified: false,
       status: "approved",
       updated_at: timestamp,
       approved_notified_at: timestamp,
       onboarding_step: "awaiting_menu_option",
       onboarding_step_updated_at: timestamp,
+      onboarding_complete: true,
     };
 
     const datosActualizados = await intentarActualizacionSupabase(
       providerId,
       payloadPrincipal,
       {
-        verified: false,
         updated_at: timestamp,
         approved_notified_at: timestamp,
         onboarding_step: "awaiting_menu_option",
         onboarding_step_updated_at: timestamp,
+        onboarding_complete: true,
       },
     );
 
@@ -1250,10 +1186,10 @@ async function rechazarProveedor(providerId, payload = {}, requestId = null) {
   try {
     const timestamp = new Date().toISOString();
     const payloadPrincipal = {
-      verified: false,
       status: "rejected",
       updated_at: timestamp,
       rejected_notified_at: timestamp,
+      onboarding_complete: true,
     };
 
     if (limpiarTexto(payload.notes)) {
@@ -1263,7 +1199,7 @@ async function rechazarProveedor(providerId, payload = {}, requestId = null) {
     const datosActualizados = await intentarActualizacionSupabase(
       providerId,
       payloadPrincipal,
-      { verified: false, updated_at: timestamp },
+      { updated_at: timestamp, onboarding_complete: true },
     );
 
     const registro =
@@ -1314,7 +1250,7 @@ async function revisarProveedor(providerId, payload = {}, requestId = null) {
     const payloadBase = {
       updated_at: timestamp,
       status: estadoFinal,
-      verified: estadoFinal === "approved",
+      onboarding_complete: true,
     };
 
     const documentFirstNames = limpiarTexto(
@@ -1375,7 +1311,7 @@ async function revisarProveedor(providerId, payload = {}, requestId = null) {
 
     const payloadFallback = {
       updated_at: timestamp,
-      verified: estadoFinal === "approved",
+      onboarding_complete: true,
     };
     if (estadoFinal === "approved") {
       payloadFallback.onboarding_step = "awaiting_menu_option";
@@ -1522,8 +1458,6 @@ async function actualizarPerfilProfesional(
         provider_id: id,
         services: Array.isArray(payload.services) ? payload.services : [],
         experience_range: payload.experienceRange ?? payload.experience_range,
-        social_media_url: payload.socialMediaUrl ?? payload.social_media_url,
-        social_media_type: payload.socialMediaType ?? payload.social_media_type,
         facebook_username:
           payload.facebookUsername ?? payload.facebook_username,
         instagram_username:
@@ -1540,15 +1474,13 @@ async function actualizarPerfilProfesional(
       providerId: data.provider_id || data.providerId || id,
       services: Array.isArray(data.services) ? data.services : [],
       experienceRange: data.experience_range || data.experienceRange || null,
-      socialMediaUrl: data.social_media_url || data.socialMediaUrl || null,
-      socialMediaType: data.social_media_type || data.socialMediaType || null,
       facebookUsername: data.facebook_username || data.facebookUsername || null,
       instagramUsername:
         data.instagram_username || data.instagramUsername || null,
-      verified:
-        typeof data.verified === "boolean"
-          ? data.verified
-          : (data.verified ?? null),
+      onboardingComplete:
+        typeof data.onboarding_complete === "boolean"
+          ? data.onboarding_complete
+          : (data.onboardingComplete ?? null),
       message: data.message || null,
       errorReason: data.error_reason || data.errorReason || null,
     };
@@ -1742,7 +1674,7 @@ const obtenerProveedoresPorIds = async (providerIds) => {
     return [];
   const encodedIds = providerIds.map((id) => `"${id}"`).join(",");
   const response = await supabaseClient.get(
-    `${supabaseProvidersTable}?select=id,display_name,document_first_names,document_last_names,phone,city&limit=500&id=in.(${encodedIds})`,
+    `${supabaseProvidersTable}?select=id,document_first_names,document_last_names,phone,city&limit=500&id=in.(${encodedIds})`,
     {
       headers: { Accept: "application/json" },
     },
@@ -1778,10 +1710,14 @@ const normalizarProveedorMonetizacion = ({
   return {
     providerId: String(wallet?.provider_id || provider?.id || ""),
     name:
-      limpiarTexto(provider?.document_first_names) ||
-      limpiarTexto(provider?.document_last_names) ||
-      limpiarTexto(provider?.display_name) ||
-      limpiarTexto(provider?.name) ||
+      normalizarNombreCompuesto(
+        provider?.document_first_names,
+        provider?.document_last_names,
+      ) ||
+      normalizarNombreCompuesto(
+        provider?.documentFirstNames,
+        provider?.documentLastNames,
+      ) ||
       "Proveedor sin nombre",
     phone: limpiarTexto(provider?.phone) || null,
     city: limpiarTexto(provider?.city) || null,

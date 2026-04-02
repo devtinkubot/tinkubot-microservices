@@ -9,8 +9,8 @@ import time
 from typing import Any, Dict, Optional
 
 import httpx
-
 from config.configuracion import configuracion
+from services.proveedores.identidad import resolver_nombre_visible_proveedor
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +84,9 @@ class ClienteBusqueda:
         slot_adquirido = False
         try:
             if not self.internal_token:
-                logger.error("❌ AI_SEARCH_INTERNAL_TOKEN no configurado en ai-clientes")
+                logger.error(
+                    "❌ AI_SEARCH_INTERNAL_TOKEN no configurado en ai-clientes"
+                )
                 return self._crear_respuesta_error(
                     "Token interno de búsqueda no configurado",
                     degrade_reason="internal_token_missing",
@@ -128,7 +130,9 @@ class ClienteBusqueda:
             # Agregar filtros si se proporcionan
             filtros: Dict[str, Any] = {"verified_only": True}
             if ciudad:
-                filtros["city"] = ciudad.lower()  # Normalizar a minúsculas para case-insensitive
+                filtros["city"] = (
+                    ciudad.lower()
+                )  # Normalizar a minúsculas para case-insensitive
 
             carga["filters"] = filtros
 
@@ -141,9 +145,14 @@ class ClienteBusqueda:
 
             resultado = respuesta.json()
             await self._registrar_exito_busqueda()
+            total_proveedores = len(resultado.get("providers", []))
+            estrategia = resultado.get("metadata", {}).get("search_strategy", "unknown")
             logger.info(
-                f"✅ Búsqueda en Search Service: {len(resultado.get('providers', []))} resultados "
-                f"(estrategia: {resultado.get('metadata', {}).get('search_strategy', 'unknown')})"
+                (
+                    "✅ Búsqueda en Search Service: "
+                    f"{total_proveedores} resultados "
+                    f"(estrategia: {estrategia})"
+                )
             )
 
             return self._convertir_resultado_busqueda_a_formato_legacy(resultado)
@@ -153,7 +162,8 @@ class ClienteBusqueda:
             if status >= 500 or status == 429:
                 await self._registrar_fallo_busqueda(f"http_{status}")
             logger.error(
-                f"❌ Error HTTP en Search Service: {e.response.status_code} - {e.response.text}"
+                "❌ Error HTTP en Search Service: "
+                f"{e.response.status_code} - {e.response.text}"
             )
             return self._crear_respuesta_error(
                 f"Error HTTP {e.response.status_code}",
@@ -188,7 +198,8 @@ class ClienteBusqueda:
         self, resultado_busqueda: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Convertir formato del Search Service al formato legado que espera ai-service-clientes
+        Convertir formato del Search Service al formato legado que espera
+        ai-service-clientes.
         """
         proveedores = resultado_busqueda.get("providers", [])
         metadatos = resultado_busqueda.get("metadata", {})
@@ -196,12 +207,25 @@ class ClienteBusqueda:
         # Convertir proveedores al formato legado
         proveedores_legacy = []
         for proveedor in proveedores:
+            document_first_names = proveedor.get("document_first_names")
+            document_last_names = proveedor.get("document_last_names")
+            first_name = document_first_names or proveedor.get("first_name")
+            last_name = document_last_names or proveedor.get("last_name")
+            display_name = proveedor.get("display_name")
+            nombre_visible = resolver_nombre_visible_proveedor(
+                proveedor,
+                status="approved",
+            )
             proveedor_legacy = {
                 "id": proveedor.get("id"),
                 "phone_number": proveedor.get("phone_number"),
-                "real_phone": proveedor.get("real_phone") or proveedor.get("phone_number"),
-                "full_name": proveedor.get("full_name"),
-                "name": proveedor.get("full_name"),
+                "real_phone": proveedor.get("real_phone")
+                or proveedor.get("phone_number"),
+                "full_name": nombre_visible,
+                "name": nombre_visible,
+                "display_name": display_name,
+                "first_name": first_name,
+                "last_name": last_name,
                 "city": proveedor.get("city"),
                 "rating": proveedor.get("rating", 0.0),
                 "available": proveedor.get("available", True),
@@ -211,9 +235,7 @@ class ClienteBusqueda:
                 "experience_range": proveedor.get("experience_range"),
                 "created_at": proveedor.get("created_at"),
                 "similarity_score": proveedor.get("similarity_score"),
-                "semantic_alignment_score": proveedor.get(
-                    "semantic_alignment_score"
-                ),
+                "semantic_alignment_score": proveedor.get("semantic_alignment_score"),
                 "matched_service_name": proveedor.get("matched_service_name"),
                 "matched_service_summary": proveedor.get("matched_service_summary"),
                 "domain_code": proveedor.get("domain_code"),

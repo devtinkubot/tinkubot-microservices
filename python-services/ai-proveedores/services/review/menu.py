@@ -14,7 +14,6 @@ def poner_flujo_en_menu_revision(
             "state": "awaiting_menu_option",
             "has_consent": True,
             "esta_registrado": True,
-            "profile_pending_review": False,
             "pending_review_attempts": 0,
             "review_silenced": False,
         }

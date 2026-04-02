@@ -18,6 +18,7 @@ async def manejar_estado_menu(
     esta_registrado: bool,
     supabase: Any = None,
     telefono: Optional[str] = None,
+    selected_option: Optional[str] = None,
 ) -> Dict[str, Any]:
     return await _manejar_estado_menu(
         flujo=flujo,
@@ -26,6 +27,7 @@ async def manejar_estado_menu(
         esta_registrado=esta_registrado,
         supabase=supabase,
         telefono=telefono,
+        selected_option=selected_option,
     )
 
 

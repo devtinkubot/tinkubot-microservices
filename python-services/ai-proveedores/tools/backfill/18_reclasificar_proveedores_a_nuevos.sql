@@ -1,7 +1,7 @@
 -- Reclasificación manual de proveedores a la cola "Nuevos".
 -- Objetivo:
 -- - mover todos los casos a onboarding_step = pending_verification
--- - para los que estaban approved, además bajar status a pending y verified a false
+-- - para los que estaban approved, además bajar status a pending y marcar onboarding_complete
 --
 -- Casos incluidos:
 -- - 0b4e962e-2d2c-44e0-a704-1f53f56c0f96
@@ -29,13 +29,10 @@ update public.providers p
 set
   onboarding_step = 'pending_verification',
   onboarding_step_updated_at = timezone('utc'::text, now()),
+  onboarding_complete = true,
   status = case
     when candidatos.status = 'approved' then 'pending'
     else p.status
-  end,
-  verified = case
-    when candidatos.status = 'approved' then false
-    else p.verified
   end,
   updated_at = timezone('utc'::text, now())
 from candidatos
@@ -44,6 +41,6 @@ returning
   p.id,
   p.full_name,
   p.status,
-  p.verified,
+  p.onboarding_complete,
   p.onboarding_step,
   p.onboarding_step_updated_at;

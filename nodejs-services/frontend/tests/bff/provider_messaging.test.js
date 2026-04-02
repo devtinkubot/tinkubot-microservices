@@ -9,10 +9,22 @@ const {
 
 test("resuelve el nombre desde los campos canónicos de supabase", () => {
   const registro = {
-    full_name: "Legacy Name",
     document_first_names: "Ana Maria",
     document_last_names: "Perez Lopez",
-    display_name: "Nombre Visible",
+    full_name: "Nombre legado",
+  };
+
+  assert.equal(
+    resolverNombreCanonicoProveedor(registro),
+    "Ana Maria Perez Lopez",
+  );
+});
+
+test("ignora full_name cuando ya existen document_first_names y document_last_names", () => {
+  const registro = {
+    document_first_names: "Ana Maria",
+    document_last_names: "Perez Lopez",
+    full_name: "Proveedor legado",
   };
 
   assert.equal(
@@ -23,7 +35,6 @@ test("resuelve el nombre desde los campos canónicos de supabase", () => {
 
 test("no depende de full_name para construir el mensaje de aprobación", () => {
   const registro = {
-    full_name: "",
     document_first_names: "Ana Maria",
     document_last_names: "Perez Lopez",
   };
@@ -54,14 +65,12 @@ test("usa proveedor como fallback seguro cuando no hay nombres canónicos", () =
 test("rechazo también usa campos canónicos y no full_name", () => {
   const mensaje = construirMensajeRechazoProveedor(
     {
-      full_name: "Legacy Name",
-      display_name: "Nombre Visible",
+      document_first_names: "Ana",
+      document_last_names: "Perez",
     },
     "datos incompletos",
   );
 
-  assert.match(mensaje, /Hola Nombre Visible/);
-  assert.doesNotThrow(() =>
-    construirMensajeRechazoProveedor({ full_name: "" }, "motivo"),
-  );
+  assert.match(mensaje, /Hola Ana Perez/);
+  assert.doesNotThrow(() => construirMensajeRechazoProveedor({}, "motivo"));
 });

@@ -14,6 +14,7 @@ from typing import Any, Dict, Optional, cast
 from config import configuracion
 from infrastructure.redis import cliente_redis
 from services import garantizar_campos_obligatorios_proveedor
+from services.shared.estados_proveedor import normalizar_estado_administrativo
 from utils import (
     extraer_servicios_almacenados as extraer_servicios_guardados,
 )
@@ -43,36 +44,13 @@ _PRIORIDAD_ORIGEN_PERFIL = {
     "phone": 200,
     "real_phone": 100,
 }
-_ESTADOS_APROBADOS_COMPAT = {
-    "approved",
-    "approved_basic",
-    "aprobado",
-    "aprobado_basico",
-    "basic_approved",
-    "ok",
-    "profile_pending_review",
-    "perfil_pendiente_revision",
-    "professional_review_pending",
-    "interview_required",
-    "entrevista",
-    "auditoria",
-    "needs_info",
-    "falta_info",
-    "faltainfo",
-}
 
 
-def _normalizar_estado_para_prioridad(estado: str, verified: bool) -> str:
-    estado_limpio = str(estado or "").strip().lower()
-    if estado_limpio in _ESTADOS_APROBADOS_COMPAT:
-        return "approved"
-    if estado_limpio in {"rejected", "rechazado", "denied"}:
-        return "rejected"
-    if estado_limpio in {"pending_verification"}:
+def _normalizar_estado_para_prioridad(estado: str) -> str:
+    estado_normalizado = normalizar_estado_administrativo(status=estado)
+    if str(estado or "").strip().lower() == "pending_verification":
         return "pending_verification"
-    if estado_limpio in {"pending", "pendiente", "new"}:
-        return "pending"
-    return "approved" if verified else "pending"
+    return estado_normalizado
 
 
 def _normalizar_real_phone_para_busqueda(telefono: str) -> Optional[str]:
@@ -109,17 +87,16 @@ def _puntuar_perfil_resuelto(
     *,
     origen: str,
 ) -> tuple[int, int, int, int]:
-    prioridad_verificado = 1 if bool(perfil.get("verified")) else 0
+    prioridad_completitud = 1 if bool(perfil.get("onboarding_complete")) else 0
     estado = _normalizar_estado_para_prioridad(
         str(perfil.get("status") or ""),
-        bool(perfil.get("verified")),
     )
     prioridad_estado = _PRIORIDAD_ESTADO_PERFIL.get(estado, 0)
     prioridad_origen = _PRIORIDAD_ORIGEN_PERFIL.get(origen, 0)
     prioridad_consentimiento = 1 if bool(perfil.get("has_consent")) else 0
     return (
         prioridad_estado,
-        prioridad_verificado,
+        prioridad_completitud,
         prioridad_consentimiento,
         prioridad_origen,
     )
@@ -203,7 +180,9 @@ async def _obtener_perfiles_por_real_phone(
     return registros
 
 
-def _elegir_perfil_canonico(candidatos: list[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+def _elegir_perfil_canonico(
+    candidatos: list[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
     if not candidatos:
         return None
     return max(

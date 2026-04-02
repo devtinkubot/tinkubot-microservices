@@ -11,7 +11,6 @@ from .actualizar_servicios import _obtener_telefono_proveedor
 from .estado_operativo import (
     perfil_profesional_completo,
 )
-from .redes_sociales_slots import resolver_redes_sociales
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +20,6 @@ async def actualizar_perfil_profesional(
     proveedor_id: str,
     servicios: List[str],
     experience_range: Optional[str],
-    social_media_url: Optional[str],
-    social_media_type: Optional[str],
     facebook_username: Optional[str] = None,
     instagram_username: Optional[str] = None,
 ) -> Dict[str, object]:
@@ -33,37 +30,6 @@ async def actualizar_perfil_profesional(
         raise ValueError("proveedor_id es requerido")
 
     servicios_actualizados = await actualizar_servicios(proveedor_id, servicios)
-    if not supabase:
-        redes_sociales = resolver_redes_sociales(
-            {
-                "social_media_url": social_media_url,
-                "social_media_type": social_media_type,
-                "facebook_username": facebook_username,
-                "instagram_username": instagram_username,
-            }
-        )
-        return {
-            "success": True,
-            "services": servicios_actualizados,
-            "experience_range": experience_range,
-            "social_media_url": social_media_url,
-            "social_media_type": social_media_type,
-            "facebook_username": redes_sociales["facebook_username"],
-            "instagram_username": redes_sociales["instagram_username"],
-            "verified": perfil_profesional_completo(
-                experience_range=experience_range,
-                servicios=servicios_actualizados,
-            ),
-        }
-
-    redes_sociales = resolver_redes_sociales(
-        {
-            "social_media_url": social_media_url,
-            "social_media_type": social_media_type,
-            "facebook_username": facebook_username,
-            "instagram_username": instagram_username,
-        }
-    )
     perfil_completo = perfil_profesional_completo(
         experience_range=experience_range,
         servicios=servicios_actualizados,
@@ -71,14 +37,12 @@ async def actualizar_perfil_profesional(
     payload_actualizacion = {
         "updated_at": datetime.utcnow().isoformat(),
         "experience_range": experience_range,
-        "social_media_url": social_media_url,
-        "social_media_type": social_media_type,
-        "facebook_username": redes_sociales["facebook_username"],
-        "instagram_username": redes_sociales["instagram_username"],
+        "facebook_username": facebook_username,
+        "instagram_username": instagram_username,
         "status": "approved",
         "onboarding_step": "awaiting_menu_option",
         "onboarding_step_updated_at": datetime.utcnow().isoformat(),
-        "verified": perfil_completo,
+        "onboarding_complete": perfil_completo,
     }
 
     await run_supabase(
@@ -111,9 +75,7 @@ async def actualizar_perfil_profesional(
         "success": True,
         "services": servicios_actualizados,
         "experience_range": experience_range,
-        "social_media_url": social_media_url,
-        "social_media_type": social_media_type,
-        "facebook_username": redes_sociales["facebook_username"],
-        "instagram_username": redes_sociales["instagram_username"],
-        "verified": perfil_completo,
+        "facebook_username": facebook_username,
+        "instagram_username": instagram_username,
+        "onboarding_complete": perfil_completo,
     }

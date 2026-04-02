@@ -25,6 +25,12 @@ from services.review.state import (
     sincronizar_flujo_con_perfil,
 )
 from services.shared import es_comando_reinicio
+from services.shared.estados_proveedor import (
+    ONBOARDING_REANUDACION_STATES,
+)
+from services.shared.identidad_proveedor import (
+    resolver_nombre_visible_proveedor,
+)
 from services.shared.ingreso_whatsapp import es_evento_interactivo, es_evento_multimedia
 from templates.onboarding import (
     payload_consentimiento_proveedor,
@@ -48,18 +54,6 @@ from templates.shared import (
 
 TIEMPO_INACTIVIDAD_SESION_SEGUNDOS = configuracion.ttl_flujo_segundos
 TIEMPO_AVISO_INACTIVIDAD_SEGUNDOS = configuracion.provider_inactivity_warning_seconds
-
-ONBOARDING_REANUDACION_STATES = {
-    "awaiting_menu_option",
-    "onboarding_consent",
-    "onboarding_city",
-    "onboarding_dni_front_photo",
-    "onboarding_face_photo",
-    "onboarding_experience",
-    "onboarding_specialty",
-    "onboarding_add_another_service",
-    "onboarding_social_media",
-}
 
 
 def _mensaje_onboarding_requiere_procesamiento(
@@ -270,7 +264,9 @@ async def _manejar_flujo_sin_estado(
             return {"response": respuesta_bloqueo, "persist_flow": True}
         flujo["state"] = "pending_verification"
         return {
-            "response": construir_respuesta_revision(str(flujo.get("full_name") or "")),
+            "response": construir_respuesta_revision(
+                resolver_nombre_visible_proveedor(proveedor=flujo)
+            ),
             "persist_flow": True,
         }
 
@@ -386,6 +382,7 @@ async def manejar_mensaje(
     esta_registrado_contexto = bool(
         flujo.get("provider_id") or (perfil_proveedor or {}).get("id")
     )
+    esta_verificado_contexto = resolver_estado_registro(flujo, perfil_proveedor)[2]
     if (
         inactividad_reanudable
         and not mensaje_accionable
@@ -393,6 +390,18 @@ async def manejar_mensaje(
     ):
         flujo["last_seen_at_prev"] = flujo.get("last_seen_at") or ahora_iso
         flujo["last_seen_at"] = ahora_iso
+        if esta_registrado_contexto and not esta_verificado_contexto:
+            flujo["state"] = "pending_verification"
+            flujo["has_consent"] = True
+            if perfil_proveedor and perfil_proveedor.get("id"):
+                flujo["provider_id"] = perfil_proveedor.get("id")
+            return {
+                "response": construir_respuesta_revision(
+                    resolver_nombre_visible_proveedor(proveedor=flujo)
+                ),
+                "new_flow": flujo,
+                "persist_flow": True,
+            }
         return {
             "response": _construir_reanudacion_onboarding(
                 flujo,

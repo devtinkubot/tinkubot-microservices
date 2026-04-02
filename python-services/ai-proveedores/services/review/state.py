@@ -2,36 +2,24 @@
 
 from typing import Any, Dict, Optional, Tuple
 
-from services.maintenance.redes_sociales_slots import resolver_redes_sociales
-from services.onboarding.progress import (
-    es_perfil_onboarding_completo,
-    resolver_checkpoint_onboarding_desde_perfil,
+from services.shared.identidad_proveedor import (
+    resolver_nombre_visible_proveedor,
 )
-from services.onboarding.registration import determinar_estado_registro
+from services.shared.estados_proveedor import (
+    normalizar_estado_administrativo as normalizar_estado_administrativo_comun,
+)
 
 from .menu import poner_flujo_en_menu_revision
 from .messages import construir_respuesta_revision, construir_respuesta_verificado
+from .progress import (
+    determinar_estado_registro,
+    es_perfil_onboarding_completo,
+    resolver_checkpoint_onboarding_desde_perfil,
+)
 
 ESTADOS_APROBADOS_OPERATIVOS = {"approved"}
 ESTADOS_BLOQUEO_REVISION = {"rejected"}
 MAX_INTENTOS_REVISION_SIN_RESPUESTA = 3
-ESTADOS_APROBADOS_COMPAT = {
-    "approved",
-    "aprobado",
-    "ok",
-    "approved_basic",
-    "aprobado_basico",
-    "basic_approved",
-    "profile_pending_review",
-    "perfil_pendiente_revision",
-    "professional_review_pending",
-    "interview_required",
-    "entrevista",
-    "auditoria",
-    "needs_info",
-    "falta_info",
-    "faltainfo",
-}
 
 
 def _copiar_campo_si_presente(
@@ -69,7 +57,7 @@ def _sincronizar_campos_base(
     proveedor_id = perfil_proveedor.get("id")
     if proveedor_id:
         flujo["provider_id"] = proveedor_id
-    _copiar_campo_si_presente(flujo, perfil_proveedor, "full_name")
+    _copiar_campo_si_presente(flujo, perfil_proveedor, "status")
     _copiar_campo_si_presente(flujo, perfil_proveedor, "document_first_names")
     _copiar_campo_si_presente(flujo, perfil_proveedor, "document_last_names")
     _copiar_campo_si_presente(flujo, perfil_proveedor, "document_id_number")
@@ -77,6 +65,10 @@ def _sincronizar_campos_base(
     _copiar_campo_si_presente(flujo, perfil_proveedor, "formatted_name")
     _copiar_campo_si_presente(flujo, perfil_proveedor, "first_name")
     _copiar_campo_si_presente(flujo, perfil_proveedor, "last_name")
+    flujo["full_name"] = resolver_nombre_visible_proveedor(
+        proveedor=flujo,
+        fallback="",
+    )
 
 
 def _sincronizar_campos_ubicacion(
@@ -105,6 +97,7 @@ def _sincronizar_campos_onboarding(
         perfil_proveedor,
         "onboarding_step_updated_at",
     )
+    _copiar_campo_si_presente(flujo, perfil_proveedor, "onboarding_complete")
     _copiar_campo_si_presente(flujo, perfil_proveedor, "experience_range")
 
 
@@ -114,9 +107,7 @@ def _sincronizar_campos_contacto(
 ) -> None:
     """Sincroniza datos de contacto, medios y documentos."""
     flujo["services"] = _fusionar_servicios_perfil(perfil_proveedor)
-    _copiar_campo_si_presente(flujo, perfil_proveedor, "social_media_url")
-    _copiar_campo_si_presente(flujo, perfil_proveedor, "social_media_type")
-    redes = resolver_redes_sociales(perfil_proveedor)
+    redes = _resolver_redes_sociales_local(perfil_proveedor)
     flujo["facebook_username"] = redes["facebook_username"]
     flujo["instagram_username"] = redes["instagram_username"]
     _copiar_campo_si_presente(flujo, perfil_proveedor, "face_photo_url")
@@ -129,17 +120,18 @@ def normalizar_estado_administrativo(
     perfil_proveedor: Optional[Dict[str, Any]],
 ) -> str:
     """Normaliza el estado administrativo persistido del proveedor."""
-    if not perfil_proveedor:
-        return "pending"
+    return normalizar_estado_administrativo_comun(perfil_proveedor)
 
-    estado_crudo = str(perfil_proveedor.get("status") or "").strip().lower()
-    if estado_crudo in ESTADOS_APROBADOS_COMPAT:
-        return "approved"
-    if estado_crudo in {"rejected", "rechazado", "denied"}:
-        return "rejected"
-    if estado_crudo in {"pending", "pendiente", "new"}:
-        return "pending"
-    return "approved" if perfil_proveedor.get("verified") else "pending"
+
+def _resolver_redes_sociales_local(
+    datos: Dict[str, Any],
+) -> Dict[str, Optional[str]]:
+    facebook_username = str(datos.get("facebook_username") or "").strip() or None
+    instagram_username = str(datos.get("instagram_username") or "").strip() or None
+    return {
+        "facebook_username": facebook_username,
+        "instagram_username": instagram_username,
+    }
 
 
 def sincronizar_flujo_con_perfil(
@@ -152,7 +144,6 @@ def sincronizar_flujo_con_perfil(
         _sincronizar_campos_ubicacion(flujo, perfil_proveedor)
         _sincronizar_campos_onboarding(flujo, perfil_proveedor)
         _sincronizar_campos_contacto(flujo, perfil_proveedor)
-        flujo["profile_pending_review"] = False
     else:
         flujo.setdefault("services", [])
         flujo.setdefault("experience_range", None)
@@ -160,7 +151,6 @@ def sincronizar_flujo_con_perfil(
         flujo.setdefault("city_confirmed_at", None)
         flujo.setdefault("onboarding_step", None)
         flujo.setdefault("onboarding_step_updated_at", None)
-        flujo["profile_pending_review"] = False
     return flujo
 
 
@@ -172,16 +162,15 @@ def resolver_estado_registro(
     tiene_consentimiento = bool(
         flujo.get("has_consent") or (perfil_proveedor or {}).get("has_consent")
     )
-    esta_registrado = bool(
-        determinar_estado_registro(perfil_proveedor)
-    )
+    esta_registrado = bool(determinar_estado_registro(perfil_proveedor))
     flujo["esta_registrado"] = esta_registrado
     estado_administrativo = normalizar_estado_administrativo(perfil_proveedor)
     esta_verificado = estado_administrativo in ESTADOS_APROBADOS_OPERATIVOS
+    onboarding_complete = bool((perfil_proveedor or {}).get("onboarding_complete"))
     esta_pendiente_revision = bool(
         esta_registrado
         and not esta_verificado
-        and estado_administrativo in ESTADOS_BLOQUEO_REVISION
+        and (estado_administrativo in ESTADOS_BLOQUEO_REVISION or onboarding_complete)
     )
     return (
         tiene_consentimiento,
@@ -206,7 +195,9 @@ def manejar_pendiente_revision(
             "provider_id": proveedor_id,
         }
     )
-    nombre_proveedor = flujo["full_name"]
+    nombre_proveedor = resolver_nombre_visible_proveedor(
+        proveedor=flujo,
+    )
     return construir_respuesta_revision(nombre_proveedor)
 
 
@@ -268,5 +259,7 @@ def manejar_bloqueo_revision_posterior(
 
     flujo["pending_review_attempts"] = intentos_previos + 1
     flujo["review_silenced"] = False
-    nombre_proveedor = str(flujo.get("full_name") or "")
+    nombre_proveedor = resolver_nombre_visible_proveedor(
+        proveedor=flujo,
+    )
     return construir_respuesta_revision(nombre_proveedor)

@@ -75,10 +75,12 @@ Rutas y piezas relevantes:
 
 ### `services/shared/`
 
-Contiene la normalización común de respuestas y los prompts compartidos de IA:
+Contiene utilidades técnicas y puentes transitorios. No debe crecer como
+dominio común:
 
-- `normalizacion_respuestas.py`
-- `prompts_ia.py`
+- normalización mecánica de respuestas
+- helpers de entrada y sesiones
+- prompts o adaptadores que no tengan ownership claro de un solo contexto
 
 ### `templates/shared/`
 
@@ -92,7 +94,10 @@ Contiene mensajes y copys transversales:
 
 - `flows/` debe orquestar, no definir copy de usuario.
 - `templates/` debe concentrar el texto visible.
-- `services/shared/` debe concentrar reglas reutilizables de interacción.
+- `services/shared/` debe quedarse en utilidades técnicas y compatibilidad
+  temporal, no en reglas de negocio compartidas.
+- si una regla cambia por razones de `onboarding`, `maintenance`, `review` o
+  `availability`, pertenece al contexto dueño y no a `shared`.
 - `infrastructure/` debe limitarse a integración técnica.
 - `utils/` debe contener funciones puras y compartidas.
 - `tools/` no forma parte del runtime; solo existe para operación manual o batch.

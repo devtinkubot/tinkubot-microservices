@@ -4,8 +4,11 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from models.proveedores import SolicitudCreacionProveedor
-from services.maintenance.constantes import SERVICIOS_MAXIMOS
-from services.maintenance.redes_sociales_slots import resolver_redes_sociales
+from services.onboarding.registration.constantes import SERVICIOS_MAXIMOS
+from services.shared.identidad_proveedor import (
+    resolver_nombre_visible_proveedor,
+)
+from services.shared.redes_sociales_slots import resolver_redes_sociales
 from utils import (
     normalizar_texto_para_busqueda,
 )
@@ -150,7 +153,8 @@ def normalizar_datos_proveedor(
             if entry.get("service_name")
         ]
     else:
-        # Fase 5: Normalizar servicios preservando una variante legible y el texto original.
+        # Fase 5: Normalizar servicios preservando una variante legible y
+        # el texto original.
         servicios_limpios = sanitizar_servicios(servicios)
         servicios_normalizados = [
             _formatear_servicio_para_visualizacion(servicio)
@@ -181,8 +185,8 @@ def normalizar_datos_proveedor(
     )
     redes_sociales = resolver_redes_sociales(
         {
-            "social_media_url": datos_crudos.social_media_url,
-            "social_media_type": datos_crudos.social_media_type,
+            "facebook_username": datos_crudos.facebook_username,
+            "instagram_username": datos_crudos.instagram_username,
         }
     )
 
@@ -192,7 +196,10 @@ def normalizar_datos_proveedor(
         "from_number": datos_crudos.from_number,
         "user_id": datos_crudos.user_id,
         "real_phone": real_phone,
-        "full_name": datos_crudos.full_name.strip().title(),  # Formato legible
+        "full_name": resolver_nombre_visible_proveedor(
+            proveedor=datos_crudos,
+            fallback="",
+        ),
         "document_first_names": (
             datos_crudos.document_first_names.strip()
             if datos_crudos.document_first_names
@@ -218,11 +225,9 @@ def normalizar_datos_proveedor(
         "service_entries": service_entries,
         "experience_range": datos_crudos.experience_range,
         "has_consent": datos_crudos.has_consent,
-        "verified": False,
+        "onboarding_complete": bool(datos_crudos.onboarding_complete),
         # Arrancamos en 5 para promediar con futuras calificaciones de clientes.
         "rating": 5.0,
-        "social_media_url": datos_crudos.social_media_url,
-        "social_media_type": datos_crudos.social_media_type,
         "facebook_username": redes_sociales["facebook_username"],
         "instagram_username": redes_sociales["instagram_username"],
         "display_name": (
@@ -256,11 +261,10 @@ def garantizar_campos_obligatorios_proveedor(
         Dict con todos los campos obligatorios garantizados
     """
     datos = dict(registro or {})
-    datos.setdefault("verified", False)
-
+    estado = str(datos.get("status") or "").strip().lower()
     valor_disponible = datos.get("available")
     if valor_disponible is None:
-        valor_disponible = datos.get("verified", True)
+        valor_disponible = estado == "approved"
     datos["available"] = bool(valor_disponible)
 
     datos["rating"] = float(datos.get("rating") or 5.0)
@@ -271,6 +275,7 @@ def garantizar_campos_obligatorios_proveedor(
     datos.setdefault("city_confirmed_at", None)
     datos.setdefault("onboarding_step", None)
     datos.setdefault("onboarding_step_updated_at", None)
+    datos.setdefault("onboarding_complete", False)
     datos.setdefault("facebook_username", None)
     datos.setdefault("instagram_username", None)
     datos.setdefault("display_name", None)
@@ -280,5 +285,5 @@ def garantizar_campos_obligatorios_proveedor(
     # Fase 5: Eliminada referencia a 'profession'
     datos["has_consent"] = bool(datos.get("has_consent"))
     if not datos.get("status"):
-        datos["status"] = "approved" if datos.get("verified") else "pending"
+        datos["status"] = "pending"
     return datos

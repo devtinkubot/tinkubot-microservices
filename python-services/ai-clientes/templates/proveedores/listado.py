@@ -3,6 +3,8 @@
 from datetime import datetime, timedelta
 from typing import Any, Dict, List
 
+from services.proveedores.identidad import resolver_nombre_visible_proveedor
+
 LISTADO_TIMEOUT_SECONDS = 300
 LISTADO_TIMEOUT_FOOTER = "Tienes 5 minutos para elegir un experto."
 
@@ -11,13 +13,11 @@ LISTADO_TIMEOUT_FOOTER = "Tienes 5 minutos para elegir un experto."
 
 
 def _nombre_corto_proveedor(proveedor: Dict[str, Any]) -> str:
-    nombre = (
-        proveedor.get("name") or proveedor.get("provider_name") or "Proveedor"
-    ).strip()
-    partes = [parte for parte in nombre.split() if parte]
-    if not partes:
-        return "Proveedor"
-    return partes[0]
+    return resolver_nombre_visible_proveedor(
+        proveedor,
+        status="approved",
+        corto=True,
+    )
 
 
 def mensaje_intro_listado_proveedores(ciudad: str) -> str:

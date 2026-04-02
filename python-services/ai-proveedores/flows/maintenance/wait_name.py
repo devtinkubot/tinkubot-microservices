@@ -2,8 +2,8 @@
 
 from typing import Any, Dict, Optional
 
-from templates.onboarding.ciudad import solicitar_ciudad_registro
-from templates.onboarding.documentos import payload_onboarding_dni_frontal
+from templates.maintenance.ciudad import solicitar_ciudad_registro
+from templates.maintenance.documentos import payload_onboarding_dni_frontal
 
 
 async def manejar_espera_nombre(

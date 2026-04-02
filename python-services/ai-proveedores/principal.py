@@ -14,8 +14,12 @@ import uvicorn
 from config import configuracion
 from fastapi import FastAPI, Header
 from fastapi.middleware.cors import CORSMiddleware
+from flows.onboarding.handlers.servicios import (
+    resolver_servicio_onboarding_best_effort,
+)
 from infrastructure.database import run_supabase, set_supabase_client
 from infrastructure.embeddings.servicio_embeddings import ServicioEmbeddings
+from infrastructure.redis import cliente_redis  # noqa: F401
 from infrastructure.storage import subir_medios_identidad
 from models import RecepcionMensajeWhatsApp, RespuestaSalud
 from models.proveedores import SolicitudCreacionProveedor
@@ -24,22 +28,18 @@ from pydantic import BaseModel, Field
 from services.availability.disponibilidad_admin import (
     router as router_disponibilidad_admin,
 )
+from services.maintenance.actualizar_perfil_profesional import (
+    actualizar_perfil_profesional,
+)
+from services.maintenance.actualizar_servicios import actualizar_servicios
+from services.onboarding.registration import reiniciar_onboarding_proveedor
 from services.onboarding.session import invalidar_cache_perfil_proveedor
 from services.onboarding.worker import (
     bucle_limpieza_onboarding,
     ejecutar_limpieza_onboarding,
 )
-from services.onboarding.registration import reiniciar_onboarding_proveedor
-from flows.onboarding.handlers.servicios import (
-    resolver_servicio_onboarding_best_effort,
-)
-from services.maintenance.actualizar_servicios import actualizar_servicios
-from services.maintenance.actualizar_perfil_profesional import (
-    actualizar_perfil_profesional,
-)
-from services.shared.ingreso_whatsapp import (
-    normalizar_lista_servicios_flujo,
-)
+from services.maintenance.servicios_sync import normalizar_lista_servicios_flujo
+from services.shared import ingreso_whatsapp as _ingreso_whatsapp
 from services.shared.orquestacion_whatsapp import (
     normalizar_respuesta_whatsapp as normalizar_respuesta_whatsapp_impl,
 )
@@ -47,6 +47,9 @@ from services.shared.orquestacion_whatsapp import (
     procesar_mensaje_whatsapp,
 )
 from supabase import Client, create_client
+
+_es_mensaje_interactivo_duplicado = _ingreso_whatsapp.es_mensaje_interactivo_duplicado
+_es_mensaje_multimedia_duplicado = _ingreso_whatsapp.es_mensaje_multimedia_duplicado
 
 # Configuración desde variables de entorno
 URL_SUPABASE = configuracion.supabase_url or os.getenv("SUPABASE_URL", "")
@@ -158,6 +161,7 @@ class RespuestaRegistrarProveedorOnboarding(BaseModel):
     provider_id: Optional[str] = None
     provider: Optional[Dict[str, Any]] = None
     media_uploaded: bool = False
+    onboarding_complete: Optional[bool] = None
     error_reason: Optional[str] = None
 
 
@@ -170,8 +174,6 @@ class SolicitudActualizarPerfilProfesionalProveedor(BaseModel):
     provider_id: str
     services: list[str] = Field(default_factory=list)
     experience_range: Optional[str] = None
-    social_media_url: Optional[str] = None
-    social_media_type: Optional[str] = None
     facebook_username: Optional[str] = None
     instagram_username: Optional[str] = None
 
@@ -181,11 +183,8 @@ class RespuestaActualizarPerfilProfesionalProveedor(BaseModel):
     provider_id: Optional[str] = None
     services: list[str] = Field(default_factory=list)
     experience_range: Optional[str] = None
-    social_media_url: Optional[str] = None
-    social_media_type: Optional[str] = None
     facebook_username: Optional[str] = None
     instagram_username: Optional[str] = None
-    verified: Optional[bool] = None
     error_reason: Optional[str] = None
 
 
@@ -450,6 +449,7 @@ async def registrar_proveedor_onboarding_interno(
             provider_id=str(provider.get("id") or "").strip() or None,
             provider=provider,
             media_uploaded=media_uploaded,
+            onboarding_complete=bool(provider.get("onboarding_complete")),
         )
     except Exception as exc:
         return RespuestaRegistrarProveedorOnboarding(
@@ -522,27 +522,33 @@ async def actualizar_perfil_profesional_admin_interno(
         )
 
     try:
-        resultado = await actualizar_perfil_profesional(
+        resultado: Dict[str, Any] = await actualizar_perfil_profesional(
             proveedor_id=provider_id,
             servicios=list(solicitud.services or []),
             experience_range=solicitud.experience_range,
-            social_media_url=solicitud.social_media_url,
-            social_media_type=solicitud.social_media_type,
             facebook_username=solicitud.facebook_username,
             instagram_username=solicitud.instagram_username,
         )
+        resultado_services_raw = resultado.get("services")
+        resultado_services: list[str] = []
+        if isinstance(resultado_services_raw, list):
+            resultado_services = [
+                str(servicio)
+                for servicio in resultado_services_raw
+                if servicio is not None
+            ]
         return RespuestaActualizarPerfilProfesionalProveedor(
             ok=bool(resultado.get("success")),
             provider_id=provider_id,
-            services=list(resultado.get("services") or []),
-            experience_range=resultado.get("experience_range"),
-            social_media_url=resultado.get("social_media_url"),
-            social_media_type=resultado.get("social_media_type"),
-            facebook_username=resultado.get("facebook_username"),
-            instagram_username=resultado.get("instagram_username"),
-            verified=bool(resultado.get("verified"))
-            if "verified" in resultado
-            else None,
+            services=resultado_services,
+            experience_range=str(resultado.get("experience_range") or ""),
+            facebook_username=str(resultado.get("facebook_username") or ""),
+            instagram_username=str(resultado.get("instagram_username") or ""),
+            onboarding_complete=(
+                bool(resultado.get("onboarding_complete"))
+                if "onboarding_complete" in resultado
+                else None
+            ),
         )
     except Exception as exc:
         logger.error(

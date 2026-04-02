@@ -2,7 +2,7 @@
 
 from typing import Any, Dict
 
-from templates.maintenance.menus import payload_menu_post_registro_proveedor
+from templates.review.menu import payload_menu_post_registro_proveedor
 from templates.review.estados import (
     mensaje_perfil_profesional_en_revision,
     mensaje_proveedor_en_revision,

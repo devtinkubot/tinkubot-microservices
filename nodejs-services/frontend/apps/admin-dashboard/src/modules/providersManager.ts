@@ -50,8 +50,8 @@ const ONBOARDING_COLUMNS: OnboardingColumn[] = [
   { state: "onboarding_dni_front_photo", title: "Cédula frontal" },
   { state: "onboarding_face_photo", title: "Foto de perfil" },
   { state: "onboarding_experience", title: "Experiencia" },
+  { state: "onboarding_real_phone", title: "Teléfono real" },
   { state: "onboarding_specialty", title: "Servicios" },
-  { state: "onboarding_social_media", title: "Redes sociales" },
 ];
 
 const EXPERIENCE_RANGE_OPTIONS = [
@@ -170,7 +170,7 @@ function resolverNombreVisibleProveedor(proveedor: ProviderRecord): string {
     .join(" ")
     .trim();
 
-  return nombreDocumento || formattedName || displayName || "Proveedor";
+  return displayName || formattedName || nombreDocumento || "Proveedor";
 }
 
 function resolverNombreVisibleOperativoProveedor(
@@ -186,8 +186,8 @@ function resolverNombreVisibleOperativoProveedor(
 
   return (
     nombreDocumento ||
-    proveedor.displayName?.trim() ||
     proveedor.formattedName?.trim() ||
+    proveedor.displayName?.trim() ||
     "Proveedor"
   );
 }
@@ -234,8 +234,17 @@ function normalizarPasoOnboarding(proveedor: ProviderRecord): string | null {
     : null;
 }
 
-function esPerfilProfesionalEditable(): boolean {
-  return estado.bucketActivo === "profile_incomplete";
+function esPerfilProfesionalEditable(
+  proveedor: ProviderRecord | null = estado.proveedorSeleccionado,
+): boolean {
+  if (estado.bucketActivo !== "profile_incomplete" || !proveedor) {
+    return false;
+  }
+
+  return (
+    proveedor.status === "approved" &&
+    !tienePerfilProfesionalCompleto(proveedor)
+  );
 }
 
 function normalizarListaServiciosEditable(
@@ -244,6 +253,20 @@ function normalizarListaServiciosEditable(
   return (servicios || [])
     .map((servicio) => servicio?.trim() || "")
     .filter((servicio) => servicio.length > 0);
+}
+
+function tienePerfilProfesionalCompleto(
+  proveedor: ProviderRecord | null | undefined,
+): boolean {
+  if (!proveedor) {
+    return false;
+  }
+
+  const serviciosValidos = normalizarListaServiciosEditable(
+    proveedor.servicesList,
+  );
+  const experiencia = proveedor.experienceRange?.trim();
+  return Boolean(experiencia && serviciosValidos.length >= 1);
 }
 
 function construirFilaServicioEditable(valor: string, indice: number): string {
@@ -395,15 +418,15 @@ function formatearAntiguedadAprobacion(
 
   const diffHoras = Math.floor(diffMs / (60 * 60 * 1000));
   if (diffHoras < 1) {
-    return "Aprobado hace menos de 1 hora";
+    return "Hace menos de 1 hora";
   }
 
   if (diffHoras < 24) {
-    return `Aprobado hace ${diffHoras} ${diffHoras === 1 ? "hora" : "horas"}`;
+    return `Hace ${diffHoras} ${diffHoras === 1 ? "hora" : "horas"}`;
   }
 
   const diffDias = Math.floor(diffHoras / 24);
-  return `Aprobado hace ${diffDias} ${diffDias === 1 ? "día" : "días"}`;
+  return `Hace ${diffDias} ${diffDias === 1 ? "día" : "días"}`;
 }
 
 function resolverAntiguedadOnboarding(timestamp: string | null | undefined): {
@@ -549,12 +572,10 @@ function actualizarEncabezadoBucket() {
     if (titulo) titulo.textContent = "Incompletos";
     if (subtitulo) {
       subtitulo.textContent =
-        "Proveedores con información personal aprobada que todavía no completan experiencia y al menos 1 servicio.";
+        "Proveedores fuera de onboarding, verificación pendiente u operación. Aquí caen las irregularidades.";
     }
-    if (vacio) vacio.textContent = "No hay perfiles profesionales incompletos.";
-    if (textoCarga)
-      textoCarga.textContent =
-        "Obteniendo perfiles profesionales incompletos...";
+    if (vacio) vacio.textContent = "No hay proveedores incompletos.";
+    if (textoCarga) textoCarga.textContent = "Obteniendo proveedores incompletos...";
     return;
   }
 
@@ -1046,11 +1067,11 @@ function actualizarPerfilProfesional(proveedor: ProviderRecord) {
     : [];
   const reviewsUsadas = new Set<string>();
   const experienciaValor = proveedor.experienceRange?.trim() || "Sin definir";
-  const urlRedSocial = proveedor.socialMediaUrl?.trim();
-  const tipoRedSocial = proveedor.socialMediaType?.trim();
-  const etiquetaRedSocial = [tipoRedSocial, urlRedSocial]
-    .filter((item) => typeof item === "string" && item.trim().length > 0)
-    .join(" / ");
+  const etiquetasRedes = [proveedor.facebookUsername, proveedor.instagramUsername]
+    .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    .map((item) => `@${item.trim().replace(/^@+/, "")}`);
+  const etiquetaRedSocial =
+    etiquetasRedes.length > 0 ? etiquetasRedes.join(" · ") : null;
 
   if (servicios) {
     if (serviciosDetalle.length > 0 || reviewsPendientes.length > 0) {
@@ -1106,11 +1127,7 @@ function actualizarPerfilProfesional(proveedor: ProviderRecord) {
 
   if (redSocial) {
     if (etiquetaRedSocial) {
-      redSocial.innerHTML = urlRedSocial
-        ? `<a href="${escaparHtml(urlRedSocial)}" target="_blank" rel="noopener noreferrer">${escaparHtml(
-            etiquetaRedSocial,
-          )}</a>`
-        : escaparHtml(etiquetaRedSocial);
+      redSocial.innerHTML = escaparHtml(etiquetaRedSocial);
       redSocial.classList.remove("text-muted");
     } else {
       redSocial.textContent = "Sin red social registrada";
@@ -1122,7 +1139,7 @@ function actualizarPerfilProfesional(proveedor: ProviderRecord) {
 }
 
 function actualizarFormularioPerfilProfesional(proveedor: ProviderRecord) {
-  const esEditable = esPerfilProfesionalEditable();
+  const esEditable = esPerfilProfesionalEditable(proveedor);
   const seccionIdentidad = obtenerElemento<HTMLElement>(
     "#provider-identity-edit-section",
   );
@@ -1217,7 +1234,7 @@ function actualizarCopyRevision(_proveedor: ProviderRecord) {
   const ayudaFooter = obtenerElemento<HTMLElement>(
     "#provider-review-footer-help",
   );
-  const esEditable = esPerfilProfesionalEditable();
+  const esEditable = esPerfilProfesionalEditable(_proveedor);
 
   if (tituloBasico) {
     tituloBasico.textContent = "Información personal";
@@ -1241,7 +1258,7 @@ function actualizarCopyRevision(_proveedor: ProviderRecord) {
 
 function actualizarVistaOperativo(_proveedor: ProviderRecord) {
   const esOperativo = estado.bucketActivo === "operativos";
-  const esEditable = esPerfilProfesionalEditable();
+  const esEditable = esPerfilProfesionalEditable(_proveedor);
   const seccionRevision = document.querySelector<HTMLElement>(
     ".provider-review-form",
   );
@@ -1593,8 +1610,6 @@ async function guardarPerfilProfesionalCompletado(proveedor: ProviderRecord) {
   const payload: ProviderProfessionalProfileUpdatePayload = {
     services: servicios,
     experienceRange: experienciaSeleccionada,
-    socialMediaUrl: proveedor.socialMediaUrl?.trim() || undefined,
-    socialMediaType: proveedor.socialMediaType?.trim() || undefined,
     facebookUsername: proveedor.facebookUsername?.trim() || undefined,
     instagramUsername: proveedor.instagramUsername?.trim() || undefined,
   };
@@ -1756,7 +1771,7 @@ function manejarAccionModal() {
     "#provider-review-document-id-number",
   );
 
-  if (estado.bucketActivo === "profile_incomplete") {
+  if (estado.bucketActivo === "profile_incomplete" && esPerfilProfesionalEditable(proveedor)) {
     void (async () => {
       try {
         establecerAccionEnProceso(proveedor.id);
@@ -2236,7 +2251,7 @@ function renderizarEncabezadoTabla() {
       <tr>
         <th>Proveedor</th>
         <th>Ciudad</th>
-        <th>Aprobado hace</th>
+        <th>Antigüedad</th>
         <th>Contacto</th>
         <th class="text-end">Detalle</th>
       </tr>

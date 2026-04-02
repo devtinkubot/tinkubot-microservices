@@ -3,6 +3,7 @@
 import re
 from typing import Any, Dict, List
 
+from services.proveedores.identidad import resolver_nombre_visible_proveedor
 
 DETALLE_PROVIDER_MENU = "provider_detail_menu"
 DETALLE_PROVIDER_PHOTO = "provider_detail_photo"
@@ -45,12 +46,7 @@ def _embellecer(texto: Any) -> str:
 
 
 def _nombre_proveedor(proveedor: Dict[str, Any]) -> str:
-    return (
-        proveedor.get("name")
-        or proveedor.get("provider_name")
-        or proveedor.get("full_name")
-        or "Proveedor"
-    )
+    return resolver_nombre_visible_proveedor(proveedor, status="approved")
 
 
 def _ubicacion_proveedor(proveedor: Dict[str, Any]) -> str:
@@ -149,7 +145,9 @@ def ui_detalle_proveedor(proveedor: Dict[str, Any]) -> Dict[str, Any]:
     if str(proveedor.get("face_photo_url") or "").strip():
         opciones.append({"id": DETALLE_PROVIDER_PHOTO, "title": "Foto de perfil"})
     if servicios_proveedor(proveedor):
-        opciones.append({"id": DETALLE_PROVIDER_SERVICES, "title": "Servicios que ofrece"})
+        opciones.append(
+            {"id": DETALLE_PROVIDER_SERVICES, "title": "Servicios que ofrece"}
+        )
     if str(proveedor.get("social_media_url") or "").strip():
         opciones.append({"id": DETALLE_PROVIDER_SOCIAL, "title": "Redes sociales"})
     if certificaciones_proveedor(proveedor):
@@ -189,7 +187,9 @@ def mensaje_foto_perfil_proveedor(proveedor: Dict[str, Any]) -> Dict[str, Any]:
     nombre = _nombre_proveedor(proveedor)
     return {
         "response": f"*{nombre}*\nFoto de perfil del experto.",
-        "ui": ui_subvista_detalle_proveedor(foto_url=str(proveedor.get("face_photo_url") or "").strip()),
+        "ui": ui_subvista_detalle_proveedor(
+            foto_url=str(proveedor.get("face_photo_url") or "").strip()
+        ),
     }
 
 

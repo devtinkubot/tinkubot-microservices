@@ -5,7 +5,7 @@ from typing import Any, Awaitable, Callable, Dict, Optional
 from flows.constructors import construir_respuesta_solicitud_consentimiento
 from flows.validators.input import parsear_cadena_servicios
 from models.proveedores import SolicitudCreacionProveedor
-from services.onboarding.registration import validar_y_construir_proveedor
+from services.maintenance.registration import validar_y_construir_proveedor
 from services.shared import (
     RESPUESTAS_CONFIRMACION_REGISTRO_AFIRMATIVAS,
     RESPUESTAS_CONFIRMACION_REGISTRO_NEGATIVAS,
@@ -14,8 +14,11 @@ from services.shared import (
     normalizar_respuesta_binaria,
     normalizar_texto_interaccion,
 )
+from services.shared.identidad_proveedor import (
+    resolver_nombre_visible_proveedor,
+)
 from templates.maintenance import CONFIRM_ACCEPT_ID, CONFIRM_REJECT_ID
-from templates.review.estados import mensaje_proveedor_en_revision
+from templates.maintenance.revision import mensaje_proveedor_en_revision
 from templates.shared import (
     mensaje_no_pude_guardar_informacion_registro,
     mensaje_no_pude_validar_datos_registro,
@@ -158,7 +161,9 @@ async def manejar_confirmacion(
                 "messages": [
                     {
                         "response": mensaje_proveedor_en_revision(
-                            datos_proveedor.full_name
+                            resolver_nombre_visible_proveedor(
+                                proveedor=datos_proveedor,
+                            )
                         )
                     }
                 ],

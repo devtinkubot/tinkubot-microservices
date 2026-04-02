@@ -2,37 +2,25 @@
 
 from typing import Any, Dict
 
-from services.maintenance.redes_sociales_slots import resolver_redes_sociales
+from services.shared.interactive_controls import (
+    CERTIFICATE_SKIP_ID,
+    PROFILE_CONTROL_IDS,
+    PROFILE_SINGLE_USE_CONTROL_IDS,
+    SERVICE_ADD_NO_ID,
+    SERVICE_ADD_YES_ID,
+    SERVICE_CONFIRM_ID,
+    SERVICE_CORRECT_ID,
+    SOCIAL_FACEBOOK_ID,
+    SOCIAL_INSTAGRAM_ID,
+    SOCIAL_SKIP_ID,
+)
+from services.shared.redes_sociales_slots import construir_url_red_social
 from templates.shared.estados import (
     estado_no_cargado,
     estado_no_registrada,
     estado_no_registrado,
     estado_recibida,
 )
-
-SOCIAL_SKIP_ID = "skip_profile_social_media"
-SOCIAL_FACEBOOK_ID = "profile_social_facebook"
-SOCIAL_INSTAGRAM_ID = "profile_social_instagram"
-CERTIFICATE_SKIP_ID = "skip_profile_certificate"
-SERVICE_ADD_YES_ID = "profile_add_another_service_yes"
-SERVICE_ADD_NO_ID = "profile_add_another_service_no"
-SERVICE_CONFIRM_ID = "profile_service_confirm"
-SERVICE_CORRECT_ID = "profile_service_correct"
-PROFILE_SINGLE_USE_CONTROL_IDS = {
-    SOCIAL_SKIP_ID,
-    CERTIFICATE_SKIP_ID,
-    SERVICE_ADD_YES_ID,
-    SERVICE_ADD_NO_ID,
-    SERVICE_CONFIRM_ID,
-    SERVICE_CORRECT_ID,
-}
-PROFILE_CONTROL_IDS = {
-    *PROFILE_SINGLE_USE_CONTROL_IDS,
-    SERVICE_ADD_YES_ID,
-    SERVICE_ADD_NO_ID,
-    SERVICE_CONFIRM_ID,
-    SERVICE_CORRECT_ID,
-}
 
 
 PROMPT_NOMBRE_PERFIL = "*¿Cuál es tu nombre completo?*"
@@ -172,8 +160,6 @@ def payload_agregar_otro_servicio(
 def construir_resumen_confirmacion_perfil_profesional(
     *,
     experience_range: Any = None,
-    social_media_url: Any,
-    social_media_type: Any = None,
     facebook_username: Any = None,
     instagram_username: Any = None,
     certificate_uploaded: bool,
@@ -182,16 +168,8 @@ def construir_resumen_confirmacion_perfil_profesional(
     experiencia = str(experience_range or "").strip()
     if not experiencia:
         experiencia = estado_no_registrada()
-    redes = resolver_redes_sociales(
-        {
-            "social_media_url": social_media_url,
-            "social_media_type": social_media_type,
-            "facebook_username": facebook_username,
-            "instagram_username": instagram_username,
-        }
-    )
-    red_facebook = redes["facebook_url"] or estado_no_registrada()
-    red_instagram = redes["instagram_url"] or estado_no_registrada()
+    red_facebook = construir_url_red_social("facebook", facebook_username) or estado_no_registrada()
+    red_instagram = construir_url_red_social("instagram", instagram_username) or estado_no_registrada()
     certificado = estado_recibida() if certificate_uploaded else estado_no_cargado()
     servicios_completos = list(services[:3]) + [estado_no_registrado()] * max(
         0, 3 - len(services)
@@ -212,24 +190,6 @@ def mensaje_menu_edicion_perfil_profesional() -> str:
     return (
         "*Indica qué deseas corregir:*\n"
         "Usa los botones para cambiar experiencia, redes, certificado o servicios."
-    )
-
-
-def mensaje_error_certificado_invalido() -> str:
-    return "Envíame el certificado como imagen o toca *Omitir* para continuar."
-
-
-def mensaje_minimo_servicios_pendiente(
-    cantidad_actual: int,
-    minimo_requerido: int,
-) -> str:
-    faltan = max(minimo_requerido - cantidad_actual, 0)
-    etiqueta_requerida = "servicio" if minimo_requerido == 1 else "servicios"
-    etiqueta_faltante = "servicio" if faltan == 1 else "servicios"
-    return (
-        f"Necesitas al menos *{minimo_requerido} {etiqueta_requerida}* para completar tu perfil. "
-        f"Por ahora llevas *{cantidad_actual}*. "
-        f"Agrega {faltan} {etiqueta_faltante} más."
     )
 
 

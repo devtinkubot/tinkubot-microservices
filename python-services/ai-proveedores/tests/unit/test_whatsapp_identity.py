@@ -18,7 +18,7 @@ from services.onboarding.whatsapp_identity import (  # noqa: E402
     persistir_identities_whatsapp,
     normalizar_identidad_whatsapp,
 )
-from services.shared.ingreso_whatsapp import normalizar_telefono_canonico  # noqa: E402
+from services.shared.whatsapp_identity import normalizar_telefono_canonico  # noqa: E402
 
 
 def test_normalizar_telefono_canonico_preserva_bsuid_como_lid():

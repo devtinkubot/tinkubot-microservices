@@ -53,6 +53,8 @@ def test_onboarding_redes_sociales_publica_evento_con_phone_recuperado(monkeypat
     assert captured["phone"] == "593999111299@s.whatsapp.net"
     assert captured["payload"]["checkpoint"] == "pending_verification"
     assert captured["payload"]["facebook_username"] == "diego.unkuch"
+    assert "social_media_url" not in captured["payload"]
+    assert "social_media_type" not in captured["payload"]
 
 
 def test_onboarding_redes_sociales_skip_publica_evento_con_phone_recuperado(
@@ -99,3 +101,5 @@ def test_onboarding_redes_sociales_skip_publica_evento_con_phone_recuperado(
     assert captured["payload"]["checkpoint"] == "pending_verification"
     assert captured["payload"]["facebook_username"] is None
     assert captured["payload"]["instagram_username"] is None
+    assert "social_media_url" not in captured["payload"]
+    assert "social_media_type" not in captured["payload"]

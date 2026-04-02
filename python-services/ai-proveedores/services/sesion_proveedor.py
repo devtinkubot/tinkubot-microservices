@@ -141,7 +141,6 @@ async def manejar_estado_inicial(
             "has_consent": True,
             "esta_registrado": True,
             "verification_notified": True,
-            "profile_pending_review": False,
         }
     )
     return {

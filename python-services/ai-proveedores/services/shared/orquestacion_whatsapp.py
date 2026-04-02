@@ -26,14 +26,16 @@ from services.onboarding.session import (
     obtener_perfil_proveedor_cacheado,
 )
 from services.onboarding.vista import obtener_vista_onboarding
+from services.maintenance.servicios_sync import (
+    normalizar_lista_servicios_flujo,
+    sincronizar_servicios_si_cambiaron,
+)
 from services.shared import interpretar_respuesta
 from services.shared.ingreso_whatsapp import (
     es_mensaje_interactivo_duplicado,
     es_mensaje_multimedia_duplicado,
-    normalizar_lista_servicios_flujo,
-    normalizar_telefono_canonico,
-    sincronizar_servicios_si_cambiaron,
 )
+from services.shared.whatsapp_identity import normalizar_telefono_canonico
 
 
 def _valor_texto_opcional(valor: Optional[str]) -> Optional[str]:

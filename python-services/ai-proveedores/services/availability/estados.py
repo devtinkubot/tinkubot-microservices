@@ -2,51 +2,19 @@
 
 from typing import Optional
 
-ESTADO_ESPERANDO_DISPONIBILIDAD = "awaiting_availability_response"
+from services.shared.estados_proveedor import (
+    MENU_POST_REGISTRO_STATES,
+    STANDARD_ONBOARDING_STATES,
+)
 
-STANDARD_ONBOARDING_STATES = frozenset(
-    {
-        None,
-        "pending_verification",
-        "onboarding_consent",
-        "onboarding_city",
-        "onboarding_dni_front_photo",
-        "onboarding_face_photo",
-        "onboarding_experience",
-        "onboarding_specialty",
-        "onboarding_add_another_service",
-        "onboarding_social_media",
-        "confirm",
-    }
-)
+ESTADO_ESPERANDO_DISPONIBILIDAD = "awaiting_availability_response"
 MANUAL_PHONE_FALLBACK_STATES = frozenset({"onboarding_real_phone"})
-ONBOARDING_STATES = frozenset(STANDARD_ONBOARDING_STATES | MANUAL_PHONE_FALLBACK_STATES)
-MENU_STATES = frozenset(
-    {
-        "awaiting_menu_option",
-        "awaiting_personal_info_action",
-        "awaiting_professional_info_action",
-        "awaiting_deletion_confirmation",
-        "awaiting_active_service_action",
-        "awaiting_service_remove",
-        "awaiting_face_photo_update",
-        "awaiting_dni_front_photo_update",
-        "awaiting_dni_back_photo_update",
-        "viewing_personal_name",
-        "viewing_personal_city",
-        "viewing_personal_photo",
-        "viewing_personal_dni_front",
-        "viewing_personal_dni_back",
-        "viewing_professional_experience",
-        "viewing_professional_services",
-        "viewing_professional_service",
-        "viewing_professional_social",
-        "viewing_professional_social_facebook",
-        "viewing_professional_social_instagram",
-        "viewing_professional_certificates",
-        "viewing_professional_certificate",
-    }
+ONBOARDING_STATES = frozenset(
+    STANDARD_ONBOARDING_STATES
+    | MANUAL_PHONE_FALLBACK_STATES
+    | {"pending_verification", "confirm"}
 )
+MENU_STATES = MENU_POST_REGISTRO_STATES
 PROFILE_COMPLETION_STATES = frozenset(
     {
         "maintenance_experience",

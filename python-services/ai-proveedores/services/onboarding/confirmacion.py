@@ -23,8 +23,11 @@ from services.shared import (
     normalizar_respuesta_binaria,
     normalizar_texto_interaccion,
 )
-from templates.maintenance import CONFIRM_ACCEPT_ID, CONFIRM_REJECT_ID
-from templates.review.estados import mensaje_proveedor_en_revision
+from services.shared.identidad_proveedor import (
+    resolver_nombre_visible_proveedor,
+)
+from templates.onboarding.confirmacion import CONFIRM_ACCEPT_ID, CONFIRM_REJECT_ID
+from templates.onboarding.revision import mensaje_proveedor_en_revision
 from templates.shared import (
     mensaje_no_pude_guardar_informacion_registro,
     mensaje_no_pude_validar_datos_registro,
@@ -117,6 +120,10 @@ async def manejar_confirmacion_onboarding(
                 ],
             }
 
+        datos_proveedor = datos_proveedor.model_copy(
+            update={"onboarding_complete": True}
+        )
+
         if onboarding_async_persistence_enabled():
             servicios_registrados = list(datos_proveedor.services_list or [])
             provider_id = str(flujo.get("provider_id") or "").strip() or None
@@ -140,7 +147,10 @@ async def manejar_confirmacion_onboarding(
                 flujo=flujo_evento,
                 source_message_id=carga.get("id") or carga.get("message_id"),
                 payload=payload_registro_proveedor(
-                    provider_data=datos_proveedor.model_dump(mode="json"),
+                    provider_data=datos_proveedor.model_dump(
+                        mode="json",
+                        exclude_none=True,
+                    ),
                     flujo=flujo_evento,
                     checkpoint="pending_verification",
                 ),
@@ -151,7 +161,9 @@ async def manejar_confirmacion_onboarding(
                 "messages": [
                     {
                         "response": mensaje_proveedor_en_revision(
-                            datos_proveedor.full_name
+                            resolver_nombre_visible_proveedor(
+                                proveedor=datos_proveedor,
+                            )
                         )
                     }
                 ],
@@ -185,7 +197,9 @@ async def manejar_confirmacion_onboarding(
                 "messages": [
                     {
                         "response": mensaje_proveedor_en_revision(
-                            datos_proveedor.full_name
+                            resolver_nombre_visible_proveedor(
+                                proveedor=datos_proveedor,
+                            )
                         )
                     }
                 ],

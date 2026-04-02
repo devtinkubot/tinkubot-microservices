@@ -19,28 +19,20 @@ const normalizarNombreCompuesto = (...partes) =>
     .trim();
 
 const resolverPrimerNombreCanonicoProveedor = (registro = {}) => {
-  const nombreDocumento = normalizarNombreCompuesto(
-    registro.document_first_names,
-    registro.documentFirstNames,
-  );
-  const primerNombre = limpiarTexto(nombreDocumento)?.split(/\s+/)?.[0];
+  const primerNombre = limpiarTexto(
+    registro.document_first_names || registro.documentFirstNames,
+  )?.split(/\s+/)?.[0];
   return primerNombre || "Proveedor";
 };
 
 const resolverNombreCanonicoProveedor = (registro = {}) => {
-  const nombreDocumento = normalizarNombreCompuesto(
+  const nombreVisible = normalizarNombreCompuesto(
     registro.document_first_names,
     registro.document_last_names,
     registro.documentFirstNames,
     registro.documentLastNames,
   );
-  const nombreVisible =
-    limpiarTexto(registro.display_name) ||
-    limpiarTexto(registro.displayName) ||
-    limpiarTexto(registro.formatted_name) ||
-    limpiarTexto(registro.formattedName);
-
-  return nombreDocumento || nombreVisible || "Proveedor";
+  return nombreVisible || "Proveedor";
 };
 
 const construirMensajeAprobacionProveedor = (registro = {}) => {

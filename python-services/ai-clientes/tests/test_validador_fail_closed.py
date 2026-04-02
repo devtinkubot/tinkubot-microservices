@@ -181,6 +181,48 @@ async def test_validador_rechaza_incoherencia_taxonomica_aunque_la_ia_acepte():
 
 
 @pytest.mark.asyncio
+async def test_validador_ia_only_acepta_aunque_la_taxonomia_no_cuadre():
+    validador = ValidadorProveedoresIA(
+        cliente_openai=_OpenAIStub(mode="structured_valid"),
+        semaforo_openai=asyncio.Semaphore(1),
+        tiempo_espera_openai=0.5,
+        logger=logging.getLogger("test"),
+        validacion_proveedores_ia_only=True,
+    )
+
+    resultado = await validador.validar_proveedores(
+        necesidad_usuario="ayuda con el sistema electrico de mi auto",
+        descripcion_problema=(
+            "Necesito alguien que me ayude con el sistema electrico de mi auto"
+        ),
+        request_domain_code="automotriz",
+        request_category_name="mantenimiento electrico de vehiculos",
+        proveedores=[
+            {
+                "id": "p1",
+                "services_list": [
+                    "mantenimiento de sistemas eléctricos",
+                ],
+                "matched_service_name": "mantenimiento de sistemas eléctricos",
+                "matched_service_summary": (
+                    "Servicios eléctricos para edificaciones y hogares"
+                ),
+                "domain_code": "construccion_hogar",
+                "category_name": "Mantenimiento",
+                "experience_range": "5 a 10 años",
+                "rating": 5,
+            }
+        ],
+    )
+
+    assert len(resultado) == 1
+    assert resultado[0]["id"] == "p1"
+    assert resultado[0]["validation_confidence"] == 0.91
+    assert resultado[0]["validation_reason"] == "experiencia directa"
+    assert resultado[0]["taxonomy_final_decision"] is True
+
+
+@pytest.mark.asyncio
 async def test_validador_reintenta_si_openai_devuelve_json_malformado():
     validador = ValidadorProveedoresIA(
         cliente_openai=_OpenAIStub(mode="retry_then_valid"),

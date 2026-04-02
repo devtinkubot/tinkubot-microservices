@@ -31,8 +31,8 @@ from templates.maintenance.registration import (
     payload_resumen_servicios_registro,
     preguntar_siguiente_servicio_registro,
 )
-from templates.onboarding.servicios import (
-    payload_servicios_onboarding_con_imagen,
+from templates.maintenance.servicios import (
+    payload_servicios_mantenimiento_con_imagen,
 )
 from templates.shared import (
     mensaje_formato_servicios_compartido,
@@ -103,7 +103,7 @@ async def _mensajes_prompt_servicio_compartido(
     maximo_visible: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     if indice is not None and maximo_visible is not None:
-        respuesta = payload_servicios_onboarding_con_imagen()
+        respuesta = payload_servicios_mantenimiento_con_imagen()
         flujo["service_examples_lookup"] = {}
         return [respuesta]
 

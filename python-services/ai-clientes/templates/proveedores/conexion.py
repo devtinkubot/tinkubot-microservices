@@ -2,6 +2,8 @@
 
 from typing import Any, Dict, Optional
 
+from services.proveedores.identidad import resolver_nombre_visible_proveedor
+
 
 def _contacto_whatsapp(nombre: str, telefono: str) -> Dict[str, Any]:
     nombre_limpio = (nombre or "Proveedor").strip() or "Proveedor"
@@ -27,7 +29,7 @@ def mensaje_notificacion_conexion(
     telefono_contacto: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Genera una tarjeta de contacto cuando se conecta cliente con experto."""
-    nombre = proveedor.get("name") or proveedor.get("full_name") or "Proveedor"
+    nombre = resolver_nombre_visible_proveedor(proveedor, status="approved")
     telefono = (telefono_contacto or "").strip()
     if not telefono:
         return {

@@ -5,10 +5,13 @@ from typing import Any, Dict, Optional
 
 from flows.constructors import construir_payload_menu_principal
 from services import listar_certificados_proveedor
+from services.shared.identidad_proveedor import (
+    resolver_nombre_visible_proveedor,
+)
 from templates.maintenance import solicitar_confirmacion_eliminacion
 from templates.maintenance.menus import (
-    MENU_ID_ELIMINAR_REGISTRO,
     MENU_ID_COMPLETAR_PERFIL,
+    MENU_ID_ELIMINAR_REGISTRO,
     MENU_ID_INFO_PERSONAL,
     MENU_ID_INFO_PROFESIONAL,
     MENU_ID_SALIR,
@@ -56,7 +59,7 @@ def iniciar_flujo_completar_perfil_profesional(
 def _payload_menu_principal_desde_flujo(flujo: Dict[str, Any]) -> Dict[str, Any]:
     return construir_payload_menu_principal(
         esta_registrado=True,
-        provider_name=str(flujo.get("full_name") or flujo.get("name") or ""),
+        provider_name=resolver_nombre_visible_proveedor(proveedor=flujo),
     )
 
 
@@ -277,9 +280,7 @@ async def manejar_estado_menu(
             "messages": [payload_submenu_informacion_profesional()],
         }
 
-    if (
-        seleccion == MENU_ID_ELIMINAR_REGISTRO
-    ):
+    if seleccion == MENU_ID_ELIMINAR_REGISTRO:
         flujo["state"] = "awaiting_deletion_confirmation"
         return {
             "success": True,

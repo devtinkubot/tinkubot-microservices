@@ -11,10 +11,13 @@ from services.maintenance.constantes import (
     CERTIFICADOS_MAXIMOS,
     SERVICIOS_MAXIMOS,
 )
-from services.maintenance.redes_sociales_slots import (
+from services.shared.redes_sociales_slots import (
     SOCIAL_NETWORK_FACEBOOK,
     SOCIAL_NETWORK_INSTAGRAM,
     resolver_redes_sociales,
+)
+from services.shared.identidad_proveedor import (
+    resolver_nombre_visible_proveedor,
 )
 from templates.maintenance import (
     preguntar_nuevo_servicio_con_ejemplos_dinamicos,
@@ -60,6 +63,11 @@ from templates.maintenance.menus import (
     payload_submenu_informacion_personal,
     payload_submenu_informacion_profesional,
 )
+from templates.maintenance.registration import (
+    payload_certificado_opcional,
+    preguntar_experiencia_general,
+    preguntar_nombre,
+)
 from templates.maintenance.views_labels import (
     etiqueta_apellidos_documento,
     etiqueta_cedula_documento,
@@ -73,13 +81,8 @@ from templates.maintenance.views_labels import (
     valor_no_registrada,
     valor_no_registrado,
 )
-from templates.onboarding.ciudad import (
+from templates.maintenance.ciudad import (
     solicitar_ciudad_actualizacion,
-)
-from templates.maintenance.registration import (
-    payload_certificado_opcional,
-    preguntar_experiencia_general,
-    preguntar_nombre,
 )
 from templates.shared import (
     descripcion_cedula_frontal_actual,
@@ -112,7 +115,10 @@ def _valor_visible(valor: Any, predeterminado: Optional[str] = None) -> str:
 
 
 def _formatear_datos_identidad(flujo: Dict[str, Any]) -> str:
-    nombre_visible = _valor_visible(flujo.get("full_name"), valor_no_registrado())
+    nombre_visible = _valor_visible(
+        resolver_nombre_visible_proveedor(proveedor=flujo, fallback=""),
+        valor_no_registrado(),
+    )
     nombres_documento = _valor_visible(
         flujo.get("document_first_names"),
         valor_no_registrado(),

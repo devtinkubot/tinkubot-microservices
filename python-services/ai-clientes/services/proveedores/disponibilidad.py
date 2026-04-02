@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 from infrastructure.database import run_supabase
+from services.proveedores.identidad import resolver_nombre_visible_proveedor
 
 logger = logging.getLogger(__name__)
 
@@ -160,11 +161,6 @@ class ServicioDisponibilidad:
             return f"{digitos}@lid"
 
         return f"{digitos}@s.whatsapp.net"
-
-    @staticmethod
-    def _primer_nombre(nombre: str) -> str:
-        partes = [parte.strip() for parte in str(nombre or "").split() if parte.strip()]
-        return partes[0] if partes else "proveedor"
 
     @staticmethod
     def _normalizar_real_phone_a_jid(valor: Optional[str]) -> Optional[str]:
@@ -818,7 +814,10 @@ class ServicioDisponibilidad:
             item["send_target_type"] = send_target_type or "real_phone"
             item["phone_aliases"] = aliases or [telefono]
             item.setdefault("provider_id", item.get("id"))
-            item.setdefault("nombre", item.get("name") or item.get("full_name"))
+            item.setdefault(
+                "nombre",
+                resolver_nombre_visible_proveedor(item, status="approved"),
+            )
             candidatos_por_telefono[telefono] = item
 
         if not candidatos_por_telefono:

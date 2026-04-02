@@ -9,13 +9,13 @@ imghdr_stub.what = lambda *args, **kwargs: None
 sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from services.maintenance.estado_operativo import (  # noqa: E402
+    perfil_profesional_completo,
+)
 from services.onboarding.progress import (  # noqa: E402
     determinar_checkpoint_onboarding,
     es_perfil_onboarding_completo,
     inferir_checkpoint_onboarding_desde_perfil,
-)
-from services.maintenance.estado_operativo import (  # noqa: E402
-    perfil_profesional_completo,
 )
 from services.onboarding.registration.normalizacion import (  # noqa: E402
     garantizar_campos_obligatorios_proveedor,
@@ -44,14 +44,14 @@ def test_resolver_estado_registro_pending_mantiene_bloqueo():
     assert resultado == (True, True, False, False)
 
 
-def test_resolver_estado_registro_interview_required_aprueba_acceso_basico():
+def test_resolver_estado_registro_aprobado_aprueba_acceso_basico():
     flujo = {"has_consent": True}
     perfil = {
         "id": "prov-1b",
         "full_name": "Proveedor En Revision",
         "has_consent": True,
         "verified": False,
-        "status": "interview_required",
+        "status": "approved",
     }
 
     resultado = resolver_estado_registro(flujo, perfil)
@@ -59,14 +59,14 @@ def test_resolver_estado_registro_interview_required_aprueba_acceso_basico():
     assert resultado == (True, True, True, False)
 
 
-def test_resolver_estado_registro_legacy_habilita_acceso_basico():
+def test_resolver_estado_registro_aprobado_habilita_acceso_basico():
     flujo = {"has_consent": True}
     perfil = {
         "id": "prov-basic",
         "full_name": "Proveedor Basico",
         "has_consent": True,
         "verified": False,
-        "status": "approved_basic",
+        "status": "approved",
     }
 
     resultado = resolver_estado_registro(flujo, perfil)
@@ -79,6 +79,8 @@ def test_resolver_estado_registro_aprobado_sin_full_name_sigue_registrado():
     perfil = {
         "id": "prov-approved-empty-name",
         "full_name": "",
+        "first_name": "Ana",
+        "last_name": "Perez",
         "has_consent": True,
         "verified": True,
         "status": "approved",
@@ -89,14 +91,14 @@ def test_resolver_estado_registro_aprobado_sin_full_name_sigue_registrado():
     assert resultado == (True, True, True, False)
 
 
-def test_resolver_estado_registro_profile_pending_review_aprueba_acceso_basico():
+def test_resolver_estado_registro_aprobado_sin_full_name_aprueba_acceso_basico():
     flujo = {"has_consent": True}
     perfil = {
         "id": "prov-review",
         "full_name": "Proveedor Profesional",
         "has_consent": True,
         "verified": False,
-        "status": "profile_pending_review",
+        "status": "approved",
     }
 
     resultado = resolver_estado_registro(flujo, perfil)
@@ -471,26 +473,26 @@ def test_checkpoint_onboarding_determina_persistencia_solo_en_onboarding():
     assert determinar_checkpoint_onboarding(flujo) is None
 
 
-def test_sincronizar_flujo_con_perfil_legacy_aprobado_marca_acceso_operativo():
+def test_sincronizar_flujo_con_perfil_aprobado_marca_acceso_operativo():
     flujo = {}
     perfil = {
         "id": "prov-basic",
         "full_name": "Proveedor Basico",
         "services_list": [],
-        "status": "approved_basic",
+        "status": "approved",
         "verified": False,
     }
 
     sincronizar_flujo_con_perfil(flujo, perfil)
 
 
-def test_sincronizar_flujo_perfil_pending_review_marca_acceso_operativo():
+def test_sincronizar_flujo_perfil_aprobado_sin_verificar_marca_acceso_operativo():
     flujo = {}
     perfil = {
         "id": "prov-review",
         "full_name": "Proveedor Profesional",
         "services_list": [],
-        "status": "profile_pending_review",
+        "status": "approved",
         "verified": False,
     }
 
@@ -535,9 +537,9 @@ def test_garantizar_campos_obligatorios_preserva_status_existente():
         "id": "prov-basic",
         "full_name": "Proveedor Basico",
         "verified": True,
-        "status": "approved_basic",
+        "status": "approved",
     }
 
     normalizado = garantizar_campos_obligatorios_proveedor(perfil)
 
-    assert normalizado["status"] == "approved_basic"
+    assert normalizado["status"] == "approved"

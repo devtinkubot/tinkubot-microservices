@@ -64,6 +64,7 @@ class ValidadorProveedoresIA:
         semaforo_openai: asyncio.Semaphore,
         tiempo_espera_openai: float,
         logger: logging.Logger,
+        validacion_proveedores_ia_only: Optional[bool] = None,
     ):
         """
         Inicializar el servicio de validación.
@@ -78,6 +79,11 @@ class ValidadorProveedoresIA:
         self.semaforo_openai = semaforo_openai
         self.tiempo_espera_openai = tiempo_espera_openai
         self.logger = logger
+        self.validacion_proveedores_ia_only = (
+            configuracion.validacion_proveedores_ia_only
+            if validacion_proveedores_ia_only is None
+            else bool(validacion_proveedores_ia_only)
+        )
 
     @staticmethod
     def _normalizar_texto(texto: Optional[str]) -> str:
@@ -335,57 +341,112 @@ class ValidadorProveedoresIA:
 
         bloque_proveedores = "\n".join(proveedores_info)
 
-        prompt_sistema = f"""Eres un experto en servicios profesionales. Tu tarea es
-analizar si cada proveedor PUEDE ayudar con esta necesidad del usuario.
-
-IMPORTANTE: Evalúa equivalencia semántica entre términos en distintos idiomas
-cuando representen el mismo servicio.
-
-NECESIDAD DETECTADA: "{necesidad_usuario}"
-PROBLEMA ESPECÍFICO DEL CLIENTE: "{problema}"
-DOMINIO REQUERIDO: "{dominio_request or 'N/A'}"
-CATEGORIA REQUERIDA: "{categoria_request or 'N/A'}"
-
-{bloque_proveedores}
-
-Para CADA proveedor, responde si PUEDE ayudar o NO ayudar.
-
-Criterios importantes:
-1. Los servicios que ofrece deben ser RELEVANTES y APLICABLES
-   - No basta con mencionar palabras clave
-   - Los servicios deben demostrar capacidad real de atender la necesidad
-   - "Desarrollo Software Backend" NO es automáticamente adecuado para
-     "bugs de página web"
-   - Un desarrollador backend probablemente NO puede ayudar con problemas
-     frontend
-
-2. Considera el contexto específico proporcionado
-   - "Bug en página web" requiere conocimiento de HTML/CSS/JavaScript
-   - "Error en base de datos" requiere conocimiento SQL/Base de datos
-   - "App no funciona" requiere debugging de aplicaciones
-3. Contrasta la coherencia taxonómica
-   - El dominio del request debe ser coherente con el dominio del proveedor
-   - La categoría del request debe ser coherente con la categoría del proveedor
-   - Si el servicio parece parecido pero el dominio es claramente distinto, rechaza
-   - El dominio pesa más que la categoría y la categoría pesa más que el texto
-     libre
-
-Responde SOLO con JSON válido, usando exactamente este formato:
-{{
-  "results": [
-    {{
-      "can_help": true,
-      "confidence": 0.91,
-      "reason": "experiencia directa",
-      "domain_coherence": true,
-      "category_coherence": true,
-      "service_coherence": true,
-      "taxonomy_coherence_score": 0.91
-    }}
-  ]
-}}
-
-NO incluyas markdown, fences ni explicaciones fuera del JSON."""
+        prompt_sistema = (
+            "Eres un evaluador experto de proveedores para un marketplace de "
+            "servicios en Ecuador.\n\n"
+            "Tu tarea es decidir si cada proveedor puede ayudar realmente con "
+            "la necesidad del cliente.\n\n"
+            "PRINCIPIOS CLAVE\n"
+            "- Evalúa capacidad real, no coincidencia literal de palabras.\n"
+            "- Un proveedor puede ayudar aunque el nombre exacto del servicio "
+            "no sea idéntico.\n"
+            "- Debes considerar en conjunto:\n"
+            "  1. servicio ofrecido\n"
+            "  2. dominio de negocio\n"
+            "  3. categoría\n"
+            "- Si el servicio del proveedor resuelve la necesidad real del "
+            "cliente, aprueba.\n"
+            "- Si solo hay coincidencia superficial de palabras pero no "
+            "capacidad real, rechaza.\n\n"
+            "REGLA GENERAL\n"
+            "Piensa así:\n"
+            "1. ¿El proveedor ofrece un servicio que realmente resuelve la "
+            "necesidad?\n"
+            "2. ¿Ese servicio pertenece al mismo dominio funcional?\n"
+            "3. ¿La categoría acompaña esa lectura?\n"
+            "4. Si la respuesta es sí en lo funcional, responde can_help=true.\n\n"
+            "IMPORTANTE\n"
+            "- No bloquees por diferencias de etiqueta si el servicio es "
+            "funcionalmente equivalente.\n"
+            "- No dependas de nombres exactos.\n"
+            "- No rechaces un proveedor solo porque la categoría use otra "
+            "taxonomía cercana.\n"
+            "- Sí rechaza cuando el proveedor no tiene capacidad real para "
+            "resolver el problema del cliente.\n"
+            "- Usa el contexto completo, no solo una palabra suelta.\n\n"
+            "EJEMPLOS DE EQUIVALENCIA FUNCIONAL\n"
+            '- "arreglo de cejas" puede equivaler a:\n'
+            "  - microblading de cejas\n"
+            "  - micropigmentación de cejas\n"
+            "  - diseño de cejas\n"
+            "  - depilación y diseño de cejas\n"
+            '- "estuco roto" puede equivaler a:\n'
+            "  - reparación de estucos\n"
+            "  - empastado y acabado de paredes\n"
+            "  - pintura de empaste\n"
+            '- "delivery de comida" puede equivaler a:\n'
+            "  - transporte de alimentos\n"
+            "  - servicio de entrega a domicilio\n"
+            "  - mensajería con entrega de comida\n"
+            "  - motorizado para delivery de comida\n"
+            "  - repartidor de comida\n"
+            "  - domiciliario\n"
+            "  - delivery de alimentos\n"
+            '- "corte de cabello" puede equivaler a:\n'
+            "  - servicios de belleza y estética\n"
+            "  - peluquería\n"
+            "  - tratamientos capilares\n"
+            '- "lavaplatos tapado" puede equivaler a:\n'
+            "  - destape de tuberías\n"
+            "  - plomería doméstica\n"
+            '- "cerradura dañada" puede equivaler a:\n'
+            "  - cerrajería\n"
+            "  - apertura de puertas\n"
+            "  - cambio de cerraduras\n\n"
+            "CUANDO RECHAZAR\n"
+            "- Si el servicio no resuelve el problema real.\n"
+            "- Si el proveedor está en una familia funcional distinta y no hay "
+            "equivalencia real.\n"
+            "- Si solo hay cercanía temática, pero no capacidad práctica.\n"
+            "- Si el match parece forzado.\n\n"
+            "CUANDO APROBAR\n"
+            "- Si el proveedor ofrece un servicio que realmente puede atender "
+            "la necesidad.\n"
+            "- Si el servicio es una variante, sinónimo o subservicio válido.\n"
+            "- Si la categoría y el dominio apoyan esa lectura aunque no sean "
+            "idénticos.\n\n"
+            f'NECESIDAD DETECTADA: "{necesidad_usuario}"\n'
+            f'PROBLEMA ESPECÍFICO DEL CLIENTE: "{problema}"\n'
+            f'DOMINIO REQUERIDO: "{dominio_request or "N/A"}"\n'
+            f'CATEGORIA REQUERIDA: "{categoria_request or "N/A"}"\n\n'
+            f"{bloque_proveedores}\n\n"
+            "Responde SOLO con JSON válido y nada más.\n\n"
+            "Usa exactamente este formato:\n"
+            "{\n"
+            '  "results": [\n'
+            "    {\n"
+            '      "can_help": true,\n'
+            '      "confidence": 0.91,\n'
+            '      "reason": "explicación breve y concreta",\n'
+            '      "matched_service_name": "nombre del servicio que mejor '
+            'explica el match",\n'
+            '      "domain_fit": true,\n'
+            '      "category_fit": true,\n'
+            '      "service_fit": true\n'
+            "    }\n"
+            "  ]\n"
+            "}\n\n"
+            "REGLAS DE SALIDA\n"
+            "- Devuelve un item por cada proveedor recibido.\n"
+            "- Mantén el mismo orden de entrada.\n"
+            "- confidence debe ser un número entre 0 y 1.\n"
+            "- reason debe explicar por qué sí o no, sin rodeos.\n"
+            "- matched_service_name debe ser el servicio concreto que te hizo "
+            "decidir.\n"
+            "- domain_fit, category_fit y service_fit deben reflejar tu "
+            "evaluación semántica.\n"
+            "- No incluyas markdown, texto extra ni fences."
+        )
 
         self.logger.info(
             f"📋 Prompt enviado a IA de validación:\n{prompt_sistema[:1000]}..."
@@ -506,50 +567,78 @@ NO incluyas markdown, fences ni explicaciones fuera del JSON."""
                             reason = str((decision or {}).get("reason") or "").strip()
                             decision_data = dict(decision or {})
 
-                        coherencia = self._evaluar_coherencia_taxonomica(
-                            request_domain_code=dominio_request,
-                            request_category_name=categoria_request,
-                            request_service_text=" ".join(
-                                part
-                                for part in [
-                                    necesidad_usuario,
-                                    problema,
-                                ]
-                                if part
-                            ),
-                            provider_domain_code=proveedor.get("domain_code"),
-                            provider_category_name=proveedor.get("category_name"),
-                            provider_service_text=" ".join(
-                                part.strip()
-                                for part in [
-                                    str(
-                                        proveedor.get("matched_service_name") or ""
-                                    ).strip(),
-                                    str(
-                                        proveedor.get("matched_service_summary")
-                                        or proveedor.get("service_summary")
-                                        or ""
-                                    ).strip(),
-                                    " ".join(
-                                        str(service).strip()
-                                        for service in (proveedor.get("services") or [])
-                                    ),
-                                ]
-                                if part.strip()
-                            ),
+                        service_summary = str(
+                            proveedor.get("matched_service_summary")
+                            or proveedor.get("service_summary")
+                            or ""
+                        ).strip()
+                        service_list = " ".join(
+                            str(service).strip()
+                            for service in (proveedor.get("services") or [])
                         )
-
-                        if not coherencia["taxonomy_final_decision"]:
-                            can_help = False
-                            confidence = min(
-                                confidence, coherencia["taxonomy_coherence_score"]
+                        provider_service_parts = [
+                            str(proveedor.get("matched_service_name") or "").strip(),
+                            service_summary,
+                            service_list,
+                        ]
+                        provider_service_text = " ".join(
+                            part for part in provider_service_parts if part
+                        )
+                        if self.validacion_proveedores_ia_only:
+                            coherencia = {
+                                "domain_coherence": decision_data.get(
+                                    "domain_coherence"
+                                ),
+                                "category_coherence": decision_data.get(
+                                    "category_coherence"
+                                ),
+                                "service_coherence": decision_data.get(
+                                    "service_coherence"
+                                ),
+                                "taxonomy_coherence_score": max(
+                                    0.0,
+                                    min(
+                                        1.0,
+                                        float(
+                                            decision_data.get(
+                                                "taxonomy_coherence_score"
+                                            )
+                                            or confidence
+                                        ),
+                                    ),
+                                ),
+                                "taxonomy_family_request": None,
+                                "taxonomy_family_provider": None,
+                                "taxonomy_final_decision": bool(can_help),
+                            }
+                        else:
+                            coherencia = self._evaluar_coherencia_taxonomica(
+                                request_domain_code=dominio_request,
+                                request_category_name=categoria_request,
+                                request_service_text=" ".join(
+                                    part
+                                    for part in [
+                                        necesidad_usuario,
+                                        problema,
+                                    ]
+                                    if part
+                                ),
+                                provider_domain_code=proveedor.get("domain_code"),
+                                provider_category_name=proveedor.get("category_name"),
+                                provider_service_text=provider_service_text,
                             )
-                            if not reason:
-                                reason = "taxonomy_incoherent"
-                            if coherencia["domain_coherence"] is False:
-                                reason = "domain_incoherent"
-                            elif coherencia["category_coherence"] is False:
-                                reason = "category_incoherent"
+
+                            if not coherencia["taxonomy_final_decision"]:
+                                can_help = False
+                                confidence = min(
+                                    confidence, coherencia["taxonomy_coherence_score"]
+                                )
+                                if not reason:
+                                    reason = "taxonomy_incoherent"
+                                if coherencia["domain_coherence"] is False:
+                                    reason = "domain_incoherent"
+                                elif coherencia["category_coherence"] is False:
+                                    reason = "category_incoherent"
 
                         if not can_help:
                             continue
@@ -620,46 +709,69 @@ NO incluyas markdown, fences ni explicaciones fuera del JSON."""
                     reason = str((decision or {}).get("reason") or "").strip()
                     decision_data = dict(decision or {})
 
-                coherencia = self._evaluar_coherencia_taxonomica(
-                    request_domain_code=dominio_request,
-                    request_category_name=categoria_request,
-                    request_service_text=" ".join(
-                        part
-                        for part in [
-                            necesidad_usuario,
-                            problema,
-                        ]
-                        if part
-                    ),
-                    provider_domain_code=proveedor.get("domain_code"),
-                    provider_category_name=proveedor.get("category_name"),
-                    provider_service_text=" ".join(
-                        part.strip()
-                        for part in [
-                            str(proveedor.get("matched_service_name") or "").strip(),
-                            str(
-                                proveedor.get("matched_service_summary")
-                                or proveedor.get("service_summary")
-                                or ""
-                            ).strip(),
-                            " ".join(
-                                str(service).strip()
-                                for service in (proveedor.get("services") or [])
-                            ),
-                        ]
-                        if part.strip()
-                    ),
+                provider_service_text = " ".join(
+                    part.strip()
+                    for part in [
+                        str(proveedor.get("matched_service_name") or "").strip(),
+                        str(
+                            proveedor.get("matched_service_summary")
+                            or proveedor.get("service_summary")
+                            or ""
+                        ).strip(),
+                        " ".join(
+                            str(service).strip()
+                            for service in (proveedor.get("services") or [])
+                        ),
+                    ]
+                    if part.strip()
                 )
+                if self.validacion_proveedores_ia_only:
+                    coherencia = {
+                        "domain_coherence": decision_data.get("domain_coherence"),
+                        "category_coherence": decision_data.get("category_coherence"),
+                        "service_coherence": decision_data.get("service_coherence"),
+                        "taxonomy_coherence_score": max(
+                            0.0,
+                            min(
+                                1.0,
+                                float(
+                                    decision_data.get("taxonomy_coherence_score")
+                                    or confidence
+                                ),
+                            ),
+                        ),
+                        "taxonomy_family_request": None,
+                        "taxonomy_family_provider": None,
+                        "taxonomy_final_decision": bool(can_help),
+                    }
+                else:
+                    coherencia = self._evaluar_coherencia_taxonomica(
+                        request_domain_code=dominio_request,
+                        request_category_name=categoria_request,
+                        request_service_text=" ".join(
+                            part
+                            for part in [
+                                necesidad_usuario,
+                                problema,
+                            ]
+                            if part
+                        ),
+                        provider_domain_code=proveedor.get("domain_code"),
+                        provider_category_name=proveedor.get("category_name"),
+                        provider_service_text=provider_service_text,
+                    )
 
-                if not coherencia["taxonomy_final_decision"]:
-                    can_help = False
-                    confidence = min(confidence, coherencia["taxonomy_coherence_score"])
-                    if not reason:
-                        reason = "taxonomy_incoherent"
-                    if coherencia["domain_coherence"] is False:
-                        reason = "domain_incoherent"
-                    elif coherencia["category_coherence"] is False:
-                        reason = "category_incoherent"
+                    if not coherencia["taxonomy_final_decision"]:
+                        can_help = False
+                        confidence = min(
+                            confidence, coherencia["taxonomy_coherence_score"]
+                        )
+                        if not reason:
+                            reason = "taxonomy_incoherent"
+                        if coherencia["domain_coherence"] is False:
+                            reason = "domain_incoherent"
+                        elif coherencia["category_coherence"] is False:
+                            reason = "category_incoherent"
 
                 if not can_help:
                     continue

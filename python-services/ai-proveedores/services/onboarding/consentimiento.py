@@ -68,8 +68,6 @@ def _construir_payload_redes_onboarding(flujo: Dict[str, Any]) -> Dict[str, Any]
         "updated_at": datetime.now().isoformat(),
     }
     for field in (
-        "social_media_url",
-        "social_media_type",
         "facebook_username",
         "instagram_username",
     ):

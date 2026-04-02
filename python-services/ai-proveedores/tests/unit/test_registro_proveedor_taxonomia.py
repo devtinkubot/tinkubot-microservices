@@ -6,6 +6,9 @@ from services.onboarding.registration.registro_proveedor import (
     insertar_servicios_proveedor,
     registrar_proveedor_en_base_datos,
 )
+from services.onboarding.registration.validacion_registro import (
+    validar_y_construir_proveedor,
+)
 
 
 def test_registro_inicial_persiste_servicios_normalizados_sin_taxonomia_runtime(
@@ -33,11 +36,10 @@ def test_registro_inicial_persiste_servicios_normalizados_sin_taxonomia_runtime(
                         "full_name": "Diego",
                         "city": "quito",
                         "experience_range": "3 a 5 años",
+                        "onboarding_complete": True,
                         "rating": 5.0,
                         "verified": False,
                         "has_consent": True,
-                        "social_media_url": None,
-                        "social_media_type": None,
                     }
                 ]
             )
@@ -109,8 +111,7 @@ def test_registro_inicial_persiste_servicios_normalizados_sin_taxonomia_runtime(
         services_list=["laboralista"],
         experience_range="3 a 5 años",
         has_consent=True,
-        social_media_url=None,
-        social_media_type=None,
+        onboarding_complete=True,
         document_first_names="Diego",
         document_last_names="Unkuch Gonzalez",
         document_id_number="0912345678",
@@ -129,6 +130,7 @@ def test_registro_inicial_persiste_servicios_normalizados_sin_taxonomia_runtime(
     assert captured["upsert_payload"]["document_last_names"] == "Unkuch Gonzalez"
     assert captured["upsert_payload"]["document_id_number"] == "0912345678"
     assert captured["upsert_payload"]["experience_range"] == "3 a 5 años"
+    assert captured["upsert_payload"]["onboarding_complete"] is True
     assert captured["servicios"] == [
         {
             "raw_service_text": "laboralista",
@@ -141,6 +143,7 @@ def test_registro_inicial_persiste_servicios_normalizados_sin_taxonomia_runtime(
     assert resultado["document_last_names"] == "Unkuch Gonzalez"
     assert resultado["document_id_number"] == "0912345678"
     assert resultado["experience_range"] == "3 a 5 años"
+    assert resultado["onboarding_complete"] is True
 
 
 def test_normalizar_datos_proveedor_incluye_identidad_documental():
@@ -179,6 +182,27 @@ def test_normalizar_datos_proveedor_no_infiere_real_phone_desde_phone():
     normalizado = normalizar_datos_proveedor(solicitud)
 
     assert normalizado["real_phone"] is None
+
+
+def test_validar_y_construir_proveedor_no_depende_de_full_name():
+    flujo = {
+        "first_name": "Diego",
+        "last_name": "Unkuch Gonzalez",
+        "full_name": "",
+        "city": "Quito",
+        "specialty": "laboralista",
+        "has_consent": True,
+    }
+
+    es_valido, mensaje_error, solicitud = validar_y_construir_proveedor(
+        flujo,
+        "593959091325@s.whatsapp.net",
+    )
+
+    assert es_valido is True
+    assert mensaje_error is None
+    assert solicitud is not None
+    assert solicitud.full_name == "Diego Unkuch Gonzalez"
 
 
 def test_insertar_servicios_persiste_taxonomia_sugerida_sin_revision(

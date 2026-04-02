@@ -20,7 +20,8 @@ Este documento describe el recorrido operativo del servicio con la arquitectura 
 - `services/review/`: policy, mensajes y estado de revisión.
 - `services/maintenance/`: lógica de negocio post-alta.
 - `services/availability/`: procesamiento de disponibilidad.
-- `services/shared/`: reglas compartidas de interacción y prompts de IA.
+- `services/shared/`: utilidades técnicas, compatibilidad temporal y
+  normalizaciones mecánicas.
 - `templates/`: copys y payloads visibles.
 - `infrastructure/`: Redis, Supabase, OpenAI y storage.
 
@@ -32,7 +33,8 @@ Este documento describe el recorrido operativo del servicio con la arquitectura 
 3. Router decide entre onboarding, review, maintenance o availability
 4. Cada contexto usa su route, flow, service y templates correspondientes
 5. Los mensajes visibles salen desde templates/
-6. Las reglas compartidas salen desde services/shared/
+6. Las utilidades técnicas salen desde `services/shared/`; las reglas de
+   negocio viven en el contexto dueño.
 7. El paso de servicios publica un evento crudo a Redis y deja la normalización/persistencia al worker async
 ```
 
@@ -146,5 +148,6 @@ La separación actual es:
 
 - `flows/` no debe volver a acumular texto visible hardcodeado.
 - `templates/` es la fuente de verdad para el copy.
-- `services/shared/` es la fuente de verdad para reglas comunes y prompts.
+- `services/shared/` no es un dominio común: solo debe contener soporte
+  técnico y compatibilidad temporal.
 - `infrastructure/` queda para integraciones técnicas, no para policy de negocio.

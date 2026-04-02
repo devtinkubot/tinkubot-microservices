@@ -6,13 +6,11 @@ from typing import Any, Dict, Optional
 
 from services.onboarding.progress import (
     es_perfil_onboarding_completo,
+    rehidratar_estado_onboarding_desde_supabase,
     resolver_checkpoint_onboarding_desde_perfil,
 )
 from services.onboarding.session import obtener_perfil_proveedor_cacheado
 from services.sesion_proveedor import sincronizar_flujo_con_perfil
-from services.shared.ingreso_whatsapp import (
-    rehidratar_estado_onboarding_desde_supabase,
-)
 
 
 async def obtener_vista_onboarding(

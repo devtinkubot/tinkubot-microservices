@@ -3,7 +3,7 @@
 from typing import Any, Dict, Optional
 
 from flows.constructors import construir_payload_menu_principal
-from services.maintenance.redes_sociales_slots import (
+from services.shared.redes_sociales_slots import (
     SOCIAL_NETWORK_FACEBOOK,
     parsear_username_red_social,
     resolver_redes_sociales,
@@ -81,11 +81,7 @@ async def manejar_actualizacion_redes_sociales(
         proveedor_id,
         facebook_username=facebook_username,
         instagram_username=instagram_username,
-        preferred_type=tipo_red,
     )
-
-    flujo["social_media_url"] = resultado.get("social_media_url")
-    flujo["social_media_type"] = resultado.get("social_media_type")
 
     if not resultado.get("success"):
         flujo["state"] = "awaiting_menu_option"

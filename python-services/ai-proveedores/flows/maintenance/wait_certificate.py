@@ -111,7 +111,8 @@ async def manejar_espera_certificado(
                     payload_confirmacion_resumen(
                         construir_resumen_confirmacion_perfil_profesional(
                             experience_range=flujo.get("experience_range"),
-                            social_media_url=flujo.get("social_media_url"),
+                            facebook_username=flujo.get("facebook_username"),
+                            instagram_username=flujo.get("instagram_username"),
                             certificate_uploaded=bool(
                                 flujo.get("certificate_uploaded")
                             ),
@@ -286,7 +287,8 @@ async def manejar_espera_certificado(
                 payload_confirmacion_resumen(
                     construir_resumen_confirmacion_perfil_profesional(
                         experience_range=flujo.get("experience_range"),
-                        social_media_url=flujo.get("social_media_url"),
+                        facebook_username=flujo.get("facebook_username"),
+                        instagram_username=flujo.get("instagram_username"),
                         certificate_uploaded=bool(flujo.get("certificate_uploaded")),
                         services=list(flujo.get("servicios_temporales") or []),
                     )

@@ -1,9 +1,10 @@
 """
 Configuración del servicio ai-clientes
 
-Este módulo centraliza todas las variables de configuración necesarias para el funcionamiento
-del servicio de IA para clientes de TinkuBot. Utiliza pydantic-settings para validación
-y manejo de variables de entorno, con soporte para archivos .env.
+Este módulo centraliza todas las variables de configuración necesarias para el
+funcionamiento del servicio de IA para clientes de TinkuBot. Utiliza
+pydantic-settings para validación y manejo de variables de entorno, con soporte
+para archivos .env.
 
 Variables de entorno soportadas:
 - LOG_LEVEL: Nivel de logging (DEBUG, INFO, WARNING, ERROR). Default: INFO
@@ -55,8 +56,10 @@ class ConfiguracionServicio(BaseSettings):
     supabase_service_key: Optional[str] = None
 
     # Timing Configuration
-    feedback_delay_seconds: float
-    task_poll_interval_seconds: float
+    feedback_delay_seconds: float = float(os.getenv("FEEDBACK_DELAY_SECONDS", "7200"))
+    task_poll_interval_seconds: float = float(
+        os.getenv("TASK_POLL_INTERVAL_SECONDS", "60")
+    )
     flow_ttl_seconds: int = 86400  # 24 horas
 
     # Instance Configuration
@@ -73,6 +76,7 @@ class ConfiguracionServicio(BaseSettings):
     modelo_extraccion: Optional[str] = None  # Para extracción de necesidades
     modelo_validacion: Optional[str] = None  # Para validación de contenido
     modelo_normalizacion: Optional[str] = None  # Para normalización de servicios
+    validacion_proveedores_ia_only: bool = False
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -10,7 +10,7 @@ from urllib.parse import unquote, urlparse
 
 from infrastructure.database import run_supabase
 from infrastructure.storage.almacenamiento_imagenes import SUPABASE_PROVIDERS_BUCKET
-from services.maintenance.revision_catalogo import (
+from services.onboarding.registration.catalogo_servicios import (
     eliminar_revisiones_catalogo_asociadas_servicio,
 )
 from services.onboarding.session import (

@@ -2,6 +2,7 @@
 
 from typing import Any, Dict, Optional
 
+from services.proveedores.identidad import resolver_nombre_visible_proveedor
 from templates.proveedores.conexion import mensaje_notificacion_conexion
 
 
@@ -34,7 +35,7 @@ def mensaje_conexion_formal(
     bucket: str,
     supabase_base_url: str,
 ) -> Dict[str, Any]:
-    nombre = proveedor.get("name") or proveedor.get("full_name") or "Proveedor"
+    nombre = resolver_nombre_visible_proveedor(proveedor, status="approved")
     telefono_bruto = (
         proveedor.get("real_phone")
         or proveedor.get("phone")

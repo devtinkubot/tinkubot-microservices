@@ -4,7 +4,7 @@ from templates.proveedores.conexion import mensaje_notificacion_conexion
 
 def test_mensaje_notificacion_conexion_retorna_contact_card():
     payload = mensaje_notificacion_conexion(
-        {"name": "Diego Unkuch Gonzalez"},
+        {"first_name": "Diego", "last_name": "Unkuch Gonzalez"},
         telefono_contacto="593959091325",
     )
 
@@ -18,12 +18,15 @@ def test_mensaje_notificacion_conexion_retorna_contact_card():
 
 def test_mensaje_notificacion_conexion_sin_telefono_hace_fallback_textual():
     payload = mensaje_notificacion_conexion(
-        {"name": "Diego Unkuch Gonzalez"},
+        {"first_name": "Diego", "last_name": "Unkuch Gonzalez"},
         telefono_contacto=None,
     )
 
     assert payload == {
-        "response": "Te comparto el contacto de *Diego Unkuch Gonzalez* para que coordines tu servicio."
+        "response": (
+            "Te comparto el contacto de *Diego Unkuch Gonzalez* para que coordines "
+            "tu servicio."
+        )
     }
 
 

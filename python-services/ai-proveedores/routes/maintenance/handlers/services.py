@@ -85,15 +85,12 @@ async def _finalizar_perfil_completado(
         proveedor_id=str(flujo.get("provider_id") or ""),
         servicios=servicios_temporales,
         experience_range=flujo.get("experience_range"),
-        social_media_url=flujo.get("social_media_url"),
-        social_media_type=flujo.get("social_media_type"),
         facebook_username=flujo.get("facebook_username"),
         instagram_username=flujo.get("instagram_username"),
     )
     flujo["services"] = servicios_temporales
     flujo["state"] = "awaiting_menu_option"
     flujo["profile_completion_mode"] = False
-    flujo["profile_pending_review"] = False
     flujo.pop("servicios_temporales", None)
     flujo.pop("pending_certificate_file_url", None)
     flujo.pop("pending_service_candidate", None)

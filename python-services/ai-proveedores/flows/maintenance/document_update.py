@@ -12,8 +12,8 @@ from templates.maintenance import (
     error_actualizar_documentos,
     solicitar_dni_actualizacion,
 )
-from templates.onboarding.ciudad import solicitar_ciudad_actualizacion
-from templates.onboarding.documentos import payload_onboarding_dni_frontal
+from templates.maintenance.ciudad import solicitar_ciudad_actualizacion
+from templates.maintenance.documentos import payload_onboarding_dni_frontal
 
 
 def manejar_inicio_documentos(flujo: Dict[str, Any]) -> Dict[str, Any]:

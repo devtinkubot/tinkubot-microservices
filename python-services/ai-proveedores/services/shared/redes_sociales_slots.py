@@ -1,4 +1,4 @@
-"""Utilidades para manejar redes sociales fijas de proveedores."""
+"""Utilidades técnicas neutrales para parsing de redes sociales."""
 
 from __future__ import annotations
 
@@ -10,10 +10,7 @@ from utils import limpiar_espacios
 
 SOCIAL_NETWORK_FACEBOOK = "facebook"
 SOCIAL_NETWORK_INSTAGRAM = "instagram"
-SOCIAL_NETWORKS = {
-    SOCIAL_NETWORK_FACEBOOK,
-    SOCIAL_NETWORK_INSTAGRAM,
-}
+SOCIAL_NETWORKS = {SOCIAL_NETWORK_FACEBOOK, SOCIAL_NETWORK_INSTAGRAM}
 SOCIAL_SKIP_VALUES = {"omitir", "na", "n/a", "ninguno"}
 SOCIAL_NETWORK_KEYWORDS = {
     "facebook": SOCIAL_NETWORK_FACEBOOK,
@@ -101,6 +98,47 @@ def parsear_username_red_social(
         "type": tipo_red if username else None,
         "username": username,
         "url": construir_url_red_social(tipo_red, username),
+    }
+
+
+def _inferir_tipo_red_desde_url(url_o_username: Optional[str]) -> Optional[str]:
+    texto = limpiar_espacios(url_o_username)
+    if not texto:
+        return None
+    texto_minusculas = texto.lower()
+    if "facebook.com" in texto_minusculas or "fb.com" in texto_minusculas:
+        return SOCIAL_NETWORK_FACEBOOK
+    if "instagram.com" in texto_minusculas or "instagr.am" in texto_minusculas:
+        return SOCIAL_NETWORK_INSTAGRAM
+    return None
+
+
+def resolver_redes_sociales(flujo: Optional[Dict[str, Any]]) -> Dict[str, Optional[str]]:
+    """Resuelve usernames y URLs de redes sociales desde un flujo o payload."""
+    datos = flujo or {}
+    facebook_username = _normalizar_username_crudo(datos.get("facebook_username"))
+    instagram_username = _normalizar_username_crudo(datos.get("instagram_username"))
+    social_media_url = datos.get("social_media_url")
+    social_media_type = limpiar_espacios(datos.get("social_media_type")).lower() or None
+
+    if not facebook_username and not instagram_username and social_media_url:
+        tipo_red = social_media_type or _inferir_tipo_red_desde_url(social_media_url)
+        if tipo_red:
+            parseada = parsear_username_red_social(social_media_url, tipo_red)
+            if tipo_red == SOCIAL_NETWORK_FACEBOOK:
+                facebook_username = parseada["username"]
+            elif tipo_red == SOCIAL_NETWORK_INSTAGRAM:
+                instagram_username = parseada["username"]
+
+    return {
+        "facebook_username": facebook_username,
+        "instagram_username": instagram_username,
+        "facebook_url": construir_url_red_social(
+            SOCIAL_NETWORK_FACEBOOK, facebook_username
+        ),
+        "instagram_url": construir_url_red_social(
+            SOCIAL_NETWORK_INSTAGRAM, instagram_username
+        ),
     }
 
 
@@ -202,76 +240,3 @@ def extraer_redes_sociales_desde_texto(
         "facebook_url": None,
         "instagram_url": parseada["url"],
     }
-
-
-def resolver_redes_sociales(datos: Optional[Dict[str, Any]]) -> Dict[str, Optional[str]]:
-    fuente = datos or {}
-    facebook_username = _normalizar_username_crudo(fuente.get("facebook_username"))
-    instagram_username = _normalizar_username_crudo(fuente.get("instagram_username"))
-
-    legacy_url = limpiar_espacios(fuente.get("social_media_url"))
-    legacy_type = limpiar_espacios(fuente.get("social_media_type")).lower()
-
-    if not facebook_username and legacy_type == SOCIAL_NETWORK_FACEBOOK:
-        facebook_username = extraer_username_desde_url(
-            legacy_url,
-            SOCIAL_NETWORK_FACEBOOK,
-        )
-    if not instagram_username and legacy_type == SOCIAL_NETWORK_INSTAGRAM:
-        instagram_username = extraer_username_desde_url(
-            legacy_url,
-            SOCIAL_NETWORK_INSTAGRAM,
-        )
-
-    return {
-        "facebook_username": facebook_username,
-        "instagram_username": instagram_username,
-        "facebook_url": construir_url_red_social(
-            SOCIAL_NETWORK_FACEBOOK, facebook_username
-        ),
-        "instagram_url": construir_url_red_social(
-            SOCIAL_NETWORK_INSTAGRAM, instagram_username
-        ),
-    }
-
-
-def construir_payload_legacy_red_social(
-    *,
-    facebook_username: Optional[str],
-    instagram_username: Optional[str],
-    preferred_type: Optional[str] = None,
-) -> Dict[str, Optional[str]]:
-    preferida = (preferred_type or "").strip().lower()
-    if preferida == SOCIAL_NETWORK_FACEBOOK and facebook_username:
-        return {
-            "social_media_url": construir_url_red_social(
-                SOCIAL_NETWORK_FACEBOOK,
-                facebook_username,
-            ),
-            "social_media_type": SOCIAL_NETWORK_FACEBOOK,
-        }
-    if preferida == SOCIAL_NETWORK_INSTAGRAM and instagram_username:
-        return {
-            "social_media_url": construir_url_red_social(
-                SOCIAL_NETWORK_INSTAGRAM,
-                instagram_username,
-            ),
-            "social_media_type": SOCIAL_NETWORK_INSTAGRAM,
-        }
-    if instagram_username:
-        return {
-            "social_media_url": construir_url_red_social(
-                SOCIAL_NETWORK_INSTAGRAM,
-                instagram_username,
-            ),
-            "social_media_type": SOCIAL_NETWORK_INSTAGRAM,
-        }
-    if facebook_username:
-        return {
-            "social_media_url": construir_url_red_social(
-                SOCIAL_NETWORK_FACEBOOK,
-                facebook_username,
-            ),
-            "social_media_type": SOCIAL_NETWORK_FACEBOOK,
-        }
-    return {"social_media_url": None, "social_media_type": None}

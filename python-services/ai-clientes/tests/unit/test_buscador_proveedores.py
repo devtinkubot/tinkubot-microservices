@@ -19,7 +19,8 @@ async def test_buscador_usa_search_candidate_limit(monkeypatch):
             "providers": [
                 {
                     "id": "prov-1",
-                    "full_name": "Proveedor Uno",
+                    "first_name": "Proveedor",
+                    "last_name": "Uno",
                     "services": ["capitan de barco"],
                     "similarity_score": 0.51,
                 }
@@ -87,7 +88,8 @@ async def test_buscador_limita_validacion_a_candidatos_mas_relevantes(monkeypatc
             "providers": [
                 {
                     "id": "prov-1",
-                    "full_name": "Proveedor Uno",
+                    "first_name": "Proveedor",
+                    "last_name": "Uno",
                     "services": ["desarrollo de software"],
                     "semantic_alignment_score": 0.91,
                     "retrieval_score": 0.83,
@@ -98,7 +100,8 @@ async def test_buscador_limita_validacion_a_candidatos_mas_relevantes(monkeypatc
                 },
                 {
                     "id": "prov-2",
-                    "full_name": "Proveedor Dos",
+                    "first_name": "Proveedor",
+                    "last_name": "Dos",
                     "services": ["renta de departamentos"],
                     "semantic_alignment_score": 0.12,
                     "retrieval_score": 0.79,
@@ -109,7 +112,8 @@ async def test_buscador_limita_validacion_a_candidatos_mas_relevantes(monkeypatc
                 },
                 {
                     "id": "prov-3",
-                    "full_name": "Proveedor Tres",
+                    "first_name": "Proveedor",
+                    "last_name": "Tres",
                     "services": ["asesoría en tecnología de la información"],
                     "semantic_alignment_score": 0.74,
                     "retrieval_score": 0.81,

@@ -9,7 +9,7 @@ from services.maintenance.estado_operativo import (
 from utils import (
     extraer_anios_experiencia as parsear_anios_experiencia,
 )
-from templates.onboarding.experiencia import payload_experiencia_onboarding
+from templates.maintenance.experiencia import payload_experiencia_mantenimiento
 from templates.maintenance.registration import payload_red_social_opcional_estado
 
 
@@ -40,7 +40,7 @@ async def manejar_espera_experiencia(
     """Procesa la experiencia en contextos de perfil o completado."""
     anios = _resolver_anios_experiencia(texto_mensaje, selected_option)
     if anios is None:
-        return {"success": True, "messages": [payload_experiencia_onboarding()]}
+        return {"success": True, "messages": [payload_experiencia_mantenimiento()]}
 
     flujo["experience_range"] = formatear_rango_experiencia(anios)
 

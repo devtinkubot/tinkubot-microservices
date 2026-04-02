@@ -12,6 +12,9 @@ from services.review.state import (
     manejar_pendiente_revision,
     resolver_estado_registro,
 )
+from services.shared.identidad_proveedor import (
+    resolver_nombre_visible_proveedor,
+)
 
 
 def _marcar_menu_revision(
@@ -88,8 +91,7 @@ def manejar_estado_revision_inicial(
     flujo.update(
         {
             "provider_id": provider_id,
-            "profile_pending_review": False,
         }
     )
-    nombre_proveedor = str(flujo.get("full_name") or "")
+    nombre_proveedor = resolver_nombre_visible_proveedor(proveedor=flujo)
     return construir_respuesta_revision_con_menu(nombre_proveedor)

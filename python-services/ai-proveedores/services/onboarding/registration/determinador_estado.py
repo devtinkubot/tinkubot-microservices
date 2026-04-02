@@ -10,27 +10,9 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
-logger = logging.getLogger(__name__)
+from services.shared.estados_proveedor import normalizar_estado_administrativo
 
-ESTADOS_REGISTRADO = {
-    "approved",
-    "aprobado",
-    "ok",
-    "profile_pending_review",
-    "perfil_pendiente_revision",
-    "professional_review_pending",
-    "interview_required",
-    "entrevista",
-    "auditoria",
-    "needs_info",
-    "falta_info",
-    "faltainfo",
-}
-ESTADOS_REGISTRADO_COMPAT = {
-    "approved_basic",
-    "aprobado_basico",
-    "basic_approved",
-}
+logger = logging.getLogger(__name__)
 
 
 def determinar_estado_registro(perfil_proveedor: Optional[Dict[str, Any]]) -> bool:
@@ -51,13 +33,11 @@ def determinar_estado_registro(perfil_proveedor: Optional[Dict[str, Any]]) -> bo
 
     provider_id = perfil_proveedor.get("id")
     has_consent = bool(perfil_proveedor.get("has_consent"))
-    status = str(perfil_proveedor.get("status") or "").strip().lower()
-    verified = bool(perfil_proveedor.get("verified"))
-
     if not provider_id or not has_consent:
         return False
 
-    if status in ESTADOS_REGISTRADO or status in ESTADOS_REGISTRADO_COMPAT or verified:
+    status_normalizado = normalizar_estado_administrativo(perfil_proveedor)
+    if status_normalizado in {"approved", "pending"}:
         return True
 
-    return bool(str(perfil_proveedor.get("full_name") or "").strip())
+    return True

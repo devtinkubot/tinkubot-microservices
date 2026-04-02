@@ -45,13 +45,13 @@ async def test_vista_onboarding_reconstruye_estado_desde_supabase(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_vista_onboarding_legacy_sigue_rehidratando_menu(
+async def test_vista_onboarding_aprobado_sigue_rehidratando_menu(
     monkeypatch,
 ):
     async def _fake_obtener_perfil(_telefono: str, **_kwargs):
         return {
             "id": "prov-legacy",
-            "status": "approved_basic",
+            "status": "approved",
             "has_consent": True,
             "full_name": "",
             "city": "Quito",
@@ -77,7 +77,9 @@ async def test_vista_onboarding_legacy_sigue_rehidratando_menu(
 
 
 @pytest.mark.asyncio
-async def test_vista_onboarding_aprobado_sin_full_name_no_regresa_a_registro(monkeypatch):
+async def test_vista_onboarding_aprobado_sin_full_name_no_regresa_a_registro(
+    monkeypatch,
+):
     async def _fake_obtener_perfil(_telefono: str, **_kwargs):
         return {
             "id": "prov-2",

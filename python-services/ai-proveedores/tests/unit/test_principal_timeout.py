@@ -88,6 +88,7 @@ def test_manejar_mensaje_reanudacion_menu_registrado_no_falla(monkeypatch):
             perfil_proveedor={
                 "id": "c4f1f0f2-4a6d-4e8d-9c0a-2d2c7f4d5a11",
                 "has_consent": True,
+                "status": "approved",
             },
             supabase=None,
             servicio_embeddings=None,
@@ -156,3 +157,49 @@ def test_manejar_mensaje_no_descarta_ubicacion_tardia(monkeypatch):
 
     assert resultado["response"]["messages"][0]["response"] == "ok"
     assert enrutar_llamadas
+
+
+def test_manejar_mensaje_en_revision_no_reanuda_onboarding(monkeypatch):
+    flujo = {
+        "state": "onboarding_add_another_service",
+        "last_seen_at": (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(),
+        "provider_id": "c4f1f0f2-4a6d-4e8d-9c0a-2d2c7f4d5a11",
+        "has_consent": True,
+    }
+
+    monkeypatch.setattr(
+        modulo_router,
+        "_sesion_expirada_por_inactividad",
+        lambda *_args, **_kwargs: True,
+    )
+
+    resultado = asyncio.run(
+        modulo_router.manejar_mensaje(
+            flujo=flujo,
+            telefono="593959091325@s.whatsapp.net",
+            texto_mensaje="Hola",
+            carga={},
+            opcion_menu=None,
+            perfil_proveedor={
+                "id": "c4f1f0f2-4a6d-4e8d-9c0a-2d2c7f4d5a11",
+                "has_consent": True,
+                "status": "pending",
+                "document_first_names": "Ana",
+                "document_last_names": "Pérez",
+            },
+            supabase=None,
+            servicio_embeddings=None,
+            cliente_openai=None,
+            subir_medios_identidad=lambda *args, **kwargs: None,
+            logger=types.SimpleNamespace(
+                info=lambda *args, **kwargs: None, debug=lambda *args, **kwargs: None
+            ),
+        )
+    )
+
+    assert resultado is not None
+    assert "revis" in resultado["response"]["messages"][0]["response"].lower()
+    assert (
+        "retomamos el último paso"
+        not in resultado["response"]["messages"][0]["response"].lower()
+    )

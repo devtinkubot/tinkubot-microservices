@@ -8,7 +8,6 @@ UPDATE public.providers
 SET status = 'approved'
 WHERE status IN (
   'approved_basic',
-  'profile_pending_review',
   'interview_required',
   'needs_info',
   'perfil_pendiente_revision',

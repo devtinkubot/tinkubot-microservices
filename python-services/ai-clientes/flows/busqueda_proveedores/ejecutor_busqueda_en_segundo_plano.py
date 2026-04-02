@@ -11,6 +11,8 @@ import logging
 from typing import Any, Awaitable, Callable, Dict, List
 
 from flows.mensajes.mensajes_busqueda import mensaje_expertos_encontrados
+from infrastructure.persistencia.cliente_redis import cliente_redis as redis_client
+from services.proveedores.identidad import resolver_nombre_visible_proveedor
 from templates.busqueda.confirmacion import (
     mensaje_confirmando_disponibilidad,
     mensaje_sin_disponibilidad,
@@ -175,16 +177,12 @@ async def ejecutar_busqueda_y_notificar_en_segundo_plano(
                     f"⚠️ Error enviando confirmación de disponibilidad: {exc}"
                 )
 
-            from infrastructure.persistencia.cliente_redis import (
-                cliente_redis as redis_client,
-            )
-
             # Preparar candidatos para el cliente HTTP
             candidatos = [
                 {
                     **p,
                     "provider_id": p.get("id") or p.get("provider_id"),
-                    "nombre": p.get("name") or p.get("full_name"),
+                    "nombre": resolver_nombre_visible_proveedor(p),
                     "real_phone": p.get("real_phone") or p.get("phone_number"),
                 }
                 for p in proveedores

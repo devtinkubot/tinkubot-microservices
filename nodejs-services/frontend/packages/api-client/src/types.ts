@@ -72,8 +72,6 @@ export interface ProviderRecord {
   servicesAudit?: ProviderServiceAudit[];
   serviceReviews?: ProviderServiceReview[];
   experienceRange?: string | null;
-  socialMediaUrl?: string | null;
-  socialMediaType?: string | null;
   facebookUsername?: string | null;
   instagramUsername?: string | null;
   displayName?: string | null;
@@ -117,8 +115,6 @@ export interface ProviderActionResponse {
 export interface ProviderProfessionalProfileUpdatePayload {
   services: string[];
   experienceRange: string;
-  socialMediaUrl?: string | null;
-  socialMediaType?: string | null;
   facebookUsername?: string | null;
   instagramUsername?: string | null;
 }
@@ -128,11 +124,9 @@ export interface ProviderProfessionalProfileUpdateResponse {
   providerId?: string;
   services?: string[];
   experienceRange?: string | null;
-  socialMediaUrl?: string | null;
-  socialMediaType?: string | null;
   facebookUsername?: string | null;
   instagramUsername?: string | null;
-  verified?: boolean | null;
+  onboardingComplete?: boolean | null;
   message?: string | null;
   errorReason?: string | null;
 }

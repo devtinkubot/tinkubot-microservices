@@ -10,7 +10,6 @@ def test_poner_flujo_en_menu_revision_estandariza_estado_y_flags():
     assert flujo["state"] == "awaiting_menu_option"
     assert flujo["has_consent"] is True
     assert flujo["esta_registrado"] is True
-    assert flujo["profile_pending_review"] is False
     assert flujo["pending_review_attempts"] == 0
     assert flujo["review_silenced"] is False
     assert flujo["verification_notified"] is True

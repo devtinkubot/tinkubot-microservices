@@ -1,6 +1,6 @@
 """Mensajes relacionados con el flujo de registro y mantenimiento de proveedores."""
 
-from templates.onboarding.caducidad import (
+from templates.maintenance.caducidad import (
     TEMPLATE_EXPIRY_72H_ID,
     TEMPLATE_EXPIRY_72H_LANGUAGE,
     TEMPLATE_WARNING_48H_ID,
@@ -8,7 +8,7 @@ from templates.onboarding.caducidad import (
     payload_baja_onboarding_72h,
     payload_recordatorio_onboarding_48h,
 )
-from templates.onboarding.telefono import (
+from templates.maintenance.telefono import (
     error_real_phone_invalido,
     preguntar_real_phone,
 )
@@ -25,10 +25,8 @@ from .perfil_profesional import (
     SOCIAL_INSTAGRAM_ID,
     SOCIAL_SKIP_ID,
     construir_resumen_confirmacion_perfil_profesional,
-    mensaje_error_certificado_invalido,
     mensaje_inicio_perfil_profesional,
     mensaje_menu_edicion_perfil_profesional,
-    mensaje_minimo_servicios_pendiente,
     mensaje_minimo_servicios_perfil_profesional,
     payload_agregar_otro_servicio,
     payload_certificado_opcional,
@@ -90,8 +88,6 @@ __all__ = [
     "payload_red_social_opcional",
     "payload_red_social_opcional_estado",
     "payload_certificado_opcional",
-    "mensaje_error_certificado_invalido",
-    "mensaje_minimo_servicios_pendiente",
     "mensaje_minimo_servicios_perfil_profesional",
     "construir_resumen_confirmacion_perfil_profesional",
     "preguntar_nombre",

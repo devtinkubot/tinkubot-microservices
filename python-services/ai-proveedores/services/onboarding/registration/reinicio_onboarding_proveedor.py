@@ -8,11 +8,13 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 import httpx
-
 from config.configuracion import configuracion
 from infrastructure.database import run_supabase
 from services.onboarding.registration.eliminacion_proveedor import (
     eliminar_registro_proveedor,
+)
+from services.shared.identidad_proveedor import (
+    resolver_nombre_visible_proveedor,
 )
 from templates.onboarding import payload_baja_onboarding_72h
 
@@ -117,14 +119,18 @@ async def _cargar_proveedor_por_id(
     supabase: Any, provider_id: str
 ) -> Optional[Dict[str, Any]]:
     respuesta = await run_supabase(
-        lambda: supabase.table("providers")
-        .select(
-            "id,phone,real_phone,full_name,status,verified,onboarding_step,"
-            "approved_notified_at,verification_reviewed_at,created_at"
-        )
-        .eq("id", provider_id)
-        .limit(1)
-        .execute(),
+        lambda: (
+            supabase.table("providers")
+            .select(
+                "id,phone,real_phone,display_name,"
+                "document_first_names,document_last_names,status,verified,"
+                "onboarding_step,approved_notified_at,verification_reviewed_at,"
+                "created_at"
+            )
+            .eq("id", provider_id)
+            .limit(1)
+            .execute()
+        ),
         label="providers.reset_onboarding.fetch_provider",
     )
     if respuesta.data:
@@ -164,7 +170,9 @@ async def _actualizar_evento(
 ) -> None:
     await run_supabase(
         lambda: supabase.table(TABLA_EVENTOS)
-        .update({"metadata": metadata, "event_at": datetime.now(timezone.utc).isoformat()})
+        .update(
+            {"metadata": metadata, "event_at": datetime.now(timezone.utc).isoformat()}
+        )
         .eq("provider_id", provider_id)
         .eq("event_type", EVENTO_BAJA_72H)
         .execute(),
@@ -217,7 +225,7 @@ async def reiniciar_onboarding_proveedor(
             resultado["message"] = "No se pudo determinar la antigüedad del proveedor."
             return resultado
 
-        provider_name = str(registro.get("full_name") or "").strip() or "Proveedor"
+        provider_name = resolver_nombre_visible_proveedor(proveedor=registro)
         provider_phone = _formatear_telefono_whatsapp(
             registro.get("real_phone") or registro.get("phone")
         )
@@ -277,7 +285,8 @@ async def reiniciar_onboarding_proveedor(
             )
             resultado["sent_whatsapp"] = True
             resultado["message"] = (
-                "Se envió la plantilla, pero no se pudo completar el reset administrativo."
+                "Se envió la plantilla, pero no se pudo completar "
+                "el reset administrativo."
             )
             return resultado
 
@@ -319,7 +328,8 @@ async def reiniciar_onboarding_proveedor(
                     eliminacion.get("deleted_storage_assets")
                 ),
                 "message": (
-                    "Reset administrativo ejecutado correctamente. El proveedor puede registrarse nuevamente."
+                    "Reset administrativo ejecutado correctamente. "
+                    "El proveedor puede registrarse nuevamente."
                 ),
             }
         )

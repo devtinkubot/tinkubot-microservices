@@ -11,6 +11,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import flows.onboarding.router as modulo_onboarding_router  # noqa: E402
 import routes.onboarding.router as modulo_routes_onboarding  # noqa: E402
+from routes.maintenance.handlers.profile import (  # noqa: E402
+    manejar_perfil_mantenimiento,
+)
 from flows.onboarding.handlers.ciudad import (  # noqa: E402
     manejar_espera_ciudad_onboarding,
 )
@@ -225,9 +228,54 @@ async def test_boundary_onboarding_no_reclama_registrado_sin_consentimiento():
         logger=None,
     )
 
-    assert respuesta is None
-    assert flujo["provider_id"] == "prov-1"
+    assert respuesta is not None
+    assert flujo["state"] == "onboarding_consent"
+    assert flujo["mode"] == "registration"
     assert flujo["has_consent"] is False
+    assert flujo["provider_id"] == "prov-1"
+    assert respuesta["response"]["messages"][0]["response"].startswith(
+        "Para continuar con tu registro"
+    )
+
+
+@pytest.mark.asyncio
+async def test_boundary_onboarding_registrado_sigue_manejando_paso_activo(monkeypatch):
+    async def _fake_manejar_estado_onboarding(**kwargs):
+        assert kwargs["estado"] == "onboarding_dni_front_photo"
+        return {"success": True, "messages": [{"response": "ok onboarding"}]}
+
+    monkeypatch.setattr(
+        modulo_routes_onboarding,
+        "manejar_estado_onboarding",
+        _fake_manejar_estado_onboarding,
+    )
+
+    flujo = {
+        "state": "onboarding_dni_front_photo",
+        "has_consent": True,
+        "provider_id": "prov-1",
+    }
+
+    respuesta = await modulo_routes_onboarding.manejar_contexto_onboarding(
+        estado="onboarding_dni_front_photo",
+        flujo=flujo,
+        telefono="593999111299@s.whatsapp.net",
+        texto_mensaje="hola",
+        carga={},
+        perfil_proveedor={"id": "prov-1", "has_consent": True},
+        supabase=None,
+        servicio_embeddings=None,
+        cliente_openai=None,
+        subir_medios_identidad=None,
+        opcion_menu=None,
+        tiene_consentimiento=True,
+        esta_registrado=True,
+        logger=None,
+    )
+
+    assert respuesta is not None
+    assert respuesta["response"]["messages"][0]["response"] == "ok onboarding"
+    assert flujo["state"] == "onboarding_dni_front_photo"
 
 
 @pytest.mark.asyncio
@@ -253,6 +301,30 @@ async def test_boundary_onboarding_no_reclama_menu_principal():
 
     assert respuesta is None
     assert flujo["state"] == "awaiting_menu_option"
+
+
+@pytest.mark.asyncio
+async def test_maintenance_no_convierte_onboarding_sin_modo_edicion():
+    flujo = {
+        "state": "onboarding_city",
+        "provider_id": "prov-1",
+        "has_consent": True,
+    }
+
+    respuesta = await manejar_perfil_mantenimiento(
+        flujo=flujo,
+        estado="onboarding_city",
+        texto_mensaje="Cuenca",
+        carga={},
+        supabase=None,
+        subir_medios_identidad=None,
+        telefono="593999111299@s.whatsapp.net",
+        cliente_openai=None,
+    )
+
+    assert respuesta is None
+    assert flujo["state"] == "onboarding_city"
+    assert "profile_edit_mode" not in flujo
 
 
 @pytest.mark.asyncio

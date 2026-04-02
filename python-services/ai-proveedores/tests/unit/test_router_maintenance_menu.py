@@ -37,6 +37,7 @@ def test_menu_mantenimiento_solo_atiende_registrados(monkeypatch):
     assert resultado is not None
     assert resultado["persist_flow"] is True
     assert flujo["state"] == "awaiting_menu_option"
+    assert resultado["response"]["messages"][0]["response"] == "ok"
 
 
 def test_menu_mantenimiento_no_reclama_no_registrados():
@@ -74,3 +75,25 @@ def test_menu_principal_texto_libre_reenvia_botones():
 
     assert resultado["success"] is True
     assert resultado["messages"][0]["ui"]["id"] == "provider_main_menu_v1"
+
+
+def test_menu_principal_acepta_selected_option_de_legado():
+    flujo = {"state": "awaiting_menu_option"}
+
+    resultado = asyncio.run(
+        modulo_router.manejar_menu_proveedor(
+            flujo=flujo,
+            estado="awaiting_menu_option",
+            texto_mensaje="provider_menu_info_personal",
+            opcion_menu=None,
+            selected_option="provider_menu_info_personal",
+            esta_registrado=True,
+            supabase=None,
+            telefono="593999111299@s.whatsapp.net",
+        )
+    )
+
+    assert resultado is not None
+    assert resultado["persist_flow"] is True
+    assert flujo["state"] == "awaiting_personal_info_action"
+    assert resultado["response"]["messages"][0]["ui"]["id"] == "provider_personal_info_menu_v1"

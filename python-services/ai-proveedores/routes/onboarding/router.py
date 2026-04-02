@@ -7,22 +7,7 @@ from services.onboarding.confirmacion import manejar_confirmacion_onboarding
 from services.onboarding.messages import (
     construir_respuesta_solicitud_consentimiento,
 )
-
-STANDARD_ONBOARDING_STATES = {
-    "onboarding_city",
-    "onboarding_dni_front_photo",
-    "onboarding_face_photo",
-    "onboarding_experience",
-    "onboarding_specialty",
-    "onboarding_add_another_service",
-    "onboarding_social_media",
-    "onboarding_real_phone",
-    "onboarding_consent",
-}
-
-
-def es_estado_onboarding(estado: Optional[str]) -> bool:
-    return estado in STANDARD_ONBOARDING_STATES
+from services.shared.estados_proveedor import es_estado_onboarding
 
 
 async def manejar_estado_onboarding(
@@ -163,11 +148,36 @@ async def manejar_contexto_onboarding(
         if respuesta is not None:
             return {"response": respuesta, "persist_flow": True}
 
-    if esta_registrado:
-        return None
+    if estado and es_estado_onboarding(estado):
+        if not tiene_consentimiento:
+            flujo.update(
+                {
+                    "state": "onboarding_consent",
+                    "mode": "registration",
+                    "has_consent": False,
+                }
+            )
+            return {
+                "response": construir_respuesta_solicitud_consentimiento(),
+                "persist_flow": True,
+            }
+
+        respuesta = await manejar_estado_onboarding(
+            estado=estado,
+            flujo=flujo,
+            telefono=telefono,
+            texto_mensaje=texto_mensaje,
+            carga=carga,
+            supabase=supabase,
+            perfil_proveedor=perfil_proveedor,
+            servicio_embeddings=servicio_embeddings,
+            cliente_openai=cliente_openai,
+            subir_medios_identidad=subir_medios_identidad,
+        )
+        if respuesta is not None:
+            return {"response": respuesta, "persist_flow": True}
 
     if not tiene_consentimiento:
-        flujo.clear()
         flujo.update(
             {
                 "state": "onboarding_consent",

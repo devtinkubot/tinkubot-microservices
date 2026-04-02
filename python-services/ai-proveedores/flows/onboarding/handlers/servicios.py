@@ -4,19 +4,14 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from infrastructure.database import get_supabase_client
-from services.maintenance.constantes import SERVICIOS_MAXIMOS_ONBOARDING
-from services.maintenance.clasificacion_semantica import (
-    obtener_catalogo_dominios_liviano,
-)
-from services.maintenance.revision_catalogo import (
+from services.onboarding.registration.catalogo_servicios import (
+    clasificar_servicios_livianos,
     generar_sugerencia_revision_catalogo_servicio,
-)
-from services.maintenance.validacion_semantica import (
+    obtener_catalogo_dominios_liviano,
+    registrar_revision_catalogo_servicio,
     validar_servicio_semanticamente,
 )
-from services.maintenance.revision_catalogo import (
-    registrar_revision_catalogo_servicio,
-)
+from services.onboarding.registration.constantes import SERVICIOS_MAXIMOS_ONBOARDING
 from services.shared import (
     RESPUESTAS_AGREGAR_SERVICIO_AFIRMATIVAS,
     RESPUESTAS_AGREGAR_SERVICIO_NEGATIVAS,

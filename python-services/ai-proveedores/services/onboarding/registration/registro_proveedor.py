@@ -7,12 +7,12 @@ from typing import Any, Dict, List, Optional
 from infrastructure.database import run_supabase
 from infrastructure.embeddings.servicio_embeddings import ServicioEmbeddings
 from models.proveedores import SolicitudCreacionProveedor
-from services.maintenance.clasificacion_semantica import (
+from services.onboarding.registration.catalogo_servicios import (
     clasificar_servicios_livianos,
     construir_service_summary,
     construir_texto_embedding_canonico,
 )
-from services.maintenance.constantes import DISPLAY_ORDER_MAX_DB
+from services.onboarding.registration.constantes import DISPLAY_ORDER_MAX_DB
 from services.onboarding.whatsapp_identity import persistir_identities_whatsapp
 from services.onboarding.registration.normalizacion import (
     garantizar_campos_obligatorios_proveedor,
@@ -95,7 +95,6 @@ async def asegurar_proveedor_borrador(
         "city": "",
         "status": "pending",
         "has_consent": False,
-        "verified": False,
         "experience_range": None,
         "updated_at": datetime.utcnow().isoformat(),
     }
@@ -429,7 +428,6 @@ async def registrar_proveedor_en_base_datos(
         # Upsert por teléfono: reabre rechazados como pending, evita doble round-trip
         carga_upsert = {
             **datos_normalizados,
-            "verified": False,
             "updated_at": datetime.utcnow().isoformat(),
         }
 
@@ -544,20 +542,15 @@ async def registrar_proveedor_en_base_datos(
                 "experience_range": registro_insertado.get(
                     "experience_range", datos_normalizados.get("experience_range")
                 ),
+                "onboarding_complete": registro_insertado.get(
+                    "onboarding_complete",
+                    datos_normalizados.get("onboarding_complete"),
+                ),
                 "rating": registro_insertado.get(
                     "rating", datos_normalizados["rating"]
                 ),
-                "verified": registro_insertado.get(
-                    "verified", datos_normalizados["verified"]
-                ),
                 "has_consent": registro_insertado.get(
                     "has_consent", datos_normalizados["has_consent"]
-                ),
-                "social_media_url": registro_insertado.get(
-                    "social_media_url", datos_normalizados["social_media_url"]
-                ),
-                "social_media_type": registro_insertado.get(
-                    "social_media_type", datos_normalizados["social_media_type"]
                 ),
                 "display_name": registro_insertado.get(
                     "display_name", datos_normalizados.get("display_name")
