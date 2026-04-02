@@ -1478,6 +1478,7 @@ async function resetearProveedorOnboarding(providerId, requestId = null) {
 
     const response = await axios.post(
       `${aiProveedoresUrl.replace(/\/$/, "")}/admin/provider-onboarding/${encodeURIComponent(id)}/reset`,
+      {},
       { headers },
     );
     return response.data;

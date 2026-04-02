@@ -86,7 +86,7 @@ class ConfiguracionServicio(BaseSettings):
         validation_alias="PROVIDER_NOMINATIM_SEARCH_URL",
     )
     provider_inactivity_warning_seconds: int = Field(
-        default=300,
+        default=3600,
         validation_alias="PROVIDER_INACTIVITY_WARNING_SECONDS",
     )
     provider_onboarding_consent_image_url: str = Field(

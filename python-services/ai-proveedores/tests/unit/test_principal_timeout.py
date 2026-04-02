@@ -1,12 +1,11 @@
+import asyncio
 import sys
 import types
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-import asyncio
-
 imghdr_stub = types.ModuleType("imghdr")
-imghdr_stub.what = lambda *args, **kwargs: None
+imghdr_stub.what = lambda *args, **kwargs: None  # type: ignore[attr-defined]
 sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -19,9 +18,7 @@ def test_sesion_no_expira_con_inactividad_menor_al_umbral():
         "last_seen_at": (ahora - timedelta(minutes=10)).isoformat(),
     }
 
-    assert (
-        modulo_router._sesion_expirada_por_inactividad(flujo, ahora) is False
-    )
+    assert modulo_router._sesion_expirada_por_inactividad(flujo, ahora) is False
 
 
 def test_sesion_expira_cuando_supera_el_umbral():
@@ -75,7 +72,11 @@ def test_manejar_mensaje_reanudacion_menu_registrado_no_falla(monkeypatch):
         "has_consent": True,
     }
 
-    monkeypatch.setattr(modulo_router, "_sesion_expirada_por_inactividad", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(
+        modulo_router,
+        "_sesion_expirada_por_inactividad",
+        lambda *_args, **_kwargs: True,
+    )
 
     resultado = asyncio.run(
         modulo_router.manejar_mensaje(
@@ -84,12 +85,74 @@ def test_manejar_mensaje_reanudacion_menu_registrado_no_falla(monkeypatch):
             texto_mensaje="Hola",
             carga={},
             opcion_menu=None,
-            perfil_proveedor={"id": "c4f1f0f2-4a6d-4e8d-9c0a-2d2c7f4d5a11", "has_consent": True},
+            perfil_proveedor={
+                "id": "c4f1f0f2-4a6d-4e8d-9c0a-2d2c7f4d5a11",
+                "has_consent": True,
+            },
             supabase=None,
             servicio_embeddings=None,
             subir_medios_identidad=lambda *args, **kwargs: None,
-            logger=types.SimpleNamespace(info=lambda *args, **kwargs: None, debug=lambda *args, **kwargs: None),
+            logger=types.SimpleNamespace(
+                info=lambda *args, **kwargs: None, debug=lambda *args, **kwargs: None
+            ),
         )
     )
 
     assert resultado["response"]["messages"][1]["ui"]["id"] == "provider_main_menu_v1"
+
+
+def test_manejar_mensaje_no_descarta_ubicacion_tardia(monkeypatch):
+    flujo = {
+        "state": "onboarding_city",
+        "last_seen_at": (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(),
+        "provider_id": "c4f1f0f2-4a6d-4e8d-9c0a-2d2c7f4d5a11",
+        "has_consent": True,
+    }
+    enrutar_llamadas = []
+
+    monkeypatch.setattr(
+        modulo_router,
+        "_sesion_expirada_por_inactividad",
+        lambda *_args, **_kwargs: True,
+    )
+
+    async def _fallar_timeout(*_args, **_kwargs):
+        raise AssertionError("No debe entrar al timeout para mensajes accionables")
+
+    async def _fake_enrutar_estado(**kwargs):
+        enrutar_llamadas.append(kwargs)
+        return {
+            "response": {"success": True, "messages": [{"response": "ok"}]},
+            "persist_flow": True,
+            "new_flow": kwargs["flujo"],
+        }
+
+    monkeypatch.setattr(
+        modulo_router,
+        "_manejar_timeout_inactividad",
+        _fallar_timeout,
+    )
+    monkeypatch.setattr(modulo_router, "enrutar_estado", _fake_enrutar_estado)
+
+    resultado = asyncio.run(
+        modulo_router.manejar_mensaje(
+            flujo=flujo,
+            telefono="593959091325@s.whatsapp.net",
+            texto_mensaje="",
+            carga={"location": {"latitude": -2.9039, "longitude": -78.9838}},
+            opcion_menu=None,
+            perfil_proveedor={
+                "id": "c4f1f0f2-4a6d-4e8d-9c0a-2d2c7f4d5a11",
+                "has_consent": True,
+            },
+            supabase=None,
+            servicio_embeddings=None,
+            subir_medios_identidad=lambda *args, **kwargs: None,
+            logger=types.SimpleNamespace(
+                info=lambda *args, **kwargs: None, debug=lambda *args, **kwargs: None
+            ),
+        )
+    )
+
+    assert resultado["response"]["messages"][0]["response"] == "ok"
+    assert enrutar_llamadas

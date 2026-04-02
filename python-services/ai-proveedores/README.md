@@ -37,6 +37,9 @@ Política actual:
 - el paso de servicios publica un evento crudo y no espera la normalización de IA en el request path
 - `provider-onboarding-worker` consume el evento, llama al endpoint interno de `ai-proveedores` y persiste el resultado en Supabase
 - `experience_range` es la única representación canónica de experiencia; `experience_years` ya no forma parte del contrato vivo
+- el reset administrativo de onboarding reutiliza la plantilla Meta `provider_onboarding_expired_72h_v1`
+- esa plantilla debe mantenerse como `utility`, con `ui.type = template` y solo `body`, sin botones interactivos
+- no agregar botones como `Registrarme` a esa plantilla sin una decisión explícita de producto y revisión de Meta
 
 ### Review
 

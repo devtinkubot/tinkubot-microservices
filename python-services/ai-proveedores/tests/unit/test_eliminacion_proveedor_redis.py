@@ -130,3 +130,4 @@ def test_eliminacion_proveedor_limpia_marca_redis(monkeypatch):
     assert ("clear_deleted", "593959091325@s.whatsapp.net") in captured
     assert ("clear_provider_keys", "593959091325@s.whatsapp.net") in captured
     assert ("reset_flow", "593959091325@s.whatsapp.net") in captured
+    assert ("provider_whatsapp_identities", "delete") in captured

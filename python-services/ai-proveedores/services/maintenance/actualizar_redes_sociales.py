@@ -56,7 +56,7 @@ async def actualizar_redes_sociales(
         instagram_username=instagram_username,
         preferred_type=preferred_type,
     )
-    datos_actualizacion = {
+    datos_actualizacion: Dict[str, Any] = {
         "facebook_username": facebook_username,
         "instagram_username": instagram_username,
         "social_media_url": payload_legacy["social_media_url"],
@@ -109,5 +109,7 @@ async def actualizar_redes_sociales(
 
         return {
             "success": False,
-            "message": "No se pudieron actualizar las redes sociales. Intenta nuevamente.",
+            "message": (
+                "No se pudieron actualizar las redes sociales. " "Intenta nuevamente."
+            ),
         }

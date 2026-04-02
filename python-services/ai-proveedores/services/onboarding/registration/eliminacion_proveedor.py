@@ -84,6 +84,13 @@ async def eliminar_registro_proveedor(
                 .execute(),
                 label="provider_services.delete_on_provider_removal",
             )
+            await run_supabase(
+                lambda: supabase.table("provider_whatsapp_identities")
+                .delete()
+                .eq("provider_id", provider_id_resuelto)
+                .execute(),
+                label="provider_whatsapp_identities.delete_on_provider_removal",
+            )
             await eliminar_revisiones_catalogo_asociadas_servicio(
                 supabase=supabase,
                 provider_id=provider_id_resuelto,

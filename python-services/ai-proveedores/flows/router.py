@@ -18,8 +18,14 @@ from services import (
     agregar_certificado_proveedor,
     eliminar_registro_proveedor,
 )
-from services.review.state import resolver_estado_registro, sincronizar_flujo_con_perfil
+from services.review.messages import construir_respuesta_revision
+from services.review.state import (
+    manejar_bloqueo_revision_posterior,
+    resolver_estado_registro,
+    sincronizar_flujo_con_perfil,
+)
 from services.shared import es_comando_reinicio
+from services.shared.ingreso_whatsapp import es_evento_interactivo, es_evento_multimedia
 from templates.onboarding import (
     payload_consentimiento_proveedor,
     payload_experiencia_onboarding,
@@ -54,6 +60,19 @@ ONBOARDING_REANUDACION_STATES = {
     "onboarding_add_another_service",
     "onboarding_social_media",
 }
+
+
+def _mensaje_onboarding_requiere_procesamiento(
+    carga: Dict[str, Any],
+) -> bool:
+    """Detecta si el mensaje trae evidencia que no debe descartarse por timeout."""
+    if not carga:
+        return False
+    if carga.get("location"):
+        return True
+    if es_evento_multimedia(carga):
+        return True
+    return es_evento_interactivo(carga)
 
 
 def _sesion_expirada_por_inactividad(
@@ -241,6 +260,20 @@ async def _manejar_flujo_sin_estado(
         provider_id or None,
     )
 
+    if esta_registrado and not esta_verificado:
+        respuesta_bloqueo = manejar_bloqueo_revision_posterior(
+            flujo=flujo,
+            perfil_proveedor=perfil_proveedor,
+            esta_verificado=esta_verificado,
+        )
+        if respuesta_bloqueo is not None:
+            return {"response": respuesta_bloqueo, "persist_flow": True}
+        flujo["state"] = "pending_verification"
+        return {
+            "response": construir_respuesta_revision(str(flujo.get("full_name") or "")),
+            "persist_flow": True,
+        }
+
     if esta_registrado:
         flujo["state"] = "awaiting_menu_option"
         return {
@@ -311,6 +344,7 @@ async def manejar_mensaje(
 
     ahora_utc = datetime.now(timezone.utc)
     ahora_iso = ahora_utc.isoformat()
+    mensaje_accionable = _mensaje_onboarding_requiere_procesamiento(carga)
     ultima_vista_cruda = flujo.get("last_seen_at") or flujo.get("last_seen_at_prev")
     if ultima_vista_cruda:
         try:
@@ -320,8 +354,10 @@ async def manejar_mensaje(
             else:
                 ultima_vista_dt = ultima_vista_dt.astimezone(timezone.utc)
             if (
-                ahora_utc - ultima_vista_dt
-            ).total_seconds() > TIEMPO_INACTIVIDAD_SESION_SEGUNDOS:
+                not mensaje_accionable
+                and (ahora_utc - ultima_vista_dt).total_seconds()
+                > TIEMPO_INACTIVIDAD_SESION_SEGUNDOS
+            ):
                 respuesta_timeout = await _manejar_timeout_inactividad(
                     flujo=flujo,
                     telefono=telefono,
@@ -350,7 +386,11 @@ async def manejar_mensaje(
     esta_registrado_contexto = bool(
         flujo.get("provider_id") or (perfil_proveedor or {}).get("id")
     )
-    if inactividad_reanudable and flujo.get("state") in ONBOARDING_REANUDACION_STATES:
+    if (
+        inactividad_reanudable
+        and not mensaje_accionable
+        and flujo.get("state") in ONBOARDING_REANUDACION_STATES
+    ):
         flujo["last_seen_at_prev"] = flujo.get("last_seen_at") or ahora_iso
         flujo["last_seen_at"] = ahora_iso
         return {

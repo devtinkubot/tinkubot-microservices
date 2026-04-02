@@ -31,10 +31,14 @@ def manejar_contexto_revision(
     )
 
     estado_actual = str(flujo.get("state") or "").strip()
-    if estado_actual == "pending_verification":
-        _marcar_menu_revision(flujo)
-        nombre_proveedor = str(flujo.get("full_name") or "")
-        return construir_respuesta_revision_con_menu(nombre_proveedor)
+    if estado_actual == "pending_verification" and not esta_verificado:
+        respuesta_bloqueo = manejar_bloqueo_revision_posterior(
+            flujo,
+            perfil_proveedor,
+            esta_verificado=False,
+        )
+        if respuesta_bloqueo is not None:
+            return respuesta_bloqueo
 
     es_pendiente = esta_pendiente_revision or (
         estado_actual == "pending_verification" and not esta_verificado
