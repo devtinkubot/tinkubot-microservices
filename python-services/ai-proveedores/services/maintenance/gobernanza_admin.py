@@ -164,7 +164,7 @@ async def aprobar_review_catalogo_servicio(
         domain_code=codigo_dominio,
     )
     texto_embedding = construir_texto_embedding_canonico(
-        service_name_normalized=normalizar_texto_para_busqueda(nombre_servicio),
+        service_summary=resumen,
         domain_code=codigo_dominio,
         category_name=categoria,
     )

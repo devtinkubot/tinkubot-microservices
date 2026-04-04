@@ -63,6 +63,22 @@ async def test_buscador_usa_search_candidate_limit(monkeypatch):
         cliente_busqueda.buscar_proveedores.await_args.kwargs["category"]
         == "navegación marítima"
     )
+    assert (
+        cliente_busqueda.buscar_proveedores.await_args.kwargs["search_profile"][
+            "primary_service"
+        ]
+        == "capitan de barco"
+    )
+    assert (
+        cliente_busqueda.buscar_proveedores.await_args.kwargs["search_profile"][
+            "service_summary"
+        ]
+        == "capitan de barco"
+    )
+    search_profile = cliente_busqueda.buscar_proveedores.await_args.kwargs["search_profile"]
+    assert search_profile["primary_service"] == "capitan de barco"
+    assert search_profile["domain"] == "transporte"
+    assert search_profile["category"] == "navegación marítima"
     validador_ia.validar_proveedores.assert_awaited_once()
     assert (
         validador_ia.validar_proveedores.await_args.kwargs["request_domain"]
@@ -71,6 +87,52 @@ async def test_buscador_usa_search_candidate_limit(monkeypatch):
     assert (
         validador_ia.validar_proveedores.await_args.kwargs["request_category"]
         == "navegación marítima"
+    )
+    assert (
+        validador_ia.validar_proveedores.await_args.kwargs["search_profile"][
+            "primary_service"
+        ]
+        == "capitan de barco"
+    )
+
+
+@pytest.mark.asyncio
+async def test_buscador_prefiere_service_summary_en_consulta(monkeypatch):
+    cliente_busqueda = AsyncMock()
+    cliente_busqueda.buscar_proveedores = AsyncMock(
+        return_value={
+            "ok": True,
+            "providers": [],
+            "total": 0,
+            "search_metadata": {"strategy": "embeddings", "search_time_ms": 120},
+        }
+    )
+    validador_ia = AsyncMock()
+    validador_ia.validar_proveedores = AsyncMock(return_value=[])
+
+    buscador = BuscadorProveedores(
+        cliente_busqueda=cliente_busqueda,
+        validador_ia=validador_ia,
+        logger=logging.getLogger("test_buscador"),
+    )
+
+    await buscador.buscar(
+        profesion="soporte y desarrollo de app móvil",
+        ciudad="cuenca",
+        descripcion_problema="Se presento un problema en la app movil y necesito soporte y desarrollo",
+        domain="tecnología",
+        category="desarrollo de software",
+        search_profile={
+            "primary_service": "soporte y desarrollo de app móvil",
+            "service_summary": "Proveer soporte técnico y desarrollo para una aplicación móvil con problemas.",
+            "domain": "tecnología",
+            "category": "desarrollo de software",
+        },
+    )
+
+    assert (
+        cliente_busqueda.buscar_proveedores.await_args.kwargs["consulta"]
+        == "Proveer soporte técnico y desarrollo para una aplicación móvil con problemas. tecnología desarrollo de software"
     )
 
 

@@ -183,18 +183,55 @@ async def test_resolver_servicio_best_effort_hace_fallback_a_texto_crudo(monkeyp
         cliente_openai=object(),
     )
 
-    assert resultado["ok"] is True
-    assert resultado["used_fallback"] is True
+    assert resultado["ok"] is False
+    assert resultado["error_reason"] == "No pude interpretar ese servicio."
     assert resultado["service_detail"]["service_name"] == "Servicio raro inventado"
     assert resultado["service_detail"]["requires_review"] is True
 
 
 @pytest.mark.asyncio
-async def test_resolver_servicio_best_effort_registra_review_catalogo(
+async def test_resolver_servicio_best_effort_persiste_si_taxonomia_cierra(
     monkeypatch,
 ):
-    captured = {}
+    async def _fake_normalizar(**_kwargs):
+        return {
+            "ok": True,
+            "service_detail": {
+                "raw_service_text": "Desarrollo de apps moviles con IA, incluye soporte y mantenimiento.",
+                "service_name": "Desarrollo de aplicaciones móviles con inteligencia artificial",
+                "service_summary": "Desarrollo de aplicaciones móviles que incorporan inteligencia artificial, incluyendo soporte y mantenimiento.",
+                "domain_code": "tecnologia",
+                "category_name": "Tecnología",
+                "classification_confidence": 1.0,
+                "requires_review": False,
+                "needs_clarification": False,
+                "review_reason": "El servicio está claramente definido y se ajusta a la categoría de tecnología.",
+            },
+        }
 
+    monkeypatch.setitem(
+        resolver_servicio_onboarding_best_effort.__globals__,
+        "normalizar_servicios_onboarding",
+        _fake_normalizar,
+    )
+
+    resultado = await resolver_servicio_onboarding_best_effort(
+        texto_mensaje="Desarrollo de apps moviles con IA, incluye soporte y mantenimiento.",
+        cliente_openai=object(),
+        provider_id="prov-1",
+    )
+
+    assert resultado["ok"] is True
+    assert resultado["service_detail"]["domain_code"] == "tecnologia"
+    assert resultado["service_detail"]["category_name"] == "Tecnología"
+    assert resultado["service_detail"]["requires_review"] is False
+    assert resultado["service_detail"]["needs_clarification"] is False
+
+
+@pytest.mark.asyncio
+async def test_resolver_servicio_best_effort_falla_si_falta_taxonomia(
+    monkeypatch,
+):
     async def _fake_normalizar(**_kwargs):
         return {
             "ok": True,
@@ -202,54 +239,19 @@ async def test_resolver_servicio_best_effort_registra_review_catalogo(
                 "raw_service_text": "Gestion de proyectos tics",
                 "service_name": "Gestión de proyectos TIC",
                 "service_summary": "Gestión de proyectos relacionados con tecnologías de la información.",
-                "domain_code": None,
+                "domain_code": "tecnologia",
                 "category_name": None,
                 "classification_confidence": 0.52,
                 "requires_review": True,
+                "needs_clarification": True,
                 "review_reason": "catalog_review_required",
             },
         }
-
-    async def _fake_registrar_revision_catalogo_servicio(**kwargs):
-        captured.update(kwargs)
-        return {"id": "review-1"}
-
-    async def _fake_sugerencia_revision_catalogo_servicio(**_kwargs):
-        return {
-            "suggested_domain_code": "tecnologia",
-            "proposed_category_name": "Servicios tecnológicos",
-            "proposed_service_summary": "Gestión de proyectos tecnológicos con foco en IA.",
-            "review_reason": "best_effort_catalog_suggestion",
-            "confidence": 0.84,
-        }
-
-    async def _fake_obtener_catalogo_dominios_liviano(_supabase):
-        return [{"code": "tecnologia", "display_name": "Tecnología", "description": ""}]
 
     monkeypatch.setitem(
         resolver_servicio_onboarding_best_effort.__globals__,
         "normalizar_servicios_onboarding",
         _fake_normalizar,
-    )
-    monkeypatch.setitem(
-        resolver_servicio_onboarding_best_effort.__globals__,
-        "registrar_revision_catalogo_servicio",
-        _fake_registrar_revision_catalogo_servicio,
-    )
-    monkeypatch.setitem(
-        resolver_servicio_onboarding_best_effort.__globals__,
-        "generar_sugerencia_revision_catalogo_servicio",
-        _fake_sugerencia_revision_catalogo_servicio,
-    )
-    monkeypatch.setitem(
-        resolver_servicio_onboarding_best_effort.__globals__,
-        "obtener_catalogo_dominios_liviano",
-        _fake_obtener_catalogo_dominios_liviano,
-    )
-    monkeypatch.setitem(
-        resolver_servicio_onboarding_best_effort.__globals__,
-        "_resolver_supabase_runtime",
-        lambda: object(),
     )
 
     resultado = await resolver_servicio_onboarding_best_effort(
@@ -258,14 +260,12 @@ async def test_resolver_servicio_best_effort_registra_review_catalogo(
         provider_id="prov-1",
     )
 
-    assert resultado["ok"] is True
-    assert captured["provider_id"] == "prov-1"
-    assert captured["raw_service_text"] == "Gestion de proyectos tics"
-    assert captured["service_name"] == "Gestión de proyectos TIC"
-    assert captured["suggested_domain_code"] == "tecnologia"
-    assert captured["proposed_category_name"] == "Servicios tecnológicos"
-    assert captured["review_reason"] == "best_effort_catalog_suggestion"
-    assert captured["source"] == "provider_onboarding"
+    assert resultado["ok"] is False
+    assert resultado["error_reason"] == "classification_incomplete"
+    assert (
+        resultado["response"]
+        == "No pude cerrar ese servicio. Escríbelo otra vez con más detalle o usa una especialidad más exacta."
+    )
 
 
 @pytest.mark.asyncio
@@ -566,7 +566,7 @@ def test_validar_servicio_semanticamente_recorta_normalized_service_visible():
             self.calls += 1
             if self.calls == 1:
                 payload = {
-                    "status": "catalog_review_required",
+                    "status": "accepted",
                     "normalized_service": (
                         "instalación y mantenimiento de sistemas de climatización "
                         "industrial para grandes superficies y complejos empresariales"
@@ -614,6 +614,115 @@ def test_validar_servicio_semanticamente_recorta_normalized_service_visible():
     assert len(resultado["normalized_service"]) <= 68
     assert "…" not in resultado["normalized_service"]
     assert cliente_openai.chat.completions.calls == 1
+
+
+def test_validar_servicio_semanticamente_reintenta_modo_estricto():
+    class _Respuesta:
+        def __init__(self, content):
+            self.choices = [type("C", (), {"message": type("M", (), {"content": content})()})()]
+
+    class _Completions:
+        def __init__(self):
+            self.calls = []
+
+        async def create(self, **kwargs):
+            self.calls.append(kwargs["messages"][1]["content"])
+            if len(self.calls) == 1:
+                payload = {
+                    "normalized_service": "servicios de jardineria y poda de arboles",
+                    "domain_code": None,
+                    "category_name": None,
+                    "service_summary": "Servicio de jardineria y poda.",
+                    "confidence": 0.4,
+                    "reason": "ambiguous",
+                    "clarification_question": None,
+                    "status": "accepted",
+                }
+            else:
+                payload = {
+                    "normalized_service": "servicios de jardineria y poda de arboles",
+                    "domain_code": "jardineria",
+                    "category_name": "Jardineria",
+                    "service_summary": "Servicio de jardineria y poda.",
+                    "confidence": 0.9,
+                    "reason": "resolved",
+                    "clarification_question": None,
+                    "status": "accepted",
+                }
+            return _Respuesta(json.dumps(payload))
+
+    class _Chat:
+        def __init__(self):
+            self.completions = _Completions()
+
+    class _ClienteOpenAI:
+        def __init__(self):
+            self.chat = _Chat()
+
+    cliente_openai = _ClienteOpenAI()
+
+    resultado = asyncio.run(
+        validar_servicio_semanticamente(
+            cliente_openai=cliente_openai,
+            supabase=None,
+            raw_service_text="Servicios de jardinería y poda de árboles",
+            service_name="Servicios de jardinería y poda de árboles",
+        )
+    )
+
+    assert len(cliente_openai.chat.completions.calls) == 2
+    assert "Modo estricto" in cliente_openai.chat.completions.calls[1]
+    assert resultado["domain_code"] == "jardineria"
+    assert resultado["category_name"] == "Jardineria"
+    assert resultado["is_valid_service"] is True
+
+
+def test_validar_servicio_semanticamente_falla_si_sigue_incompleto():
+    class _Respuesta:
+        def __init__(self, content):
+            self.choices = [type("C", (), {"message": type("M", (), {"content": content})()})()]
+
+    class _Completions:
+        def __init__(self):
+            self.calls = 0
+
+        async def create(self, **_kwargs):
+            self.calls += 1
+            payload = {
+                "normalized_service": "servicios de jardineria y poda de arboles",
+                "domain_code": None,
+                "category_name": None,
+                "service_summary": "Servicio de jardineria y poda.",
+                "confidence": 0.3,
+                "reason": "ambiguous",
+                "clarification_question": None,
+                "status": "accepted",
+            }
+            return _Respuesta(json.dumps(payload))
+
+    class _Chat:
+        def __init__(self):
+            self.completions = _Completions()
+
+    class _ClienteOpenAI:
+        def __init__(self):
+            self.chat = _Chat()
+
+    cliente_openai = _ClienteOpenAI()
+
+    resultado = asyncio.run(
+        validar_servicio_semanticamente(
+            cliente_openai=cliente_openai,
+            supabase=None,
+            raw_service_text="Servicios de jardinería y poda de árboles",
+            service_name="Servicios de jardinería y poda de árboles",
+        )
+    )
+
+    assert cliente_openai.chat.completions.calls == 2
+    assert resultado["is_valid_service"] is False
+    assert resultado["needs_clarification"] is True
+    assert resultado["domain_resolution_status"] == "clarification_required"
 
 
 def test_espera_especialidad_onboarding_con_linea_numerada_va_a_consentimiento(
@@ -969,6 +1078,7 @@ def test_asistente_clarificacion_usa_ejemplos_reales(monkeypatch):
         def rpc(self, fn_name, params):
             assert fn_name == "match_provider_services"
             assert params["match_count"] >= 8
+            assert "verified_only" not in params
             return _RpcQuery()
 
     async def _fake_run_supabase(operation, **_kwargs):
@@ -1467,17 +1577,17 @@ def test_service_summary_se_construye_con_categoria_y_dominio():
 
 def test_texto_embedding_canonico_usa_gramatica_estable():
     texto = modulo_clasificacion.construir_texto_embedding_canonico(
-        service_name_normalized="Desarrollo de Software a Medida",
+        service_summary="Desarrollo de software a medida, con soporte y mantenimiento.",
         domain_code="Tecnología",
         category_name="Servicios tecnológicos",
     )
 
     assert texto == (
-        "desarrollo de software a medida | tecnologia | servicios tecnologicos"
+        "desarrollo de software a medida con soporte y mantenimiento | tecnologia | servicios tecnologicos"
     )
 
 
-def test_reclasificacion_masiva_ignora_service_summary_en_embedding():
+def test_reclasificacion_masiva_usa_service_summary_en_embedding():
     from tools.maintenance import reclasificar_provider_services_masivo as modulo_reclasificar
 
     row = modulo_reclasificar.ProviderServiceRow(
@@ -1485,7 +1595,7 @@ def test_reclasificacion_masiva_ignora_service_summary_en_embedding():
         provider_id="prov-1",
         service_name="Desarrollo de software",
         raw_service_text="desarrollo de software",
-        service_summary="Resumen previo",
+        service_summary="Resumen previo con soporte y mantenimiento",
         domain_code="tecnologia",
         category_name="Servicios tecnologicos",
         classification_confidence=0.93,
@@ -1506,11 +1616,11 @@ def test_reclasificacion_masiva_ignora_service_summary_en_embedding():
     )
 
     assert embedding_text == modulo_clasificacion.construir_texto_embedding_canonico(
-        service_name_normalized="Desarrollo de software",
+        service_summary="Resumen distinto para UI",
         domain_code="tecnologia",
         category_name="Servicios tecnologicos",
     )
-    assert needs_embedding is False
+    assert needs_embedding is True
     assert payload["service_summary"] == "Resumen distinto para UI"
     assert accepted is True
 
@@ -1525,9 +1635,14 @@ async def test_insertar_servicios_proveedor_usa_texto_embedding_canonico(monkeyp
     async def _fake_clasificar_servicios_livianos(**_kwargs):
         return [
             {
+                "normalized_service": "Desarrollo de software",
+                "domain_resolution_status": "matched",
                 "resolved_domain_code": "tecnologia",
                 "category_name": "Servicios tecnologicos",
                 "classification_confidence": 0.9,
+                "is_valid_service": True,
+                "needs_clarification": False,
+                "reason": "service_validated",
             }
         ]
 

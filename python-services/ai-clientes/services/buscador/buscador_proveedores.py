@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional, Protocol
 
 from config.configuracion import configuracion
 from infrastructure.clientes.busqueda import ClienteBusqueda
+from utils.texto import normalizar_texto_para_coincidencia
 
 
 class IValidadorIA(Protocol):
@@ -17,7 +18,44 @@ class IValidadorIA(Protocol):
         request_category_name: Optional[str] = None,
         request_domain: Optional[str] = None,
         request_category: Optional[str] = None,
+        search_profile: Optional[Dict[str, Any]] = None,
     ) -> list[Dict[str, Any]]: ...
+
+
+def _tokens_from_text(text: str) -> list[str]:
+    normalized = normalizar_texto_para_coincidencia(text or "")
+    return [token for token in normalized.split() if len(token) >= 3]
+
+
+def _build_search_profile_from_inputs(
+    *,
+    primary_service: str,
+    service_summary: Optional[str] = None,
+    domain: Optional[str] = None,
+    category: Optional[str] = None,
+    raw_input: str = "",
+) -> Dict[str, Any]:
+    signals: list[str] = []
+    for value in (service_summary, primary_service, domain, category):
+        if value:
+            candidate = value.strip()
+            if candidate and candidate not in signals:
+                signals.append(candidate)
+    for token in _tokens_from_text(raw_input):
+        if len(signals) >= 6:
+            break
+        if token not in signals:
+            signals.append(token)
+    return {
+        "primary_service": primary_service,
+        "service_summary": service_summary,
+        "domain": domain,
+        "category": category,
+        "signals": signals,
+        "raw_input": raw_input.strip(),
+        "confidence": 0.85,
+        "source": "client",
+    }
 
 
 class BuscadorProveedores:
@@ -56,6 +94,7 @@ class BuscadorProveedores:
         domain_code: Optional[str] = None,
         category: Optional[str] = None,
         category_name: Optional[str] = None,
+        search_profile: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Buscar proveedores usando Search Service + validación IA.
@@ -78,12 +117,24 @@ class BuscadorProveedores:
                 - total: cantidad de proveedores
                 - search_scope: ámbito de búsqueda
         """
+        profile = search_profile or _build_search_profile_from_inputs(
+            primary_service=profesion,
+            service_summary=None,
+            domain=domain or domain_code,
+            category=category or category_name,
+            raw_input=descripcion_problema or profesion,
+        )
+        service_summary = str(
+            profile.get("service_summary") or profile.get("primary_service") or ""
+        ).strip()
+        profile["service_summary"] = service_summary or None
         consulta = self._build_canonical_query(
-            profesion=profesion,
+            profesion=str(profile.get("primary_service") or profesion),
+            service_summary=service_summary or None,
             descripcion_problema=descripcion_problema,
-            domain=domain,
+            domain=str(profile.get("domain") or domain or ""),
             domain_code=domain_code,
-            category=category,
+            category=str(profile.get("category") or category or ""),
             category_name=category_name,
         )
         self.logger.info(
@@ -105,6 +156,7 @@ class BuscadorProveedores:
                 category=category,
                 domain_code=domain_code,
                 category_name=category_name,
+                search_profile=profile,
                 limite=configuracion.search_candidate_limit,
             )
 
@@ -156,6 +208,7 @@ class BuscadorProveedores:
                 request_category_name=category_name,
                 request_domain=domain,
                 request_category=category,
+                search_profile=profile,
             )
             proveedores_rankeados = self._rankear_proveedores(
                 proveedores=proveedores_validados,
@@ -187,15 +240,16 @@ class BuscadorProveedores:
     def _build_canonical_query(
         *,
         profesion: str,
-        descripcion_problema: Optional[str],
-        domain: Optional[str],
-        domain_code: Optional[str],
-        category: Optional[str],
-        category_name: Optional[str],
+        service_summary: Optional[str] = None,
+        descripcion_problema: Optional[str] = None,
+        domain: Optional[str] = None,
+        domain_code: Optional[str] = None,
+        category: Optional[str] = None,
+        category_name: Optional[str] = None,
     ) -> str:
         """Construye la consulta canónica priorizando servicio y taxonomía."""
         query_parts = [
-            str(profesion or "").strip(),
+            str(service_summary or profesion or "").strip(),
             str(domain_code or domain or "").strip(),
             str(category_name or category or "").strip(),
         ]
@@ -229,7 +283,6 @@ class BuscadorProveedores:
                 float(proveedor.get("similarity_score") or 0.0),
                 float(proveedor.get("classification_confidence") or 0.0),
                 float(proveedor.get("rating") or 0.0),
-                1.0 if proveedor.get("verified") else 0.0,
             ),
             reverse=True,
         )
@@ -268,7 +321,6 @@ class BuscadorProveedores:
             retrieval = float(proveedor.get("retrieval_score") or similarity)
             validation = float(proveedor.get("validation_confidence") or 0.0)
             rating = max(0.0, min(1.0, float(proveedor.get("rating") or 0.0) / 5.0))
-            verified = 1.0 if proveedor.get("verified") else 0.0
             metadata_terms = " ".join(
                 str(proveedor.get(field) or "").lower()
                 for field in (
@@ -295,7 +347,6 @@ class BuscadorProveedores:
                     + validation * 0.25
                     + metadata_match * 0.10
                     + rating * 0.05
-                    + verified * 0.05,
                 ),
             )
             proveedor_rankeado = dict(proveedor)
@@ -306,7 +357,6 @@ class BuscadorProveedores:
                 "validation_confidence": round(validation, 4),
                 "metadata_match": round(metadata_match, 4),
                 "rating_score": round(rating, 4),
-                "verified_score": round(verified, 4),
             }
             rankeados.append(proveedor_rankeado)
 

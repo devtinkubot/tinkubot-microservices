@@ -5,19 +5,16 @@ Modelos de datos para Search Service
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SearchFilters(BaseModel):
     """Filtros para búsqueda de proveedores"""
 
-    verified_only: bool = False
+    model_config = ConfigDict(extra="ignore")
+
     min_rating: float = Field(default=0.0, ge=0.0, le=5.0)
     city: Optional[str] = None
-    max_distance_km: Optional[int] = None
-
-    class Config:
-        extra = "ignore"
 
 
 class SearchRequest(BaseModel):
@@ -42,8 +39,9 @@ class ProviderInfo(BaseModel):
     available: bool
     verified: bool
     services: List[str]
-    years_of_experience: Optional[int] = None
     experience_range: Optional[str] = None
+    years_of_experience: Optional[int] = None  # Ya no viene de la BD
+
     created_at: datetime
     similarity_score: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     semantic_alignment_score: Optional[float] = Field(
@@ -83,30 +81,6 @@ class SearchResult(BaseModel):
     suggestions: Optional[List[str]] = None
 
 
-class TokenAnalysis(BaseModel):
-    """Análisis de tokens de una consulta"""
-
-    original_text: str
-    normalized_text: str
-    tokens: List[str]
-    service_tokens: List[str]
-    city: Optional[str]
-    has_urgency: bool
-    token_count: int
-    has_clear_intent: bool
-
-
-class ProviderIndex(BaseModel):
-    """Índice de búsqueda para un proveedor"""
-
-    provider_id: str
-    profession_tokens: List[str]
-    city_normalized: Optional[str]
-    service_tokens: List[str]
-    keywords: List[str]
-    search_vector: str  # Para búsqueda full-text
-    updated_at: datetime
-
 
 class CacheConfig(BaseModel):
     """Configuración de caché"""
@@ -139,41 +113,6 @@ class HealthCheck(BaseModel):
     search_service_ready: bool
     uptime_seconds: int
     metrics: Metrics
-
-
-class ErrorResponse(BaseModel):
-    """Respuesta de error estándar"""
-
-    error: str
-    message: str
-    details: Optional[Dict[str, Any]] = None
-    timestamp: datetime
-    request_id: Optional[str] = None
-
-
-class BulkIndexRequest(BaseModel):
-    """Solicitud de indexación masiva"""
-
-    provider_ids: List[str]
-    force_reindex: bool = False
-
-
-class BulkIndexResponse(BaseModel):
-    """Respuesta de indexación masiva"""
-
-    total_processed: int
-    successful: int
-    failed: int
-    errors: List[Dict[str, Any]]
-    processing_time_ms: int
-
-
-class SuggestionRequest(BaseModel):
-    """Solicitud de sugerencias de búsqueda"""
-
-    partial_query: str = Field(..., min_length=1, max_length=100)
-    context: Optional[Dict[str, Any]] = None
-    limit: int = Field(default=5, ge=1, le=20)
 
 
 class SuggestionResponse(BaseModel):

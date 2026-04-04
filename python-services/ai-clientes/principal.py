@@ -188,6 +188,7 @@ async def buscar_proveedores(
     domain_code: str | None = None,
     category: str | None = None,
     category_name: str | None = None,
+    search_profile: dict[str, Any] | None = None,
 ):
     """Wrapper de búsqueda para flujos en segundo plano."""
     if orquestador.buscador:
@@ -200,6 +201,7 @@ async def buscar_proveedores(
             domain_code=domain_code,
             category=category,
             category_name=category_name,
+            search_profile=search_profile,
         )
     return {"ok": False, "providers": [], "total": 0}
 

@@ -24,13 +24,11 @@ from models.schemas import (
 from openai import AsyncOpenAI
 from services.cache_service import cache_service
 from supabase import Client, create_client
-from utils.text_processor import TextProcessor, analyze_query
+from utils.text_processor import analyze_query
 
 logger = logging.getLogger(__name__)
-SUPABASE_TIMEOUT_SECONDS = (
-    float(getattr(settings, "search_timeout_ms", 5000) or 5000) / 1000.0
-)
-SLOW_QUERY_THRESHOLD_MS = int(getattr(settings, "search_timeout_ms", 5000) or 5000)
+SUPABASE_TIMEOUT_SECONDS = settings.search_timeout_ms / 1000.0
+SLOW_QUERY_THRESHOLD_MS = settings.search_timeout_ms
 
 
 class EmbeddingUnavailableError(Exception):
@@ -43,9 +41,8 @@ class SearchService:
     def __init__(self):
         self.supabase: Optional[Client] = None
         self.openai_client: Optional[AsyncOpenAI] = None
-        self.text_processor = TextProcessor()
         self._openai_semaphore = asyncio.Semaphore(
-            int(getattr(settings, "max_openai_concurrency", 5) or 5)
+            settings.max_openai_concurrency
         )
 
     async def _run_supabase(self, op, label: str):
@@ -105,8 +102,20 @@ class SearchService:
 
     def _build_effective_query(self, request: SearchRequest) -> str:
         context = getattr(request, "context", None) or {}
+        search_profile = context.get("search_profile")
+        if not isinstance(search_profile, dict):
+            search_profile = {}
         service_candidate = str(
-            context.get("normalized_service") or context.get("service_candidate") or ""
+            context.get("normalized_service")
+            or context.get("service_candidate")
+            or search_profile.get("primary_service")
+            or ""
+        ).strip()
+        service_summary = str(
+            context.get("service_summary")
+            or search_profile.get("service_summary")
+            or service_candidate
+            or ""
         ).strip()
         domain_text = str(
             context.get("domain_code") or context.get("domain") or ""
@@ -116,7 +125,9 @@ class SearchService:
         ).strip()
 
         query_parts: List[str] = []
-        if service_candidate:
+        if service_summary:
+            query_parts.append(service_summary)
+        elif service_candidate:
             query_parts.append(service_candidate)
         if domain_text:
             query_parts.append(domain_text)
@@ -137,6 +148,15 @@ class SearchService:
         return " ".join(deduped_parts) if deduped_parts else request.query
 
     @staticmethod
+    def _extract_signals_text(context: Dict[str, Any]) -> str:
+        raw_signals = context.get("signals") or []
+        if isinstance(raw_signals, str):
+            raw_signals = [raw_signals]
+        return " ".join(
+            str(signal).strip() for signal in raw_signals if str(signal).strip()
+        )
+
+    @staticmethod
     def _tokenize_text(value: Optional[str]) -> set[str]:
         if not value:
             return set()
@@ -154,10 +174,20 @@ class SearchService:
 
     def _build_context_profile(self, request: SearchRequest) -> Dict[str, Any]:
         context = getattr(request, "context", None) or {}
+        search_profile = context.get("search_profile")
+        if not isinstance(search_profile, dict):
+            search_profile = {}
         service_candidate = str(
             context.get("normalized_service")
             or context.get("service_candidate")
+            or search_profile.get("primary_service")
             or request.query
+            or ""
+        ).strip()
+        service_summary = str(
+            context.get("service_summary")
+            or search_profile.get("service_summary")
+            or service_candidate
             or ""
         ).strip()
         problem_description = str(context.get("problem_description") or "").strip()
@@ -171,23 +201,28 @@ class SearchService:
         query_text = " ".join(
             part
             for part in [
+                service_summary,
                 service_candidate,
                 domain_text,
                 category_text,
             ]
             if part
         )
+        signal_text = self._extract_signals_text(context)
 
         return {
             "service_candidate": service_candidate,
+            "service_summary": service_summary,
             "problem_description": problem_description,
             "domain_text": domain_text,
             "category_text": category_text,
-            "service_tokens": self._tokenize_text(service_candidate),
+            "service_tokens": self._tokenize_text(service_summary or service_candidate),
             "problem_tokens": self._tokenize_text(problem_description),
             "domain_tokens": self._tokenize_text(domain_text),
             "category_tokens": self._tokenize_text(category_text),
             "query_tokens": self._tokenize_text(query_text),
+            "signals_text": signal_text,
+            "signals_tokens": self._tokenize_text(signal_text),
         }
 
     def _compute_semantic_alignment_score(
@@ -251,11 +286,15 @@ class SearchService:
             else 0.0,
         )
 
+        signals_overlap = self._token_overlap(
+            context_profile["signals_tokens"], provider_service_tokens
+        )
         compatibility_score = (
-            service_overlap * 0.42
-            + problem_overlap * 0.22
-            + taxonomy_overlap * 0.21
-            + query_overlap * 0.10
+            service_overlap * 0.39
+            + problem_overlap * 0.20
+            + taxonomy_overlap * 0.20
+            + query_overlap * 0.09
+            + signals_overlap * 0.07
         )
 
         normalized_service_candidate = self._normalize_text(
@@ -328,7 +367,6 @@ class SearchService:
                 float(provider.retrieval_score or 0.0),
                 float(provider.similarity_score or 0.0),
                 float(provider.rating or 0.0),
-                1.0 if provider.verified else 0.0,
             ),
             reverse=True,
         )
@@ -339,14 +377,28 @@ class SearchService:
         if request.filters:
             canonical += (
                 f":{request.filters.city}:"
-                f"{request.filters.min_rating}:{request.filters.verified_only}"
+                f"{request.filters.min_rating}"
             )
         context = request.context or {}
+        search_profile = context.get("search_profile")
+        if not isinstance(search_profile, dict):
+            search_profile = {}
+        service_summary = str(
+            context.get("service_summary")
+            or search_profile.get("service_summary")
+            or context.get("service_candidate")
+            or search_profile.get("primary_service")
+            or ""
+        ).lower().strip()
         canonical += (
-            f":{str(context.get('normalized_service') or context.get('service_candidate') or '').lower().strip()}:"
+            f":{service_summary}:"
+            f"{str(context.get('normalized_service') or context.get('service_candidate') or search_profile.get('primary_service') or '').lower().strip()}:"
             f"{str(context.get('domain_code') or context.get('domain') or '').lower().strip()}:"
             f"{str(context.get('category_name') or context.get('category') or '').lower().strip()}"
         )
+        signals_text = self._extract_signals_text(context).lower().strip()
+        if signals_text:
+            canonical += f":{signals_text}"
 
         return hashlib.sha256(canonical.encode()).hexdigest()[:16]
 
@@ -489,17 +541,15 @@ class SearchService:
             )
 
         city = None
-        verified_only = True
         if request.filters:
             city = request.filters.city
-            verified_only = request.filters.verified_only
 
         match_count = max(settings.vector_top_k, request.limit + request.offset)
         params = {
             "query_embedding": embedding,
             "match_count": match_count,
             "city_filter": f"%{city}%" if city else None,
-            "verified_only": verified_only,
+            "verified_only": False,
             "similarity_threshold": settings.vector_similarity_threshold,
         }
 
@@ -522,37 +572,16 @@ class SearchService:
         min_distance = min(distances) if distances else None
         max_distance = max(distances) if distances else None
         logger.info(
-            "search_embeddings_rpc query=%r match_count=%s threshold=%.2f returned=%s city=%r verified_only=%s min_distance=%s max_distance=%s",
+            "search_embeddings_rpc query=%r match_count=%s threshold=%.2f returned=%s city=%r min_distance=%s max_distance=%s",
             effective_query[:120],
             match_count,
             settings.vector_similarity_threshold,
             len(providers),
             city,
-            verified_only,
             f"{min_distance:.4f}" if min_distance is not None else "n/a",
             f"{max_distance:.4f}" if max_distance is not None else "n/a",
         )
         return self._rank_by_semantic_alignment(request, providers)
-
-    def _coerce_embedding(self, embedding: Any) -> List[float]:
-        """Normaliza distintos formatos de embedding devueltos por Supabase."""
-        if embedding is None:
-            return []
-        if isinstance(embedding, list):
-            try:
-                return [float(value) for value in embedding]
-            except (TypeError, ValueError):
-                return []
-        if isinstance(embedding, str):
-            raw = embedding.strip().strip("[]")
-            if not raw:
-                return []
-            parts = [part.strip() for part in raw.split(",") if part.strip()]
-            try:
-                return [float(part) for part in parts]
-            except (TypeError, ValueError):
-                return []
-        return []
 
     def _dict_to_provider_info_from_vector(
         self, row: Dict[str, Any], request: Optional[SearchRequest] = None
@@ -569,7 +598,6 @@ class SearchService:
         retrieval_score = self._calculate_retrieval_score(
             similarity_score=similarity_score,
             rating=float(row.get("rating", 0.0)),
-            verified=bool(row.get("verified", False)),
             classification_confidence=row.get("classification_confidence"),
         )
         semantic_alignment_score = (
@@ -589,9 +617,7 @@ class SearchService:
             full_name=row.get("full_name", ""),
             city=row.get("city"),
             rating=float(row.get("rating", 0.0)),
-            available=self._normalize_available(
-                row.get("available"), row.get("verified")
-            ),
+            available=self._normalize_available(row.get("available")),
             verified=row.get("verified", False),
             services=services,
             years_of_experience=None,
@@ -617,9 +643,6 @@ class SearchService:
         filtered_providers = []
 
         for provider in providers:
-            if filters.verified_only and not provider.verified:
-                continue
-
             if provider.rating < filters.min_rating:
                 continue
 
@@ -643,7 +666,7 @@ class SearchService:
         """Aplicar paginación preservando el orden de similitud vectorial."""
         start_idx = offset
         end_idx = start_idx + limit
-        return list(providers)[start_idx:end_idx]
+        return providers[start_idx:end_idx]
 
     def _calculate_overall_confidence(
         self, providers: List[ProviderInfo], query_analysis: Dict[str, Any]
@@ -653,41 +676,33 @@ class SearchService:
             return 0.0
 
         avg_rating = sum(p.rating for p in providers) / len(providers)
-        verified_ratio = sum(1 for p in providers if p.verified) / len(providers)
-        confidence = (avg_rating / 5.0) * 0.6 + verified_ratio * 0.4
-
-        return min(1.0, confidence)
+        return min(1.0, avg_rating / 5.0)
 
     def _calculate_retrieval_score(
         self,
         *,
         similarity_score: Optional[float],
         rating: float,
-        verified: bool,
         classification_confidence: Any,
     ) -> float:
         similarity = float(similarity_score or 0.0)
-        rating_score = max(0.0, min(1.0, rating / 5.0))
         try:
             classification = max(0.0, min(1.0, float(classification_confidence or 0.0)))
         except (TypeError, ValueError):
             classification = 0.0
-        verified_score = 1.0 if verified else 0.0
         score = (
-            similarity * 0.65
-            + classification * 0.15
-            + rating_score * 0.10
-            + verified_score * 0.10
+            similarity * 0.82
+            + classification * 0.18
         )
         return max(0.0, min(1.0, score))
 
-    def _normalize_available(self, available: Any, verified: Any) -> bool:
+    def _normalize_available(self, available: Any) -> bool:
         """
         Normaliza el estado de disponibilidad. Si no viene en la BD (None),
-        se asume True o el valor de verificación para evitar descartar resultados.
+        se asume True para evitar descartar resultados.
         """
         if available is None:
-            return bool(verified if verified is not None else True)
+            return True
         return bool(available)
 
     async def _update_metrics_async(

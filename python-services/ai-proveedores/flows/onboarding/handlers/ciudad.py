@@ -3,6 +3,8 @@
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
+import httpx
+
 from infrastructure.database import run_supabase
 from services.onboarding.event_payloads import payload_ciudad
 from services.onboarding.event_publisher import (
@@ -11,10 +13,16 @@ from services.onboarding.event_publisher import (
     publicar_evento_onboarding,
 )
 from templates.onboarding.ciudad import (
+    error_ciudad_no_reconocida,
     solicitar_ciudad_registro,
 )
 from templates.onboarding.documentos import payload_onboarding_dni_frontal
+from services.shared.ubicacion_ecuador import validar_y_normalizar_ubicacion
 from utils import limpiar_espacios
+
+NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse"
+NOMINATIM_USER_AGENT = "tinkubot-ai-proveedores/1.0 (support@tinkubot.com)"
+GEOCODING_TIMEOUT_SECONDS = 2.5
 
 
 def _parsear_coordenada(valor: Any) -> Optional[float]:
@@ -36,10 +44,43 @@ def _extraer_ciudad_desde_payload_ubicacion(
     if not isinstance(ubicacion, dict):
         return None
     for campo in ("city", "address", "name"):
-        ciudad = _normalizar_ciudad_desde_texto(ubicacion.get(campo))
+        ciudad, _estado = validar_y_normalizar_ubicacion(ubicacion.get(campo))
         if ciudad:
             return ciudad
     return None
+
+
+async def _resolver_ciudad_desde_coordenadas(
+    latitud: float, longitud: float
+) -> Optional[str]:
+    """Resuelve la ciudad/cantón principal usando reverse geocoding."""
+    params = {
+        "format": "jsonv2",
+        "lat": latitud,
+        "lon": longitud,
+        "zoom": 10,
+        "addressdetails": 1,
+        "accept-language": "es",
+    }
+    headers = {"User-Agent": NOMINATIM_USER_AGENT}
+    timeout = httpx.Timeout(GEOCODING_TIMEOUT_SECONDS)
+
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        respuesta = await client.get(
+            NOMINATIM_REVERSE_URL, params=params, headers=headers
+        )
+    if respuesta.status_code != 200:
+        return None
+
+    payload = respuesta.json()
+    direccion = payload.get("address") or {}
+    for campo in ("city", "town", "village", "county", "municipality"):
+        ciudad, _estado = validar_y_normalizar_ubicacion(direccion.get(campo))
+        if ciudad:
+            return ciudad
+
+    display_name, _estado = validar_y_normalizar_ubicacion(payload.get("display_name"))
+    return display_name
 
 
 async def _persistir_ubicacion_proveedor(
@@ -85,14 +126,25 @@ async def manejar_espera_ciudad_onboarding(  # noqa: C901
     proveedor_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Procesa la entrada de ciudad durante el onboarding."""
-    ciudad = limpiar_espacios(texto_mensaje)
+    texto_ciudad = limpiar_espacios(texto_mensaje)
+    ciudad, _estado_ciudad = validar_y_normalizar_ubicacion(texto_mensaje)
     ubicacion = (carga or {}).get("location") or {}
     latitud = _parsear_coordenada((ubicacion or {}).get("latitude"))
     longitud = _parsear_coordenada((ubicacion or {}).get("longitude"))
     ciudad_desde_payload = _extraer_ciudad_desde_payload_ubicacion(ubicacion)
-    ciudad_candidata = ciudad_desde_payload or ciudad
+    ciudad_desde_geocoding = None
+    if latitud is not None and longitud is not None:
+        try:
+            ciudad_desde_geocoding = await _resolver_ciudad_desde_coordenadas(
+                latitud, longitud
+            )
+        except Exception:
+            ciudad_desde_geocoding = None
+    ciudad_candidata = ciudad_desde_geocoding or ciudad_desde_payload or ciudad
     tiene_ubicacion_estructurada = bool(
-        ciudad_desde_payload or (latitud is not None and longitud is not None)
+        ciudad_desde_payload
+        or ciudad_desde_geocoding
+        or (latitud is not None and longitud is not None)
     )
 
     if latitud is not None:
@@ -102,6 +154,11 @@ async def manejar_espera_ciudad_onboarding(  # noqa: C901
     if latitud is not None or longitud is not None:
         flujo["location_updated_at"] = datetime.now(timezone.utc).isoformat()
     if not ciudad_candidata and not tiene_ubicacion_estructurada:
+        if texto_ciudad:
+            return {
+                "success": True,
+                "messages": [{"response": error_ciudad_no_reconocida()}],
+            }
         return {
             "success": True,
             "messages": [solicitar_ciudad_registro()],

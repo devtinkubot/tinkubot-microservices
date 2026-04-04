@@ -428,10 +428,15 @@ async def registrar_proveedor_onboarding_interno(
             solicitud.provider_data,
             servicio_embeddings,
         )
-        if not provider:
+        if not provider or provider.get("registration_blocked_reason"):
             return RespuestaRegistrarProveedorOnboarding(
                 ok=False,
-                error_reason="registration_failed",
+                provider=provider,
+                error_reason=str(
+                    provider.get("registration_blocked_reason")
+                    if provider
+                    else "registration_failed"
+                ),
             )
 
         media_uploaded = False

@@ -3,6 +3,7 @@ Configuración local de AI Search Service
 Usa pydantic-settings para cargar variables de entorno
 """
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -44,6 +45,7 @@ class Settings(BaseSettings):
 
     # Logging
     log_level: str = "INFO"
+    log_sampling_rate: int = Field(default=10, ge=1)
 
 
 settings = Settings()

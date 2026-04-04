@@ -72,6 +72,17 @@ def _normalizar_entradas_servicio(servicios: List[Any]) -> List[Dict[str, Any]]:
     return entradas
 
 
+def _clasificacion_servicio_completa(clasificacion: Dict[str, Any]) -> bool:
+    return bool(
+        str(clasificacion.get("domain_resolution_status") or "").strip().lower()
+        == "matched"
+        and str(clasificacion.get("resolved_domain_code") or "").strip()
+        and str(clasificacion.get("category_name") or "").strip()
+        and bool(clasificacion.get("is_valid_service", True))
+        and not bool(clasificacion.get("needs_clarification"))
+    )
+
+
 async def asegurar_proveedor_borrador(
     supabase: Client,
     telefono: str,
@@ -190,6 +201,35 @@ async def insertar_servicios_proveedor(
         servicios=[entry["service_name"] for entry in service_entries],
     )
 
+    clasificaciones_incompletas: List[Dict[str, Any]] = []
+    for idx, entry in enumerate(service_entries):
+        metadata_base = (
+            clasificaciones_semanticas[idx]
+            if idx < len(clasificaciones_semanticas)
+            else {}
+        )
+        if not _clasificacion_servicio_completa(metadata_base):
+            clasificaciones_incompletas.append(
+                {
+                    "service": entry["service_name"],
+                    "error": "classification_incomplete",
+                    "reason": metadata_base.get("reason"),
+                    "response": metadata_base.get("clarification_question"),
+                }
+            )
+
+    if clasificaciones_incompletas:
+        logger.warning(
+            "⚠️ No se insertan servicios porque la clasificación no cerró: %s",
+            clasificaciones_incompletas,
+        )
+        return {
+            "inserted_rows": [],
+            "requested_count": requested_count,
+            "inserted_count": 0,
+            "failed_services": clasificaciones_incompletas,
+        }
+
     def _resultado() -> Dict[str, Any]:
         return {
             "inserted_rows": servicios_insertados,
@@ -227,6 +267,15 @@ async def insertar_servicios_proveedor(
                     domain_code=domain_code_to_use,
                 )
             )
+
+            if not domain_code_to_use or not metadata.get("category_name"):
+                failed_services.append(
+                    {
+                        "service": servicio,
+                        "error": "missing_domain_or_category",
+                    }
+                )
+                continue
 
             try:
                 resultado = await run_supabase(
@@ -310,7 +359,7 @@ async def insertar_servicios_proveedor(
             logger.info(f"🔄 Generando embedding para servicio: {servicio}")
             embedding = await servicio_embeddings.generar_embedding(
                 construir_texto_embedding_canonico(
-                    service_name_normalized=servicio_normalizado,
+                    service_summary=service_summary,
                     domain_code=domain_code_to_use,
                     category_name=metadata.get("category_name"),
                 )
@@ -338,7 +387,7 @@ async def insertar_servicios_proveedor(
                         "display_order": _resolver_display_order(
                             display_order_start + idx
                         ),
-                        "domain_code": domain_code_to_use,  # ✅ Usar dominio sugerido
+                        "domain_code": domain_code_to_use,
                         "category_name": metadata.get("category_name"),
                         "classification_confidence": (
                             metadata.get("classification_confidence") or 0.0
@@ -510,8 +559,42 @@ async def registrar_proveedor_en_base_datos(
                     resultado_insercion["requested_count"],
                     len(resultado_insercion["failed_services"]),
                 )
+                if resultado_insercion["inserted_count"] != resultado_insercion["requested_count"]:
+                    logger.warning(
+                        "⚠️ Registro detenido porque no se pudieron cerrar todos los servicios"
+                    )
+                    return {
+                        "id": id_proveedor,
+                        "phone": registro_insertado.get("phone", datos_normalizados["phone"]),
+                        "registration_blocked_reason": "service_classification_incomplete",
+                        "error_reason": "service_classification_incomplete",
+                        "services_normalized": servicios_normalizados,
+                        "service_entries": service_entries,
+                        "failed_services": resultado_insercion["failed_services"],
+                    }
             else:
                 logger.warning("⚠️ No hay servicios para insertar en provider_services")
+
+            try:
+                await run_supabase(
+                    lambda: supabase.table("providers")
+                    .update(
+                        {
+                            "onboarding_complete": True,
+                            "updated_at": datetime.utcnow().isoformat(),
+                        }
+                    )
+                    .eq("id", id_proveedor)
+                    .execute(),
+                    timeout=tiempo_espera,
+                    label="providers.mark_onboarding_complete",
+                )
+            except Exception as exc:
+                logger.warning(
+                    "⚠️ No se pudo marcar onboarding_complete para %s: %s",
+                    id_proveedor,
+                    exc,
+                )
 
             # Fase 6: Eliminado campo 'profession' del registro
             registro_proveedor = {

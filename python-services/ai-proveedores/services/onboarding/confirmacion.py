@@ -28,6 +28,7 @@ from services.shared.identidad_proveedor import (
 )
 from templates.onboarding.confirmacion import CONFIRM_ACCEPT_ID, CONFIRM_REJECT_ID
 from templates.onboarding.revision import mensaje_proveedor_en_revision
+from templates.onboarding.servicios import mensaje_no_pude_guardar_servicio
 from templates.shared import (
     mensaje_no_pude_guardar_informacion_registro,
     mensaje_no_pude_validar_datos_registro,
@@ -171,6 +172,23 @@ async def manejar_confirmacion_onboarding(
             }
 
         proveedor_registrado = await registrar_proveedor_fn(datos_proveedor)
+        if proveedor_registrado and proveedor_registrado.get(
+            "registration_blocked_reason"
+        ):
+            return {
+                "success": True,
+                "messages": [
+                    {"response": mensaje_no_pude_guardar_servicio()}
+                ],
+                "new_flow": {
+                    "state": "onboarding_specialty",
+                    "has_consent": True,
+                    "registration_allowed": False,
+                    "provider_id": proveedor_registrado.get("id")
+                    or flujo.get("provider_id"),
+                },
+            }
+
         if proveedor_registrado:
             logger.info(
                 "Proveedor registrado exitosamente: %s",

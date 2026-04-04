@@ -168,18 +168,46 @@ def _normalizar_codigo_taxonomia(texto: Optional[str]) -> Optional[str]:
 
 def _extraer_perfil_servicio(
     valor: Any,
-) -> Dict[str, Optional[str]]:
+) -> Dict[str, Any]:
     if isinstance(valor, dict):
+        search_profile = valor.get("search_profile")
+        search_profile_dict = (
+            search_profile if isinstance(search_profile, dict) else None
+        )
         normalized_service = str(
             valor.get("normalized_service")
             or valor.get("service")
             or valor.get("service_name")
+            or (search_profile_dict or {}).get("primary_service")
+            or (search_profile_dict or {}).get("normalized_service")
             or ""
         ).strip()
-        domain = str(valor.get("domain") or "").strip() or None
-        category = str(valor.get("category") or "").strip() or None
-        domain_code = str(valor.get("domain_code") or "").strip() or None
-        category_name = str(valor.get("category_name") or "").strip() or None
+        service_summary = str(
+            valor.get("service_summary")
+            or valor.get("service_full")
+            or (search_profile_dict or {}).get("service_summary")
+            or ""
+        ).strip() or None
+        domain = str(
+            valor.get("domain")
+            or (search_profile_dict or {}).get("domain")
+            or ""
+        ).strip() or None
+        category = str(
+            valor.get("category")
+            or (search_profile_dict or {}).get("category")
+            or ""
+        ).strip() or None
+        domain_code = str(
+            valor.get("domain_code")
+            or (search_profile_dict or {}).get("domain_code")
+            or ""
+        ).strip() or None
+        category_name = str(
+            valor.get("category_name")
+            or (search_profile_dict or {}).get("category_name")
+            or ""
+        ).strip() or None
 
         if domain and not domain_code:
             domain_code = _normalizar_codigo_taxonomia(domain)
@@ -188,43 +216,70 @@ def _extraer_perfil_servicio(
 
         return {
             "normalized_service": normalized_service or None,
+            "service_summary": service_summary,
             "domain": domain,
             "category": category,
             "domain_code": domain_code,
             "category_name": category_name,
+            "search_profile": search_profile_dict,
         }
 
     servicio = str(valor or "").strip()
     return {
         "normalized_service": servicio or None,
+        "service_summary": servicio or None,
         "domain": None,
         "category": None,
         "domain_code": None,
         "category_name": None,
+        "search_profile": None,
     }
 
 
-def _construir_contexto_busqueda_enriquecido(
+def _construir_search_profile_minimo(
     *,
-    texto: str,
-    servicio: Optional[str],
-    domain: Optional[str],
-    category: Optional[str],
-    hint: Optional[str] = None,
-) -> str:
-    partes = []
-    if ref := (hint or "").strip():
-        partes.append(f"Servicio de referencia: {ref}")
-    if service := (servicio or "").strip():
-        partes.append(f"Servicio normalizado: {service}")
-    if dom := (domain or "").strip():
-        partes.append(f"Dominio: {dom}")
-    if cat := (category or "").strip():
-        partes.append(f"Categoría: {cat}")
-    detalle = (texto or "").strip()
-    if detalle:
-        partes.append(f"Necesidad del usuario: {detalle}")
-    return ". ".join(partes) if partes else detalle
+    raw_input: str,
+    primary_service: Optional[str],
+    service_summary: Optional[str] = None,
+    domain: Optional[str] = None,
+    category: Optional[str] = None,
+    confidence: float = 0.0,
+    search_profile: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    perfil = dict(search_profile or {})
+    servicio = str(
+        perfil.get("primary_service") or primary_service or ""
+    ).strip()
+    resumen = str(
+        perfil.get("service_summary") or service_summary or ""
+    ).strip() or None
+    dominio = str(perfil.get("domain") or domain or "").strip() or None
+    categoria = str(perfil.get("category") or category or "").strip() or None
+
+    perfil["raw_input"] = (raw_input or "").strip()
+    perfil["primary_service"] = servicio or None
+    if resumen:
+        perfil["service_summary"] = resumen
+    perfil["domain"] = dominio
+    perfil["category"] = categoria
+    if dominio and not perfil.get("domain_code"):
+        perfil["domain_code"] = _normalizar_codigo_taxonomia(dominio)
+    if categoria and not perfil.get("category_name"):
+        perfil["category_name"] = _normalizar_texto(categoria) or categoria
+    if not perfil.get("signals"):
+        signals: list[str] = []
+        if resumen:
+            signals.append(f"resumen del servicio: {resumen}")
+        if servicio:
+            signals.append(f"servicio objetivo: {servicio}")
+        if dominio:
+            signals.append(f"dominio: {dominio}")
+        if categoria:
+            signals.append(f"categoría: {categoria}")
+        perfil["signals"] = signals
+    perfil["confidence"] = max(0.0, min(1.0, float(confidence or 0.0)))
+    perfil["source"] = perfil.get("source") or "client"
+    return perfil
 
 
 async def procesar_estado_esperando_servicio(
@@ -334,9 +389,22 @@ async def procesar_estado_esperando_servicio(
     if (not es_necesidad and not respuesta_seguimiento_concreta) or solicitud_generica_ocupacion:
         hint = valor_servicio or limpio
         hint_usuario = _hint_usuario_legible(limpio, valor_servicio)
+        search_profile = _construir_search_profile_minimo(
+            raw_input=texto or limpio,
+            primary_service=valor_servicio or hint,
+            service_summary=perfil_servicio.get("service_summary") or valor_servicio or hint,
+            domain=dominio_servicio or None,
+            category=categoria_servicio or None,
+            confidence=0.0,
+            search_profile=perfil_servicio.get("search_profile"),
+        )
         flujo["state"] = "awaiting_service"
         flujo["service_candidate_hint"] = hint
         flujo["service_candidate_hint_label"] = hint_usuario
+        flujo.pop("service_domain", None)
+        flujo.pop("service_domain_code", None)
+        flujo.pop("service_category", None)
+        flujo.pop("service_category_name", None)
         if dominio_servicio:
             flujo["service_domain"] = dominio_servicio
         if categoria_servicio:
@@ -347,7 +415,9 @@ async def procesar_estado_esperando_servicio(
             flujo["service_category_name"] = categoria_name_servicio
         flujo.pop("service_candidate", None)
         flujo.pop("service", None)
+        flujo.pop("service_full", None)
         flujo.pop("descripcion_problema", None)
+        flujo["search_profile"] = search_profile
         from templates.mensajes.validacion import mensaje_solicitar_detalle_servicio
 
         logger.info(
@@ -378,10 +448,14 @@ async def procesar_estado_esperando_servicio(
                 fallback_source=dominio_generico_origen,
                 service_text=valor_servicio,
                 context_excerpt=limpio,
-            )
+        )
         flujo["state"] = "awaiting_service"
         flujo["service_candidate_hint"] = valor_servicio
         flujo["service_candidate_hint_label"] = valor_servicio
+        flujo.pop("service_domain", None)
+        flujo.pop("service_domain_code", None)
+        flujo.pop("service_category", None)
+        flujo.pop("service_category_name", None)
         if dominio_servicio:
             flujo["service_domain"] = dominio_servicio
         if categoria_servicio:
@@ -392,7 +466,16 @@ async def procesar_estado_esperando_servicio(
             flujo["service_category_name"] = categoria_name_servicio
         flujo.pop("service_candidate", None)
         flujo.pop("service", None)
+        flujo.pop("service_full", None)
         flujo.pop("descripcion_problema", None)
+        flujo["search_profile"] = _construir_search_profile_minimo(
+            raw_input=texto or limpio,
+            primary_service=valor_servicio,
+            domain=dominio_servicio or None,
+            category=categoria_servicio or None,
+            confidence=0.0,
+            search_profile=perfil_servicio.get("search_profile"),
+        )
         from templates.mensajes.validacion import mensaje_solicitar_precision_servicio
 
         mensaje_precision = (
@@ -435,6 +518,49 @@ async def procesar_estado_esperando_servicio(
             or mensaje_solicitar_precision_servicio(valor_servicio),
         }
 
+    if not dominio_servicio or not categoria_servicio:
+        search_profile = _construir_search_profile_minimo(
+            raw_input=texto or limpio,
+            primary_service=valor_servicio,
+            service_summary=perfil_servicio.get("service_summary") or valor_servicio,
+            domain=dominio_servicio or None,
+            category=categoria_servicio or None,
+            confidence=0.0,
+            search_profile=perfil_servicio.get("search_profile"),
+        )
+        flujo["state"] = "awaiting_service"
+        flujo["service_candidate_hint"] = valor_servicio
+        flujo["service_candidate_hint_label"] = valor_servicio
+        flujo.pop("service_domain", None)
+        flujo.pop("service_domain_code", None)
+        flujo.pop("service_category", None)
+        flujo.pop("service_category_name", None)
+        if dominio_servicio:
+            flujo["service_domain"] = dominio_servicio
+        if categoria_servicio:
+            flujo["service_category"] = categoria_servicio
+        if dominio_code_servicio:
+            flujo["service_domain_code"] = dominio_code_servicio
+        if categoria_name_servicio:
+            flujo["service_category_name"] = categoria_name_servicio
+        flujo.pop("service_candidate", None)
+        flujo.pop("service", None)
+        flujo.pop("service_full", None)
+        flujo.pop("descripcion_problema", None)
+        flujo["search_profile"] = search_profile
+        from templates.mensajes.validacion import mensaje_solicitar_precision_servicio
+
+        logger.info(
+            "taxonomy_incomplete_blocked normalized_input='%s' extracted='%s' domain='%s' category='%s'",
+            limpio.lower()[:120],
+            valor_servicio,
+            dominio_servicio or "",
+            categoria_servicio or "",
+        )
+        return flujo, {
+            "response": mensaje_solicitar_precision_servicio(valor_servicio),
+        }
+
     if respuesta_seguimiento_concreta:
         logger.info(
             "followup_specific_need_accepted normalized_input='%s' extracted='%s'",
@@ -442,22 +568,40 @@ async def procesar_estado_esperando_servicio(
             valor_servicio,
         )
 
-    contexto_busqueda = _construir_contexto_busqueda_enriquecido(
-        texto=texto or limpio,
-        servicio=valor_servicio,
-        domain=dominio_servicio,
-        category=categoria_servicio,
-        hint=servicio_hint_existente or None,
+    partes_contexto = []
+    if servicio_hint_existente:
+        partes_contexto.append(f"Servicio de referencia: {servicio_hint_existente}")
+    if valor_servicio:
+        partes_contexto.append(f"Servicio normalizado: {valor_servicio}")
+    if dominio_servicio:
+        partes_contexto.append(f"Dominio: {dominio_servicio}")
+    if categoria_servicio:
+        partes_contexto.append(f"Categoría: {categoria_servicio}")
+    detalle_contexto = (texto or limpio).strip()
+    if detalle_contexto:
+        partes_contexto.append(f"Necesidad del usuario: {detalle_contexto}")
+    contexto_busqueda = ". ".join(partes_contexto) if partes_contexto else detalle_contexto
+    search_profile = _construir_search_profile_minimo(
+        raw_input=texto or limpio,
+        primary_service=valor_servicio,
+        service_summary=perfil_servicio.get("service_summary") or valor_servicio,
+        domain=dominio_servicio or None,
+        category=categoria_servicio or None,
+        confidence=0.92 if dominio_servicio or categoria_servicio else 0.8,
+        search_profile=perfil_servicio.get("search_profile"),
     )
     flujo.update(
         {
             "service_candidate": valor_servicio,
+            "service_summary": perfil_servicio.get("service_summary")
+            or contexto_busqueda,
             "service_full": contexto_busqueda,
             "descripcion_problema": texto or limpio,
             "service_domain": dominio_servicio or None,
             "service_domain_code": dominio_code_servicio or None,
             "service_category": categoria_servicio or None,
             "service_category_name": categoria_name_servicio or None,
+            "search_profile": search_profile,
             "state": "confirm_service",
         }
     )

@@ -70,7 +70,6 @@ async def _buscar_similares(
                 "query_embedding": embedding,
                 "match_count": match_count,
                 "city_filter": None,
-                "verified_only": True,
                 "similarity_threshold": _CLARIFICATION_SIMILARITY_THRESHOLD,
             },
         ).execute(),

@@ -195,14 +195,23 @@ def _build_update_payload(
     except Exception:
         resolved_confidence_value = 0.0
 
-    resolved_normalized_name = normalizar_texto_para_busqueda(resolved_service_name)
     current_embedding_text = construir_texto_embedding_canonico(
-        service_name_normalized=normalizar_texto_para_busqueda(row.service_name),
+        service_summary=_normalize_optional_text(row.service_summary)
+        or construir_service_summary(
+            service_name=row.service_name,
+            category_name=row.category_name,
+            domain_code=row.domain_code,
+        ),
         domain_code=row.domain_code,
         category_name=row.category_name,
     )
     resolved_embedding_text = construir_texto_embedding_canonico(
-        service_name_normalized=resolved_normalized_name,
+        service_summary=resolved_service_summary
+        or construir_service_summary(
+            service_name=resolved_service_name,
+            category_name=resolved_category_name,
+            domain_code=resolved_domain_code,
+        ),
         domain_code=resolved_domain_code,
         category_name=resolved_category_name,
     )
@@ -226,9 +235,12 @@ def _build_update_payload(
     if row.classification_confidence != resolved_confidence_value:
         payload["classification_confidence"] = resolved_confidence_value
     if conflict_free_name_update and (
-        normalizar_texto_para_busqueda(row.service_name) != resolved_normalized_name
+        normalizar_texto_para_busqueda(row.service_name)
+        != normalizar_texto_para_busqueda(resolved_service_name)
     ):
-        payload["service_name_normalized"] = resolved_normalized_name
+        payload["service_name_normalized"] = normalizar_texto_para_busqueda(
+            resolved_service_name
+        )
 
     requires_review = bool(
         service_detail.get("needs_clarification")

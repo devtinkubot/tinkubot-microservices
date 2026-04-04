@@ -69,7 +69,6 @@ Content-Type: application/json
 {
   "query": "necesito médico en Quito urgente",
   "filters": {
-    "verified_only": true,
     "min_rating": 4.0,
     "city": "Quito"
   },
@@ -102,6 +101,7 @@ GET /api/v1/health
 - **Consulta canónica**: se construye desde `service_candidate` / `normalized_service` + `domain_code` / `domain` + `category_name` / `category`.
 - **Contexto auxiliar**: `problem_description` se conserva para trazabilidad y ranking, pero no forma parte del texto principal que se embebe.
 - **Comportamiento ante falla de RPC o embeddings**: fail-fast, sin fallback local a búsquedas legacy.
+- **Signals opcionales**: `ai-clientes` puede adjuntar `signals` en el contexto para reforzar el reranking y la compatibilidad semántica sin alterar el embedding base.
 
 ## 🗃️ Base de Datos Optimizada
 
@@ -125,7 +125,7 @@ SELECT * FROM match_provider_services(
     query_embedding := :embedding,
     match_count := 30,
     city_filter := '%Quito%',
-    verified_only := true
+    verified_only := false
 );
 ```
 

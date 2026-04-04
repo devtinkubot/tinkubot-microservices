@@ -245,7 +245,7 @@ def test_insertar_servicios_persiste_taxonomia_sugerida_sin_revision(
                 "normalized_service": "Instalación de paneles solares",
                 "domain_code": "energia_renovable",
                 "resolved_domain_code": None,
-                "domain_resolution_status": "catalog_review_required",
+                "domain_resolution_status": "clarification_required",
                 "category_name": "instalación de paneles solares",
                 "proposed_category_name": "instalación de paneles solares",
                 "service_summary": (
@@ -255,6 +255,10 @@ def test_insertar_servicios_persiste_taxonomia_sugerida_sin_revision(
                     "Instalo paneles solares para hogares " "y negocios."
                 ),
                 "classification_confidence": 0.91,
+                "is_valid_service": False,
+                "needs_clarification": True,
+                "reason": "domain_or_category_not_resolved",
+                "clarification_question": "Indica el servicio o especialidad exacta que ofreces.",
             }
         ]
 
@@ -285,8 +289,7 @@ def test_insertar_servicios_persiste_taxonomia_sugerida_sin_revision(
         )
     )
 
-    assert resultado["inserted_count"] == 1
-    assert resultado["failed_services"] == []
-    assert captured["payload"]["provider_id"] == "prov-1"
-    assert captured["payload"]["domain_code"] == "energia_renovable"
-    assert captured["payload"]["category_name"] == "instalación de paneles solares"
+    assert resultado["inserted_count"] == 0
+    assert len(resultado["failed_services"]) == 1
+    assert resultado["failed_services"][0]["error"] == "classification_incomplete"
+    assert "payload" not in captured

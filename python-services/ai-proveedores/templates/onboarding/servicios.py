@@ -79,7 +79,10 @@ def mensaje_servicio_no_reconocido() -> str:
 
 
 def mensaje_no_pude_guardar_servicio() -> str:
-    return "No pude guardar ese servicio. Intenta con otro texto."
+    return (
+        "No pude cerrar ese servicio. "
+        "Escríbelo otra vez con más detalle o usa una especialidad más exacta."
+    )
 
 
 def mensaje_servicio_duplicado() -> str:

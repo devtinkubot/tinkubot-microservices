@@ -9,6 +9,7 @@ from infrastructure.embeddings.servicio_embeddings import ServicioEmbeddings
 from services.maintenance.clasificacion_semantica import (
     clasificar_servicios_livianos,
     construir_service_summary,
+    construir_texto_embedding_canonico,
 )
 from services.maintenance.constantes import DISPLAY_ORDER_MAX_DB
 from supabase import Client
@@ -174,7 +175,12 @@ async def insertar_servicios_proveedor(
         )
 
         try:
-            embedding = await servicio_embeddings.generar_embedding(servicio)
+            texto_embedding = construir_texto_embedding_canonico(
+                service_summary=service_summary,
+                domain_code=domain_code_to_use,
+                category_name=metadata.get("category_name"),
+            )
+            embedding = await servicio_embeddings.generar_embedding(texto_embedding)
             resultado = await run_supabase(
                 lambda: supabase.table("provider_services")
                 .insert(

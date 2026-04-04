@@ -9,8 +9,6 @@ from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Query, Request
 from models.schemas import (
-    BulkIndexRequest,
-    BulkIndexResponse,
     HealthCheck,
     Metrics,
     SearchMetadata,
@@ -263,31 +261,6 @@ async def clear_cache(
         raise HTTPException(status_code=500, detail="Error limpiando caché")
 
 
-@router.post("/index/rebuild", response_model=BulkIndexResponse)
-async def rebuild_search_index(
-    request: BulkIndexRequest, background_tasks: BackgroundTasks
-):
-    """
-    Reconstruir índice de búsqueda
-
-    - **provider_ids**: Lista de IDs de proveedores a indexar (vacío = todos)
-    - **force_reindex**: Forzar reindexación incluso si ya existe
-    """
-    try:
-        # TODO: Implementar lógica de reindexación
-        background_tasks.add_task(
-            rebuild_index_task, request.provider_ids, request.force_reindex
-        )
-
-        return BulkIndexResponse(
-            total_processed=0, successful=0, failed=0, errors=[], processing_time_ms=0
-        )
-
-    except Exception as e:
-        logger.error(f"Error en reindexación: {e}")
-        raise HTTPException(status_code=500, detail="Error en reindexación")
-
-
 @router.get("/stats")
 async def get_search_stats():
     """
@@ -324,18 +297,6 @@ async def update_search_statistics(
         logger.debug(f"📊 Estadísticas actualizadas para búsqueda [{request_id}]")
     except Exception as e:
         logger.warning(f"Error actualizando estadísticas [{request_id}]: {e}")
-
-
-async def rebuild_index_task(provider_ids: List[str], force_reindex: bool):
-    """Tarea en background para reconstruir índice"""
-    try:
-        logger.info(
-            f"🔄 Iniciando reindexación de {len(provider_ids) if provider_ids else 'todos'} proveedores"
-        )
-        # TODO: Implementar lógica completa de reindexación
-        logger.info("✅ Reindexación completada")
-    except Exception as e:
-        logger.error(f"❌ Error en reindexación: {e}")
 
 
 # Nota: El manejador de excepciones global está definido en main.py usando app.exception_handler()

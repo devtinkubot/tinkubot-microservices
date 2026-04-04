@@ -3,7 +3,7 @@ defmodule ProviderOnboardingWorker.ProcessorTest do
 
   alias ProviderOnboardingWorker.Processor
 
-  test "build_service_row uses canonical embedding text and preserves summary" do
+  test "build_service_row uses canonical embedding text from summary and preserves summary" do
     on_exit(fn ->
       Application.delete_env(:provider_onboarding_worker, :embedding_for_hook)
     end)
@@ -30,7 +30,8 @@ defmodule ProviderOnboardingWorker.ProcessorTest do
 
     assert {:ok, row} = Processor.build_service_row("prov-1", payload, resolved)
 
-    assert_received {:embedding_text, "desarrollo web | tecnologia | servicios tecnologicos"}
+    assert_received {:embedding_text,
+                     "resumen para ui | tecnologia | servicios tecnologicos"}
 
     assert row["service_summary"] == "Resumen para UI"
     assert row["service_name"] == "Desarrollo Web"
@@ -41,7 +42,7 @@ defmodule ProviderOnboardingWorker.ProcessorTest do
   end
 
   test "canonical embedding text drops empty components" do
-    assert Processor.canonical_embedding_text("diseno grafico", nil, "") ==
-             "diseno grafico"
+    assert Processor.canonical_embedding_text("Resumen breve", nil, "") ==
+             "resumen breve"
   end
 end

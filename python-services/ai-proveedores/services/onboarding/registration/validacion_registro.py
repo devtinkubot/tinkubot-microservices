@@ -83,7 +83,7 @@ def validar_y_construir_proveedor(
             ),
             experience_range=flujo.get("experience_range"),
             has_consent=flujo.get("has_consent", False),
-            onboarding_complete=True,
+            onboarding_complete=False,
             display_name=flujo.get("display_name"),
             formatted_name=flujo.get("formatted_name"),
             first_name=flujo.get("first_name"),

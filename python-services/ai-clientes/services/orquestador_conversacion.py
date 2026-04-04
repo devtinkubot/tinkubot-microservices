@@ -138,6 +138,15 @@ def normalizar_entrada_ciudad(texto: Optional[str]) -> Optional[str]:
     return None
 
 
+def _resolver_ciudad_canton_desde_texto(texto: Optional[str]) -> Optional[str]:
+    """Resuelve una ciudad/cantón canónico desde texto libre o metadatos."""
+    ciudad_directa = normalizar_entrada_ciudad(texto)
+    if ciudad_directa:
+        return ciudad_directa
+    _, ciudad_detectada = extraer_servicio_y_ubicacion("", texto or "")
+    return ciudad_detectada
+
+
 def interpretar_si_no(texto: Optional[str]) -> Optional[bool]:
     if not texto:
         return None
@@ -217,7 +226,7 @@ def extraer_ciudad_desde_payload_ubicacion(
         return None
 
     if isinstance(ubicacion.get("city"), str) and ubicacion["city"].strip():
-        ciudad_directa = normalizar_entrada_ciudad(ubicacion["city"])
+        ciudad_directa = _resolver_ciudad_canton_desde_texto(ubicacion["city"])
         if ciudad_directa:
             return ciudad_directa
 
@@ -230,8 +239,7 @@ def extraer_ciudad_desde_payload_ubicacion(
     )
     if not texto:
         return None
-    _, ciudad_detectada = extraer_servicio_y_ubicacion("", texto)
-    return ciudad_detectada
+    return _resolver_ciudad_canton_desde_texto(texto)
 
 
 def normalizar_boton(valor: Optional[str]) -> Optional[str]:
@@ -559,8 +567,8 @@ class OrquestadorConversacional:
                     direccion.get("city"),
                     direccion.get("town"),
                     direccion.get("village"),
-                    direccion.get("municipality"),
                     direccion.get("county"),
+                    direccion.get("municipality"),
                 ]
                 for candidato in candidatos:
                     ciudad_normalizada = normalizar_entrada_ciudad(candidato)

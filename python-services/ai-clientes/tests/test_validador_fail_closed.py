@@ -75,7 +75,7 @@ async def test_validador_fail_closed_si_no_hay_openai_client():
 
 
 @pytest.mark.asyncio
-async def test_validador_fail_closed_en_timeout_openai():
+async def test_validador_timeout_openai_preserva_candidatos():
     validador = ValidadorProveedoresIA(
         cliente_openai=_OpenAIStub(mode="timeout"),
         semaforo_openai=asyncio.Semaphore(1),
@@ -86,10 +86,23 @@ async def test_validador_fail_closed_en_timeout_openai():
     resultado = await validador.validar_proveedores(
         necesidad_usuario="microblading",
         descripcion_problema="microblading de cejas",
-        proveedores=[{"id": "p1"}],
+        proveedores=[
+            {
+                "id": "p1",
+                "matched_service_name": "microblading de cejas",
+                "matched_service_summary": "Diseño y pigmentación de cejas",
+                "domain_code": "belleza",
+                "category_name": "estética",
+            }
+        ],
     )
 
-    assert resultado == []
+    assert len(resultado) == 1
+    assert resultado[0]["id"] == "p1"
+    assert resultado[0]["validation_mode"] == "timeout_fallback"
+    assert resultado[0]["validation_timeout"] is True
+    assert resultado[0]["validation_reason"] == "validation_timeout_fallback"
+    assert resultado[0]["taxonomy_final_decision"] is True
 
 
 @pytest.mark.asyncio

@@ -67,6 +67,7 @@ class ClienteBusqueda:
         category: Optional[str] = None,
         domain_code: Optional[str] = None,
         category_name: Optional[str] = None,
+        search_profile: Optional[Dict[str, Any]] = None,
         limite: int = 10,
     ) -> Dict[str, Any]:
         """
@@ -110,25 +111,57 @@ class ClienteBusqueda:
                 "limit": limite,
             }
             context_payload: Dict[str, Any] = {}
-            if descripcion_problema:
-                context_payload["problem_description"] = descripcion_problema
-            if service_candidate:
-                context_payload["service_candidate"] = service_candidate
-                context_payload["normalized_service"] = service_candidate
-            if domain:
-                context_payload["domain"] = domain
-            if category:
-                context_payload["category"] = category
-            if domain_code:
-                context_payload["domain_code"] = domain_code
-            if category_name:
-                context_payload["category_name"] = category_name
+
+            perfil_busqueda = dict(search_profile or {})
+            primary_service = str(
+                perfil_busqueda.get("primary_service")
+                or service_candidate
+                or ""
+            ).strip()
+            service_summary = str(
+                perfil_busqueda.get("service_summary")
+                or primary_service
+                or ""
+            ).strip()
+            domain_text = str(perfil_busqueda.get("domain") or domain or "").strip()
+            category_text = str(
+                perfil_busqueda.get("category") or category or ""
+            ).strip()
+            if descripcion_problema or perfil_busqueda.get("raw_input"):
+                context_payload["problem_description"] = (
+                    str(
+                        perfil_busqueda.get("raw_input")
+                        or descripcion_problema
+                        or ""
+                    ).strip()
+                )
+            if primary_service:
+                context_payload["service_candidate"] = primary_service
+                context_payload["normalized_service"] = primary_service
+            if service_summary:
+                context_payload["service_summary"] = service_summary
+            if domain_text:
+                context_payload["domain"] = domain_text
+            if category_text:
+                context_payload["category"] = category_text
+            if domain_code or perfil_busqueda.get("domain_code"):
+                context_payload["domain_code"] = str(
+                    perfil_busqueda.get("domain_code") or domain_code or ""
+                ).strip()
+            if category_name or perfil_busqueda.get("category_name"):
+                context_payload["category_name"] = str(
+                    perfil_busqueda.get("category_name") or category_name or ""
+                ).strip()
+            if perfil_busqueda.get("signals"):
+                context_payload["signals"] = list(perfil_busqueda.get("signals") or [])
+            if perfil_busqueda:
+                context_payload["search_profile"] = perfil_busqueda
             if context_payload:
                 context_payload["language_hint"] = "es"
                 carga["context"] = context_payload
 
             # Agregar filtros si se proporcionan
-            filtros: Dict[str, Any] = {"verified_only": True}
+            filtros: Dict[str, Any] = {}
             if ciudad:
                 filtros["city"] = (
                     ciudad.lower()

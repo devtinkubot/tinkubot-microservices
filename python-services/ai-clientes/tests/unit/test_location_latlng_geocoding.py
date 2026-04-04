@@ -4,7 +4,10 @@ from typing import Any, Dict, Optional
 
 import pytest
 
-from services.orquestador_conversacion import OrquestadorConversacional
+from services.orquestador_conversacion import (
+    OrquestadorConversacional,
+    extraer_ciudad_desde_payload_ubicacion,
+)
 
 
 class _ExtractorIAStub:
@@ -115,3 +118,63 @@ async def test_awaiting_city_reusa_ciudad_confirmada_desde_ubicacion(monkeypatch
 
     assert resultado["messages"][0]["response"] == "continuando flujo"
 
+
+def test_extraer_ciudad_desde_payload_prefiere_canton_cuando_ciudad_no_es_canonica():
+    ubicacion = {
+        "city": "Paccha",
+        "address": "Paccha, Cuenca, Azuay, Ecuador",
+        "name": "Paccha",
+    }
+
+    assert extraer_ciudad_desde_payload_ubicacion(ubicacion) == "Cuenca"
+
+
+@pytest.mark.asyncio
+async def test_resolver_ciudad_desde_coordenadas_prefiere_county_sobre_municipality(
+    monkeypatch,
+):
+    repo_clientes = _RepoClientesStub()
+    orchestrator = OrquestadorConversacional(
+        redis_client=None,
+        supabase=None,
+        gestor_sesiones=_GestorSesionesStub(),
+        extractor_ia=_ExtractorIAStub(),
+        repositorio_clientes=repo_clientes,
+    )
+
+    class _FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "address": {
+                    "municipality": "Paccha",
+                    "county": "Cuenca",
+                },
+                "display_name": "Paccha, Cuenca, Azuay, Ecuador",
+            }
+
+    class _FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def get(self, *args, **kwargs):
+            return _FakeResponse()
+
+    monkeypatch.setattr(
+        "services.orquestador_conversacion.httpx.AsyncClient", _FakeClient
+    )
+
+    ciudad = await orchestrator._resolver_ciudad_desde_coordenadas(
+        -2.8987367153168,
+        -78.959991455078,
+    )
+
+    assert ciudad == "Cuenca"

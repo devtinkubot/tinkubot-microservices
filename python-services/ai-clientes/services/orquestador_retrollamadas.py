@@ -167,6 +167,7 @@ class OrquestadorRetrollamadas:
         radio_km: float = 10.0,
         descripcion_problema: str | None = None,
         limite: int = 10,
+        search_profile: dict[str, Any] | None = None,
     ):
         if self.buscador:
             resultado = await self.buscador.buscar(
@@ -174,6 +175,7 @@ class OrquestadorRetrollamadas:
                 ciudad=ciudad,
                 radio_km=radio_km,
                 descripcion_problema=descripcion_problema or servicio,
+                search_profile=search_profile,
             )
             return resultado.get("results", []) if resultado else []
         return []

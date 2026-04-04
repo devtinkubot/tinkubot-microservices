@@ -131,8 +131,9 @@ async def _buscar_ai_search(
             "category_name": perfil.get("category_name"),
             "language_hint": "es",
         },
-        "filters": {"verified_only": True, "city": "cuenca"},
+        "filters": {"city": "cuenca"},
     }
+    assert "verified_only" not in payload["filters"]
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(

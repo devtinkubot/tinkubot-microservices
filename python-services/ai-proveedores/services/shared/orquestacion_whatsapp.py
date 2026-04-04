@@ -18,8 +18,13 @@ from services.availability import (
 from services.availability import (
     _resolver_alias_disponibilidad as resolver_alias_disp_impl,
 )
+from services.onboarding.event_payloads import payload_servicios
+from services.onboarding.event_publisher import (
+    EVENT_TYPE_SERVICES,
+    onboarding_async_persistence_enabled,
+    publicar_evento_onboarding,
+)
 from services.onboarding.progress import persistir_checkpoint_onboarding
-from services.onboarding.event_publisher import onboarding_async_persistence_enabled
 from services.onboarding.session import (
     establecer_flujo,
     obtener_flujo,
@@ -41,6 +46,35 @@ from services.shared.whatsapp_identity import normalizar_telefono_canonico
 def _valor_texto_opcional(valor: Optional[str]) -> Optional[str]:
     texto = str(valor or "").strip()
     return texto or None
+
+
+def _ultimo_servicio_payload(flujo: Dict[str, Any]) -> Dict[str, Any]:
+    for clave in ("service_entries", "servicios_detallados"):
+        entradas = flujo.get(clave)
+        if not isinstance(entradas, list) or not entradas:
+            continue
+        for item in reversed(entradas):
+            if isinstance(item, dict):
+                return item
+    return {}
+
+
+def _payload_evento_servicios(flujo: Dict[str, Any]) -> Dict[str, Any]:
+    servicios = normalizar_lista_servicios_flujo(flujo)
+    ultimo_servicio = _ultimo_servicio_payload(flujo)
+    raw_service_text = str(
+        ultimo_servicio.get("raw_service_text")
+        or ultimo_servicio.get("service_name")
+        or (servicios[-1] if servicios else "")
+    ).strip()
+    service_position = max(len(servicios) - 1, 0)
+    checkpoint = str(flujo.get("state") or "").strip() or "onboarding_add_another_service"
+    return payload_servicios(
+        services=servicios,
+        raw_service_text=raw_service_text,
+        service_position=service_position,
+        checkpoint=checkpoint,
+    )
 
 
 async def _hay_contexto_disponibilidad_activo(telefono: str) -> bool:
@@ -217,12 +251,40 @@ async def procesar_mensaje_whatsapp(
     nuevo_flujo = resultado_manejo.get("new_flow")
     persistir_flujo = resultado_manejo.get("persist_flow", True)
     flujo_a_persistir = nuevo_flujo if nuevo_flujo is not None else flujo
-    await sincronizar_servicios_si_cambiaron(
-        {"provider_id": flujo.get("provider_id"), "services": servicios_previos},
-        flujo_a_persistir,
-        supabase=supabase,
-        logger=logger,
-    )
+    deferir_sincronizacion_servicios = False
+    if (
+        onboarding_async_persistence_enabled()
+        and str(flujo_a_persistir.get("state") or "").strip()
+        == "onboarding_add_another_service"
+    ):
+        try:
+            stream_id = await publicar_evento_onboarding(
+                event_type=EVENT_TYPE_SERVICES,
+                flujo=flujo_a_persistir,
+                payload=_payload_evento_servicios(flujo_a_persistir),
+                source_message_id=carga.get("id") or carga.get("message_id"),
+            )
+            deferir_sincronizacion_servicios = bool(stream_id)
+            if deferir_sincronizacion_servicios:
+                logger.info(
+                    "📨 Servicios diferidos al worker async provider=%s stream_id=%s",
+                    flujo_a_persistir.get("provider_id"),
+                    stream_id,
+                )
+        except Exception as exc:
+            logger.warning(
+                "No se pudo publicar el evento async de servicios para %s: %s",
+                telefono,
+                exc,
+            )
+
+    if not deferir_sincronizacion_servicios:
+        await sincronizar_servicios_si_cambiaron(
+            {"provider_id": flujo.get("provider_id"), "services": servicios_previos},
+            flujo_a_persistir,
+            supabase=supabase,
+            logger=logger,
+        )
     if persistir_flujo:
         if supabase and not onboarding_async_persistence_enabled():
             try:

@@ -234,6 +234,73 @@ class ValidadorProveedoresIA:
             )
         return payload[:total_proveedores]
 
+    def _enriquecer_proveedor_timeout_fallback(
+        self,
+        *,
+        proveedor: Dict[str, Any],
+        necesidad_usuario: str,
+        descripcion_problema: Optional[str],
+        request_domain_code: Optional[str],
+        request_category_name: Optional[str],
+        request_domain: Optional[str],
+        request_category: Optional[str],
+    ) -> Dict[str, Any]:
+        service_summary = str(
+            proveedor.get("matched_service_summary")
+            or proveedor.get("service_summary")
+            or ""
+        ).strip()
+        service_list = " ".join(
+            str(service).strip() for service in (proveedor.get("services") or [])
+        )
+        provider_service_parts = [
+            str(proveedor.get("matched_service_name") or "").strip(),
+            service_summary,
+            service_list,
+        ]
+        provider_service_text = " ".join(part for part in provider_service_parts if part)
+        coherencia = self._evaluar_coherencia_taxonomica(
+            request_domain_code=request_domain_code,
+            request_category_name=request_category_name,
+            request_service_text=" ".join(
+                part for part in [necesidad_usuario, descripcion_problema or ""] if part
+            ),
+            provider_domain_code=proveedor.get("domain_code"),
+            provider_category_name=proveedor.get("category_name"),
+            provider_service_text=provider_service_text,
+        )
+        proveedor_enriquecido = dict(proveedor)
+        proveedor_enriquecido["validation_mode"] = "timeout_fallback"
+        proveedor_enriquecido["validation_timeout"] = True
+        proveedor_enriquecido["validation_confidence"] = coherencia[
+            "taxonomy_coherence_score"
+        ]
+        proveedor_enriquecido["validation_reason"] = "validation_timeout_fallback"
+        proveedor_enriquecido["taxonomy_coherence_score"] = coherencia[
+            "taxonomy_coherence_score"
+        ]
+        proveedor_enriquecido["domain_coherence"] = coherencia["domain_coherence"]
+        proveedor_enriquecido["category_coherence"] = coherencia["category_coherence"]
+        proveedor_enriquecido["service_coherence"] = coherencia["service_coherence"]
+        proveedor_enriquecido["taxonomy_family_request"] = coherencia[
+            "taxonomy_family_request"
+        ]
+        proveedor_enriquecido["taxonomy_family_provider"] = coherencia[
+            "taxonomy_family_provider"
+        ]
+        proveedor_enriquecido["taxonomy_final_decision"] = coherencia[
+            "taxonomy_final_decision"
+        ]
+        proveedor_enriquecido["validation_raw"] = {
+            "mode": "timeout_fallback",
+            "domain_coherence": coherencia["domain_coherence"],
+            "category_coherence": coherencia["category_coherence"],
+            "service_coherence": coherencia["service_coherence"],
+            "taxonomy_coherence_score": coherencia["taxonomy_coherence_score"],
+            "taxonomy_final_decision": coherencia["taxonomy_final_decision"],
+        }
+        return proveedor_enriquecido
+
     async def _solicitar_validacion(
         self,
         *,
@@ -270,6 +337,7 @@ class ValidadorProveedoresIA:
         request_category_name: Optional[str] = None,
         request_domain: Optional[str] = None,
         request_category: Optional[str] = None,
+        search_profile: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
         """
         Usa IA para validar que los proveedores encontrados REALMENTE puedan ayudar
@@ -302,6 +370,16 @@ class ValidadorProveedoresIA:
         problema = (descripcion_problema or necesidad_usuario or "").strip()
         dominio_request = request_domain_code or request_domain
         categoria_request = request_category_name or request_category
+        perfil_busqueda = search_profile if isinstance(search_profile, dict) else {}
+        primary_service_request = str(
+            perfil_busqueda.get("primary_service") or necesidad_usuario or ""
+        ).strip()
+        signals_request = perfil_busqueda.get("signals") or []
+        if isinstance(signals_request, str):
+            signals_request = [signals_request]
+        signals_request_text = ", ".join(
+            str(signal).strip() for signal in signals_request if str(signal).strip()
+        )
 
         # Construir prompt con información completa de proveedores
         proveedores_info = []
@@ -374,6 +452,11 @@ class ValidadorProveedoresIA:
             "- Sí rechaza cuando el proveedor no tiene capacidad real para "
             "resolver el problema del cliente.\n"
             "- Usa el contexto completo, no solo una palabra suelta.\n\n"
+            "PERFIL CANONICO DE BUSQUEDA\n"
+            f'- Servicio principal: "{primary_service_request or "N/A"}"\n'
+            f'- Dominio canónico: "{perfil_busqueda.get("domain") or dominio_request or "N/A"}"\n'
+            f'- Categoria canónica: "{perfil_busqueda.get("category") or categoria_request or "N/A"}"\n'
+            f'- Senales auxiliares: "{signals_request_text or "N/A"}"\n\n'
             "EJEMPLOS DE EQUIVALENCIA FUNCIONAL\n"
             '- "arreglo de cejas" puede equivaler a:\n'
             "  - microblading de cejas\n"
@@ -489,6 +572,8 @@ class ValidadorProveedoresIA:
                     f"Problema: {problema}\n"
                     f"Dominio requerido: {dominio_request or 'N/A'}\n"
                     f"Categoria requerida: {categoria_request or 'N/A'}\n"
+                    f"Servicio principal: {primary_service_request or 'N/A'}\n"
+                    f"Senales auxiliares: {signals_request_text or 'N/A'}\n"
                     f"Proveedores:\n{bloque_proveedores}\n\n"
                     "Devuelve SOLO un objeto JSON con la clave 'results'. "
                     "Cada item debe tener can_help, confidence, reason, "
@@ -828,8 +913,25 @@ class ValidadorProveedoresIA:
             return proveedores_validados
 
         except asyncio.TimeoutError:
-            self.logger.warning("⚠️ Timeout en validar_proveedores, fail-closed")
-            return []
+            self.logger.warning("⚠️ Timeout en validar_proveedores, fallback local")
+            proveedores_fallback = [
+                self._enriquecer_proveedor_timeout_fallback(
+                    proveedor=proveedor,
+                    necesidad_usuario=necesidad_usuario,
+                    descripcion_problema=descripcion_problema,
+                    request_domain_code=request_domain_code,
+                    request_category_name=request_category_name,
+                    request_domain=request_domain,
+                    request_category=request_category,
+                )
+                for proveedor in proveedores
+            ]
+            self.logger.info(
+                "validator_timeout_fallback passed=%s total=%s",
+                len(proveedores_fallback),
+                len(proveedores),
+            )
+            return proveedores_fallback
         except Exception as exc:
             self.logger.warning(f"⚠️ Error en validación IA, fail-closed: {exc}")
             return []

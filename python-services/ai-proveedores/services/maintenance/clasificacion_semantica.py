@@ -224,16 +224,16 @@ def construir_service_summary(  # noqa: C901
 
 def construir_texto_embedding_canonico(
     *,
-    service_name_normalized: str,
+    service_summary: str,
     domain_code: Optional[str] = None,
     category_name: Optional[str] = None,
 ) -> str:
     """Construye el texto canónico para embeddings de servicios."""
     componentes: List[str] = []
 
-    nombre_normalizado = normalizar_texto_para_busqueda(service_name_normalized)
-    if nombre_normalizado:
-        componentes.append(nombre_normalizado)
+    resumen_normalizado = normalizar_texto_para_busqueda(service_summary)
+    if resumen_normalizado:
+        componentes.append(resumen_normalizado)
 
     domain = normalizar_domain_code_operativo(domain_code)
     if domain:

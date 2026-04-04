@@ -102,6 +102,30 @@ class ExtractorNecesidadIA:
         "lavar",
         "desmanchar",
     }
+    VERBOS_JARDINERIA = {
+        "podar",
+        "poda",
+        "cortar",
+        "recortar",
+        "desmalezar",
+        "desbrozar",
+        "arreglar",
+        "mantener",
+        "mantenimiento",
+    }
+    TERMINOS_MANTENIMIENTO_JARDIN = {
+        "sucio",
+        "sucia",
+        "sucios",
+        "sucias",
+        "limpiar",
+        "limpieza",
+        "ordenar",
+        "desorden",
+        "desordenado",
+        "desordenada",
+        "cuidado",
+    }
     TERMINOS_MUEBLES = {
         "mueble",
         "muebles",
@@ -119,6 +143,23 @@ class ExtractorNecesidadIA:
         "armario",
         "aparador",
         "vitrina",
+    }
+    TERMINOS_JARDIN = {
+        "jardin",
+        "jardines",
+        "cesped",
+        "césped",
+        "grama",
+        "pasto",
+        "seto",
+        "setos",
+        "arbusto",
+        "arbustos",
+        "plantas",
+        "planta",
+        "huerto",
+        "area verde",
+        "área verde",
     }
 
     def __init__(
@@ -164,14 +205,19 @@ class ExtractorNecesidadIA:
     ) -> Optional[str]:
         texto_norm = cls._normalizar_texto_local(mensaje_usuario)
         tokens = set(texto_norm.split())
-        if not (tokens & cls.TERMINOS_MUEBLES):
-            return None
-        if tokens & cls.VERBOS_RETAPIZADO:
-            return "retapizado de muebles"
-        if tokens & cls.VERBOS_LIMPIEZA:
-            return "limpieza de muebles"
-        if tokens & cls.VERBOS_RESTAURACION_MUEBLES:
-            return "restauración de muebles"
+        if tokens & cls.TERMINOS_MUEBLES:
+            if tokens & cls.VERBOS_RETAPIZADO:
+                return "retapizado de muebles"
+            if tokens & cls.VERBOS_LIMPIEZA:
+                return "limpieza de muebles"
+            if tokens & cls.VERBOS_RESTAURACION_MUEBLES:
+                return "restauración de muebles"
+        if tokens & cls.TERMINOS_JARDIN:
+            if tokens & cls.TERMINOS_MANTENIMIENTO_JARDIN:
+                return "mantenimiento de jardines"
+            if tokens & cls.VERBOS_JARDINERIA:
+                return "poda de jardines"
+            return "mantenimiento de jardines"
         return None
 
     @classmethod
@@ -185,6 +231,136 @@ class ExtractorNecesidadIA:
     def _normalizar_categoria_taxonomia(cls, texto: Optional[str]) -> Optional[str]:
         valor = cls._normalizar_texto_local(texto or "")
         return valor or None
+
+    @classmethod
+    def _extraer_senales_busqueda(
+        cls,
+        mensaje_usuario: str,
+        normalized_service: str,
+        service_summary: Optional[str],
+        domain: Optional[str],
+        category: Optional[str],
+    ) -> list[str]:
+        texto_norm = cls._normalizar_texto_local(mensaje_usuario)
+        tokens = texto_norm.split()
+        senales: list[str] = []
+
+        if service_summary:
+            senales.append(f"resumen del servicio: {service_summary}")
+        if normalized_service:
+            senales.append(f"servicio objetivo: {normalized_service}")
+        if domain:
+            senales.append(f"dominio: {domain}")
+        if category:
+            senales.append(f"categoría: {category}")
+
+        if any(token in {"urgente", "urgentemente"} for token in tokens):
+            senales.append("requiere atención urgente")
+
+        if any(
+            token in {"problema", "falla", "rota", "dañada", "dañado"}
+            for token in tokens
+        ):
+            senales.append("describe un problema concreto")
+
+        if any(
+            token in {"necesito", "busco", "quiero", "requiero", "solicito"}
+            for token in tokens
+        ):
+            senales.append("solicita un servicio específico")
+
+        vistos: set[str] = set()
+        resultado: list[str] = []
+        for senal in senales:
+            limpio = " ".join(str(senal or "").strip().split())
+            if not limpio:
+                continue
+            normalizado = cls._normalizar_texto_local(limpio)
+            if normalizado in vistos:
+                continue
+            vistos.add(normalizado)
+            resultado.append(limpio)
+        return resultado
+
+    @classmethod
+    def _normalizar_senales(cls, senales: Optional[list[str]]) -> list[str]:
+        resultado: list[str] = []
+        vistos: set[str] = set()
+        for senal in senales or []:
+            limpio = " ".join(str(senal or "").strip().split())
+            if not limpio:
+                continue
+            normalizado = cls._normalizar_texto_local(limpio)
+            if normalizado in vistos:
+                continue
+            vistos.add(normalizado)
+            resultado.append(limpio)
+        return resultado
+
+    @classmethod
+    def _armar_search_profile(
+        cls,
+        *,
+        raw_input: Optional[str],
+        primary_service: Optional[str],
+        service_summary: Optional[str] = None,
+        domain: Optional[str] = None,
+        category: Optional[str] = None,
+        signals: Optional[list[str]] = None,
+        confidence: float = 0.0,
+        source: str = "client",
+    ) -> dict[str, Any]:
+        servicio = str(primary_service or "").strip()
+        resumen = str(service_summary or "").strip() or None
+        dominio = str(domain or "").strip() or None
+        categoria = str(category or "").strip() or None
+        senales_procesadas = cls._normalizar_senales(signals)
+        if not senales_procesadas:
+            if resumen:
+                senales_procesadas.append(f"resumen del servicio: {resumen}")
+            if servicio:
+                senales_procesadas.append(f"servicio objetivo: {servicio}")
+            if dominio:
+                senales_procesadas.append(f"dominio: {dominio}")
+            if categoria:
+                senales_procesadas.append(f"categoría: {categoria}")
+        return {
+            "raw_input": (raw_input or "").strip(),
+            "primary_service": servicio or None,
+            "service_summary": resumen,
+            "domain": dominio,
+            "category": categoria,
+            "signals": senales_procesadas,
+            "confidence": max(0.0, min(1.0, float(confidence or 0.0))),
+            "source": source,
+        }
+
+    @classmethod
+    def _construir_search_profile(
+        cls,
+        *,
+        raw_input: str,
+        normalized_service: str,
+        service_summary: Optional[str] = None,
+        domain: Optional[str] = None,
+        category: Optional[str] = None,
+        confidence: float = 0.0,
+    ) -> dict[str, Any]:
+        return cls._armar_search_profile(
+            raw_input=raw_input,
+            primary_service=normalized_service,
+            service_summary=service_summary,
+            domain=domain,
+            category=category,
+            signals=cls._extraer_senales_busqueda(
+                raw_input,
+                normalized_service,
+                service_summary,
+                domain,
+                category,
+            ),
+            confidence=confidence,
+        )
 
     @staticmethod
     def _extraer_json_parseable(contenido: str) -> Optional[Any]:
@@ -216,6 +392,8 @@ class ExtractorNecesidadIA:
         if not isinstance(data, dict):
             return None
 
+        status = str(data.get("status") or "").strip().lower() or None
+
         normalized_service = (
             str(
                 data.get("normalized_service")
@@ -232,6 +410,10 @@ class ExtractorNecesidadIA:
             str(data.get("category") or data.get("category_name") or "").strip()
         )
 
+        service_summary = str(data.get("service_summary") or "").strip() or None
+        confidence = data.get("confidence")
+        reason = str(data.get("reason") or "").strip() or None
+
         if not normalized_service:
             return None
 
@@ -241,6 +423,10 @@ class ExtractorNecesidadIA:
             "category": category or None,
             "domain_code": cls._normalizar_codigo_taxonomia(domain),
             "category_name": cls._normalizar_categoria_taxonomia(category),
+            "service_summary": service_summary,
+            "confidence": confidence,
+            "reason": reason,
+            "status": status,
         }
 
     @classmethod
@@ -253,13 +439,17 @@ class ExtractorNecesidadIA:
             "y la categoría de la necesidad del usuario, pero NUNCA uses códigos, "
             "solo texto.\n\n"
             "TU TAREA:\n"
-            "Extraer exactamente 3 campos de la necesidad del cliente:\n"
+            "Extraer los campos operativos del servicio solicitado por el cliente.\n"
             "- normalized_service: La necesidad específica convertida a acción. "
             "En minúsculas, español neutro, de 4 a 10 palabras. "
             "Mantén términos técnicos si el usuario los usó (ej: pliegos, licitación).\n"
             "- domain: Área amplia (ej: 'tecnología', 'servicios legales').\n"
             "- category: Área específica (ej: 'gestión de proyectos de ti', "
-            "'derecho penal').\n\n"
+            "'derecho penal').\n"
+            "- service_summary: Resumen breve y operativo del servicio.\n"
+            "- confidence: 0.0 a 1.0.\n"
+            "- reason: Justificación breve.\n"
+            "- status: accepted|clarification_required|rejected.\n\n"
             "REGLAS CRÍTICAS:\n"
             "1. ANTI-PROFESIÓN: Si el usuario pide un oficio genérico "
             "(ej: 'necesito un abogado' o 'busco carpintero'), "
@@ -273,15 +463,151 @@ class ExtractorNecesidadIA:
             "{"
             '"normalized_service":"...",'
             '"domain":"...",'
-            '"category":"..."'
+            '"category":"...",'
+            '"service_summary":"...",'
+            '"confidence":0.0,'
+            '"reason":"...",'
+            '"status":"accepted|clarification_required|rejected"'
             "}"
         )
 
     @staticmethod
-    def _construir_prompt_usuario_busqueda_cliente(texto_cliente: str) -> str:
-        return (
-            f'Convierte esta necesidad de usuario en un perfil de búsqueda: "{texto_cliente}"'
+    def _construir_prompt_usuario_busqueda_cliente(
+        texto_cliente: str,
+        *,
+        normalized_service_hint: Optional[str] = None,
+        modo_estricto: bool = False,
+    ) -> str:
+        lineas = [
+            f'Convierte esta necesidad de usuario en un perfil de búsqueda: "{texto_cliente}"',
+        ]
+        if normalized_service_hint:
+            lineas.append(
+                "Servicio normalizado sugerido por reglas locales: "
+                f'"{normalized_service_hint}"'
+            )
+        if modo_estricto:
+            lineas.append(
+                "Modo estricto: si el texto describe un servicio real, "
+                "debes completar domain y category. Si no puedes hacerlo, "
+                "responde clarification_required."
+            )
+        return "\n".join(lineas)
+
+    async def _clasificar_servicio_busqueda_cliente(
+        self,
+        mensaje_usuario: str,
+        *,
+        normalized_service_hint: Optional[str] = None,
+        modo_estricto: bool = False,
+    ) -> Optional[dict[str, Optional[str]]]:
+        if not self.cliente_openai:
+            return None
+
+        prompt_sistema = self._construir_prompt_sistema_busqueda_cliente()
+        if modo_estricto:
+            prompt_sistema += (
+                "\n\nREGLAS ESTRICTAS:\n"
+                "- Debes cerrar domain y category cuando el texto sea resoluble.\n"
+                "- No devuelvas profesiones puras como normalized_service.\n"
+                "- Si el texto sigue siendo ambiguo, usa clarification_required.\n"
+            )
+
+        prompt_usuario = self._construir_prompt_usuario_busqueda_cliente(
+            mensaje_usuario[:250],
+            normalized_service_hint=normalized_service_hint,
+            modo_estricto=modo_estricto,
         )
+
+        try:
+            async with self.semaforo_openai:
+                respuesta = await asyncio.wait_for(
+                    self.cliente_openai.chat.completions.create(
+                        model=self.MODELO_EXTRACCION,
+                        messages=[
+                            {"role": "system", "content": prompt_sistema},
+                            {"role": "user", "content": prompt_usuario},
+                        ],
+                        response_format={
+                            "type": "json_schema",
+                            "json_schema": {
+                                "name": "service_classification",
+                                "strict": True,
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "normalized_service": {"type": "string"},
+                                        "domain": {"type": ["string", "null"]},
+                                        "category": {"type": ["string", "null"]},
+                                        "service_summary": {"type": ["string", "null"]},
+                                        "confidence": {"type": "number"},
+                                        "reason": {"type": "string"},
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "accepted",
+                                                "clarification_required",
+                                                "rejected",
+                                            ],
+                                        },
+                                    },
+                                    "required": [
+                                        "normalized_service",
+                                        "domain",
+                                        "category",
+                                        "service_summary",
+                                        "confidence",
+                                        "reason",
+                                        "status",
+                                    ],
+                                    "additionalProperties": False,
+                                },
+                            },
+                        },
+                        temperature=0.0,
+                        max_tokens=120,
+                    ),
+                    timeout=self.tiempo_espera_openai,
+                )
+
+            if not respuesta.choices:
+                return None
+
+            contenido = (respuesta.choices[0].message.content or "").strip()
+            payload = self._extraer_json_parseable(contenido)
+            perfil = self._normalizar_respuesta_busqueda_cliente(payload)
+            if not perfil:
+                self.logger.warning(
+                    "⚠️ Respuesta de IA de búsqueda inválida: %s",
+                    contenido[:200],
+                )
+                return None
+
+            self.logger.info(
+                "✅ IA detectó perfil: service='%s', domain='%s', category='%s' de: '%s...'",
+                perfil["normalized_service"],
+                perfil.get("domain"),
+                perfil.get("category"),
+                mensaje_usuario[:50],
+            )
+            confidence = perfil.get("confidence")
+            if not isinstance(confidence, (int, float)) or float(confidence) <= 0.0:
+                confidence = 0.92 if perfil.get("domain") and perfil.get("category") else 0.75
+            perfil["search_profile"] = self._construir_search_profile(
+                raw_input=mensaje_usuario,
+                normalized_service=perfil["normalized_service"] or "",
+                service_summary=perfil.get("service_summary"),
+                domain=perfil.get("domain"),
+                category=perfil.get("category"),
+                confidence=float(confidence),
+            )
+            return perfil
+        except asyncio.TimeoutError:
+            self.logger.warning("⚠️ Timeout extrayendo servicio con IA")
+            return None
+        except Exception as exc:
+            self.logger.warning(f"⚠️ Error extrayendo servicio con IA: {exc}")
+            return None
 
     async def _normalizar_servicio_a_espanol(
         self, servicio_detectado: str
@@ -346,10 +672,18 @@ Responde SOLO con el nombre del servicio."""
             )
             return {
                 "normalized_service": hint_ocupacion,
+                "service_summary": hint_ocupacion,
                 "domain": None,
                 "category": None,
                 "domain_code": None,
                 "category_name": None,
+                "search_profile": self._construir_search_profile(
+                    raw_input=mensaje_usuario,
+                    normalized_service=hint_ocupacion,
+                    service_summary=hint_ocupacion,
+                    domain=None,
+                    category=None,
+                ),
             }
 
         servicio_local = self._resolver_servicio_por_reglas_locales(mensaje_usuario)
@@ -359,70 +693,65 @@ Responde SOLO con el nombre del servicio."""
                 normalizar_texto_para_coincidencia(mensaje_usuario)[:120],
                 servicio_local,
             )
-            return {
-                "normalized_service": servicio_local,
-                "domain": None,
-                "category": None,
-                "domain_code": None,
-                "category_name": None,
-            }
-
         if not self.cliente_openai:
+            if servicio_local:
+                return {
+                    "normalized_service": servicio_local,
+                    "service_summary": servicio_local,
+                    "domain": None,
+                    "category": None,
+                    "domain_code": None,
+                    "category_name": None,
+                    "search_profile": self._construir_search_profile(
+                        raw_input=mensaje_usuario,
+                        normalized_service=servicio_local,
+                        service_summary=servicio_local,
+                        domain=None,
+                        category=None,
+                    ),
+                }
             self.logger.warning("⚠️ extraer_servicio_con_ia: sin cliente OpenAI")
             return None
 
         if not mensaje_usuario or not mensaje_usuario.strip():
             return None
 
-        prompt_sistema = self._construir_prompt_sistema_busqueda_cliente()
-        prompt_usuario = self._construir_prompt_usuario_busqueda_cliente(
-            mensaje_usuario[:250]
+        perfil = await self._clasificar_servicio_busqueda_cliente(
+            mensaje_usuario,
+            normalized_service_hint=servicio_local,
+            modo_estricto=False,
         )
 
-        try:
-            async with self.semaforo_openai:
-                respuesta = await asyncio.wait_for(
-                    self.cliente_openai.chat.completions.create(
-                        model=self.MODELO_EXTRACCION,
-                        messages=[
-                            {"role": "system", "content": prompt_sistema},
-                            {"role": "user", "content": prompt_usuario},
-                        ],
-                        response_format={"type": "json_object"},
-                        temperature=0.0,
-                        max_tokens=120,
-                    ),
-                    timeout=self.tiempo_espera_openai,
-                )
-
-            if not respuesta.choices:
-                return None
-
-            contenido = (respuesta.choices[0].message.content or "").strip()
-            payload = self._extraer_json_parseable(contenido)
-            perfil = self._normalizar_respuesta_busqueda_cliente(payload)
-            if not perfil:
-                self.logger.warning(
-                    "⚠️ Respuesta de IA de búsqueda inválida: %s",
-                    contenido[:200],
-                )
-                return None
-
-            self.logger.info(
-                "✅ IA detectó perfil: service='%s', domain='%s', category='%s' de: '%s...'",
-                perfil["normalized_service"],
-                perfil.get("domain"),
-                perfil.get("category"),
-                mensaje_usuario[:50],
+        if perfil and (not perfil.get("domain") or not perfil.get("category")):
+            perfil_estricto = await self._clasificar_servicio_busqueda_cliente(
+                mensaje_usuario,
+                normalized_service_hint=perfil.get("normalized_service")
+                or servicio_local,
+                modo_estricto=True,
             )
+            if perfil_estricto:
+                perfil = perfil_estricto
+
+        if perfil:
             return perfil
 
-        except asyncio.TimeoutError:
-            self.logger.warning("⚠️ Timeout extrayendo servicio con IA")
-            return None
-        except Exception as exc:
-            self.logger.warning(f"⚠️ Error extrayendo servicio con IA: {exc}")
-            return None
+        if servicio_local:
+            return {
+                "normalized_service": servicio_local,
+                "service_summary": servicio_local,
+                "domain": None,
+                "category": None,
+                "domain_code": None,
+                "category_name": None,
+                "search_profile": self._construir_search_profile(
+                    raw_input=mensaje_usuario,
+                    normalized_service=servicio_local,
+                    service_summary=servicio_local,
+                    domain=None,
+                    category=None,
+                ),
+            }
+        return None
 
     async def extraer_servicio_con_ia_pura(
         self,

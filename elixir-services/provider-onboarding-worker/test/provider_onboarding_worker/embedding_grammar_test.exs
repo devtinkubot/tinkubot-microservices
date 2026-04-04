@@ -3,12 +3,12 @@ defmodule ProviderOnboardingWorker.EmbeddingGrammarTest do
 
   alias ProviderOnboardingWorker.EmbeddingGrammar
 
-  test "builds canonical service embedding text from the base fields only" do
+  test "builds canonical service embedding text from the service summary" do
     assert EmbeddingGrammar.canonical_service_text(
-             "Desarrollo de Software",
+             "Desarrollo de software a medida, con soporte y mantenimiento.",
              "Tecnología",
              "Servicios tecnológicos"
-           ) == "desarrollo de software | tecnologia | servicios tecnologicos"
+           ) == "desarrollo de software a medida con soporte y mantenimiento | tecnologia | servicios tecnologicos"
   end
 
   test "ignores blank components while keeping order stable" do

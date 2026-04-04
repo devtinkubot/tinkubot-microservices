@@ -3,10 +3,9 @@ Aplicación principal de Search Service
 """
 
 import logging
-import os
+from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 
-import structlog
 from app.api.endpoints import router as api_router
 from app.config import settings
 from fastapi import FastAPI, Request
@@ -21,25 +20,6 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-# Configurar structlog
-structlog.configure(
-    processors=[
-        structlog.stdlib.filter_by_level,
-        structlog.stdlib.add_logger_name,
-        structlog.stdlib.add_log_level,
-        structlog.stdlib.PositionalArgumentsFormatter(),
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.StackInfoRenderer(),
-        structlog.processors.format_exc_info,
-        structlog.processors.UnicodeDecoder(),
-        structlog.dev.ConsoleRenderer(),
-    ],
-    context_class=dict,
-    logger_factory=structlog.stdlib.LoggerFactory(),
-    wrapper_class=structlog.stdlib.BoundLogger,
-    cache_logger_on_first_use=True,
-)
 
 
 @asynccontextmanager
@@ -110,7 +90,7 @@ app.add_middleware(
 )
 
 
-LOG_SAMPLING_RATE = int(os.getenv("LOG_SAMPLING_RATE", "10"))
+LOG_SAMPLING_RATE = settings.log_sampling_rate
 
 
 # Middleware de logging con muestreo
@@ -185,7 +165,7 @@ async def root():
         "service": "Search Token Service",
         "version": "1.0.0",
         "status": "running",
-        "timestamp": "2024-01-01T00:00:00Z",  # TODO: usar datetime real
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -209,7 +189,6 @@ async def health_simple():
 async def global_exception_handler(request: Request, exc: Exception):
     """Manejador global de excepciones no manejadas"""
     import uuid
-    from datetime import datetime
 
     request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
 
@@ -227,7 +206,7 @@ async def global_exception_handler(request: Request, exc: Exception):
             "error": "internal_error",
             "message": "Error interno del servidor",
             "request_id": request_id,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         },
     )
 
@@ -240,7 +219,7 @@ async def not_found_handler(request: Request, exc):
         content={
             "error": "not_found",
             "message": f"Endpoint no encontrado: {request.method} {request.url.path}",
-            "timestamp": "2024-01-01T00:00:00Z",  # TODO: datetime real
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         },
     )
 

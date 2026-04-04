@@ -218,9 +218,127 @@ def _validacion_heuristica(
         needs_clarification=False,
         normalized_service=service_name,
         reason="heuristic_accept",
-        domain_resolution_status="catalog_review_required",
+        domain_resolution_status="clarification_required",
         confidence=0.55,
     )
+
+
+def _clasificacion_completa(
+    data: Dict[str, Any],
+    *,
+    codigos_catalogo: set[str],
+) -> bool:
+    domain_code = normalizar_domain_code_operativo(
+        data.get("resolved_domain_code") or data.get("domain_code")
+    )
+    category_name = str(data.get("category_name") or "").strip()
+    status = str(data.get("status") or "").strip().lower()
+    return bool(
+        status == "accepted"
+        and domain_code
+        and category_name
+        and (not codigos_catalogo or domain_code in codigos_catalogo)
+    )
+
+
+async def _clasificar_servicio_con_ia(
+    *,
+    cliente_openai: Any,
+    raw_service_text: str,
+    service_name: str,
+    dominios_prompt: str,
+    modo_estricto: bool,
+    timeout: float,
+) -> Optional[Dict[str, Any]]:
+    try:
+        respuesta = await cliente_openai.chat.completions.create(
+            model=configuracion.openai_chat_model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": construir_prompt_sistema_enriquecimiento_servicios(),
+                },
+                {
+                    "role": "user",
+                    "content": construir_prompt_usuario_enriquecimiento_servicios(
+                        raw_service_text,
+                        dominios_prompt,
+                        modo_estricto=modo_estricto,
+                    ),
+                },
+            ],
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "service_enrichment",
+                    "strict": True,
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "normalized_service": {"type": "string"},
+                            "domain_code": {"type": ["string", "null"]},
+                            "category_name": {"type": ["string", "null"]},
+                            "service_summary": {"type": "string"},
+                            "confidence": {"type": "number"},
+                            "reason": {"type": "string"},
+                            "clarification_question": {"type": ["string", "null"]},
+                            "status": {
+                                "type": "string",
+                                "enum": ["accepted", "clarification_required", "rejected"],
+                            },
+                        },
+                        "required": [
+                            "normalized_service",
+                            "domain_code",
+                            "category_name",
+                            "service_summary",
+                            "confidence",
+                            "reason",
+                            "clarification_question",
+                            "status",
+                        ],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            temperature=configuracion.openai_temperature_precisa,
+            timeout=timeout,
+        )
+        contenido = (respuesta.choices[0].message.content or "").strip()
+        data = json.loads(contenido)
+    except Exception as exc:
+        logger.warning(
+            "⚠️ No se pudo validar servicio con IA (modo_estricto=%s): %s",
+            modo_estricto,
+            exc,
+        )
+        return None
+
+    normalized_service = normalizar_texto_visible_corto(
+        str(data.get("normalized_service") or service_name).strip() or service_name
+    )
+    domain_code = normalizar_domain_code_operativo(
+        str(data.get("domain_code") or "").strip() or None
+    )
+    category_name = str(data.get("category_name") or "").strip() or None
+    service_summary = str(data.get("service_summary") or "").strip() or None
+    reason = str(data.get("reason") or "ai_validation").strip() or "ai_validation"
+    clarification_question = (
+        str(data.get("clarification_question") or "").strip() or None
+    )
+    confidence = float(data.get("confidence") or 0.0)
+    status = str(data.get("status") or "").strip().lower() or "clarification_required"
+    return {
+        "normalized_service": normalized_service,
+        "domain_code": domain_code,
+        "resolved_domain_code": domain_code,
+        "category_name": category_name,
+        "service_summary": service_summary,
+        "confidence": confidence,
+        "reason": reason,
+        "clarification_question": clarification_question,
+        "status": status,
+    }
 
 
 async def enriquecer_servicio_semanticamente(
@@ -261,137 +379,88 @@ async def enriquecer_servicio_semanticamente(
     if not dominios_prompt:
         dominios_prompt = PROMPT_CATALOGO_SIN_DOMINIO
 
-    try:
-        respuesta = await cliente_openai.chat.completions.create(
-            model=configuracion.openai_chat_model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": construir_prompt_sistema_enriquecimiento_servicios(),
-                },
-                {
-                    "role": "user",
-                    "content": construir_prompt_usuario_enriquecimiento_servicios(
-                        raw_service_text,
-                        dominios_prompt,
-                    ),
-                },
-            ],
-            response_format={
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "service_enrichment",
-                    "strict": True,
-                    "schema": {
-                        "type": "object",
-                        "properties": {
-                            "normalized_service": {"type": "string"},
-                            "domain": {"type": ["string", "null"]},
-                            "category": {"type": ["string", "null"]},
-                            "service_summary": {"type": "string"},
-                            "confidence": {"type": "number"},
-                            "reason": {"type": "string"},
-                            "status": {
-                                "type": "string",
-                                "enum": [
-                                    "accepted",
-                                    "clarification_required",
-                                    "catalog_review_required",
-                                    "rejected",
-                                ],
-                            },
-                        },
-                        "required": [
-                            "normalized_service",
-                            "domain",
-                            "category",
-                            "service_summary",
-                            "confidence",
-                            "reason",
-                            "status",
-                        ],
-                        "additionalProperties": False,
-                    },
-                },
-            },
-            temperature=configuracion.openai_temperature_precisa,
-            timeout=timeout,
+    primera = await _clasificar_servicio_con_ia(
+        cliente_openai=cliente_openai,
+        raw_service_text=raw_service_text,
+        service_name=service_name,
+        dominios_prompt=dominios_prompt,
+        modo_estricto=False,
+        timeout=timeout,
+    )
+    if primera and _clasificacion_completa(primera, codigos_catalogo=codigos_catalogo):
+        return _resultado(
+            is_valid_service=True,
+            needs_clarification=False,
+            normalized_service=primera["normalized_service"],
+            reason=primera["reason"],
+            domain_resolution_status="matched",
+            domain_code=primera["resolved_domain_code"],
+            resolved_domain_code=primera["resolved_domain_code"],
+            category_name=primera["category_name"],
+            service_summary=primera["service_summary"],
+            confidence=primera["confidence"] or heuristico["confidence"],
+            clarification_question=None,
         )
-        contenido = (respuesta.choices[0].message.content or "").strip()
-        data = json.loads(contenido)
-    except Exception as exc:
-        logger.warning("⚠️ No se pudo validar servicio con IA: %s", exc)
-        return heuristico
 
-    status = str(data.get("status") or "").strip().lower()
-    normalized_service = normalizar_texto_visible_corto(
-        str(data.get("normalized_service") or service_name).strip() or service_name
+    segunda = await _clasificar_servicio_con_ia(
+        cliente_openai=cliente_openai,
+        raw_service_text=raw_service_text,
+        service_name=service_name,
+        dominios_prompt=dominios_prompt,
+        modo_estricto=True,
+        timeout=timeout,
     )
-    domain_name = str(data.get("domain") or "").strip() or None
-    category_name = str(data.get("category") or "").strip() or None
-    service_summary = str(data.get("service_summary") or "").strip() or None
-    reason = str(data.get("reason") or "ai_validation").strip() or "ai_validation"
-    confidence = float(data.get("confidence") or 0.0)
-    domain_code = normalizar_domain_code_operativo(domain_name)
-    resolved_domain_code = (
-        domain_code if domain_code and domain_code in codigos_catalogo else None
-    )
+    if segunda and _clasificacion_completa(segunda, codigos_catalogo=codigos_catalogo):
+        return _resultado(
+            is_valid_service=True,
+            needs_clarification=False,
+            normalized_service=segunda["normalized_service"],
+            reason=segunda["reason"],
+            domain_resolution_status="matched",
+            domain_code=segunda["resolved_domain_code"],
+            resolved_domain_code=segunda["resolved_domain_code"],
+            category_name=segunda["category_name"],
+            service_summary=segunda["service_summary"],
+            confidence=segunda["confidence"] or heuristico["confidence"],
+            clarification_question=None,
+        )
 
+    fallback = segunda or primera or {}
+    status = str(fallback.get("status") or "").strip().lower()
     if status == "rejected":
         return _resultado(
             is_valid_service=False,
             needs_clarification=False,
-            normalized_service=normalized_service,
-            reason=reason,
+            normalized_service=str(
+                fallback.get("normalized_service") or service_name
+            ).strip()
+            or service_name,
+            reason=str(fallback.get("reason") or "ai_rejected").strip() or "ai_rejected",
             domain_resolution_status="rejected",
-            confidence=confidence,
-        )
-
-    if status == "clarification_required":
-        return _resultado(
-            is_valid_service=False,
-            needs_clarification=True,
-            normalized_service=normalized_service,
-            reason=reason,
-            domain_resolution_status="clarification_required",
-            clarification_question=_pregunta_aclaracion(
-                normalizar_texto_para_busqueda(normalized_service)
-            ),
-            domain_code=domain_code,
-            category_name=category_name,
-            service_summary=service_summary,
-            confidence=confidence,
-        )
-
-    if status == "catalog_review_required" or not resolved_domain_code:
-        return _resultado(
-            is_valid_service=True,
-            needs_clarification=False,
-            normalized_service=normalized_service,
-            reason=(
-                reason
-                if domain_code or status == "catalog_review_required"
-                else "domain_not_resolved"
-            ),
-            domain_resolution_status="catalog_review_required",
-            domain_code=domain_code,
-            resolved_domain_code=None,
-            category_name=category_name,
-            service_summary=service_summary,
-            confidence=confidence or heuristico["confidence"],
+            confidence=float(fallback.get("confidence") or heuristico["confidence"]),
         )
 
     return _resultado(
-        is_valid_service=True,
-        needs_clarification=False,
-        normalized_service=normalized_service,
-        reason=reason,
-        domain_resolution_status="matched",
-        domain_code=resolved_domain_code,
-        resolved_domain_code=resolved_domain_code,
-        category_name=category_name,
-        service_summary=service_summary,
-        confidence=confidence or heuristico["confidence"],
+        is_valid_service=False,
+        needs_clarification=True,
+        normalized_service=str(
+            fallback.get("normalized_service") or service_name
+        ).strip()
+        or service_name,
+        reason="domain_or_category_not_resolved",
+        domain_resolution_status="clarification_required",
+        clarification_question=(
+            fallback.get("clarification_question")
+            or _pregunta_aclaracion(
+                normalizar_texto_para_busqueda(
+                    str(fallback.get("normalized_service") or service_name)
+                )
+            )
+        ),
+        domain_code=fallback.get("domain_code"),
+        category_name=fallback.get("category_name"),
+        service_summary=fallback.get("service_summary"),
+        confidence=float(fallback.get("confidence") or heuristico["confidence"]),
     )
 
 

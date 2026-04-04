@@ -12,7 +12,6 @@ WORKDIR /app
 # Instalar dependencias del sistema
 RUN apt-get update && apt-get install -y \
     gcc \
-    postgresql-client \
     curl \
     tzdata \
     && rm -rf /var/lib/apt/lists/*

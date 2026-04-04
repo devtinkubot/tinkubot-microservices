@@ -6,7 +6,7 @@ CREATE OR REPLACE FUNCTION public.match_provider_services(
     query_embedding vector,
     match_count integer,
     city_filter text DEFAULT NULL,
-    verified_only boolean DEFAULT true,
+    verified_only boolean DEFAULT false,
     similarity_threshold real DEFAULT 0.0
 )
 RETURNS TABLE(

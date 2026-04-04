@@ -179,7 +179,7 @@ async def main() -> None:
         )
 
         embedding_text = construir_texto_embedding_canonico(
-            service_name_normalized=normalizar_texto_para_busqueda(approved_name),
+            service_summary=service_summary,
             domain_code=domain_code,
             category_name=category_name,
         )

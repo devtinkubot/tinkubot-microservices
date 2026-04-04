@@ -5,10 +5,6 @@ from typing import Any, Dict, List, Optional
 
 from infrastructure.database import get_supabase_client
 from services.onboarding.registration.catalogo_servicios import (
-    clasificar_servicios_livianos,
-    generar_sugerencia_revision_catalogo_servicio,
-    obtener_catalogo_dominios_liviano,
-    registrar_revision_catalogo_servicio,
     validar_servicio_semanticamente,
 )
 from services.onboarding.registration.constantes import SERVICIOS_MAXIMOS_ONBOARDING
@@ -25,6 +21,7 @@ from templates.onboarding.redes_sociales import (
 )
 from templates.onboarding.servicios import (
     mensaje_maximo_servicios_onboarding,
+    mensaje_no_pude_guardar_servicio,
     mensaje_no_pude_interpretar_servicio,
     mensaje_no_pude_normalizar_servicio,
     mensaje_no_pude_procesar_servicios,
@@ -72,10 +69,34 @@ def _servicio_crudo_a_meta_servicio(texto_crudo: str) -> Dict[str, Any]:
         "service_summary": texto,
         "domain_code": None,
         "category_name": None,
+        "domain_resolution_status": "clarification_required",
         "classification_confidence": 0.0,
+        "needs_clarification": True,
         "requires_review": True,
         "review_reason": "pending_worker_resolution",
     }
+
+
+def _servicio_completo_para_guardar(detalle: Dict[str, Any]) -> bool:
+    return bool(
+        str(detalle.get("domain_code") or "").strip()
+        and str(detalle.get("category_name") or "").strip()
+        and not bool(detalle.get("needs_clarification"))
+        and not bool(detalle.get("requires_review"))
+    )
+
+
+def _estado_resolucion_servicio(validacion: Dict[str, Any]) -> str:
+    estado = str(
+        validacion.get("status")
+        or validacion.get("domain_resolution_status")
+        or ""
+    ).strip().lower()
+    if estado in {"accepted", "matched"}:
+        return "matched"
+    if estado in {"rejected"}:
+        return "rejected"
+    return "clarification_required"
 
 
 def _normalizar_meta_servicio(
@@ -98,10 +119,11 @@ def _normalizar_meta_servicio(
         "category_name"
     )
     confidence = float(validacion.get("confidence") or 0.0)
+    needs_clarification = bool(validacion.get("needs_clarification"))
     requiere_revision = bool(
-        validacion.get("needs_clarification")
-        or confidence < 0.7
-        or not validacion.get("resolved_domain_code")
+        needs_clarification
+        or not str(domain_code or "").strip()
+        or not str(category_name or "").strip()
     )
     return {
         "raw_service_text": texto_crudo,
@@ -109,7 +131,9 @@ def _normalizar_meta_servicio(
         "service_summary": service_summary,
         "domain_code": domain_code,
         "category_name": category_name,
+        "domain_resolution_status": _estado_resolucion_servicio(validacion),
         "classification_confidence": confidence,
+        "needs_clarification": needs_clarification,
         "requires_review": requiere_revision,
         "review_reason": validacion.get("reason"),
     }
@@ -223,25 +247,23 @@ async def normalizar_servicio_onboarding_individual(
                 "response": mensaje_servicio_no_reconocido(),
             }
         return {
-            "ok": True,
-            "service": str(validacion.get("normalized_service") or servicio).strip()
-            or servicio,
-            "service_detail": _normalizar_meta_servicio(
-                validacion,
-                str(validacion.get("normalized_service") or servicio).strip()
-                or servicio,
-                texto,
+            "ok": False,
+            "response": (
+                validacion.get("clarification_question")
+                or mensaje_no_pude_guardar_servicio()
             ),
         }
+
+    detalle_normalizado = _normalizar_meta_servicio(
+        validacion,
+        str(validacion.get("normalized_service") or servicio).strip() or servicio,
+        texto,
+    )
     return {
         "ok": True,
         "service": str(validacion.get("normalized_service") or servicio).strip()
         or servicio,
-        "service_detail": _normalizar_meta_servicio(
-            validacion,
-            str(validacion.get("normalized_service") or servicio).strip() or servicio,
-            texto,
-        ),
+        "service_detail": detalle_normalizado,
     }
 
 
@@ -282,109 +304,29 @@ async def resolver_servicio_onboarding_best_effort(
     if resultado.get("ok"):
         detalle = dict(resultado.get("service_detail") or {})
         detalle["raw_service_text"] = texto
-        if provider_id and _requiere_revision_catalogo(detalle):
-            supabase = _resolver_supabase_runtime()
-            dominios_catalogo = await obtener_catalogo_dominios_liviano(supabase)
-            sugerencia = {}
-            if cliente_openai:
-                sugerencia = await generar_sugerencia_revision_catalogo_servicio(
-                    cliente_openai=cliente_openai,
-                    raw_service_text=texto,
-                    service_name=str(
-                        detalle.get("service_name")
-                        or detalle.get("normalized_service")
-                        or texto
-                    ).strip()
-                    or texto,
-                    dominios_catalogo=dominios_catalogo,
-                )
-            await registrar_revision_catalogo_servicio(
-                supabase=supabase,
-                provider_id=provider_id,
-                raw_service_text=texto,
-                service_name=str(detalle.get("service_name") or detalle.get("normalized_service") or texto).strip()
-                or texto,
-                suggested_domain_code=(
-                    sugerencia.get("suggested_domain_code")
-                    or detalle.get("domain_code")
-                ),
-                proposed_category_name=(
-                    sugerencia.get("proposed_category_name")
-                    or detalle.get("category_name")
-                ),
-                proposed_service_summary=(
-                    sugerencia.get("proposed_service_summary")
-                    or detalle.get("service_summary")
-                ),
-                review_reason=(
-                    sugerencia.get("review_reason")
-                    or str(
-                        detalle.get("review_reason")
-                        or "catalog_review_required"
-                    ).strip()
-                    or "catalog_review_required"
-                ),
-                source="provider_onboarding",
-            )
+        if not _servicio_completo_para_guardar(detalle):
+            return {
+                "ok": False,
+                "raw_service_text": texto,
+                "service_detail": detalle,
+                "error_reason": "classification_incomplete",
+                "response": mensaje_no_pude_guardar_servicio(),
+            }
         return {
             "ok": True,
             "raw_service_text": texto,
             "service_detail": detalle,
         }
 
-    detalle = _servicio_crudo_a_meta_servicio(texto)
-    detalle["review_reason"] = str(resultado.get("response") or "resolution_fallback")
-    if provider_id:
-        supabase = _resolver_supabase_runtime()
-        dominios_catalogo = await obtener_catalogo_dominios_liviano(supabase)
-        sugerencia = {}
-        if cliente_openai:
-            sugerencia = await generar_sugerencia_revision_catalogo_servicio(
-                cliente_openai=cliente_openai,
-                raw_service_text=texto,
-                service_name=str(detalle.get("service_name") or texto).strip() or texto,
-                dominios_catalogo=dominios_catalogo,
-            )
-        await registrar_revision_catalogo_servicio(
-            supabase=supabase,
-            provider_id=provider_id,
-            raw_service_text=texto,
-            service_name=str(detalle.get("service_name") or detalle.get("normalized_service") or texto).strip()
-            or texto,
-            suggested_domain_code=(
-                sugerencia.get("suggested_domain_code") or detalle.get("domain_code")
-            ),
-            proposed_category_name=(
-                sugerencia.get("proposed_category_name") or detalle.get("category_name")
-            ),
-            proposed_service_summary=(
-                sugerencia.get("proposed_service_summary")
-                or detalle.get("service_summary")
-            ),
-            review_reason=(
-                sugerencia.get("review_reason")
-                or str(detalle.get("review_reason") or "resolution_fallback").strip()
-                or "resolution_fallback"
-            ),
-            source="provider_onboarding",
-        )
     return {
-        "ok": True,
+        "ok": False,
         "raw_service_text": texto,
-        "service_detail": detalle,
-        "used_fallback": True,
+        "service_detail": _servicio_crudo_a_meta_servicio(texto),
+        "error_reason": str(
+            resultado.get("response") or "service_classification_incomplete"
+        ),
+        "response": str(resultado.get("response") or mensaje_no_pude_guardar_servicio()),
     }
-
-
-def _requiere_revision_catalogo(detalle: Dict[str, Any]) -> bool:
-    """Detecta si la IA dejó una sugerencia que debe pasar por revisión."""
-    confidence = float(detalle.get("classification_confidence") or 0.0)
-    return bool(
-        detalle.get("requires_review")
-        or confidence < 0.7
-        or not str(detalle.get("domain_code") or "").strip()
-        or not str(detalle.get("category_name") or "").strip()
-    )
 
 
 async def manejar_espera_servicios_onboarding(

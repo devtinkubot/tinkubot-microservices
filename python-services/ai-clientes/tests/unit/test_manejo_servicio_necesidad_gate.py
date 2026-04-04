@@ -76,6 +76,100 @@ async def test_acepta_necesidad_concreta_y_pasa_a_confirmacion():
 
 
 @pytest.mark.asyncio
+async def test_jardineria_mixta_confirma_servicio_normalizado():
+    flujo = {
+        "state": "awaiting_service",
+        "city": "Cuenca",
+        "city_confirmed": True,
+    }
+
+    async def extraer_fn(_texto: str):
+        return {
+            "normalized_service": "mantenimiento de jardines",
+            "domain": "jardinería",
+            "category": "mantenimiento de jardines",
+            "search_profile": {
+                "raw_input": "El jardín de la casa está sucio y los árboles frutales necesitan poda, necesito que alguien me ayude.",
+                "primary_service": "mantenimiento de jardines",
+                "domain": "jardinería",
+                "category": "mantenimiento de jardines",
+                "signals": [
+                    "servicio objetivo: mantenimiento de jardines",
+                    "dominio: jardinería",
+                    "categoría: mantenimiento de jardines",
+                ],
+                "confidence": 0.92,
+                "source": "client",
+            },
+        }
+
+    async def validar_necesidad_fn(_texto: str):
+        return True
+
+    flujo_actualizado, respuesta = await procesar_estado_esperando_servicio(
+        flujo=flujo,
+        texto=(
+            "El jardín de la casa está sucio y los árboles frutales necesitan poda, "
+            "necesito que alguien me ayude."
+        ),
+        saludos=set(),
+        prompt_inicial="¿Qué necesitas resolver?",
+        extraer_fn=extraer_fn,
+        validar_necesidad_fn=validar_necesidad_fn,
+    )
+
+    assert flujo_actualizado["state"] == "confirm_service"
+    assert flujo_actualizado["service_candidate"] == "mantenimiento de jardines"
+    assert flujo_actualizado["service_domain"] == "jardinería"
+    assert flujo_actualizado["service_category"] == "mantenimiento de jardines"
+    assert flujo_actualizado["search_profile"]["primary_service"] == "mantenimiento de jardines"
+    assert "¿Es este el servicio que buscas: *mantenimiento de jardines*?" in respuesta[
+        "response"
+    ]
+    assert respuesta["ui"]["type"] == "buttons"
+
+
+@pytest.mark.asyncio
+async def test_servicio_sin_taxonomia_pide_precision_y_no_confirma():
+    flujo = {"state": "awaiting_service"}
+
+    async def extraer_fn(_texto: str):
+        return {
+            "normalized_service": "mantenimiento de jardines",
+            "domain": None,
+            "category": None,
+            "search_profile": {
+                "raw_input": "Servicios de jardinería y poda de árboles",
+                "primary_service": "mantenimiento de jardines",
+                "domain": None,
+                "category": None,
+                "signals": ["servicio objetivo: mantenimiento de jardines"],
+                "confidence": 0.4,
+                "source": "client",
+            },
+        }
+
+    async def validar_necesidad_fn(_texto: str):
+        return True
+
+    flujo_actualizado, respuesta = await procesar_estado_esperando_servicio(
+        flujo=flujo,
+        texto="Servicios de jardinería y poda de árboles",
+        saludos=set(),
+        prompt_inicial="¿Qué necesitas resolver?",
+        extraer_fn=extraer_fn,
+        validar_necesidad_fn=validar_necesidad_fn,
+    )
+
+    assert flujo_actualizado["state"] == "awaiting_service"
+    assert flujo_actualizado["service_candidate_hint"] == "mantenimiento de jardines"
+    assert "service_candidate" not in flujo_actualizado
+    assert respuesta["response"] == mensaje_solicitar_precision_servicio(
+        "mantenimiento de jardines"
+    )
+
+
+@pytest.mark.asyncio
 async def test_gate_v2_rechaza_pero_extrae_y_pide_detalle():
     flujo = {"state": "awaiting_service"}
 
@@ -194,7 +288,24 @@ async def test_hint_previsto_se_combina_con_detalle_para_extraer_servicio():
 
     async def extraer_fn(texto: str):
         llamadas.append(texto)
-        return "fabricación de clóset a medida"
+        return {
+            "normalized_service": "fabricación de clóset a medida",
+            "domain": "construccion_hogar",
+            "category": "carpintería",
+            "search_profile": {
+                "raw_input": texto,
+                "primary_service": "fabricación de clóset a medida",
+                "domain": "construccion_hogar",
+                "category": "carpintería",
+                "signals": [
+                    "servicio objetivo: fabricación de clóset a medida",
+                    "dominio: construccion_hogar",
+                    "categoría: carpintería",
+                ],
+                "confidence": 0.91,
+                "source": "client",
+            },
+        }
 
     async def validar_necesidad_fn(_texto: str):
         return True
@@ -320,7 +431,11 @@ async def test_hint_existente_y_servicio_especifico_pasa_a_confirmacion_aun_si_g
     }
 
     async def extraer_fn(_texto: str):
-        return "desarrollo de aplicaciones móviles"
+        return {
+            "normalized_service": "desarrollo de aplicaciones móviles",
+            "domain": "tecnologia",
+            "category": "desarrollo de software",
+        }
 
     async def validar_necesidad_fn(_texto: str):
         return False
@@ -348,7 +463,11 @@ async def test_hint_existente_y_frase_corta_concreta_pasa_a_confirmacion():
     }
 
     async def extraer_fn(_texto: str):
-        return "cambio de aceite de motor"
+        return {
+            "normalized_service": "cambio de aceite de motor",
+            "domain": "automotriz",
+            "category": "mecánica preventiva",
+        }
 
     async def validar_necesidad_fn(_texto: str):
         return False
@@ -376,7 +495,11 @@ async def test_hint_existente_y_planos_para_casa_pasa_a_confirmacion():
     }
 
     async def extraer_fn(_texto: str):
-        return "diseño de planos arquitectónicos"
+        return {
+            "normalized_service": "diseño de planos arquitectónicos",
+            "domain": "construccion_hogar",
+            "category": "arquitectura",
+        }
 
     async def validar_necesidad_fn(_texto: str):
         return False
