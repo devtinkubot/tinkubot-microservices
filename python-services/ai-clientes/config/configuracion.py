@@ -76,7 +76,6 @@ class ConfiguracionServicio(BaseSettings):
     modelo_extraccion: Optional[str] = None  # Para extracción de necesidades
     modelo_validacion: Optional[str] = None  # Para validación de contenido
     modelo_normalizacion: Optional[str] = None  # Para normalización de servicios
-    validacion_proveedores_ia_only: bool = False
 
     model_config = SettingsConfigDict(
         env_file=".env",

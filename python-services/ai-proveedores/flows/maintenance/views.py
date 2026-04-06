@@ -21,8 +21,6 @@ from services.shared.identidad_proveedor import (
 )
 from templates.maintenance import (
     preguntar_nuevo_servicio_con_ejemplos_dinamicos,
-    solicitar_dni_frontal_actualizacion,
-    solicitar_dni_reverso_actualizacion,
     solicitar_red_social_actualizacion,
     solicitar_selfie_actualizacion,
 )
@@ -34,10 +32,7 @@ from templates.maintenance.menus import (
     DETAIL_ACTION_BACK,
     DETAIL_ACTION_CERTIFICATES_ADD,
     DETAIL_ACTION_CITY_CHANGE,
-    DETAIL_ACTION_DNI_BACK_CHANGE,
-    DETAIL_ACTION_DNI_FRONT_CHANGE,
     DETAIL_ACTION_EXPERIENCE_CHANGE,
-    DETAIL_ACTION_NAME_CHANGE,
     DETAIL_ACTION_PHOTO_CHANGE,
     DETAIL_ACTION_SERVICE_CHANGE,
     DETAIL_ACTION_SERVICE_DELETE,
@@ -66,7 +61,6 @@ from templates.maintenance.menus import (
 from templates.maintenance.registration import (
     payload_certificado_opcional,
     preguntar_experiencia_general,
-    preguntar_nombre,
 )
 from templates.maintenance.views_labels import (
     etiqueta_apellidos_documento,
@@ -93,6 +87,13 @@ from templates.shared import (
 
 PERSONAL_PARENT_STATE = "awaiting_personal_info_action"
 PROFESSIONAL_PARENT_STATE = "awaiting_professional_info_action"
+PERSONAL_STATES_SOLO_LECTURA = frozenset(
+    {
+        "viewing_personal_name",
+        "viewing_personal_dni_front",
+        "viewing_personal_dni_back",
+    }
+)
 
 
 def _cantidad_servicios_para_nuevo_ingreso(flujo: Dict[str, Any]) -> int:
@@ -168,7 +169,10 @@ async def render_profile_view(
     proveedor_id: Optional[str],
 ) -> Dict[str, Any]:
     if estado == "viewing_personal_name":
-        return payload_detalle_nombre(_formatear_datos_identidad(flujo))
+        return payload_detalle_nombre(
+            _formatear_datos_identidad(flujo),
+            permitir_cambio=False,
+        )
 
     if estado == "viewing_personal_city":
         return payload_detalle_ubicacion(
@@ -188,7 +192,6 @@ async def render_profile_view(
             titulo=titulo_cedula_frontal(),
             descripcion=descripcion_cedula_frontal_actual(),
             media_url=_resolver_media_url(flujo.get("dni_front_photo_url")),
-            change_id=DETAIL_ACTION_DNI_FRONT_CHANGE,
         )
 
     if estado == "viewing_personal_dni_back":
@@ -196,7 +199,6 @@ async def render_profile_view(
             titulo=titulo_cedula_reverso(),
             descripcion=descripcion_cedula_reverso_actual(),
             media_url=_resolver_media_url(flujo.get("dni_back_photo_url")),
-            change_id=DETAIL_ACTION_DNI_BACK_CHANGE,
         )
 
     if estado == "viewing_professional_services":
@@ -294,12 +296,16 @@ async def manejar_vista_perfil(  # noqa: C901
 ) -> Dict[str, Any]:
     texto = (texto_mensaje or "").strip().lower()
 
+    if estado in PERSONAL_STATES_SOLO_LECTURA:
+        flujo.pop("profile_edit_mode", None)
+        flujo.pop("profile_return_state", None)
+        flujo["state"] = PERSONAL_PARENT_STATE
+        return {
+            "success": True,
+            "messages": [payload_submenu_informacion_personal()],
+        }
+
     if estado == "viewing_personal_name":
-        if texto == DETAIL_ACTION_NAME_CHANGE:
-            flujo["profile_edit_mode"] = "personal_name"
-            flujo["profile_return_state"] = "viewing_personal_name"
-            flujo["state"] = _estado_compatibilidad_mantenimiento("maintenance_name")
-            return {"success": True, "messages": [{"response": preguntar_nombre()}]}
         if texto == DETAIL_ACTION_BACK:
             flujo["state"] = PERSONAL_PARENT_STATE
             return {
@@ -347,34 +353,6 @@ async def manejar_vista_perfil(  # noqa: C901
             return {
                 "success": True,
                 "messages": [{"response": solicitar_selfie_actualizacion()}],
-            }
-        if texto == DETAIL_ACTION_BACK:
-            flujo["state"] = PERSONAL_PARENT_STATE
-            return {
-                "success": True,
-                "messages": [payload_submenu_informacion_personal()],
-            }
-
-    if estado in {"viewing_personal_dni_front", "viewing_personal_dni_back"}:
-        if texto == DETAIL_ACTION_DNI_FRONT_CHANGE:
-            flujo["profile_edit_mode"] = "personal_dni_front_update"
-            flujo["profile_return_state"] = estado
-            flujo["state"] = _estado_compatibilidad_mantenimiento(
-                "maintenance_dni_front_photo_update"
-            )
-            return {
-                "success": True,
-                "messages": [{"response": solicitar_dni_frontal_actualizacion()}],
-            }
-        if texto == DETAIL_ACTION_DNI_BACK_CHANGE:
-            flujo["profile_edit_mode"] = "personal_dni_back_update"
-            flujo["profile_return_state"] = estado
-            flujo["state"] = _estado_compatibilidad_mantenimiento(
-                "maintenance_dni_back_photo_update"
-            )
-            return {
-                "success": True,
-                "messages": [{"response": solicitar_dni_reverso_actualizacion()}],
             }
         if texto == DETAIL_ACTION_BACK:
             flujo["state"] = PERSONAL_PARENT_STATE
@@ -454,7 +432,7 @@ async def manejar_vista_perfil(  # noqa: C901
                 "success": True,
                 "messages": [payload_submenu_informacion_profesional()],
             }
-        if texto == SERVICE_BACK_ID:
+        if texto in {SERVICE_BACK_ID, "regresar", "volver", "menu", "menú"}:
             flujo.pop("selected_service_index", None)
             flujo["state"] = PROFESSIONAL_PARENT_STATE
             return {

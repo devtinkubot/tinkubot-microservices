@@ -3,10 +3,6 @@
 from typing import Any, Dict, Optional
 
 from flows.constructors import construir_payload_menu_principal
-
-from .compat_menu import (
-    iniciar_flujo_completar_perfil_profesional as _iniciar_perfil_profesional,
-)
 from .compat_menu import manejar_estado_menu as _manejar_estado_menu
 
 
@@ -29,14 +25,6 @@ async def manejar_estado_menu(
         telefono=telefono,
         selected_option=selected_option,
     )
-
-
-def iniciar_flujo_completar_perfil_profesional(
-    flujo: Dict[str, Any],
-) -> Dict[str, Any]:
-    return _iniciar_perfil_profesional(flujo)
-
-
 def construir_menu_principal_mantenimiento(
     *,
     esta_registrado: bool = True,

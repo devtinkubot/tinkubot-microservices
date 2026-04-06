@@ -122,7 +122,9 @@ async def _manejar_timeout_listado_proveedores(
         "confirm_include_city_option",
     ):
         flujo.pop(clave, None)
-    flujo["state"] = "awaiting_service"
+    flujo["state"] = "confirm_new_search"
+    flujo["confirm_title"] = mensaje_timeout_listado_proveedores(ciudad)
+    flujo["confirm_include_city_option"] = False
 
     ahora_iso = datetime.utcnow().isoformat()
     flujo["last_seen_at"] = ahora_iso
@@ -134,10 +136,10 @@ async def _manejar_timeout_listado_proveedores(
         await orquestador.guardar_flujo(telefono, flujo)
 
     return {
-        "messages": [
-            {"response": mensaje_timeout_listado_proveedores(ciudad)},
-            await _prompt_inicial_servicio(orquestador),
-        ]
+        "messages": mensajes_confirmacion_busqueda(
+            mensaje_timeout_listado_proveedores(ciudad),
+            incluir_opcion_ciudad=False,
+        )
     }
 
 

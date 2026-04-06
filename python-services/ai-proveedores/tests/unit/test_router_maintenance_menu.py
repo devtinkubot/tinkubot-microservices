@@ -75,6 +75,8 @@ def test_menu_principal_texto_libre_reenvia_botones():
 
     assert resultado["success"] is True
     assert resultado["messages"][0]["ui"]["id"] == "provider_main_menu_v1"
+    ids = [opcion["id"] for opcion in resultado["messages"][0]["ui"]["options"]]
+    assert "provider_menu_completar_perfil" not in ids
 
 
 def test_menu_principal_acepta_selected_option_de_legado():
@@ -97,3 +99,66 @@ def test_menu_principal_acepta_selected_option_de_legado():
     assert resultado["persist_flow"] is True
     assert flujo["state"] == "awaiting_personal_info_action"
     assert resultado["response"]["messages"][0]["ui"]["id"] == "provider_personal_info_menu_v1"
+
+
+def test_menu_principal_acepta_selected_option_profesional():
+    flujo = {"state": "awaiting_menu_option"}
+
+    resultado = asyncio.run(
+        modulo_router.manejar_menu_proveedor(
+            flujo=flujo,
+            estado="awaiting_menu_option",
+            texto_mensaje="provider_menu_info_profesional",
+            opcion_menu=None,
+            selected_option="provider_menu_info_profesional",
+            esta_registrado=True,
+            supabase=None,
+            telefono="593999111299@s.whatsapp.net",
+        )
+    )
+
+    assert resultado is not None
+    assert resultado["persist_flow"] is True
+    assert flujo["state"] == "awaiting_professional_info_action"
+    assert (
+        resultado["response"]["messages"][0]["ui"]["id"]
+        == "provider_professional_info_menu_v1"
+    )
+
+
+def test_menu_principal_acepta_texto_libre_personal():
+    flujo = {"state": "awaiting_menu_option"}
+
+    resultado = asyncio.run(
+        modulo_menu.manejar_estado_menu(
+            flujo=flujo,
+            texto_mensaje="informacion personal",
+            opcion_menu=None,
+            selected_option=None,
+            esta_registrado=True,
+            supabase=None,
+            telefono="593999111299@s.whatsapp.net",
+        )
+    )
+
+    assert flujo["state"] == "awaiting_personal_info_action"
+    assert resultado["messages"][0]["ui"]["id"] == "provider_personal_info_menu_v1"
+
+
+def test_menu_principal_acepta_texto_libre_profesional():
+    flujo = {"state": "awaiting_menu_option"}
+
+    resultado = asyncio.run(
+        modulo_menu.manejar_estado_menu(
+            flujo=flujo,
+            texto_mensaje="informacion profesional",
+            opcion_menu=None,
+            selected_option=None,
+            esta_registrado=True,
+            supabase=None,
+            telefono="593999111299@s.whatsapp.net",
+        )
+    )
+
+    assert flujo["state"] == "awaiting_professional_info_action"
+    assert resultado["messages"][0]["ui"]["id"] == "provider_professional_info_menu_v1"

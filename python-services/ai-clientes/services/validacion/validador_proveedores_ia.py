@@ -23,6 +23,8 @@ _DOMINIO_FAMILIA_ALIASES = {
     "transporte": "movilidad",
     "movilidad": "movilidad",
     "construccion_hogar": "construccion_hogar",
+    "jardineria": "mantenimiento",
+    "servicios_de_jardineria": "mantenimiento",
     "mantenimiento": "mantenimiento",
     "tecnologia": "tecnologia",
     "legal": "legal",
@@ -64,7 +66,7 @@ class ValidadorProveedoresIA:
         semaforo_openai: asyncio.Semaphore,
         tiempo_espera_openai: float,
         logger: logging.Logger,
-        validacion_proveedores_ia_only: Optional[bool] = None,
+        **_kwargs: Any,
     ):
         """
         Inicializar el servicio de validación.
@@ -79,11 +81,6 @@ class ValidadorProveedoresIA:
         self.semaforo_openai = semaforo_openai
         self.tiempo_espera_openai = tiempo_espera_openai
         self.logger = logger
-        self.validacion_proveedores_ia_only = (
-            configuracion.validacion_proveedores_ia_only
-            if validacion_proveedores_ia_only is None
-            else bool(validacion_proveedores_ia_only)
-        )
 
     @staticmethod
     def _normalizar_texto(texto: Optional[str]) -> str:
@@ -242,8 +239,7 @@ class ValidadorProveedoresIA:
         descripcion_problema: Optional[str],
         request_domain_code: Optional[str],
         request_category_name: Optional[str],
-        request_domain: Optional[str],
-        request_category: Optional[str],
+        **_kwargs: Any,
     ) -> Dict[str, Any]:
         service_summary = str(
             proveedor.get("matched_service_summary")
@@ -300,6 +296,43 @@ class ValidadorProveedoresIA:
             "taxonomy_final_decision": coherencia["taxonomy_final_decision"],
         }
         return proveedor_enriquecido
+
+    @staticmethod
+    def _extraer_decision(
+        decision: Any,
+    ) -> tuple[bool, float, str, Dict[str, Any]]:
+        if isinstance(decision, bool):
+            return decision, (1.0 if decision else 0.0), "legacy_boolean_response", {}
+        can_help = bool((decision or {}).get("can_help"))
+        try:
+            confidence = max(
+                0.0, min(1.0, float((decision or {}).get("confidence") or 0.0))
+            )
+        except (TypeError, ValueError):
+            confidence = 0.0
+        reason = str((decision or {}).get("reason") or "").strip()
+        return can_help, confidence, reason, dict(decision or {})
+
+    @staticmethod
+    def _enriquecer_proveedor_ia(
+        *,
+        proveedor: Dict[str, Any],
+        can_help: bool,
+        confidence: float,
+        reason: str,
+        decision_data: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        enriquecido = dict(proveedor)
+        enriquecido["validation_confidence"] = confidence
+        enriquecido["validation_reason"] = reason or None
+        enriquecido["taxonomy_final_decision"] = bool(can_help)
+        if decision_data:
+            enriquecido["validation_raw"] = {
+                k: decision_data.get(k)
+                for k in ("can_help", "confidence", "reason")
+                if k in decision_data
+            }
+        return enriquecido
 
     async def _solicitar_validacion(
         self,
@@ -543,10 +576,11 @@ class ValidadorProveedoresIA:
                     self.MODELO_VALIDACION,
                     "json_object",
                 )
+                max_tokens_batch = max(200 * len(proveedores), 600)
                 respuesta = await asyncio.wait_for(
                     self._solicitar_validacion(
                         prompt_usuario=prompt_sistema,
-                        max_tokens=400,
+                        max_tokens=max_tokens_batch,
                         response_format={"type": "json_object"},
                     ),
                     timeout=self.tiempo_espera_openai,
@@ -559,7 +593,12 @@ class ValidadorProveedoresIA:
                 return []
 
             contenido = (respuesta.choices[0].message.content or "").strip()
-            self.logger.debug(f"🤖 Respuesta validación IA: {contenido[:200]}")
+            finish_reason = respuesta.choices[0].finish_reason
+            self.logger.debug(
+                "validator_raw_response finish_reason=%s content=%s",
+                finish_reason,
+                contenido[:500],
+            )
             payload = self._extraer_json_parseable(contenido)
             lista_validacion = self._normalizar_lista_validacion(
                 payload, len(proveedores)
@@ -584,7 +623,7 @@ class ValidadorProveedoresIA:
                 respuesta = await asyncio.wait_for(
                     self._solicitar_validacion(
                         prompt_usuario=prompt_reintento,
-                        max_tokens=300,
+                        max_tokens=max_tokens_batch,
                         response_format={"type": "json_object"},
                     ),
                     timeout=self.tiempo_espera_openai,
@@ -609,7 +648,7 @@ class ValidadorProveedoresIA:
                         respuesta_individual = await asyncio.wait_for(
                             self._solicitar_validacion(
                                 prompt_usuario=prompt_individual,
-                                max_tokens=220,
+                                max_tokens=400,
                                 response_format={"type": "json_object"},
                             ),
                             timeout=self.tiempo_espera_openai,
@@ -630,142 +669,20 @@ class ValidadorProveedoresIA:
                             continue
 
                         decision = lista_individual[0]
-                        if isinstance(decision, bool):
-                            can_help = decision
-                            confidence = 1.0 if decision else 0.0
-                            reason = "legacy_boolean_response"
-                            decision_data = {}
-                        else:
-                            can_help = bool((decision or {}).get("can_help"))
-                            try:
-                                confidence = max(
-                                    0.0,
-                                    min(
-                                        1.0,
-                                        float(
-                                            (decision or {}).get("confidence") or 0.0
-                                        ),
-                                    ),
-                                )
-                            except (TypeError, ValueError):
-                                confidence = 0.0
-                            reason = str((decision or {}).get("reason") or "").strip()
-                            decision_data = dict(decision or {})
-
-                        service_summary = str(
-                            proveedor.get("matched_service_summary")
-                            or proveedor.get("service_summary")
-                            or ""
-                        ).strip()
-                        service_list = " ".join(
-                            str(service).strip()
-                            for service in (proveedor.get("services") or [])
+                        can_help, confidence, reason, decision_data = (
+                            self._extraer_decision(decision)
                         )
-                        provider_service_parts = [
-                            str(proveedor.get("matched_service_name") or "").strip(),
-                            service_summary,
-                            service_list,
-                        ]
-                        provider_service_text = " ".join(
-                            part for part in provider_service_parts if part
-                        )
-                        if self.validacion_proveedores_ia_only:
-                            coherencia = {
-                                "domain_coherence": decision_data.get(
-                                    "domain_coherence"
-                                ),
-                                "category_coherence": decision_data.get(
-                                    "category_coherence"
-                                ),
-                                "service_coherence": decision_data.get(
-                                    "service_coherence"
-                                ),
-                                "taxonomy_coherence_score": max(
-                                    0.0,
-                                    min(
-                                        1.0,
-                                        float(
-                                            decision_data.get(
-                                                "taxonomy_coherence_score"
-                                            )
-                                            or confidence
-                                        ),
-                                    ),
-                                ),
-                                "taxonomy_family_request": None,
-                                "taxonomy_family_provider": None,
-                                "taxonomy_final_decision": bool(can_help),
-                            }
-                        else:
-                            coherencia = self._evaluar_coherencia_taxonomica(
-                                request_domain_code=dominio_request,
-                                request_category_name=categoria_request,
-                                request_service_text=" ".join(
-                                    part
-                                    for part in [
-                                        necesidad_usuario,
-                                        problema,
-                                    ]
-                                    if part
-                                ),
-                                provider_domain_code=proveedor.get("domain_code"),
-                                provider_category_name=proveedor.get("category_name"),
-                                provider_service_text=provider_service_text,
-                            )
-
-                            if not coherencia["taxonomy_final_decision"]:
-                                can_help = False
-                                confidence = min(
-                                    confidence, coherencia["taxonomy_coherence_score"]
-                                )
-                                if not reason:
-                                    reason = "taxonomy_incoherent"
-                                if coherencia["domain_coherence"] is False:
-                                    reason = "domain_incoherent"
-                                elif coherencia["category_coherence"] is False:
-                                    reason = "category_incoherent"
 
                         if not can_help:
                             continue
 
-                        proveedor_enriquecido = dict(proveedor)
-                        proveedor_enriquecido["validation_confidence"] = confidence
-                        proveedor_enriquecido["validation_reason"] = reason or None
-                        proveedor_enriquecido["taxonomy_coherence_score"] = coherencia[
-                            "taxonomy_coherence_score"
-                        ]
-                        proveedor_enriquecido["domain_coherence"] = coherencia[
-                            "domain_coherence"
-                        ]
-                        proveedor_enriquecido["category_coherence"] = coherencia[
-                            "category_coherence"
-                        ]
-                        proveedor_enriquecido["service_coherence"] = coherencia[
-                            "service_coherence"
-                        ]
-                        proveedor_enriquecido["taxonomy_family_request"] = coherencia[
-                            "taxonomy_family_request"
-                        ]
-                        proveedor_enriquecido["taxonomy_family_provider"] = coherencia[
-                            "taxonomy_family_provider"
-                        ]
-                        proveedor_enriquecido["taxonomy_final_decision"] = coherencia[
-                            "taxonomy_final_decision"
-                        ]
-                        if decision_data:
-                            proveedor_enriquecido["validation_raw"] = {
-                                key: decision_data.get(key)
-                                for key in (
-                                    "can_help",
-                                    "confidence",
-                                    "reason",
-                                    "domain_coherence",
-                                    "category_coherence",
-                                    "service_coherence",
-                                    "taxonomy_coherence_score",
-                                )
-                                if key in decision_data
-                            }
+                        proveedor_enriquecido = self._enriquecer_proveedor_ia(
+                            proveedor=proveedor,
+                            can_help=can_help,
+                            confidence=confidence,
+                            reason=reason,
+                            decision_data=decision_data,
+                        )
                         proveedores_validados.append(proveedor_enriquecido)
 
                     self.logger.info(
@@ -777,127 +694,20 @@ class ValidadorProveedoresIA:
 
             proveedores_validados = []
             for proveedor, decision in zip(proveedores, lista_validacion):
-                if isinstance(decision, bool):
-                    can_help = decision
-                    confidence = 1.0 if decision else 0.0
-                    reason = "legacy_boolean_response"
-                    decision_data = {}
-                else:
-                    can_help = bool((decision or {}).get("can_help"))
-                    try:
-                        confidence = max(
-                            0.0,
-                            min(1.0, float((decision or {}).get("confidence") or 0.0)),
-                        )
-                    except (TypeError, ValueError):
-                        confidence = 0.0
-                    reason = str((decision or {}).get("reason") or "").strip()
-                    decision_data = dict(decision or {})
-
-                provider_service_text = " ".join(
-                    part.strip()
-                    for part in [
-                        str(proveedor.get("matched_service_name") or "").strip(),
-                        str(
-                            proveedor.get("matched_service_summary")
-                            or proveedor.get("service_summary")
-                            or ""
-                        ).strip(),
-                        " ".join(
-                            str(service).strip()
-                            for service in (proveedor.get("services") or [])
-                        ),
-                    ]
-                    if part.strip()
+                can_help, confidence, reason, decision_data = (
+                    self._extraer_decision(decision)
                 )
-                if self.validacion_proveedores_ia_only:
-                    coherencia = {
-                        "domain_coherence": decision_data.get("domain_coherence"),
-                        "category_coherence": decision_data.get("category_coherence"),
-                        "service_coherence": decision_data.get("service_coherence"),
-                        "taxonomy_coherence_score": max(
-                            0.0,
-                            min(
-                                1.0,
-                                float(
-                                    decision_data.get("taxonomy_coherence_score")
-                                    or confidence
-                                ),
-                            ),
-                        ),
-                        "taxonomy_family_request": None,
-                        "taxonomy_family_provider": None,
-                        "taxonomy_final_decision": bool(can_help),
-                    }
-                else:
-                    coherencia = self._evaluar_coherencia_taxonomica(
-                        request_domain_code=dominio_request,
-                        request_category_name=categoria_request,
-                        request_service_text=" ".join(
-                            part
-                            for part in [
-                                necesidad_usuario,
-                                problema,
-                            ]
-                            if part
-                        ),
-                        provider_domain_code=proveedor.get("domain_code"),
-                        provider_category_name=proveedor.get("category_name"),
-                        provider_service_text=provider_service_text,
-                    )
-
-                    if not coherencia["taxonomy_final_decision"]:
-                        can_help = False
-                        confidence = min(
-                            confidence, coherencia["taxonomy_coherence_score"]
-                        )
-                        if not reason:
-                            reason = "taxonomy_incoherent"
-                        if coherencia["domain_coherence"] is False:
-                            reason = "domain_incoherent"
-                        elif coherencia["category_coherence"] is False:
-                            reason = "category_incoherent"
 
                 if not can_help:
                     continue
-                proveedor_enriquecido = dict(proveedor)
-                proveedor_enriquecido["validation_confidence"] = confidence
-                proveedor_enriquecido["validation_reason"] = reason or None
-                proveedor_enriquecido["taxonomy_coherence_score"] = coherencia[
-                    "taxonomy_coherence_score"
-                ]
-                proveedor_enriquecido["domain_coherence"] = coherencia[
-                    "domain_coherence"
-                ]
-                proveedor_enriquecido["category_coherence"] = coherencia[
-                    "category_coherence"
-                ]
-                proveedor_enriquecido["service_coherence"] = coherencia[
-                    "service_coherence"
-                ]
-                proveedor_enriquecido["taxonomy_family_request"] = coherencia[
-                    "taxonomy_family_request"
-                ]
-                proveedor_enriquecido["taxonomy_family_provider"] = coherencia[
-                    "taxonomy_family_provider"
-                ]
-                proveedor_enriquecido["taxonomy_final_decision"] = coherencia[
-                    "taxonomy_final_decision"
-                ]
-                if decision_data:
-                    proveedor_enriquecido["validation_raw"] = {
-                        key: decision_data.get(key)
-                        for key in (
-                            "can_help",
-                            "confidence",
-                            "reason",
-                            "domain_coherence",
-                            "category_coherence",
-                            "service_coherence",
-                            "taxonomy_coherence_score",
-                        )
-                        if key in decision_data
-                    }
+
+                proveedor_enriquecido = self._enriquecer_proveedor_ia(
+                    proveedor=proveedor,
+                    can_help=can_help,
+                    confidence=confidence,
+                    reason=reason,
+                    decision_data=decision_data,
+                )
                 proveedores_validados.append(proveedor_enriquecido)
 
             self.logger.info(
@@ -914,7 +724,7 @@ class ValidadorProveedoresIA:
 
         except asyncio.TimeoutError:
             self.logger.warning("⚠️ Timeout en validar_proveedores, fallback local")
-            proveedores_fallback = [
+            proveedores_enriquecidos = [
                 self._enriquecer_proveedor_timeout_fallback(
                     proveedor=proveedor,
                     necesidad_usuario=necesidad_usuario,
@@ -926,6 +736,17 @@ class ValidadorProveedoresIA:
                 )
                 for proveedor in proveedores
             ]
+            proveedores_fallback = [
+                p
+                for p in proveedores_enriquecidos
+                if p.get("taxonomy_final_decision", False)
+            ]
+            if not proveedores_fallback and proveedores_enriquecidos:
+                proveedores_fallback = sorted(
+                    proveedores_enriquecidos,
+                    key=lambda p: p.get("taxonomy_coherence_score", 0),
+                    reverse=True,
+                )[:1]
             self.logger.info(
                 "validator_timeout_fallback passed=%s total=%s",
                 len(proveedores_fallback),

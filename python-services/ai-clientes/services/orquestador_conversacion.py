@@ -6,6 +6,7 @@ mensajes de WhatsApp, maneja la máquina de estados y coordina con
 otros servicios (disponibilidad, búsqueda, etc.).
 """
 
+import asyncio
 import logging
 import re
 import unicodedata
@@ -724,6 +725,16 @@ class OrquestadorConversacional:
             cliente_id=cliente_id,
         )
 
+    async def _disparar_prefetch_busqueda(
+        self, telefono: str, flujo: Dict[str, Any]
+    ) -> None:
+        """Publica evento de prefetch al Redis Stream (fire-and-forget)."""
+        from infrastructure.prefetch.publicador_prefetch import (
+            publicar_prefetch_busqueda,
+        )
+
+        await publicar_prefetch_busqueda(telefono, flujo, self.redis_client)
+
     async def _procesar_awaiting_service(
         self,
         telefono: str,
@@ -802,6 +813,7 @@ class OrquestadorConversacional:
             respuesta = await self.construir_prompt_inicial_servicio()
 
         if flujo.get("state") == "confirm_service":
+            asyncio.create_task(self._disparar_prefetch_busqueda(telefono, flujo))
             return await responder(flujo, respuesta)
 
         servicio_confirmado = (flujo.get("service") or "").strip()

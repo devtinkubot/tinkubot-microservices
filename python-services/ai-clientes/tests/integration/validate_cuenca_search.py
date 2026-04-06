@@ -182,7 +182,7 @@ async def main() -> int:
         semaforo_openai=asyncio.Semaphore(1),
         tiempo_espera_openai=float(os.getenv("OPENAI_TIMEOUT_SECONDS", "20")),
         logger=logger,
-        validacion_proveedores_ia_only=True,
+
     )
     ai_search_base_url = os.getenv(
         "AI_SEARCH_BASE_URL",

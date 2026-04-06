@@ -200,7 +200,7 @@ async def test_validador_ia_only_acepta_aunque_la_taxonomia_no_cuadre():
         semaforo_openai=asyncio.Semaphore(1),
         tiempo_espera_openai=0.5,
         logger=logging.getLogger("test"),
-        validacion_proveedores_ia_only=True,
+
     )
 
     resultado = await validador.validar_proveedores(

@@ -2,15 +2,14 @@
 
 from typing import Any, Dict, Optional
 
+from templates.maintenance.menus import payload_submenu_informacion_personal
+
 from ..compat import es_contexto_mantenimiento
 from ..compat_profile import (
     manejar_actualizacion_selfie,
-    manejar_dni_frontal_actualizacion,
-    manejar_dni_trasera_actualizacion,
     manejar_espera_certificado,
     manejar_espera_ciudad_onboarding,
     manejar_espera_experiencia,
-    manejar_espera_nombre,
     manejar_espera_real_phone_onboarding,
     manejar_inicio_documentos,
 )
@@ -73,6 +72,18 @@ def _normalizar_estado(flujo: Dict[str, Any]) -> None:
         flujo["state"] = STATE_ALIAS_TO_MAINTENANCE[estado]
 
 
+def _respuesta_retirada_informacion_sensible(
+    flujo: Dict[str, Any],
+) -> Dict[str, Any]:
+    flujo.pop("profile_edit_mode", None)
+    flujo.pop("profile_return_state", None)
+    flujo["state"] = "awaiting_personal_info_action"
+    return {
+        "success": True,
+        "messages": [payload_submenu_informacion_personal()],
+    }
+
+
 async def manejar_perfil_mantenimiento(
     *,
     flujo: Dict[str, Any],
@@ -104,6 +115,16 @@ async def manejar_perfil_mantenimiento(
         )
     ):
         return None
+
+    if estado_normalizado in {
+        "maintenance_name",
+        "maintenance_dni_front_photo_update",
+        "maintenance_dni_back_photo_update",
+    }:
+        return {
+            "response": _respuesta_retirada_informacion_sensible(flujo),
+            "persist_flow": True,
+        }
 
     if estado_normalizado == "maintenance_experience":
         respuesta = await manejar_espera_experiencia(
@@ -137,31 +158,6 @@ async def manejar_perfil_mantenimiento(
         _normalizar_estado(flujo)
         return {"response": respuesta, "persist_flow": True}
 
-    if estado_normalizado == "maintenance_dni_front_photo_update":
-        respuesta = manejar_dni_frontal_actualizacion(flujo, carga)
-        if (
-            respuesta.get("messages")
-            and respuesta["messages"][0].get("response") == "__persistir_dni_frontal__"
-        ):
-            respuesta = await manejar_dni_trasera_actualizacion(
-                flujo=flujo,
-                carga={},
-                proveedor_id=flujo.get("provider_id"),
-                subir_medios_identidad=subir_medios_identidad,
-            )
-        _normalizar_estado(flujo)
-        return {"response": respuesta, "persist_flow": True}
-
-    if estado_normalizado == "maintenance_dni_back_photo_update":
-        respuesta = await manejar_dni_trasera_actualizacion(
-            flujo=flujo,
-            carga=carga,
-            proveedor_id=flujo.get("provider_id"),
-            subir_medios_identidad=subir_medios_identidad,
-        )
-        _normalizar_estado(flujo)
-        return {"response": respuesta, "persist_flow": True}
-
     if estado_normalizado == "maintenance_real_phone":
         respuesta = await manejar_espera_real_phone_onboarding(flujo, texto_mensaje)
         _normalizar_estado(flujo)
@@ -172,16 +168,6 @@ async def manejar_perfil_mantenimiento(
             flujo,
             texto_mensaje,
             carga=carga,
-            supabase=supabase,
-            proveedor_id=flujo.get("provider_id"),
-        )
-        _normalizar_estado(flujo)
-        return {"response": respuesta, "persist_flow": True}
-
-    if estado_normalizado == "maintenance_name":
-        respuesta = await manejar_espera_nombre(
-            flujo,
-            texto_mensaje,
             supabase=supabase,
             proveedor_id=flujo.get("provider_id"),
         )

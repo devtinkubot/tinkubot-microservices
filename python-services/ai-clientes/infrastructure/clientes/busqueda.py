@@ -242,8 +242,6 @@ class ClienteBusqueda:
         for proveedor in proveedores:
             document_first_names = proveedor.get("document_first_names")
             document_last_names = proveedor.get("document_last_names")
-            first_name = document_first_names or proveedor.get("first_name")
-            last_name = document_last_names or proveedor.get("last_name")
             display_name = proveedor.get("display_name")
             nombre_visible = resolver_nombre_visible_proveedor(
                 proveedor,
@@ -256,14 +254,15 @@ class ClienteBusqueda:
                 or proveedor.get("phone_number"),
                 "full_name": nombre_visible,
                 "name": nombre_visible,
+                "document_first_names": document_first_names,
+                "document_last_names": document_last_names,
                 "display_name": display_name,
-                "first_name": first_name,
-                "last_name": last_name,
                 "city": proveedor.get("city"),
-                "rating": proveedor.get("rating", 0.0),
+                "rating": proveedor.get("rating") or 5.0,
                 "available": proveedor.get("available", True),
                 "verified": proveedor.get("verified", False),
                 "services": proveedor.get("services", []),
+                "service_summaries": proveedor.get("service_summaries"),
                 "years_of_experience": proveedor.get("years_of_experience"),
                 "experience_range": proveedor.get("experience_range"),
                 "created_at": proveedor.get("created_at"),

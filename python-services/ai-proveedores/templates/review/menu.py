@@ -29,11 +29,6 @@ def payload_menu_post_registro_proveedor() -> Dict[str, Any]:
                     ),
                 },
                 {
-                    "id": "provider_menu_completar_perfil",
-                    "title": "Completar perfil",
-                    "description": "Continuar la configuración de tu perfil profesional",
-                },
-                {
                     "id": "provider_menu_eliminar_registro",
                     "title": "Eliminar mi registro",
                     "description": "Eliminar permanentemente tu perfil",

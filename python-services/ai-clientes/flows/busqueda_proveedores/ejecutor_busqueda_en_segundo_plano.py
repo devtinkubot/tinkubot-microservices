@@ -92,25 +92,43 @@ async def ejecutar_busqueda_y_notificar_en_segundo_plano(
             flujo.get("descripcion_problema") or flujo.get("service_full") or servicio
         )
 
-        # Ejecutar búsqueda
+        # Ejecutar búsqueda (verificar cache de prefetch primero)
         from principal import buscar_proveedores, supabase
         from services.proveedores.disponibilidad import servicio_disponibilidad
 
-        logger.info(
-            f"🔍 Ejecutando búsqueda de proveedores: service='{servicio}', city='{ciudad}'"
-        )
+        resultado_busqueda = None
+        try:
+            from infrastructure.prefetch.publicador_prefetch import (
+                obtener_prefetch_cache,
+            )
 
-        resultado_busqueda = await buscar_proveedores(
-            servicio,
-            ciudad,
-            radio_km=10.0,
-            descripcion_problema=descripcion_problema,
-            domain=dominio or None,
-            domain_code=dominio_code or None,
-            category=categoria or None,
-            category_name=categoria_name or None,
-            search_profile=search_profile,
-        )
+            cached = await obtener_prefetch_cache(
+                telefono, servicio, ciudad, redis_client
+            )
+            if cached:
+                resultado_busqueda = cached
+                logger.info(
+                    f"⚡ Prefetch cache hit: {len(cached.get('providers') or [])} proveedores"
+                )
+        except Exception as exc:
+            logger.debug(f"prefetch cache check failed: {exc}")
+
+        if resultado_busqueda is None:
+            logger.info(
+                f"🔍 Ejecutando búsqueda de proveedores: service='{servicio}', city='{ciudad}'"
+            )
+            resultado_busqueda = await buscar_proveedores(
+                servicio,
+                ciudad,
+                radio_km=10.0,
+                descripcion_problema=descripcion_problema,
+                domain=dominio or None,
+                domain_code=dominio_code or None,
+                category=categoria or None,
+                category_name=categoria_name or None,
+                search_profile=search_profile,
+            )
+
         proveedores = resultado_busqueda.get("providers") or []
 
         logger.info(

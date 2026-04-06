@@ -10,15 +10,11 @@ from services.shared.identidad_proveedor import (
 )
 from templates.maintenance import solicitar_confirmacion_eliminacion
 from templates.maintenance.menus import (
-    MENU_ID_COMPLETAR_PERFIL,
     MENU_ID_ELIMINAR_REGISTRO,
     MENU_ID_INFO_PERSONAL,
     MENU_ID_INFO_PROFESIONAL,
     MENU_ID_SALIR,
-    SUBMENU_ID_PERSONAL_DNI_FRONTAL,
-    SUBMENU_ID_PERSONAL_DNI_REVERSO,
     SUBMENU_ID_PERSONAL_FOTO,
-    SUBMENU_ID_PERSONAL_NOMBRE,
     SUBMENU_ID_PERSONAL_REGRESAR,
     SUBMENU_ID_PERSONAL_UBICACION,
     SUBMENU_ID_PROF_CERTIFICADOS,
@@ -29,9 +25,6 @@ from templates.maintenance.menus import (
     payload_submenu_informacion_personal,
     payload_submenu_informacion_profesional,
 )
-from templates.maintenance.registration import (
-    mensaje_inicio_perfil_profesional,
-)
 from templates.shared import informar_cierre_sesion
 
 from .views import render_profile_view
@@ -41,19 +34,21 @@ LISTAR_CERTIFICADOS_PROVEEDOR = listar_certificados_proveedor
 
 logger = logging.getLogger(__name__)
 
-
-def iniciar_flujo_completar_perfil_profesional(
-    flujo: Dict[str, Any],
-) -> Dict[str, Any]:
-    """Inicializa la segunda etapa del perfil profesional."""
-    servicios_temporales = list(flujo.get("services") or [])
-    flujo["profile_completion_mode"] = True
-    flujo["servicios_temporales"] = servicios_temporales
-    flujo["state"] = "maintenance_experience"
-    return {
-        "success": True,
-        "messages": [{"response": mensaje_inicio_perfil_profesional()}],
-    }
+ALIASES_PERSONAL_RESTRINGIDOS = {
+    "nombre",
+    "provider_submenu_personal_nombre",
+    "cedula frontal",
+    "cédula frontal",
+    "dni frontal",
+    "provider_submenu_personal_dni_frontal",
+    "cedula reverso",
+    "cédula reverso",
+    "dni reverso",
+    "provider_submenu_personal_dni_reverso",
+    "4",
+    "5",
+    "6",
+}
 
 
 def _payload_menu_principal_desde_flujo(flujo: Dict[str, Any]) -> Dict[str, Any]:
@@ -81,6 +76,23 @@ def _es_opcion_info_profesional(texto: str, opcion: Optional[str]) -> bool:
     )
 
 
+def _texto_normalizado(texto: Optional[str]) -> str:
+    return str(texto or "").strip().lower()
+
+
+def _seleccion_normalizada(
+    *,
+    texto_mensaje: Optional[str],
+    opcion_menu: Optional[str],
+    selected_option: Optional[str],
+) -> str:
+    for valor in (selected_option, opcion_menu, texto_mensaje):
+        texto = _texto_normalizado(valor)
+        if texto:
+            return texto
+    return ""
+
+
 async def manejar_submenu_informacion_personal(
     *,
     flujo: Dict[str, Any],
@@ -89,22 +101,24 @@ async def manejar_submenu_informacion_personal(
     selected_option: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Procesa el submenú de información personal."""
-    seleccion = (selected_option or "").strip().lower()
+    seleccion = _seleccion_normalizada(
+        texto_mensaje=texto_mensaje,
+        opcion_menu=opcion_menu,
+        selected_option=selected_option,
+    )
 
-    if seleccion == SUBMENU_ID_PERSONAL_NOMBRE:
-        flujo["state"] = "viewing_personal_name"
+    if seleccion in ALIASES_PERSONAL_RESTRINGIDOS:
         return {
             "success": True,
-            "messages": [
-                await render_profile_view(
-                    flujo=flujo,
-                    estado="viewing_personal_name",
-                    proveedor_id=flujo.get("provider_id"),
-                )
-            ],
+            "messages": [payload_submenu_informacion_personal()],
         }
 
-    if seleccion == SUBMENU_ID_PERSONAL_UBICACION:
+    if seleccion in {
+        SUBMENU_ID_PERSONAL_UBICACION,
+        "1",
+        "ubicacion",
+        "ubicación",
+    }:
         flujo["state"] = "viewing_personal_city"
         return {
             "success": True,
@@ -117,7 +131,12 @@ async def manejar_submenu_informacion_personal(
             ],
         }
 
-    if seleccion == SUBMENU_ID_PERSONAL_FOTO:
+    if seleccion in {
+        SUBMENU_ID_PERSONAL_FOTO,
+        "2",
+        "foto",
+        "foto de perfil",
+    }:
         flujo["state"] = "viewing_personal_photo"
         return {
             "success": True,
@@ -130,33 +149,14 @@ async def manejar_submenu_informacion_personal(
             ],
         }
 
-    if seleccion == SUBMENU_ID_PERSONAL_DNI_FRONTAL:
-        flujo["state"] = "viewing_personal_dni_front"
-        return {
-            "success": True,
-            "messages": [
-                await render_profile_view(
-                    flujo=flujo,
-                    estado="viewing_personal_dni_front",
-                    proveedor_id=flujo.get("provider_id"),
-                )
-            ],
-        }
-
-    if seleccion == SUBMENU_ID_PERSONAL_DNI_REVERSO:
-        flujo["state"] = "viewing_personal_dni_back"
-        return {
-            "success": True,
-            "messages": [
-                await render_profile_view(
-                    flujo=flujo,
-                    estado="viewing_personal_dni_back",
-                    proveedor_id=flujo.get("provider_id"),
-                )
-            ],
-        }
-
-    if seleccion == SUBMENU_ID_PERSONAL_REGRESAR:
+    if seleccion in {
+        SUBMENU_ID_PERSONAL_REGRESAR,
+        "3",
+        "regresar",
+        "volver",
+        "menu",
+        "menú",
+    }:
         flujo["state"] = "awaiting_menu_option"
         return {
             "success": True,
@@ -177,9 +177,18 @@ async def manejar_submenu_informacion_profesional(
     selected_option: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Procesa el submenú de información profesional."""
-    seleccion = (selected_option or "").strip().lower()
+    seleccion = _seleccion_normalizada(
+        texto_mensaje=texto_mensaje,
+        opcion_menu=opcion_menu,
+        selected_option=selected_option,
+    )
 
-    if seleccion == SUBMENU_ID_PROF_EXPERIENCIA:
+    if seleccion in {
+        SUBMENU_ID_PROF_EXPERIENCIA,
+        "1",
+        "experiencia",
+        "experiencia general",
+    }:
         flujo["state"] = "viewing_professional_experience"
         return {
             "success": True,
@@ -192,7 +201,7 @@ async def manejar_submenu_informacion_profesional(
             ],
         }
 
-    if seleccion == SUBMENU_ID_PROF_SERVICIOS:
+    if seleccion in {SUBMENU_ID_PROF_SERVICIOS, "2", "servicios", "servicio"}:
         flujo["state"] = "viewing_professional_services"
         return {
             "success": True,
@@ -205,7 +214,12 @@ async def manejar_submenu_informacion_profesional(
             ],
         }
 
-    if seleccion == SUBMENU_ID_PROF_CERTIFICADOS:
+    if seleccion in {
+        SUBMENU_ID_PROF_CERTIFICADOS,
+        "3",
+        "certificados",
+        "certificado",
+    }:
         flujo["state"] = "viewing_professional_certificates"
         return {
             "success": True,
@@ -218,7 +232,13 @@ async def manejar_submenu_informacion_profesional(
             ],
         }
 
-    if seleccion == SUBMENU_ID_PROF_REDES:
+    if seleccion in {
+        SUBMENU_ID_PROF_REDES,
+        "4",
+        "redes",
+        "redes sociales",
+        "red social",
+    }:
         flujo["state"] = "viewing_professional_social"
         return {
             "success": True,
@@ -231,7 +251,14 @@ async def manejar_submenu_informacion_profesional(
             ],
         }
 
-    if seleccion == SUBMENU_ID_PROF_REGRESAR:
+    if seleccion in {
+        SUBMENU_ID_PROF_REGRESAR,
+        "5",
+        "regresar",
+        "volver",
+        "menu",
+        "menú",
+    }:
         flujo["state"] = "awaiting_menu_option"
         return {
             "success": True,
@@ -262,18 +289,25 @@ async def manejar_estado_menu(
         opcion_menu,
         texto_mensaje,
     )
-    seleccion = (selected_option or "").strip().lower()
+    texto_normalizado = _texto_normalizado(texto_mensaje)
+    seleccion = _seleccion_normalizada(
+        texto_mensaje=texto_mensaje,
+        opcion_menu=opcion_menu,
+        selected_option=selected_option,
+    )
     servicios_actuales = flujo.get("services") or []
-    if seleccion == MENU_ID_COMPLETAR_PERFIL:
-        return iniciar_flujo_completar_perfil_profesional(flujo)
-    if seleccion == MENU_ID_INFO_PERSONAL:
+    if _es_opcion_info_personal(texto_normalizado, opcion_menu) or (
+        seleccion == MENU_ID_INFO_PERSONAL
+    ):
         flujo["state"] = "awaiting_personal_info_action"
         return {
             "success": True,
             "messages": [payload_submenu_informacion_personal()],
         }
 
-    if seleccion == MENU_ID_INFO_PROFESIONAL:
+    if _es_opcion_info_profesional(texto_normalizado, opcion_menu) or (
+        seleccion == MENU_ID_INFO_PROFESIONAL
+    ):
         flujo["state"] = "awaiting_professional_info_action"
         return {
             "success": True,

@@ -34,13 +34,6 @@ async def manejar_submenu_informacion_profesional(
         selected_option=selected_option,
     )
 
-
-def iniciar_flujo_completar_perfil_profesional(
-    flujo: Dict[str, Any],
-) -> Dict[str, Any]:
-    return legacy_menu.iniciar_flujo_completar_perfil_profesional(flujo)
-
-
 async def manejar_estado_menu(
     *,
     flujo: Dict[str, Any],

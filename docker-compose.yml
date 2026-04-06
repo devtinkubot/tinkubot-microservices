@@ -243,6 +243,35 @@ services:
       - wa-gateway-ipv4
     restart: unless-stopped
 
+  # Provider Prefetch Worker - Pre-fetches search results during client confirmation
+  provider-prefetch-worker:
+    build:
+      context: ./elixir-services/provider-prefetch-worker
+      dockerfile: Dockerfile
+    container_name: tinkubot-provider-prefetch-worker
+    environment:
+      - REDIS_URL=${REDIS_URL}
+      - AI_SEARCH_URL=${AI_SEARCH_URL:-http://ai-search:8000}
+      - AI_SEARCH_INTERNAL_TOKEN=${AI_SEARCH_INTERNAL_TOKEN}
+      - PROVIDER_PREFETCH_STREAM_KEY=${PROVIDER_PREFETCH_STREAM_KEY:-client_search_prefetch_events}
+      - PROVIDER_PREFETCH_STREAM_GROUP=${PROVIDER_PREFETCH_STREAM_GROUP:-provider-prefetch-workers}
+      - PROVIDER_PREFETCH_CONSUMER_NAME=${PROVIDER_PREFETCH_CONSUMER_NAME:-provider-prefetch-worker-1}
+      - PROVIDER_PREFETCH_STREAM_BLOCK_MS=${PROVIDER_PREFETCH_STREAM_BLOCK_MS:-5000}
+      - PROVIDER_PREFETCH_STREAM_BATCH_SIZE=${PROVIDER_PREFETCH_STREAM_BATCH_SIZE:-10}
+      - PROVIDER_PREFETCH_STREAM_CLAIM_IDLE_MS=${PROVIDER_PREFETCH_STREAM_CLAIM_IDLE_MS:-15000}
+      - PROVIDER_PREFETCH_MAX_ATTEMPTS=${PROVIDER_PREFETCH_MAX_ATTEMPTS:-2}
+      - PROVIDER_PREFETCH_STATUS_TTL_SECONDS=${PROVIDER_PREFETCH_STATUS_TTL_SECONDS:-300}
+      - PROVIDER_PREFETCH_RESULT_TTL_SECONDS=${PROVIDER_PREFETCH_RESULT_TTL_SECONDS:-120}
+      - PROVIDER_PREFETCH_SEARCH_TIMEOUT_MS=${PROVIDER_PREFETCH_SEARCH_TIMEOUT_MS:-8000}
+    depends_on:
+      redis:
+        condition: service_healthy
+      ai-search:
+        condition: service_started
+    networks:
+      - wa-gateway-ipv4
+    restart: unless-stopped
+
   # AI Search Service - Servicio de búsqueda optimizado con IA
   ai-search:
     build:

@@ -1,6 +1,9 @@
--- Corrige la funcion rpc usada por ai-search para evitar referencia a
--- experience_years, una columna que ya no existe en providers.
--- Se mantiene el contrato externo de la funcion y se retorna NULL en ese campo.
+-- Corrige la funcion rpc usada por ai-search:
+-- 1. Reemplaza experience_years (columna eliminada) por experience_range
+-- 2. Agrega campos de nombre: document_first_names, document_last_names,
+--    display_name, formatted_name, first_name, last_name
+-- 3. Construye social_media_url/social_media_type desde facebook_username/
+--    instagram_username (las columnas que el onboarding realmente llena)
 
 CREATE OR REPLACE FUNCTION public.match_provider_services(
     query_embedding vector,
@@ -18,12 +21,16 @@ RETURNS TABLE(
     city text,
     rating double precision,
     verified boolean,
-    experience_years integer,
+    experience_range text,
+    document_first_names text,
+    document_last_names text,
+    display_name text,
     social_media_url text,
     social_media_type text,
     face_photo_url text,
     created_at timestamp with time zone,
     services text[],
+    service_summaries text[],
     matched_service_name text,
     matched_service_summary text,
     domain_code text,
@@ -42,9 +49,24 @@ AS $function$
             p.city,
             p.rating,
             p.verified,
-            NULL::integer AS experience_years,
-            p.social_media_url,
-            p.social_media_type,
+            p.experience_range,
+            p.document_first_names,
+            p.document_last_names,
+            p.display_name,
+            CASE
+                WHEN p.instagram_username IS NOT NULL AND p.instagram_username <> ''
+                    THEN 'https://instagram.com/' || p.instagram_username
+                WHEN p.facebook_username IS NOT NULL AND p.facebook_username <> ''
+                    THEN 'https://facebook.com/' || p.facebook_username
+                ELSE NULL
+            END AS social_media_url,
+            CASE
+                WHEN p.instagram_username IS NOT NULL AND p.instagram_username <> ''
+                    THEN 'Instagram'
+                WHEN p.facebook_username IS NOT NULL AND p.facebook_username <> ''
+                    THEN 'Facebook'
+                ELSE NULL
+            END AS social_media_type,
             p.face_photo_url,
             p.created_at,
             ps.service_name,
@@ -68,7 +90,8 @@ AS $function$
     provider_services_agg AS (
         SELECT
             provider_id,
-            array_agg(service_name ORDER BY display_order) AS services
+            array_agg(service_name ORDER BY display_order) AS services,
+            array_agg(service_summary ORDER BY display_order) AS service_summaries
         FROM ranked_matches
         GROUP BY provider_id
     )
@@ -81,12 +104,16 @@ AS $function$
         rm.city,
         rm.rating,
         rm.verified,
-        rm.experience_years,
+        rm.experience_range,
+        rm.document_first_names,
+        rm.document_last_names,
+        rm.display_name,
         rm.social_media_url,
         rm.social_media_type,
         rm.face_photo_url,
         rm.created_at,
         psa.services,
+        psa.service_summaries,
         rm.service_name AS matched_service_name,
         rm.service_summary AS matched_service_summary,
         rm.domain_code,

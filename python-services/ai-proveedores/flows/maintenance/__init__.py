@@ -9,7 +9,6 @@ from .document_update import (
     manejar_inicio_documentos,
 )
 from .menu import (
-    iniciar_flujo_completar_perfil_profesional,
     manejar_estado_menu,
     manejar_submenu_informacion_personal,
     manejar_submenu_informacion_profesional,
@@ -49,7 +48,6 @@ from .wait_name import manejar_espera_nombre
 from .wait_social import manejar_espera_red_social
 
 __all__ = [
-    "iniciar_flujo_completar_perfil_profesional",
     "manejar_estado_menu",
     "manejar_submenu_informacion_personal",
     "manejar_submenu_informacion_profesional",

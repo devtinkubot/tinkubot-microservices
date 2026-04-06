@@ -26,8 +26,6 @@ PROFILE_COMPLETION_STATES = frozenset(
         "maintenance_profile_service_confirmation",
         "maintenance_add_another_service",
         "maintenance_services_confirmation",
-        "maintenance_profile_completion_confirmation",
-        "maintenance_profile_completion_edit_action",
         "maintenance_services_edit_action",
         "maintenance_services_edit_replace_select",
         "maintenance_services_edit_replace_input",
@@ -48,7 +46,6 @@ PROFILE_COMPLETION_STATES = frozenset(
         "awaiting_services_edit_replace_input",
         "awaiting_services_edit_delete_select",
         "awaiting_services_edit_add",
-        "maintenance_profile_completion_finalize",
     }
 )
 

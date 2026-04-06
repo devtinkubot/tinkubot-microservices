@@ -49,7 +49,7 @@ cliente_openai = (
     if configuracion.openai_api_key
     else None
 )
-TIEMPO_ESPERA_OPENAI_SEGUNDOS = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "5"))
+TIEMPO_ESPERA_OPENAI_SEGUNDOS = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "15"))
 MAX_CONCURRENCIA_OPENAI = int(os.getenv("MAX_OPENAI_CONCURRENCY", "5"))
 semaforo_openai = (
     asyncio.Semaphore(MAX_CONCURRENCIA_OPENAI) if cliente_openai else None

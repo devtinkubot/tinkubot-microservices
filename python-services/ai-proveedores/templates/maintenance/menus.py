@@ -6,7 +6,6 @@ from templates.shared import mensaje_elige_opcion_interes
 
 MENU_ID_INFO_PERSONAL = "provider_menu_info_personal"
 MENU_ID_INFO_PROFESIONAL = "provider_menu_info_profesional"
-MENU_ID_COMPLETAR_PERFIL = "provider_menu_completar_perfil"
 MENU_ID_ELIMINAR_REGISTRO = "provider_menu_eliminar_registro"
 MENU_ID_SALIR = "provider_menu_salir"
 
@@ -95,7 +94,7 @@ def payload_menu_post_registro_proveedor() -> Dict[str, Any]:
                 {
                     "id": MENU_ID_INFO_PERSONAL,
                     "title": "Información personal",
-                    "description": "Nombre, ubicación, documentos y foto de perfil",
+                    "description": "Ubicación y foto de perfil",
                 },
                 {
                     "id": MENU_ID_INFO_PROFESIONAL,
@@ -103,11 +102,6 @@ def payload_menu_post_registro_proveedor() -> Dict[str, Any]:
                     "description": (
                         "Experiencia, servicios, certificaciones y redes sociales"
                     ),
-                },
-                {
-                    "id": MENU_ID_COMPLETAR_PERFIL,
-                    "title": "Completar perfil",
-                    "description": "Continuar la configuración de tu perfil profesional",
                 },
                 {
                     "id": MENU_ID_ELIMINAR_REGISTRO,
@@ -137,11 +131,6 @@ def payload_submenu_informacion_personal() -> Dict[str, Any]:
             "list_section_title": "Información personal",
             "options": [
                 {
-                    "id": SUBMENU_ID_PERSONAL_NOMBRE,
-                    "title": "Nombre",
-                    "description": "Actualizar tu nombre visible",
-                },
-                {
                     "id": SUBMENU_ID_PERSONAL_UBICACION,
                     "title": "Ubicación",
                     "description": "Cambiar ciudad o compartir ubicación",
@@ -150,16 +139,6 @@ def payload_submenu_informacion_personal() -> Dict[str, Any]:
                     "id": SUBMENU_ID_PERSONAL_FOTO,
                     "title": "Foto de perfil",
                     "description": "Ver o actualizar tu foto de perfil",
-                },
-                {
-                    "id": SUBMENU_ID_PERSONAL_DNI_FRONTAL,
-                    "title": "Cédula frontal",
-                    "description": "Ver o actualizar la foto frontal",
-                },
-                {
-                    "id": SUBMENU_ID_PERSONAL_DNI_REVERSO,
-                    "title": "Cédula reverso",
-                    "description": "Ver o actualizar la foto posterior",
                 },
                 {
                     "id": SUBMENU_ID_PERSONAL_REGRESAR,
@@ -359,15 +338,17 @@ def _truncar_titulo_lista(valor: str, limite: int = LIST_OPTION_TITLE_MAX) -> st
     return texto[: max(limite - 3, 0)].rstrip() + "..."
 
 
-def payload_detalle_nombre(nombre: str) -> Dict[str, Any]:
+def payload_detalle_nombre(
+    nombre: str, *, permitir_cambio: bool = True
+) -> Dict[str, Any]:
     nombre_visible = str(nombre or "").strip() or "No registrado"
+    options = [{"id": DETAIL_ACTION_BACK, "title": "Regresar"}]
+    if permitir_cambio:
+        options.insert(0, {"id": DETAIL_ACTION_NAME_CHANGE, "title": "Cambiar"})
     return _payload_botones_detalle(
         header_text="Información personal",
         body=f"*Nombre actual*\n{nombre_visible}",
-        options=[
-            {"id": DETAIL_ACTION_NAME_CHANGE, "title": "Cambiar"},
-            {"id": DETAIL_ACTION_BACK, "title": "Regresar"},
-        ],
+        options=options,
     )
 
 
@@ -405,16 +386,16 @@ def payload_detalle_foto(
     titulo: str,
     descripcion: str,
     media_url: str,
-    change_id: str,
+    change_id: Optional[str] = None,
 ) -> Dict[str, Any]:
+    options = [{"id": DETAIL_ACTION_BACK, "title": "Regresar"}]
+    if change_id:
+        options.insert(0, {"id": change_id, "title": "Cambiar"})
     return _payload_botones_detalle(
         header_text=titulo,
         header_media_url=media_url,
         body=descripcion,
-        options=[
-            {"id": change_id, "title": "Cambiar"},
-            {"id": DETAIL_ACTION_BACK, "title": "Regresar"},
-        ],
+        options=options,
     )
 
 
@@ -490,17 +471,18 @@ def payload_detalle_red_social_canal(
 def payload_detalle_servicios(
     servicios: List[str], max_servicios: int
 ) -> Dict[str, Any]:
+    maximo_slots_visibles = max(min(max_servicios, 9), 0)
     options = [
         {
             "id": f"{SERVICE_SLOT_PREFIX}{idx}",
             "title": f"Servicio {idx + 1}",
             "description": (
                 _truncar_descripcion_lista(servicios[idx])
-                if idx < len(servicios)
+                if idx < min(len(servicios), maximo_slots_visibles)
                 else "No registrado"
             ),
         }
-        for idx in range(max_servicios)
+        for idx in range(maximo_slots_visibles)
     ]
     options.append(
         {

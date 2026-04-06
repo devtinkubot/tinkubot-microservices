@@ -46,7 +46,7 @@ def _embellecer(texto: Any) -> str:
 
 
 def _nombre_proveedor(proveedor: Dict[str, Any]) -> str:
-    return resolver_nombre_visible_proveedor(proveedor, status="approved")
+    return resolver_nombre_visible_proveedor(proveedor, status="approved", corto=True)
 
 
 def _ubicacion_proveedor(proveedor: Dict[str, Any]) -> str:
@@ -195,8 +195,9 @@ def mensaje_foto_perfil_proveedor(proveedor: Dict[str, Any]) -> Dict[str, Any]:
 
 def mensaje_servicios_proveedor(proveedor: Dict[str, Any]) -> Dict[str, Any]:
     nombre = _nombre_proveedor(proveedor)
-    servicios = servicios_proveedor(proveedor)
-    lineas = [f"*{nombre}*", "*Servicios que ofrece:*"]
+    summaries = proveedor.get("service_summaries") or []
+    servicios = [_embellecer(s) for s in summaries if s and str(s).strip()] if summaries else servicios_proveedor(proveedor)
+    lineas = [f"*{nombre}*", "", "*Servicios que ofrece:*"]
     lineas.extend([f"• {servicio}" for servicio in servicios])
     return {
         "response": "\n".join(lineas),

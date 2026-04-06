@@ -34,13 +34,16 @@ class ProviderInfo(BaseModel):
     phone_number: str
     real_phone: Optional[str] = None
     full_name: str
+    document_first_names: Optional[str] = None
+    document_last_names: Optional[str] = None
+    display_name: Optional[str] = None
     city: Optional[str]
     rating: float
     available: bool
     verified: bool
     services: List[str]
+    service_summaries: Optional[List[str]] = None
     experience_range: Optional[str] = None
-    years_of_experience: Optional[int] = None  # Ya no viene de la BD
 
     created_at: datetime
     similarity_score: Optional[float] = Field(default=None, ge=0.0, le=1.0)
