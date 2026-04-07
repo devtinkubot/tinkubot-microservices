@@ -800,6 +800,7 @@ class OrquestadorConversacional:
             None,
             None,
             None,
+            self.extractor_ia.generar_especializaciones_ocupacion,
         )
         flujo = flujo_actualizado
 

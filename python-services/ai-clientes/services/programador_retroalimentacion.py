@@ -265,17 +265,22 @@ class ProgramadorRetroalimentacion:
     async def _ya_hay_notificacion_rate_limit_vigente(
         self, telefono: str, retry_at_utc: datetime
     ) -> bool:
-        if not self.repositorio_flujo:
+        if not self.supabase:
             return False
         try:
-            flujo = await self.repositorio_flujo.obtener(telefono) or {}
-            vigente_hasta = flujo.get(CLAVE_NOTIFICACION_RATE_LIMIT)
-            if not vigente_hasta:
-                return False
-            vigente_hasta_dt = datetime.fromisoformat(
-                str(vigente_hasta).replace("Z", "+00:00")
-            ).astimezone(timezone.utc)
-            return vigente_hasta_dt >= retry_at_utc
+            resultado = await run_supabase(
+                lambda: self.supabase.table("task_queue")
+                .select("id")
+                .eq("status", "pending")
+                .contains(
+                    "payload",
+                    {"phone": telefono, "type": "rate_limit_notification"},
+                )
+                .limit(1)
+                .execute(),
+                etiqueta="task_queue.check_rate_limit_dup",
+            )
+            return bool(resultado and resultado.data)
         except Exception:
             return False
 

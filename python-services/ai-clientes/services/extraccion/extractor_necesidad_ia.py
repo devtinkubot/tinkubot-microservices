@@ -760,6 +760,67 @@ Responde SOLO con el nombre del servicio."""
         """Alias de compatibilidad para extraer servicio con IA."""
         return await self.extraer_servicio_con_ia(mensaje_usuario)
 
+    async def generar_especializaciones_ocupacion(
+        self, ocupacion: str
+    ) -> list[str]:
+        """Genera 4-6 especializaciones comunes para una ocupación genérica."""
+        if not self.cliente_openai or not ocupacion or not ocupacion.strip():
+            return []
+
+        prompt_sistema = (
+            "Eres un experto en servicios profesionales en Ecuador. "
+            "Dado un oficio o profesión genérica, genera entre 4 y 6 "
+            "especializaciones o necesidades comunes que un cliente podría necesitar. "
+            "Cada opción debe ser una frase corta y accionable (máx 50 caracteres). "
+            "Responde SOLO con un JSON: {\"specializations\": [\"...\", ...]}"
+        )
+        prompt_usuario = f"Profesión: {ocupacion.strip()[:100]}"
+
+        try:
+            async with self.semaforo_openai:
+                respuesta = await asyncio.wait_for(
+                    self.cliente_openai.chat.completions.create(
+                        model=self.MODELO_EXTRACCION,
+                        messages=[
+                            {"role": "system", "content": prompt_sistema},
+                            {"role": "user", "content": prompt_usuario},
+                        ],
+                        response_format={
+                            "type": "json_schema",
+                            "json_schema": {
+                                "name": "specializations",
+                                "strict": True,
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "specializations": {
+                                            "type": "array",
+                                            "items": {"type": "string"},
+                                        },
+                                    },
+                                    "required": ["specializations"],
+                                    "additionalProperties": False,
+                                },
+                            },
+                        },
+                        temperature=0.3,
+                        max_tokens=200,
+                    ),
+                    timeout=self.tiempo_espera_openai,
+                )
+
+            contenido = (respuesta.choices[0].message.content or "").strip()
+            datos = json.loads(contenido)
+            specs = [
+                s.strip()[:50]
+                for s in datos.get("specializations", [])
+                if s and s.strip()
+            ]
+            return specs[:6]
+        except Exception as exc:
+            self.logger.warning("⚠️ Error generando especializaciones: %s", exc)
+            return []
+
     async def es_necesidad_o_problema(self, mensaje_usuario: str) -> bool:
         """
         Determina si el mensaje describe una necesidad/problema concreto.

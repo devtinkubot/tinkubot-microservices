@@ -301,6 +301,9 @@ async def procesar_estado_esperando_servicio(
     registrar_evento_fn: Optional[
         Callable[..., Awaitable[None]]
     ] = None,
+    generar_especializaciones_fn: Optional[
+        Callable[[str], Awaitable[list[str]]]
+    ] = None,
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """Procesa el estado `awaiting_service`.
 
@@ -386,7 +389,8 @@ async def procesar_estado_esperando_servicio(
         and _es_solicitud_generica_ocupacion(limpio, valor_servicio)
     )
 
-    if (not es_necesidad and not respuesta_seguimiento_concreta) or solicitud_generica_ocupacion:
+    extraccion_completa = bool(valor_servicio and dominio_servicio and categoria_servicio)
+    if ((not es_necesidad and not respuesta_seguimiento_concreta) or solicitud_generica_ocupacion) and not extraccion_completa:
         hint = valor_servicio or limpio
         hint_usuario = _hint_usuario_legible(limpio, valor_servicio)
         search_profile = _construir_search_profile_minimo(
@@ -418,13 +422,35 @@ async def procesar_estado_esperando_servicio(
         flujo.pop("service_full", None)
         flujo.pop("descripcion_problema", None)
         flujo["search_profile"] = search_profile
-        from templates.mensajes.validacion import mensaje_solicitar_detalle_servicio
+        from templates.mensajes.validacion import (
+            construir_lista_especializaciones,
+            mensaje_solicitar_detalle_servicio,
+        )
 
         logger.info(
             "occupation_only_blocked normalized_input='%s' extracted='%s'",
             limpio.lower()[:120],
             hint,
         )
+
+        especializaciones: list[str] = []
+        if generar_especializaciones_fn:
+            try:
+                especializaciones = await generar_especializaciones_fn(
+                    hint_usuario or hint
+                )
+            except Exception as exc:
+                logger.warning("⚠️ Error obteniendo especializaciones: %s", exc)
+
+        if especializaciones:
+            flujo["specialization_options"] = especializaciones
+            return flujo, {
+                "response": mensaje_solicitar_detalle_servicio(hint_usuario),
+                "ui": construir_lista_especializaciones(
+                    hint_usuario or hint, especializaciones
+                ),
+            }
+
         return flujo, {
             "response": mensaje_solicitar_detalle_servicio(hint_usuario),
         }
@@ -612,7 +638,8 @@ async def procesar_estado_esperando_servicio(
         ui_confirmar_servicio,
     )
 
+    service_summary_texto = (perfil_servicio.get("service_summary") or "").strip()
     return flujo, {
-        "response": mensaje_confirmar_servicio(valor_servicio),
+        "response": mensaje_confirmar_servicio(valor_servicio, service_summary_texto),
         "ui": ui_confirmar_servicio(),
     }

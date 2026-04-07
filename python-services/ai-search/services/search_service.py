@@ -354,13 +354,13 @@ class SearchService:
                 for provider in ranked
                 if (
                     provider.semantic_alignment_score is None
-                    or provider.semantic_alignment_score >= 0.30
+                    or provider.semantic_alignment_score >= settings.semantic_alignment_threshold
                 )
             ]
             if filtered:
                 ranked = filtered
 
-        return sorted(
+        ranked = sorted(
             ranked,
             key=lambda provider: (
                 float(provider.semantic_alignment_score or 0.0),
@@ -370,6 +370,17 @@ class SearchService:
             ),
             reverse=True,
         )
+        for i, p in enumerate(ranked[:5]):
+            logger.info(
+                "📊 #%d %s sim=%.3f align=%.3f service=%s domain=%s",
+                i + 1,
+                p.id[:8],
+                p.similarity_score or 0.0,
+                p.semantic_alignment_score or 0.0,
+                (p.matched_service_name or "")[:50],
+                p.domain_code or "",
+            )
+        return ranked
 
     def _generate_query_hash(self, request: SearchRequest, effective_query: str) -> str:
         """Generar hash único para consulta."""

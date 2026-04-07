@@ -156,9 +156,60 @@ def extraer_servicio_desde_opcion_lista(
     return None
 
 
-def mensaje_confirmar_servicio(servicio: str) -> str:
+SPECIALIZATION_PREFIX = "specialization::"
+
+
+def construir_lista_especializaciones(
+    ocupacion: str,
+    especializaciones: List[str],
+) -> Dict[str, Any]:
+    """Construye UI de lista interactiva con especializaciones IA."""
+    opciones: List[Dict[str, Any]] = []
+    for idx, spec in enumerate(especializaciones[:6], start=1):
+        spec_limpio = (spec or "").strip()
+        if not spec_limpio:
+            continue
+        opciones.append(
+            {
+                "id": f"{SPECIALIZATION_PREFIX}{_slug_servicio(spec_limpio)}",
+                "title": f"Opción {idx}",
+                "description": spec_limpio[:72],
+            }
+        )
+    if not opciones:
+        return {}
+    return {
+        "type": "list",
+        "id": "specialization_list_v1",
+        "list_button_text": "Ver opciones",
+        "list_section_title": f"Opciones de {(ocupacion or '').strip()[:12]}",
+        "options": opciones,
+    }
+
+
+def extraer_especializacion_desde_lista(
+    selected_option: Optional[str],
+    especializaciones: Optional[List[str]] = None,
+) -> Optional[str]:
+    """Resuelve la especialización seleccionada por slug."""
+    selected = (selected_option or "").strip().lower()
+    if not selected.startswith(SPECIALIZATION_PREFIX):
+        return None
+    slug = selected[len(SPECIALIZATION_PREFIX) :].strip("_ ")
+    if not slug:
+        return None
+    for spec in especializaciones or []:
+        if _slug_servicio(spec) == slug:
+            return spec
+    return slug.replace("_", " ").strip().title()
+
+
+def mensaje_confirmar_servicio(servicio: str, resumen: str = "") -> str:
     """Confirma el servicio detectado antes de continuar la búsqueda."""
     servicio_texto = (servicio or "").strip() or "tu solicitud"
+    resumen_texto = (resumen or "").strip()
+    if resumen_texto and resumen_texto.lower() != servicio_texto.lower():
+        return f"¿Buscas: *{servicio_texto}*?\n_{resumen_texto}_"
     return f"¿Es este el servicio que buscas: *{servicio_texto}*?"
 
 

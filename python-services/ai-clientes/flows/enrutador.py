@@ -395,6 +395,26 @@ async def enrutar_estado(  # noqa: C901
 
     if estado == "awaiting_service":
         if tipo_mensaje == "interactive_list_reply" and seleccionado:
+            from templates.mensajes.validacion import (
+                SPECIALIZATION_PREFIX,
+                extraer_especializacion_desde_lista,
+            )
+
+            if seleccionado.startswith(SPECIALIZATION_PREFIX):
+                especializaciones_guardadas = (
+                    flujo.get("specialization_options") or []
+                )
+                spec = extraer_especializacion_desde_lista(
+                    seleccionado, especializaciones_guardadas
+                )
+                if spec:
+                    flujo.pop("specialization_options", None)
+                    flujo.pop("service_candidate_hint", None)
+                    flujo.pop("service_candidate_hint_label", None)
+                    return await orquestador._procesar_awaiting_service(
+                        telefono, flujo, spec, responder, cliente_id
+                    )
+
             servicio_lista = extraer_servicio_desde_opcion_lista(
                 seleccionado,
             )
