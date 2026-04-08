@@ -1,5 +1,9 @@
 # wa-gateway Migration Summary
 
+Status: Historical migration record
+Audience: Backend / Infra
+Last reviewed: 2026-04-08
+
 ## Overview
 This document records the current state after removing the legacy `whatsmeow` transport and standardizing `wa-gateway` as a Meta Cloud API gateway only.
 

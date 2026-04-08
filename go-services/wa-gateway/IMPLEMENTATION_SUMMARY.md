@@ -1,5 +1,9 @@
 # wa-gateway Implementation Summary
 
+Status: Operational reference
+Audience: Backend / Infra
+Last reviewed: 2026-04-08
+
 **Date:** 2026-03-16  
 **Status:** Active
 

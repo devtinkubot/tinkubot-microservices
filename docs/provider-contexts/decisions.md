@@ -1,5 +1,10 @@
 # Provider Context Split Decisions
 
+Status: Canonical
+Audience: Backend / Arquitectura
+Last reviewed: 2026-04-08
+Canonical owner: `ai-proveedores`
+
 ## Decision 1: Use bounded contexts
 We will organize the provider code by bounded contexts:
 

@@ -1,5 +1,10 @@
 # Provider Context Audit
 
+Status: Transitional
+Audience: Backend / Arquitectura
+Last reviewed: 2026-04-08
+Canonical owner: `ai-proveedores`
+
 ## Scope
 Audit focused only on `python-services/ai-proveedores`.
 

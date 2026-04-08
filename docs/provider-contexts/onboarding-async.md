@@ -1,5 +1,10 @@
 # Provider Onboarding Async
 
+Status: Canonical
+Audience: Backend / Operaciones
+Last reviewed: 2026-04-08
+Canonical owner: `ai-proveedores`
+
 Este documento resume la política canónica del flujo async de onboarding de proveedores, con foco en el paso de servicios y la persistencia final en Supabase.
 
 ## Objetivo

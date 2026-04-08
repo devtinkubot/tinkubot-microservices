@@ -1,5 +1,10 @@
 # Provider Ownership Matrix
 
+Status: Canonical
+Audience: Backend / Arquitectura
+Last reviewed: 2026-04-08
+Canonical owner: `ai-proveedores`
+
 Scope: `python-services/ai-proveedores`
 
 ## Why this exists

@@ -1,5 +1,10 @@
 # Provider State Audit
 
+Status: Historical compatibility map
+Audience: Backend / Arquitectura
+Last reviewed: 2026-04-08
+Canonical owner: `ai-proveedores`
+
 ## Scope
 Audit focused on `python-services/ai-proveedores`.
 

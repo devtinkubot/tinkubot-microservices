@@ -1,5 +1,10 @@
 # Perfil Semántico De Búsqueda
 
+Status: Reference
+Audience: Backend / Search / AI
+Last reviewed: 2026-04-08
+Canonical owner: `ai-search` + `ai-clientes`
+
 El flujo de `ai-clientes` ya no trata la necesidad del cliente como texto plano.
 Ahora la IA devuelve un perfil estructurado para mejorar la búsqueda semántica:
 
