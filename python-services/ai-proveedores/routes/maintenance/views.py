@@ -2,8 +2,8 @@
 
 from typing import Any, Dict, Optional
 
-from .compat_views import manejar_vista_perfil as _manejar_vista_perfil
-from .compat_views import render_profile_view as _render_profile_view
+from flows.maintenance.views import manejar_vista_perfil as _manejar_vista_perfil
+from flows.maintenance.views import render_profile_view as _render_profile_view
 
 
 async def render_profile_view(

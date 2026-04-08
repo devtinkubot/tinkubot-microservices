@@ -123,7 +123,7 @@ async def _cargar_proveedor_por_id(
             supabase.table("providers")
             .select(
                 "id,phone,real_phone,display_name,"
-                "document_first_names,document_last_names,status,verified,"
+                "document_first_names,document_last_names,status,"
                 "onboarding_step,approved_notified_at,verification_reviewed_at,"
                 "created_at"
             )

@@ -66,7 +66,7 @@ def _proveedor_base(**kwargs):
         "real_phone": "593959091325",
         "full_name": "Ana Pérez",
         "status": "approved",
-        "verified": False,
+        "onboarding_complete": False,
         "onboarding_step": None,
         "approved_notified_at": (ahora - timedelta(hours=49)).isoformat(),
         "verification_reviewed_at": None,

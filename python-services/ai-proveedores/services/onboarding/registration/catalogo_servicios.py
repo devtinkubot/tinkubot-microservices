@@ -9,9 +9,6 @@ import unicodedata
 from typing import Any, Dict, List, Optional
 
 from infrastructure.database import run_supabase
-from services.maintenance.validacion_semantica import (
-    validar_servicio_semanticamente as validar_servicio_semanticamente_operativa,
-)
 from utils import normalizar_texto_para_busqueda
 
 logger = logging.getLogger(__name__)
@@ -216,6 +213,7 @@ async def clasificar_servicios_livianos(
     supabase: Any,
     servicios: List[str],
     timeout: float = 8.0,
+    validar_fn: Optional[Any] = None,
 ) -> List[Dict[str, Any]]:
     servicios_limpios = [
         str(servicio).strip() for servicio in servicios if str(servicio).strip()
@@ -228,10 +226,15 @@ async def clasificar_servicios_livianos(
         item["code"] for item in catalogo_dominios if item.get("code")
     }
 
+    if validar_fn is None:
+        raise ValueError(
+            "validar_fn es requerido: inyectar validar_servicio_semanticamente"
+        )
+
     resultados: List[Dict[str, Any]] = []
     for servicio in servicios_limpios:
         try:
-            fila = await validar_servicio_semanticamente(
+            fila = await validar_fn(
                 cliente_openai=cliente_openai,
                 supabase=supabase,
                 raw_service_text=servicio,
@@ -292,23 +295,6 @@ async def clasificar_servicios_livianos(
             }
         )
     return resultados
-
-
-async def validar_servicio_semanticamente(
-    *,
-    cliente_openai: Optional[Any],
-    supabase: Any,
-    raw_service_text: str,
-    service_name: str,
-    timeout: float = 8.0,
-) -> Dict[str, Any]:
-    return await validar_servicio_semanticamente_operativa(
-        cliente_openai=cliente_openai,
-        supabase=supabase,
-        raw_service_text=raw_service_text,
-        service_name=service_name,
-        timeout=timeout,
-    )
 
 
 async def eliminar_revisiones_catalogo_asociadas_servicio(

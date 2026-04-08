@@ -23,7 +23,6 @@ async def test_vista_onboarding_reconstruye_estado_desde_supabase(monkeypatch):
             "face_photo_url": "face-photo",
             "experience_range": "1-3",
             "services_list": ["cerrajería"],
-            "verified": True,
         }
 
     monkeypatch.setattr(
@@ -91,7 +90,6 @@ async def test_vista_onboarding_aprobado_sin_full_name_no_regresa_a_registro(
             "face_photo_url": "face-photo",
             "experience_range": "1-3",
             "services_list": ["cerrajería"],
-            "verified": True,
         }
 
     monkeypatch.setattr(

@@ -4,16 +4,16 @@ from typing import Any, Dict, Optional
 
 from templates.maintenance.menus import payload_submenu_informacion_personal
 
-from ..compat import es_contexto_mantenimiento
-from ..compat_profile import (
-    manejar_actualizacion_selfie,
-    manejar_espera_certificado,
+from flows.maintenance.context import es_contexto_mantenimiento
+from flows.maintenance.document_update import manejar_inicio_documentos
+from flows.maintenance.phone_city import (
     manejar_espera_ciudad_onboarding,
-    manejar_espera_experiencia,
     manejar_espera_real_phone_onboarding,
-    manejar_inicio_documentos,
 )
-from ..compat_services import manejar_espera_red_social
+from flows.maintenance.selfie_update import manejar_actualizacion_selfie
+from flows.maintenance.wait_certificate import manejar_espera_certificado
+from flows.maintenance.wait_experience import manejar_espera_experiencia
+from flows.maintenance.wait_social import manejar_espera_red_social
 
 MAINTENANCE_PROFILE_STATES = {
     "maintenance_experience",

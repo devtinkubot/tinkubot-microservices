@@ -4,7 +4,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from infrastructure.database import get_supabase_client
-from services.onboarding.registration.catalogo_servicios import (
+from services.maintenance.validacion_semantica import (
     validar_servicio_semanticamente,
 )
 from services.onboarding.registration.constantes import SERVICIOS_MAXIMOS_ONBOARDING

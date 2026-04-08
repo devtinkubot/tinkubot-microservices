@@ -97,7 +97,6 @@ async def test_inbound_numerico_prefiere_aprobado_por_real_phone_sobre_pending_p
         "phone": telefono,
         "real_phone": "593992846648",
         "status": "pending",
-        "verified": True,
         "has_consent": True,
     }
     approved = {
@@ -105,7 +104,6 @@ async def test_inbound_numerico_prefiere_aprobado_por_real_phone_sobre_pending_p
         "phone": "102550967742602@lid",
         "real_phone": "593992846648",
         "status": "approved",
-        "verified": True,
         "has_consent": True,
         "approved_notified_at": "2026-02-20T21:48:25Z",
     }

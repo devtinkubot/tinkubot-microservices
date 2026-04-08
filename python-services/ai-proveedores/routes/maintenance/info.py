@@ -2,7 +2,7 @@
 
 from typing import Any, Dict, Optional
 
-from .compat_menu import (
+from flows.maintenance.menu import (
     manejar_submenu_informacion_personal,
     manejar_submenu_informacion_profesional,
 )

@@ -135,12 +135,12 @@ async def _cargar_proveedores_candidatos(supabase: Any) -> list[Dict[str, Any]]:
             supabase.table("providers")
             .select(
                 "id,phone,real_phone,display_name,"
-                "document_first_names,document_last_names,status,verified,"
+                "document_first_names,document_last_names,status,"
                 "onboarding_step,approved_notified_at,verification_reviewed_at,"
                 "created_at"
             )
             .eq("status", "approved")
-            .eq("verified", False)
+            .eq("onboarding_complete", False)
             .order("approved_notified_at", desc=False)
             .order("created_at", desc=False)
             .execute()

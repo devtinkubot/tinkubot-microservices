@@ -1,27 +1,33 @@
 # TinkuBot Microservices
 
-Sistema de microservicios de IA para TinkuBot con Python (FastAPI), Node.js, Redis Pub/Sub y Supabase/PostGIS.
+Sistema de microservicios de IA para TinkuBot con Python (FastAPI), Go, Node.js, Elixir, Redis Pub/Sub y Supabase/PostGIS.
 
 ## Estructura del Proyecto
 
 ```
 tinkubot-microservices/
-├── python-services/          # Servicios de IA en Python
-│   ├── ai-clientes/          # Procesamiento de mensajes de clientes
-│   ├── ai-proveedores/       # Gestión de proveedores
-│   └── ai-search/            # Búsqueda semántica con embeddings
-├── node-services/            # Servicios en Node.js
-│   └── whatsapp-gateway/     # Gateway de WhatsApp
-├── docs/                     # Documentación SQL y migraciones
-├── tools/                    # Herramientas operativas y scripts de mantenimiento
-└── docker-compose.yml        # Orquestación de contenedores
+├── python-services/            # Servicios de IA en Python (FastAPI)
+│   ├── ai-clientes/            # Procesamiento de mensajes de clientes
+│   ├── ai-proveedores/         # Gestión de proveedores
+│   └── ai-search/              # Búsqueda semántica con embeddings
+├── go-services/
+│   └── wa-gateway/             # Gateway de WhatsApp (Go)
+├── nodejs-services/
+│   └── frontend/               # Frontend y dashboard (Node.js/Express)
+├── elixir-services/
+│   ├── provider-onboarding-worker/   # Worker de onboarding
+│   └── provider-prefetch-worker/     # Worker de prefetch
+├── infrastructure-services/
+│   └── message-queue/          # Cola de mensajes (infra)
+├── docs/                       # Documentación repo-wide
+└── docker-compose.yml          # Orquestación de contenedores
 ```
 
 ## Documentación Principal
 
 - [Índice de `ai-proveedores`](docs/ai-proveedores.md)
 - [Decisiones de `ai-proveedores`](docs/provider-contexts/decisions.md)
-- [Audit de estado de `ai-proveedores`](docs/provider-contexts/state-audit.md)
+- [Ownership matrix](docs/provider-contexts/ownership-matrix.md)
 - [Fronteras de `ai-proveedores`](docs/ai-proveedores-boundaries.md)
 
 ## Servicios Implementados
@@ -47,7 +53,7 @@ tinkubot-microservices/
    - Arquitectura interna por capas: `config/`, `models/`, `flows/`, `routes/`, `services/`, `templates/`, `infrastructure/`
    - Helpers puros en `utils/`, operaciones manuales en `tools/` y verificación en `tests/`
 
-4. **WhatsApp Gateway** (Node.js)
+4. **WhatsApp Gateway** (Go)
    - Integración con WhatsApp Business API
    - Webhook handling
    - Envío de mensajes multimedia
@@ -55,6 +61,9 @@ tinkubot-microservices/
 ## Tecnologías
 
 - **FastAPI**: Framework web asíncrono para Python
+- **Go**: WhatsApp Gateway
+- **Elixir**: Workers de onboarding y prefetch
+- **Node.js/Express**: Frontend y dashboard
 - **Redis (Upstash)**: Cache y almacenamiento de sesiones
 - **Supabase/PostgreSQL**: Persistencia con extensión PostGIS
 - **OpenAI**: Procesamiento de lenguaje natural y embeddings
@@ -65,7 +74,9 @@ tinkubot-microservices/
 ### Requisitos Previos
 
 - Python 3.11+
+- Go 1.21+
 - Node.js 18+
+- Elixir 1.16+ / Erlang/OTP 26+
 - PostgreSQL con extensiones PostGIS y pgvector
 - Cuenta de Upstash Redis
 - API Key de OpenAI
@@ -144,9 +155,8 @@ python main.py
 **WhatsApp Gateway**
 
 ```bash
-cd node-services/whatsapp-gateway
-npm install
-npm run dev
+cd go-services/wa-gateway
+go run .
 ```
 
 ### Verificar Estado

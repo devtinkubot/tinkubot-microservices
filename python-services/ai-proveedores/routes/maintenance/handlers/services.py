@@ -2,25 +2,27 @@
 
 from typing import Any, Dict, Optional
 
-from ..compat import es_contexto_mantenimiento
-from ..compat_services import (
-    manejar_accion_edicion_servicios_registro,
+from flows.maintenance.context import es_contexto_mantenimiento
+from flows.maintenance.services import (
     manejar_accion_servicios,
     manejar_accion_servicios_activos,
-    manejar_agregar_servicio_desde_edicion_registro,
     manejar_agregar_servicios,
     manejar_confirmacion_agregar_servicios,
+    manejar_eliminar_servicio,
+)
+from flows.maintenance.services_confirmation import (
+    manejar_accion_edicion_servicios_registro,
+    manejar_agregar_servicio_desde_edicion_registro,
     manejar_confirmacion_perfil_profesional,
     manejar_confirmacion_servicio_perfil,
     manejar_confirmacion_servicios,
     manejar_decision_agregar_otro_servicio,
     manejar_edicion_perfil_profesional,
     manejar_eliminacion_servicio_registro,
-    manejar_eliminar_servicio,
-    manejar_espera_especialidad,
     manejar_reemplazo_servicio_registro,
     manejar_seleccion_reemplazo_servicio_registro,
 )
+from flows.maintenance.specialty import manejar_espera_especialidad
 from ..menu import construir_menu_principal_mantenimiento
 
 MANTENANCE_STATES = {

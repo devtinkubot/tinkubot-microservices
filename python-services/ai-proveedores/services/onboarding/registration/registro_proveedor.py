@@ -7,6 +7,9 @@ from typing import Any, Dict, List, Optional
 from infrastructure.database import run_supabase
 from infrastructure.embeddings.servicio_embeddings import ServicioEmbeddings
 from models.proveedores import SolicitudCreacionProveedor
+from services.maintenance.validacion_semantica import (
+    validar_servicio_semanticamente,
+)
 from services.onboarding.registration.catalogo_servicios import (
     clasificar_servicios_livianos,
     construir_service_summary,
@@ -199,6 +202,7 @@ async def insertar_servicios_proveedor(
         cliente_openai=getattr(servicio_embeddings, "client", None),
         supabase=supabase,
         servicios=[entry["service_name"] for entry in service_entries],
+        validar_fn=validar_servicio_semanticamente,
     )
 
     clasificaciones_incompletas: List[Dict[str, Any]] = []

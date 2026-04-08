@@ -3,7 +3,7 @@
 from typing import Any, Dict, Optional
 
 from flows.constructors import construir_payload_menu_principal
-from .compat_menu import manejar_estado_menu as _manejar_estado_menu
+from flows.maintenance.menu import manejar_estado_menu as _manejar_estado_menu
 
 
 async def manejar_estado_menu(

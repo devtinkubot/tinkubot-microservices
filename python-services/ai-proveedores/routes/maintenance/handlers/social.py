@@ -2,10 +2,8 @@
 
 from typing import Any, Dict, Optional
 
-from ..compat_services import (
-    manejar_actualizacion_redes_sociales,
-    manejar_espera_red_social,
-)
+from flows.maintenance.social_update import manejar_actualizacion_redes_sociales
+from flows.maintenance.wait_social import manejar_espera_red_social
 
 MAINTENANCE_UPDATE_STATES = {
     "maintenance_social_facebook_username",

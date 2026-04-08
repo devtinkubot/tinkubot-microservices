@@ -38,7 +38,6 @@ def test_registro_inicial_persiste_servicios_normalizados_sin_taxonomia_runtime(
                         "experience_range": "3 a 5 años",
                         "onboarding_complete": True,
                         "rating": 5.0,
-                        "verified": False,
                         "has_consent": True,
                     }
                 ]

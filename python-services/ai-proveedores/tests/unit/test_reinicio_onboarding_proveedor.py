@@ -53,7 +53,6 @@ class _Query:
                         "real_phone": "593959091325",
                         "full_name": "Ana Pérez",
                         "status": "approved",
-                        "verified": False,
                         "onboarding_step": None,
                         "approved_notified_at": (now - timedelta(hours=50)).isoformat(),
                         "verification_reviewed_at": None,

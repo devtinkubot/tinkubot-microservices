@@ -1,7 +1,5 @@
-# Ignorar todo por defecto
-*
-
-# Excepciones (solo estos archivos se trackean)
-!.gitignore
-!provider-contexts/
-!provider-contexts/**
+# Ignorar solo archivos temporales y borradores locales
+*.tmp
+*.bak
+*~
+.DS_Store

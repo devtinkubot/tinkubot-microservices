@@ -155,7 +155,6 @@ class RespuestaProveedor(BaseModel):
         total_services: Total de servicios registrados
         rating: Calificación promedio
         available: Disponibilidad actual
-        verified: Estado de verificación
         experience_range: Rango legible de experiencia
         document_first_names: Nombres leídos del documento (opcional)
         document_last_names: Apellidos leídos del documento (opcional)
@@ -184,7 +183,6 @@ class RespuestaProveedor(BaseModel):
     total_services: int  # Contador de servicios
     rating: float
     available: bool
-    verified: bool
     experience_range: Optional[str] = None
     onboarding_complete: bool = False
     facebook_username: Optional[str] = None

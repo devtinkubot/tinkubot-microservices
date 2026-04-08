@@ -35,7 +35,6 @@ def test_resolver_estado_registro_pending_mantiene_bloqueo():
         "id": "prov-1",
         "full_name": "Proveedor Pendiente",
         "has_consent": True,
-        "verified": False,
         "status": "pending",
     }
 
@@ -50,7 +49,6 @@ def test_resolver_estado_registro_aprobado_aprueba_acceso_basico():
         "id": "prov-1b",
         "full_name": "Proveedor En Revision",
         "has_consent": True,
-        "verified": False,
         "status": "approved",
     }
 
@@ -65,7 +63,6 @@ def test_resolver_estado_registro_aprobado_habilita_acceso_basico():
         "id": "prov-basic",
         "full_name": "Proveedor Basico",
         "has_consent": True,
-        "verified": False,
         "status": "approved",
     }
 
@@ -82,7 +79,6 @@ def test_resolver_estado_registro_aprobado_sin_full_name_sigue_registrado():
         "first_name": "Ana",
         "last_name": "Perez",
         "has_consent": True,
-        "verified": True,
         "status": "approved",
     }
 
@@ -97,7 +93,6 @@ def test_resolver_estado_registro_aprobado_sin_full_name_aprueba_acceso_basico()
         "id": "prov-review",
         "full_name": "Proveedor Profesional",
         "has_consent": True,
-        "verified": False,
         "status": "approved",
     }
 
@@ -112,7 +107,6 @@ def test_resolver_estado_registro_rejected_mantiene_bloqueo():
         "id": "prov-2",
         "full_name": "Proveedor Rechazado",
         "has_consent": True,
-        "verified": False,
         "status": "rejected",
     }
 
@@ -287,7 +281,6 @@ def test_manejar_bloqueo_revision_posterior_detecta_perfil_completo_pendiente():
         "id": "prov-review",
         "full_name": "Proveedor Completo",
         "has_consent": True,
-        "verified": False,
         "status": "pending",
         "city": "Quito",
         "dni_front_photo_url": "dni-front.jpg",
@@ -329,7 +322,6 @@ def test_sincronizar_flujo_con_perfil_prioriza_datos_durables_sobre_redis():
         "generic_services_removed": ["pendiente supabase"],
         "real_phone": "593999111222",
         "experience_range": "3 a 5 años",
-        "verified": True,
     }
 
     sincronizar_flujo_con_perfil(flujo, perfil)
@@ -351,7 +343,6 @@ def test_sincronizar_flujo_con_perfil_copia_datos_de_identidad():
         "document_last_names": "Perez Lopez",
         "document_id_number": "0912345678",
         "services_list": [],
-        "verified": True,
     }
 
     sincronizar_flujo_con_perfil(flujo, perfil)
@@ -404,7 +395,6 @@ def test_checkpoint_onboarding_infiere_desde_perfil_durable():
         "experience_range": None,
         "services_list": [],
         "has_consent": False,
-        "verified": False,
         "status": "pending",
     }
 
@@ -421,7 +411,6 @@ def test_checkpoint_onboarding_sin_consent_retorna_consentimiento():
         "experience_range": "3 a 5 años",
         "services_list": ["Plomeria"],
         "has_consent": False,
-        "verified": False,
         "status": "pending",
     }
 
@@ -438,7 +427,6 @@ def test_checkpoint_onboarding_detecta_perfil_completo():
         "experience_range": "3 a 5 años",
         "services_list": ["Plomeria"],
         "has_consent": True,
-        "verified": False,
         "status": "pending",
     }
 
@@ -456,7 +444,6 @@ def test_checkpoint_onboarding_aprobado_sin_full_name_sigue_en_menu():
         "experience_range": "3 a 5 años",
         "services_list": ["Plomeria"],
         "has_consent": True,
-        "verified": True,
         "status": "approved",
     }
 
@@ -480,7 +467,6 @@ def test_sincronizar_flujo_con_perfil_aprobado_marca_acceso_operativo():
         "full_name": "Proveedor Basico",
         "services_list": [],
         "status": "approved",
-        "verified": False,
     }
 
     sincronizar_flujo_con_perfil(flujo, perfil)
@@ -493,7 +479,6 @@ def test_sincronizar_flujo_perfil_aprobado_sin_verificar_marca_acceso_operativo(
         "full_name": "Proveedor Profesional",
         "services_list": [],
         "status": "approved",
-        "verified": False,
     }
 
     sincronizar_flujo_con_perfil(flujo, perfil)
@@ -506,7 +491,6 @@ def test_sincronizar_flujo_con_perfil_aprobado_canonico_marca_acceso_operativo()
         "full_name": "Proveedor Aprobado",
         "services_list": [],
         "status": "approved",
-        "verified": True,
     }
 
     sincronizar_flujo_con_perfil(flujo, perfil)
@@ -536,7 +520,6 @@ def test_garantizar_campos_obligatorios_preserva_status_existente():
     perfil = {
         "id": "prov-basic",
         "full_name": "Proveedor Basico",
-        "verified": True,
         "status": "approved",
     }
 

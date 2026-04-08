@@ -12,51 +12,14 @@ CONTEXTS = {"onboarding", "maintenance", "review", "availability"}
 # Esta lista congela el estado actual mientras reducimos el acoplamiento.
 # Cualquier cruce nuevo entre contextos debe pasar por revisión explícita.
 LEGACY_CROSS_CONTEXT_IMPORTS = {
-    ("flows/maintenance/confirmation.py", "services.onboarding.registration"),
-    ("flows/maintenance/document_update.py", "templates.onboarding.ciudad"),
-    ("flows/maintenance/document_update.py", "templates.onboarding.documentos"),
-    ("flows/maintenance/specialty.py", "templates.onboarding.servicios"),
-    ("flows/maintenance/views.py", "templates.onboarding.ciudad"),
-    ("flows/maintenance/wait_experience.py", "templates.onboarding.experiencia"),
-    ("flows/maintenance/wait_name.py", "templates.onboarding.ciudad"),
-    ("flows/maintenance/wait_name.py", "templates.onboarding.documentos"),
-    ("flows/onboarding/handlers/consentimiento.py", "templates.maintenance.menus"),
-    (
-        "flows/onboarding/handlers/experiencia.py",
-        "services.maintenance.estado_operativo",
-    ),
-    (
-        "flows/onboarding/handlers/servicios.py",
-        "services.maintenance.clasificacion_semantica",
-    ),
-    ("flows/onboarding/handlers/servicios.py", "services.maintenance.constantes"),
-    ("flows/onboarding/handlers/servicios.py", "services.maintenance.revision_catalogo"),
     (
         "flows/onboarding/handlers/servicios.py",
         "services.maintenance.validacion_semantica",
     ),
-    ("routes/availability/menu.py", "templates.maintenance.menus"),
-    ("services/maintenance/actualizar_servicios.py", "services.onboarding.registration"),
-    ("services/onboarding/confirmacion.py", "templates.maintenance"),
-    (
-        "services/onboarding/registration/eliminacion_proveedor.py",
-        "services.maintenance.revision_catalogo",
-    ),
-    (
-        "services/onboarding/registration/normalizacion.py",
-        "services.maintenance.constantes",
-    ),
     (
         "services/onboarding/registration/registro_proveedor.py",
-        "services.maintenance.clasificacion_semantica",
+        "services.maintenance.validacion_semantica",
     ),
-    (
-        "services/onboarding/registration/registro_proveedor.py",
-        "services.maintenance.constantes",
-    ),
-    ("services/review/messages.py", "templates.maintenance.menus"),
-    ("services/review/state.py", "services.onboarding.progress"),
-    ("services/review/state.py", "services.onboarding.registration"),
 }
 
 

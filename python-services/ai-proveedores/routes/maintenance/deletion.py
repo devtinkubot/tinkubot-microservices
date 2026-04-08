@@ -2,7 +2,7 @@
 
 from typing import Any, Dict
 
-from .compat_deletion import manejar_confirmacion_eliminacion
+from flows.maintenance.deletion import manejar_confirmacion_eliminacion
 
 
 async def manejar_eliminacion_proveedor(

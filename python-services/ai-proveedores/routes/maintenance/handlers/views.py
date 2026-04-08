@@ -2,7 +2,7 @@
 
 from typing import Any, Dict, Optional
 
-from ..compat_views import manejar_vista_perfil
+from flows.maintenance.views import manejar_vista_perfil
 
 async def manejar_vistas_mantenimiento(
     *,

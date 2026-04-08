@@ -450,12 +450,11 @@ async def manejar_mensaje(
     if resultado_enrutado is not None:
         logger.info(
             "🧭 router.enrutado telefono=%s state=%s persist=%s registered=%s "
-            "verified=%s pending=%s",
+            "pending=%s",
             telefono,
             flujo.get("state"),
             resultado_enrutado.get("persist_flow", True),
             esta_registrado,
-            esta_verificado,
             esta_pendiente_revision,
         )
         return resultado_enrutado
