@@ -153,7 +153,6 @@ class ProveedorFactory:
             "rating": rating,
             "professions": profesiones or ["plomero"],
             "services": kwargs.get("services", []),
-            "verified": kwargs.get("verified", False),
             "years_of_experience": kwargs.get("years_of_experience", 5),
             "experience_range": kwargs.get("experience_range", "5 a 10 años"),
             **kwargs,

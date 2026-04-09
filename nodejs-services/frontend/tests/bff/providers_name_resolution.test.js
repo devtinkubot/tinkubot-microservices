@@ -160,6 +160,7 @@ test("obtenerResumenEstadosProveedores toma las cantidades de Nuevos y Operativo
           {
             id: "provider-op-1",
             status: "approved",
+            onboarding_complete: true,
             display_name: "Proveedor Operativo",
             document_first_names: "Ana Maria",
             document_last_names: "Perez Lopez",
@@ -171,6 +172,7 @@ test("obtenerResumenEstadosProveedores toma las cantidades de Nuevos y Operativo
           {
             id: "provider-op-2",
             status: "approved",
+            onboarding_complete: false,
             display_name: "Proveedor Incompleto",
             document_first_names: "Ana Maria",
             document_last_names: "Perez Lopez",
@@ -194,7 +196,13 @@ test("obtenerResumenEstadosProveedores toma las cantidades de Nuevos y Operativo
     assert.ok(
       llamadas.some((url) => url.includes("onboarding_step=eq.pending_verification")),
     );
-    assert.ok(llamadas.some((url) => url.includes("status=eq.approved")));
+    assert.ok(
+      llamadas.some(
+        (url) =>
+          url.includes("status=eq.approved") &&
+          url.includes("onboarding_complete=eq.true"),
+      ),
+    );
   } finally {
     supabaseGet = async () => {
       throw new Error("Supabase mock not initialized");
@@ -254,6 +262,7 @@ test(
             {
               id: "provider-irregular",
               status: "approved",
+              onboarding_complete: false,
               display_name: "Proveedor sin nombres",
               city: "Cuenca",
               has_consent: true,
@@ -277,6 +286,7 @@ test(
             {
               id: "provider-operativo",
               status: "approved",
+              onboarding_complete: true,
               display_name: "Proveedor operativo",
               document_first_names: "Ana Maria",
               document_last_names: "Perez Lopez",

@@ -13,6 +13,7 @@
     "dev": "nodemon index.js",
     "dev:dashboard": "npm run dev --workspace @tinkubot/admin-dashboard",
     "build": "npm run build --workspace @tinkubot/admin-dashboard",
+    "reconcile:wallet-leads": "node scripts/reconcile_wallet_leads.js",
     "preview:dashboard": "npm run preview --workspace @tinkubot/admin-dashboard",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

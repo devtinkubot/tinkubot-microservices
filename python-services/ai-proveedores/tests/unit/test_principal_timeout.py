@@ -89,6 +89,7 @@ def test_manejar_mensaje_reanudacion_menu_registrado_no_falla(monkeypatch):
                 "id": "c4f1f0f2-4a6d-4e8d-9c0a-2d2c7f4d5a11",
                 "has_consent": True,
                 "status": "approved",
+                "onboarding_complete": True,
             },
             supabase=None,
             servicio_embeddings=None,
@@ -100,6 +101,51 @@ def test_manejar_mensaje_reanudacion_menu_registrado_no_falla(monkeypatch):
     )
 
     assert resultado["response"]["messages"][1]["ui"]["id"] == "provider_main_menu_v1"
+
+
+def test_manejar_mensaje_aprobado_incompleto_no_reanuda_menu_operativo(monkeypatch):
+    flujo = {
+        "state": "awaiting_menu_option",
+        "last_seen_at": (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(),
+        "provider_id": "c4f1f0f2-4a6d-4e8d-9c0a-2d2c7f4d5a11",
+        "has_consent": True,
+    }
+
+    monkeypatch.setattr(
+        modulo_router,
+        "_sesion_expirada_por_inactividad",
+        lambda *_args, **_kwargs: True,
+    )
+
+    resultado = asyncio.run(
+        modulo_router.manejar_mensaje(
+            flujo=flujo,
+            telefono="593959091326@s.whatsapp.net",
+            texto_mensaje="Hola",
+            carga={},
+            opcion_menu=None,
+            perfil_proveedor={
+                "id": "c4f1f0f2-4a6d-4e8d-9c0a-2d2c7f4d5a11",
+                "has_consent": True,
+                "status": "approved",
+                "onboarding_complete": False,
+                "city": "Quito",
+                "dni_front_photo_url": "dni-front.jpg",
+                "face_photo_url": "face.jpg",
+                "experience_range": "",
+                "services_list": [],
+            },
+            supabase=None,
+            servicio_embeddings=None,
+            subir_medios_identidad=lambda *args, **kwargs: None,
+            logger=types.SimpleNamespace(
+                info=lambda *args, **kwargs: None, debug=lambda *args, **kwargs: None
+            ),
+        )
+    )
+
+    assert flujo["state"] == "onboarding_experience"
+    assert "años de experiencia" in resultado["response"]["messages"][1]["response"].lower()
 
 
 def test_manejar_mensaje_no_descarta_ubicacion_tardia(monkeypatch):
@@ -184,6 +230,11 @@ def test_manejar_mensaje_en_revision_no_reanuda_onboarding(monkeypatch):
                 "id": "c4f1f0f2-4a6d-4e8d-9c0a-2d2c7f4d5a11",
                 "has_consent": True,
                 "status": "pending",
+                "city": "Quito",
+                "dni_front_photo_url": "dni-front.jpg",
+                "face_photo_url": "face.jpg",
+                "experience_range": "3 a 5 años",
+                "services_list": ["Plomería"],
                 "document_first_names": "Ana",
                 "document_last_names": "Pérez",
             },
@@ -198,8 +249,9 @@ def test_manejar_mensaje_en_revision_no_reanuda_onboarding(monkeypatch):
     )
 
     assert resultado is not None
-    assert "revis" in resultado["response"]["messages"][0]["response"].lower()
-    assert (
-        "retomamos el último paso"
-        not in resultado["response"]["messages"][0]["response"].lower()
-    )
+    respuestas = [
+        mensaje.get("response", "").lower()
+        for mensaje in resultado["response"]["messages"]
+    ]
+    assert any("revis" in respuesta for respuesta in respuestas)
+    assert all("retomamos el último paso" not in respuesta for respuesta in respuestas)

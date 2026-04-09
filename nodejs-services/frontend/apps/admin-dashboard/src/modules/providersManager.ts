@@ -528,7 +528,7 @@ function obtenerEtiquetaEstadoListado(
     case "rejected":
       return "Rechazado";
     case "approved":
-      return "Proveedor operativo";
+      return "Aprobado";
     case "pending":
     default:
       return "Nuevo";
@@ -572,7 +572,7 @@ function actualizarEncabezadoBucket() {
     if (titulo) titulo.textContent = "Incompletos";
     if (subtitulo) {
       subtitulo.textContent =
-        "Proveedores fuera de onboarding, verificación pendiente u operación. Aquí caen las irregularidades.";
+        "Proveedores aprobados o heredados que aún no quedan publicables. Aquí caen las irregularidades y casos por remediar.";
     }
     if (vacio) vacio.textContent = "No hay proveedores incompletos.";
     if (textoCarga) textoCarga.textContent = "Obteniendo proveedores incompletos...";
@@ -1437,7 +1437,9 @@ function actualizarDetalleProveedor(proveedor: ProviderRecord) {
   establecerTexto(
     "#provider-detail-stage",
     proveedor.status === "approved"
-      ? "Proveedor aprobado"
+      ? proveedor.onboardingComplete
+        ? "Proveedor operativo"
+        : "Proveedor aprobado pendiente de completar"
       : "Onboarding básico",
   );
 

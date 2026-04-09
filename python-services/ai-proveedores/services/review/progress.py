@@ -9,6 +9,7 @@ from services.shared.estados_proveedor import (
     CHECKPOINTS_ONBOARDING,
     ESTADOS_APROBADOS_COMPAT,
     MENU_POST_REGISTRO_STATES,
+    es_proveedor_operativo,
 )
 
 
@@ -90,8 +91,7 @@ def inferir_checkpoint_onboarding_desde_perfil(
     if not perfil_proveedor:
         return None
 
-    estado = _estado_administrativo_compatible(perfil_proveedor)
-    if estado == "approved":
+    if es_proveedor_operativo(perfil_proveedor):
         return CHECKPOINT_MENU_FINAL
 
     if not _texto_limpio(perfil_proveedor.get("city")):
@@ -107,8 +107,11 @@ def inferir_checkpoint_onboarding_desde_perfil(
     if not bool(perfil_proveedor.get("has_consent")):
         return "onboarding_consent"
 
+    estado = _estado_administrativo_compatible(perfil_proveedor)
     if estado in {"pending", "rejected"}:
         return "pending_verification"
+    if estado == "approved":
+        return "onboarding_specialty"
     return CHECKPOINT_MENU_FINAL
 
 

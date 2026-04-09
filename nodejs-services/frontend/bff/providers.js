@@ -251,6 +251,7 @@ const esProveedorOperativo = (proveedor) =>
   Boolean(
     proveedor &&
     proveedor.status === "approved" &&
+    proveedor.onboardingComplete === true &&
     tienePerfilProfesionalCompleto(proveedor) &&
     tieneNombreLegibleProveedor(proveedor) &&
     typeof proveedor.city === "string" &&
@@ -756,6 +757,17 @@ const normalizarEstadoMonetizacion = (value) => {
   return "active";
 };
 
+const normalizarFiltroMonetizacion = (value) => {
+  const estado = limpiarTexto(value)?.toLowerCase();
+  if (estado === "paused_paywall") {
+    return "paused_paywall";
+  }
+  if (estado === "active") {
+    return "active";
+  }
+  return "all";
+};
+
 const toIsoUtc = (value) => {
   const text = limpiarTexto(value);
   if (!text) return null;
@@ -783,6 +795,89 @@ const agruparFeedbackPorLeadId = (feedbackRows) => {
     grouped.set(leadEventId, item);
   }
   return grouped;
+};
+
+const calcularMetricasLeads = ({
+  eventos = [],
+  feedbackByLeadId = new Map(),
+}) => {
+  let hiredYes30d = 0;
+  let hiredNo30d = 0;
+  let feedbackResponses30d = 0;
+  let paidLeads30d = 0;
+  let freeLeads30d = 0;
+  let billableLeads30d = 0;
+  let averageRating30d = null;
+  let ratingTotal = 0;
+  let ratingCount = 0;
+  let lastLeadAt = null;
+
+  for (const evento of eventos) {
+    const leadId = limpiarTexto(evento?.id);
+    if (!lastLeadAt) {
+      lastLeadAt = toIsoUtc(evento?.created_at);
+    }
+
+    if (evento?.is_billable === true) {
+      billableLeads30d += 1;
+    }
+
+    const quotaSource = limpiarTexto(evento?.quota_source)?.toLowerCase();
+    if (quotaSource === "paid") {
+      paidLeads30d += 1;
+    } else if (quotaSource === "free") {
+      freeLeads30d += 1;
+    }
+
+    if (!leadId) continue;
+    const feedback = feedbackByLeadId.get(leadId);
+    if (!feedback) continue;
+
+    feedbackResponses30d += 1;
+    if (feedback.hired === true) {
+      hiredYes30d += 1;
+    } else if (feedback.hired === false) {
+      hiredNo30d += 1;
+    }
+
+    if (typeof feedback.rating === "number" && Number.isFinite(feedback.rating)) {
+      ratingTotal += feedback.rating;
+      ratingCount += 1;
+    }
+  }
+
+  const leadsShared30d = eventos.length;
+  const hireRateOverSent30d =
+    leadsShared30d > 0
+      ? Number((hiredYes30d / leadsShared30d).toFixed(4))
+      : null;
+  const hireRateOverResponded30d =
+    feedbackResponses30d > 0
+      ? Number((hiredYes30d / feedbackResponses30d).toFixed(4))
+      : null;
+  const feedbackCoverage30d =
+    leadsShared30d > 0
+      ? Number((feedbackResponses30d / leadsShared30d).toFixed(4))
+      : null;
+
+  if (ratingCount > 0) {
+    averageRating30d = Number((ratingTotal / ratingCount).toFixed(2));
+  }
+
+  return {
+    leadsShared30d,
+    billableLeads30d,
+    paidLeads30d,
+    freeLeads30d,
+    hiredYes30d,
+    hiredNo30d,
+    feedbackResponses30d,
+    feedbackCoverage30d,
+    hireRateOverSent30d,
+    hireRateOverResponded30d,
+    averageRating30d,
+    lastLeadAt,
+  };
 };
 
 const gestionarErrorAxios = (error) => {
@@ -906,7 +1001,7 @@ const obtenerResumenEstadosProveedoresSupabase = async () => {
   const [nuevos, responseOperativos] = await Promise.all([
     obtenerProveedoresPendientesSupabase(),
     supabaseClient.get(
-      `${supabaseProvidersTable}?limit=${pendingLimit}&order=approved_notified_at.desc.nullslast,created_at.desc&select=*,provider_services(service_name,service_name_normalized,raw_service_text,service_summary,domain_code,category_name,classification_confidence,display_order),provider_certificates(id,file_url,display_order,status,created_at,updated_at)&status=eq.approved`,
+      `${supabaseProvidersTable}?limit=${pendingLimit}&order=approved_notified_at.desc.nullslast,created_at.desc&select=*,provider_services(service_name,service_name_normalized,raw_service_text,service_summary,domain_code,category_name,classification_confidence,display_order),provider_certificates(id,file_url,display_order,status,created_at,updated_at)&status=eq.approved&onboarding_complete=eq.true`,
       {
         headers: {
           Accept: "application/json",
@@ -975,6 +1070,7 @@ const construirRutaSupabaseOperativos = () => {
     `order=approved_notified_at.desc.nullslast,created_at.desc`,
     "select=*,provider_services(service_name,service_name_normalized,raw_service_text,service_summary,domain_code,category_name,classification_confidence,display_order),provider_certificates(id,file_url,display_order,status,created_at,updated_at)",
     "status=eq.approved",
+    "onboarding_complete=eq.true",
   ];
 
   return `${supabaseProvidersTable}?${parametrosBase.join("&")}`;
@@ -1632,24 +1728,61 @@ const obtenerWalletPorProviderId = async (providerId) => {
   return null;
 };
 
+const obtenerUltimoRegistro = async ({
+  table,
+  select,
+  orderBy,
+  nulls = "nullslast",
+} = {}) => {
+  if (!supabaseClient || !table || !select || !orderBy) return null;
+  const response = await supabaseClient.get(
+    `${table}?select=${select}&order=${orderBy}.desc.${nulls}&limit=1`,
+    {
+      headers: { Accept: "application/json" },
+    },
+  );
+  if (Array.isArray(response.data) && response.data.length > 0) {
+    return response.data[0];
+  }
+  return null;
+};
+
 const obtenerEventosLeadDesde = async ({ sinceIso, providerIds = null }) => {
   if (!supabaseClient) return [];
 
   const params = [
-    "select=id,provider_id,created_at",
+    "select=id,provider_id,created_at,is_billable,quota_source",
     `created_at=gte.${encodeURIComponent(sinceIso)}`,
     "order=created_at.desc",
-    "limit=5000",
   ];
-  if (Array.isArray(providerIds) && providerIds.length > 0) {
+  if (Array.isArray(providerIds)) {
+    if (providerIds.length === 0) {
+      return [];
+    }
     const encodedIds = providerIds.map((id) => `"${id}"`).join(",");
     params.push(`provider_id=in.(${encodedIds})`);
   }
 
-  const response = await supabaseClient.get(`lead_events?${params.join("&")}`, {
-    headers: { Accept: "application/json" },
-  });
-  return Array.isArray(response.data) ? response.data : [];
+  const items = [];
+  let offset = 0;
+  const pageSize = 1000;
+
+  while (true) {
+    const response = await supabaseClient.get(
+      `lead_events?${params.join("&")}&limit=${pageSize}&offset=${offset}`,
+      {
+        headers: { Accept: "application/json" },
+      },
+    );
+    const page = Array.isArray(response.data) ? response.data : [];
+    items.push(...page);
+    if (page.length < pageSize) {
+      break;
+    }
+    offset += pageSize;
+  }
+
+  return items;
 };
 
 const obtenerFeedbackPorLeadIds = async (leadIds) => {
@@ -1657,7 +1790,7 @@ const obtenerFeedbackPorLeadIds = async (leadIds) => {
     return [];
   const encodedIds = leadIds.map((id) => `"${id}"`).join(",");
   const response = await supabaseClient.get(
-    `lead_feedback?select=lead_event_id,hired&lead_event_id=in.(${encodedIds})`,
+    `lead_feedback?select=lead_event_id,hired,rating,responded_at&lead_event_id=in.(${encodedIds})`,
     {
       headers: { Accept: "application/json" },
     },
@@ -1688,24 +1821,7 @@ const normalizarProveedorMonetizacion = ({
   eventos = [],
   feedbackByLeadId = new Map(),
 }) => {
-  let hiredYes30d = 0;
-  let hiredNo30d = 0;
-  let lastLeadAt = null;
-
-  for (const evento of eventos) {
-    const leadId = limpiarTexto(evento?.id);
-    if (!lastLeadAt) {
-      lastLeadAt = toIsoUtc(evento?.created_at);
-    }
-    if (!leadId) continue;
-    const feedback = feedbackByLeadId.get(leadId);
-    if (!feedback || typeof feedback.hired !== "boolean") continue;
-    if (feedback.hired) {
-      hiredYes30d += 1;
-    } else {
-      hiredNo30d += 1;
-    }
-  }
+  const metrics = calcularMetricasLeads({ eventos, feedbackByLeadId });
 
   return {
     providerId: String(wallet?.provider_id || provider?.id || ""),
@@ -1721,60 +1837,122 @@ const normalizarProveedorMonetizacion = ({
       "Proveedor sin nombre",
     phone: limpiarTexto(provider?.phone) || null,
     city: limpiarTexto(provider?.city) || null,
-    billingStatus: normalizarEstadoMonetizacion(wallet?.billing_status),
+    billingStatus: wallet ? normalizarEstadoMonetizacion(wallet?.billing_status) : "missing",
+    hasWallet: Boolean(wallet),
     freeLeadsRemaining: Number(wallet?.free_leads_remaining || 0),
     paidLeadsRemaining: Number(wallet?.paid_leads_remaining || 0),
-    leadsShared30d: eventos.length,
-    hiredYes30d,
-    hiredNo30d,
-    lastLeadAt,
+    leadsShared30d: metrics.leadsShared30d,
+    billableLeads30d: metrics.billableLeads30d,
+    freeLeads30d: metrics.freeLeads30d,
+    paidLeads30d: metrics.paidLeads30d,
+    hiredYes30d: metrics.hiredYes30d,
+    hiredNo30d: metrics.hiredNo30d,
+    feedbackResponses30d: metrics.feedbackResponses30d,
+    feedbackCoverage30d: metrics.feedbackCoverage30d,
+    hireRateOverSent30d: metrics.hireRateOverSent30d,
+    averageRating30d: metrics.averageRating30d,
+    lastLeadAt: metrics.lastLeadAt,
   };
 };
 
-async function obtenerMonetizacionResumen() {
+async function obtenerMonetizacionResumen({ status = "all" } = {}) {
   try {
-    const wallets = await obtenerWalletsResumen();
+    const statusFilter = normalizarFiltroMonetizacion(status);
+    const wallets =
+      statusFilter === "all"
+        ? await obtenerWalletsResumen()
+        : await obtenerWalletsMonetizacion({
+            status: statusFilter,
+            limit: monetizationLimit,
+            offset: 0,
+          });
+    const providerIds =
+      statusFilter === "all"
+        ? null
+        : wallets.map((item) => String(item.provider_id)).filter(Boolean);
     const now = Date.now();
     const since7d = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
     const since30d = new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString();
 
-    const [eventos7d, eventos30d] = await Promise.all([
-      obtenerEventosLeadDesde({ sinceIso: since7d }),
-      obtenerEventosLeadDesde({ sinceIso: since30d }),
+    const [
+      eventos7d,
+      eventos30d,
+      latestWallet,
+      latestLeadEvent,
+      latestFeedback,
+      latestProvider,
+      latestProviderService,
+    ] = await Promise.all([
+      obtenerEventosLeadDesde({ sinceIso: since7d, providerIds }),
+      obtenerEventosLeadDesde({ sinceIso: since30d, providerIds }),
+      obtenerUltimoRegistro({
+        table: "provider_lead_wallet",
+        select: "updated_at",
+        orderBy: "updated_at",
+      }),
+      obtenerUltimoRegistro({
+        table: "lead_events",
+        select: "created_at",
+        orderBy: "created_at",
+      }),
+      obtenerUltimoRegistro({
+        table: "lead_feedback",
+        select: "responded_at",
+        orderBy: "responded_at",
+      }),
+      obtenerUltimoRegistro({
+        table: supabaseProvidersTable,
+        select: "updated_at",
+        orderBy: "updated_at",
+      }),
+      obtenerUltimoRegistro({
+        table: "provider_services",
+        select: "updated_at",
+        orderBy: "updated_at",
+      }),
     ]);
 
     const feedback30d = await obtenerFeedbackPorLeadIds(
       eventos30d.map((item) => item.id).filter(Boolean),
     );
+    const feedbackByLeadId = agruparFeedbackPorLeadId(feedback30d);
+    const metrics30d = calcularMetricasLeads({
+      eventos: eventos30d,
+      feedbackByLeadId,
+    });
 
-    const hiredYes30d = feedback30d.filter(
-      (item) => item.hired === true,
-    ).length;
-    const hiredNo30d = feedback30d.filter(
-      (item) => item.hired === false,
-    ).length;
-    const totalFeedback30d = hiredYes30d + hiredNo30d;
-    const hiredRate30d =
-      totalFeedback30d > 0
-        ? Number((hiredYes30d / totalFeedback30d).toFixed(4))
-        : null;
-
-    const activeProviders = wallets.filter(
+    const activeWallets = wallets.filter(
       (w) => normalizarEstadoMonetizacion(w.billing_status) === "active",
     ).length;
-    const pausedProviders = wallets.filter(
+    const pausedWallets = wallets.filter(
       (w) =>
         normalizarEstadoMonetizacion(w.billing_status) === "paused_paywall",
     ).length;
 
     return {
-      activeProviders,
-      pausedProviders,
+      activeWallets,
+      pausedWallets,
       leadsShared7d: eventos7d.length,
-      leadsShared30d: eventos30d.length,
-      hiredYes30d,
-      hiredNo30d,
-      hiredRate30d,
+      leadsShared30d: metrics30d.leadsShared30d,
+      billableLeads30d: metrics30d.billableLeads30d,
+      paidLeads30d: metrics30d.paidLeads30d,
+      freeLeads30d: metrics30d.freeLeads30d,
+      feedbackResponses30d: metrics30d.feedbackResponses30d,
+      feedbackCoverage30d: metrics30d.feedbackCoverage30d,
+      hireRateOverSent30d: metrics30d.hireRateOverSent30d,
+      hireRateOverResponded30d: metrics30d.hireRateOverResponded30d,
+      averageRating30d: metrics30d.averageRating30d,
+      scopeStatus: statusFilter,
+      generatedAt: new Date().toISOString(),
+      latestWalletUpdateAt: toIsoUtc(latestWallet?.updated_at),
+      latestLeadEventAt: toIsoUtc(latestLeadEvent?.created_at),
+      latestFeedbackResponseAt: toIsoUtc(latestFeedback?.responded_at),
+      latestProviderUpdateAt: toIsoUtc(latestProvider?.updated_at),
+      latestProviderServiceUpdateAt: toIsoUtc(latestProviderService?.updated_at),
+      hasRecentLeadEvents30d: metrics30d.leadsShared30d > 0,
+      hasRecentFeedback30d: metrics30d.feedbackResponses30d > 0,
+      hiredYes30d: metrics30d.hiredYes30d,
+      hiredNo30d: metrics30d.hiredNo30d,
     };
   } catch (error) {
     throw gestionarErrorAxios(error);
@@ -1795,7 +1973,11 @@ async function obtenerMonetizacionProveedores({
   offset = 0,
 } = {}) {
   try {
-    const wallets = await obtenerWalletsMonetizacion({ status, limit, offset });
+    const wallets = await obtenerWalletsMonetizacion({
+      status: normalizarFiltroMonetizacion(status),
+      limit,
+      offset,
+    });
     const providerIds = wallets
       .map((item) => String(item.provider_id))
       .filter(Boolean);
@@ -1831,6 +2013,7 @@ async function obtenerMonetizacionProveedores({
         limit,
         offset,
         count: items.length,
+        total: items.length,
       },
     };
   } catch (error) {
@@ -1847,22 +2030,25 @@ async function obtenerMonetizacionProveedor(providerId) {
         name: "Proveedor no encontrado",
         phone: null,
         city: null,
-        billingStatus: "active",
+        billingStatus: "missing",
+        hasWallet: false,
         freeLeadsRemaining: 0,
         paidLeadsRemaining: 0,
         leadsShared30d: 0,
+        billableLeads30d: 0,
+        freeLeads30d: 0,
+        paidLeads30d: 0,
         hiredYes30d: 0,
         hiredNo30d: 0,
+        feedbackResponses30d: 0,
+        feedbackCoverage30d: null,
+        hireRateOverSent30d: null,
+        averageRating30d: null,
         lastLeadAt: null,
       };
     }
 
-    const wallet = (await obtenerWalletPorProviderId(id)) || {
-      provider_id: id,
-      free_leads_remaining: 0,
-      paid_leads_remaining: 0,
-      billing_status: "active",
-    };
+    const wallet = await obtenerWalletPorProviderId(id);
     const [providers, eventos30d] = await Promise.all([
       obtenerProveedoresPorIds([id]),
       obtenerEventosLeadDesde({

@@ -222,14 +222,19 @@ export async function obtenerResumenEstadosProveedores(): Promise<ProviderStatus
   );
 }
 
-export async function obtenerMonetizacionResumen(): Promise<MonetizationOverview> {
+export async function obtenerMonetizacionResumen(params?: {
+  status?: "all" | "active" | "paused_paywall";
+}): Promise<MonetizationOverview> {
+  const query = new URLSearchParams();
+  if (params?.status) query.set("status", params.status);
+  const suffix = query.toString() ? `?${query.toString()}` : "";
   return realizarSolicitudHttp<MonetizationOverview>(
-    `${RUTA_BASE}/monetization/overview`,
+    `${RUTA_BASE}/monetization/overview${suffix}`,
   );
 }
 
 export async function obtenerMonetizacionProveedores(params?: {
-  status?: "all" | "active" | "paused_paywall" | "suspended";
+  status?: "all" | "active" | "paused_paywall";
   limit?: number;
   offset?: number;
 }): Promise<MonetizationProvidersResponse> {

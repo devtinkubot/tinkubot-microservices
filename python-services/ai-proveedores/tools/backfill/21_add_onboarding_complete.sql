@@ -17,7 +17,6 @@ WHERE onboarding_step IN (
   'pending_verification',
   'awaiting_menu_option'
 )
-OR status = 'approved'
-OR verified = true;
+OR status = 'approved';
 
 COMMIT;

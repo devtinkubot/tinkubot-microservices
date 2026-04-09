@@ -254,7 +254,11 @@ async function resetearProveedorOnboarding(req, res) {
 
 async function obtenerMonetizacionResumen(req, res) {
   try {
-    const overview = await proveedoresBff.obtenerMonetizacionResumen();
+    const status =
+      typeof req.query.status === "string" ? req.query.status : "all";
+    const overview = await proveedoresBff.obtenerMonetizacionResumen({
+      status,
+    });
     res.json(overview);
   } catch (error) {
     const status = error?.status ?? 500;

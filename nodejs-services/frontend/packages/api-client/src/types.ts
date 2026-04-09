@@ -79,6 +79,7 @@ export interface ProviderRecord {
   fullName?: string | null;
   firstName?: string | null;
   lastName?: string | null;
+  onboardingComplete?: boolean | null;
   onboardingStep?: string | null;
   onboardingStepUpdatedAt?: string | null;
   documentFirstNames?: string | null;
@@ -175,16 +176,33 @@ export interface ProviderStatusOverviewResponse {
 export type MonetizationBillingStatus =
   | "active"
   | "paused_paywall"
-  | "suspended";
+  | "suspended"
+  | "missing";
 
 export interface MonetizationOverview {
-  activeProviders: number;
-  pausedProviders: number;
+  activeWallets: number;
+  pausedWallets: number;
   leadsShared7d: number;
   leadsShared30d: number;
+  billableLeads30d: number;
+  paidLeads30d: number;
+  freeLeads30d: number;
+  feedbackResponses30d: number;
+  feedbackCoverage30d: number | null;
+  hireRateOverSent30d: number | null;
+  hireRateOverResponded30d: number | null;
+  averageRating30d: number | null;
+  scopeStatus: "all" | "active" | "paused_paywall";
+  generatedAt: string;
+  latestWalletUpdateAt: string | null;
+  latestLeadEventAt: string | null;
+  latestFeedbackResponseAt: string | null;
+  latestProviderUpdateAt: string | null;
+  latestProviderServiceUpdateAt: string | null;
+  hasRecentLeadEvents30d: boolean;
+  hasRecentFeedback30d: boolean;
   hiredYes30d: number;
   hiredNo30d: number;
-  hiredRate30d: number | null;
 }
 
 export interface MonetizationProviderRecord {
@@ -193,11 +211,19 @@ export interface MonetizationProviderRecord {
   phone?: string | null;
   city?: string | null;
   billingStatus: MonetizationBillingStatus;
+  hasWallet: boolean;
   freeLeadsRemaining: number;
   paidLeadsRemaining: number;
   leadsShared30d: number;
+  billableLeads30d: number;
+  freeLeads30d: number;
+  paidLeads30d: number;
   hiredYes30d: number;
   hiredNo30d: number;
+  feedbackResponses30d: number;
+  feedbackCoverage30d: number | null;
+  hireRateOverSent30d: number | null;
+  averageRating30d: number | null;
   lastLeadAt?: string | null;
 }
 
@@ -207,5 +233,6 @@ export interface MonetizationProvidersResponse {
     limit: number;
     offset: number;
     count: number;
+    total?: number;
   };
 }

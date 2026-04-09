@@ -158,7 +158,6 @@ async def test_buscador_limita_validacion_a_candidatos_mas_relevantes(monkeypatc
                     "similarity_score": 0.80,
                     "classification_confidence": 1.0,
                     "rating": 4.8,
-                    "verified": True,
                 },
                 {
                     "id": "prov-2",
@@ -170,7 +169,6 @@ async def test_buscador_limita_validacion_a_candidatos_mas_relevantes(monkeypatc
                     "similarity_score": 0.76,
                     "classification_confidence": 1.0,
                     "rating": 5.0,
-                    "verified": True,
                 },
                 {
                     "id": "prov-3",
@@ -182,7 +180,6 @@ async def test_buscador_limita_validacion_a_candidatos_mas_relevantes(monkeypatc
                     "similarity_score": 0.78,
                     "classification_confidence": 1.0,
                     "rating": 4.9,
-                    "verified": True,
                 },
             ],
             "total": 3,

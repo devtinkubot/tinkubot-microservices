@@ -39,7 +39,6 @@ async def test_search_by_embeddings_envia_threshold_y_mapea_resultados(monkeypat
                         "full_name": "Proveedor Uno",
                         "city": "quito",
                         "rating": 4.8,
-                        "verified": True,
                         "experience_range": "5 a 10 años",
                         "created_at": datetime(2026, 3, 8),
                         "services": ["capitan de barco"],
@@ -70,7 +69,6 @@ async def test_search_by_embeddings_envia_threshold_y_mapea_resultados(monkeypat
     assert captured["fn_name"] == "match_provider_services"
     assert captured["params"]["similarity_threshold"] == 0.73
     assert captured["params"]["city_filter"] == "%quito%"
-    assert captured["params"]["verified_only"] is False
     assert len(providers) == 1
     assert providers[0].id == "prov-1"
     assert providers[0].services == ["capitan de barco"]
@@ -225,7 +223,6 @@ async def test_search_by_embeddings_prioriza_coincidencia_semantica_sobre_ruido(
                         "full_name": "Proveedor Tech",
                         "city": "Cuenca",
                         "rating": 4.6,
-                        "verified": True,
                         "experience_range": "5 a 10 años",
                         "created_at": datetime(2026, 3, 8),
                         "services": ["desarrollo de software"],
@@ -243,7 +240,6 @@ async def test_search_by_embeddings_prioriza_coincidencia_semantica_sobre_ruido(
                         "full_name": "Proveedor Ruido",
                         "city": "Cuenca",
                         "rating": 5.0,
-                        "verified": True,
                         "experience_range": "5 a 10 años",
                         "created_at": datetime(2026, 3, 8),
                         "services": ["renta de departamentos"],
@@ -311,7 +307,6 @@ async def test_search_by_embeddings_prioriza_diego_sobre_proveedor_mas_rankeado(
                         "full_name": "Augusto Zhinin Matute",
                         "city": "Cuenca",
                         "rating": 5.0,
-                        "verified": True,
                         "experience_range": "5 a 10 años",
                         "created_at": datetime(2026, 3, 8),
                         "services": [
@@ -332,7 +327,6 @@ async def test_search_by_embeddings_prioriza_diego_sobre_proveedor_mas_rankeado(
                         "full_name": "",
                         "city": "Cuenca",
                         "rating": 0.0,
-                        "verified": False,
                         "experience_range": None,
                         "created_at": datetime(2026, 3, 8),
                         "services": [
@@ -352,7 +346,6 @@ async def test_search_by_embeddings_prioriza_diego_sobre_proveedor_mas_rankeado(
     class _SupabaseStub:
         def rpc(self, fn_name, params):
             assert fn_name == "match_provider_services"
-            assert params["verified_only"] is False
             return _RpcCall()
 
     service.supabase = _SupabaseStub()

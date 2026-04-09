@@ -16,6 +16,7 @@ async def test_vista_onboarding_reconstruye_estado_desde_supabase(monkeypatch):
         return {
             "id": "prov-1",
             "status": "approved",
+            "onboarding_complete": True,
             "has_consent": True,
             "full_name": "",
             "city": "Quito",
@@ -51,6 +52,7 @@ async def test_vista_onboarding_aprobado_sigue_rehidratando_menu(
         return {
             "id": "prov-legacy",
             "status": "approved",
+            "onboarding_complete": True,
             "has_consent": True,
             "full_name": "",
             "city": "Quito",
@@ -76,6 +78,39 @@ async def test_vista_onboarding_aprobado_sigue_rehidratando_menu(
 
 
 @pytest.mark.asyncio
+async def test_vista_onboarding_aprobado_incompleto_rehidrata_checkpoint_remediacion(
+    monkeypatch,
+):
+    async def _fake_obtener_perfil(_telefono: str, **_kwargs):
+        return {
+            "id": "prov-incomplete",
+            "status": "approved",
+            "onboarding_complete": False,
+            "has_consent": True,
+            "full_name": "",
+            "city": "Quito",
+            "dni_front_photo_url": "dni-front",
+            "face_photo_url": "face-photo",
+            "experience_range": "",
+            "services_list": [],
+        }
+
+    monkeypatch.setattr(
+        "services.onboarding.vista.obtener_perfil_proveedor_cacheado",
+        _fake_obtener_perfil,
+    )
+
+    vista = await obtener_vista_onboarding(
+        telefono="593999111223@s.whatsapp.net",
+        flujo={},
+        perfil_proveedor=None,
+    )
+
+    assert vista["flujo"]["state"] == "onboarding_experience"
+    assert vista["checkpoint"] == "onboarding_experience"
+
+
+@pytest.mark.asyncio
 async def test_vista_onboarding_aprobado_sin_full_name_no_regresa_a_registro(
     monkeypatch,
 ):
@@ -83,6 +118,7 @@ async def test_vista_onboarding_aprobado_sin_full_name_no_regresa_a_registro(
         return {
             "id": "prov-2",
             "status": "approved",
+            "onboarding_complete": True,
             "has_consent": True,
             "full_name": "",
             "city": "Quito",

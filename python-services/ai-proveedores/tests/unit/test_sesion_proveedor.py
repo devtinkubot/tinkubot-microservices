@@ -224,6 +224,43 @@ def test_manejar_estado_inicial_aprobado_muestra_menu_interactivo():
     )
 
 
+def test_manejar_estado_inicial_aprobado_incompleto_reanuda_remediacion():
+    flujo = {
+        "has_consent": True,
+        "full_name": "Proveedor Aprobado",
+        "provider_id": "prov-approved-incomplete",
+    }
+    perfil = {
+        "id": "prov-approved-incomplete",
+        "status": "approved",
+        "onboarding_complete": False,
+        "has_consent": True,
+        "city": "Quito",
+        "dni_front_photo_url": "dni-front.jpg",
+        "face_photo_url": "face.jpg",
+        "experience_range": "",
+        "services_list": [],
+    }
+
+    respuesta = asyncio.run(
+        manejar_estado_inicial(
+            estado=None,
+            flujo=flujo,
+            perfil_proveedor=perfil,
+            provider_id="prov-approved-incomplete",
+            tiene_consentimiento=True,
+            esta_registrado=True,
+            esta_verificado=True,
+            telefono="593999111277@s.whatsapp.net",
+        )
+    )
+
+    assert respuesta is not None
+    assert flujo["state"] == "onboarding_experience"
+    assert flujo["mode"] == "registration"
+    assert "años de experiencia" in respuesta["messages"][0]["response"].lower()
+
+
 def test_manejar_aprobacion_reciente_notifica_una_sola_vez():
     flujo = {
         "state": "pending_verification",
@@ -431,13 +468,14 @@ def test_checkpoint_onboarding_detecta_perfil_completo():
     }
 
     assert es_perfil_onboarding_completo(perfil) is True
-    assert inferir_checkpoint_onboarding_desde_perfil(perfil) == "awaiting_menu_option"
+    assert inferir_checkpoint_onboarding_desde_perfil(perfil) == "pending_verification"
 
 
 def test_checkpoint_onboarding_aprobado_sin_full_name_sigue_en_menu():
     perfil = {
         "id": "prov-approved-empty-name",
         "full_name": "",
+        "onboarding_complete": True,
         "city": "cuenca",
         "dni_front_photo_url": "https://example.com/dni.jpg",
         "face_photo_url": "https://example.com/face.jpg",
@@ -449,6 +487,22 @@ def test_checkpoint_onboarding_aprobado_sin_full_name_sigue_en_menu():
 
     assert es_perfil_onboarding_completo(perfil) is True
     assert inferir_checkpoint_onboarding_desde_perfil(perfil) == "awaiting_menu_option"
+
+
+def test_checkpoint_onboarding_aprobado_incompleto_vuelve_a_remediacion():
+    perfil = {
+        "id": "prov-approved-incomplete",
+        "status": "approved",
+        "onboarding_complete": False,
+        "has_consent": True,
+        "city": "Quito",
+        "dni_front_photo_url": "dni-front.jpg",
+        "face_photo_url": "face.jpg",
+        "experience_range": "",
+        "services_list": [],
+    }
+
+    assert inferir_checkpoint_onboarding_desde_perfil(perfil) == "onboarding_experience"
 
 
 def test_checkpoint_onboarding_determina_persistencia_solo_en_onboarding():

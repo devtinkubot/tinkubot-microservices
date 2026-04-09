@@ -133,7 +133,6 @@ async def _buscar_ai_search(
         },
         "filters": {"city": "cuenca"},
     }
-    assert "verified_only" not in payload["filters"]
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(

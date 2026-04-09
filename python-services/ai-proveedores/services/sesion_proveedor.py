@@ -15,6 +15,18 @@ from services.review.state import (
     resolver_estado_registro as _resolver_estado_registro,
     sincronizar_flujo_con_perfil as _sincronizar_flujo_con_perfil,
 )
+from services.onboarding.progress import resolver_checkpoint_onboarding_desde_perfil
+from services.shared.estados_proveedor import es_proveedor_operativo
+from templates.onboarding import (
+    payload_experiencia_onboarding,
+    payload_onboarding_dni_frontal,
+    payload_onboarding_foto_perfil,
+    payload_preguntar_otro_servicio_onboarding,
+    payload_redes_sociales_onboarding_con_imagen,
+    payload_servicios_onboarding_con_imagen,
+    preguntar_real_phone,
+    solicitar_ciudad_registro,
+)
 from templates.onboarding.consentimiento import payload_consentimiento_proveedor
 
 
@@ -133,6 +145,40 @@ async def manejar_estado_inicial(
             flujo=flujo,
             provider_id=provider_id,
         )
+
+    if perfil_proveedor and not es_proveedor_operativo(perfil_proveedor):
+        checkpoint = (
+            resolver_checkpoint_onboarding_desde_perfil(perfil_proveedor)
+            or "onboarding_specialty"
+        )
+        flujo.update(
+            {
+                "state": checkpoint,
+                "mode": "registration",
+                "has_consent": True,
+                "esta_registrado": True,
+            }
+        )
+        if checkpoint == "onboarding_city":
+            prompt = solicitar_ciudad_registro()
+        elif checkpoint == "onboarding_dni_front_photo":
+            prompt = payload_onboarding_dni_frontal()
+        elif checkpoint == "onboarding_face_photo":
+            prompt = payload_onboarding_foto_perfil()
+        elif checkpoint == "onboarding_real_phone":
+            prompt = {"response": preguntar_real_phone()}
+        elif checkpoint == "onboarding_experience":
+            prompt = payload_experiencia_onboarding()
+        elif checkpoint == "onboarding_add_another_service":
+            prompt = payload_preguntar_otro_servicio_onboarding()
+        elif checkpoint == "onboarding_social_media":
+            prompt = payload_redes_sociales_onboarding_con_imagen()
+        else:
+            prompt = payload_servicios_onboarding_con_imagen()
+        return {
+            "success": True,
+            "messages": [prompt],
+        }
 
     # SÍ está registrado: establecer estado para menú de registrados
     flujo.update(

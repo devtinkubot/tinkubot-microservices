@@ -40,7 +40,6 @@ class ProviderInfo(BaseModel):
     city: Optional[str]
     rating: float
     available: bool
-    verified: bool
     services: List[str]
     service_summaries: Optional[List[str]] = None
     experience_range: Optional[str] = None

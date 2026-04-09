@@ -9,7 +9,6 @@ CREATE OR REPLACE FUNCTION public.match_provider_services(
     query_embedding vector,
     match_count integer,
     city_filter text DEFAULT NULL,
-    verified_only boolean DEFAULT false,
     similarity_threshold real DEFAULT 0.0
 )
 RETURNS TABLE(
@@ -20,7 +19,6 @@ RETURNS TABLE(
     full_name text,
     city text,
     rating double precision,
-    verified boolean,
     experience_range text,
     document_first_names text,
     document_last_names text,
@@ -48,7 +46,6 @@ AS $function$
             p.full_name,
             p.city,
             p.rating,
-            p.verified,
             p.experience_range,
             p.document_first_names,
             p.document_last_names,
@@ -84,8 +81,8 @@ AS $function$
         JOIN providers p ON p.id = ps.provider_id
         WHERE ps.service_embedding IS NOT NULL
           AND p.status = 'approved'
+          AND p.onboarding_complete = true
           AND (city_filter IS NULL OR p.city ILIKE city_filter)
-          AND (verified_only IS FALSE OR p.verified = TRUE)
     ),
     provider_services_agg AS (
         SELECT
@@ -103,7 +100,6 @@ AS $function$
         rm.full_name,
         rm.city,
         rm.rating,
-        rm.verified,
         rm.experience_range,
         rm.document_first_names,
         rm.document_last_names,

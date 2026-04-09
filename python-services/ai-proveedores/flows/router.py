@@ -24,9 +24,11 @@ from services.review.state import (
     resolver_estado_registro,
     sincronizar_flujo_con_perfil,
 )
+from services.onboarding.progress import resolver_checkpoint_onboarding_desde_perfil
 from services.shared import es_comando_reinicio
 from services.shared.estados_proveedor import (
     ONBOARDING_REANUDACION_STATES,
+    es_proveedor_operativo,
 )
 from services.shared.identidad_proveedor import (
     resolver_nombre_visible_proveedor,
@@ -180,12 +182,27 @@ async def _manejar_timeout_inactividad(
     elif esta_pendiente_timeout and not esta_verificado_timeout:
         flujo["state"] = "pending_verification"
     else:
-        flujo["state"] = "awaiting_menu_option"
-        mensajes_timeout.append(
-            construir_payload_menu_principal(
-                esta_registrado=esta_registrado_timeout,
+        es_operativo_timeout = es_proveedor_operativo(perfil_proveedor)
+        if esta_registrado_timeout and not es_operativo_timeout:
+            checkpoint = (
+                resolver_checkpoint_onboarding_desde_perfil(perfil_proveedor)
+                or "onboarding_specialty"
             )
-        )
+            flujo["state"] = checkpoint
+            flujo["mode"] = "registration"
+            mensajes_timeout.append(
+                _construir_reanudacion_onboarding(
+                    flujo,
+                    esta_registrado=False,
+                )["messages"][1]
+            )
+        else:
+            flujo["state"] = "awaiting_menu_option"
+            mensajes_timeout.append(
+                construir_payload_menu_principal(
+                    esta_registrado=esta_registrado_timeout,
+                )
+            )
 
     respuesta_timeout_contexto = await enrutar_estado(
         estado=flujo.get("state"),
@@ -271,16 +288,30 @@ async def _manejar_flujo_sin_estado(
         }
 
     if esta_registrado:
-        flujo["state"] = "awaiting_menu_option"
+        if es_proveedor_operativo(perfil_proveedor):
+            flujo["state"] = "awaiting_menu_option"
+            return {
+                "response": {
+                    "success": True,
+                    "messages": [
+                        construir_payload_menu_principal(
+                            esta_registrado=True,
+                        )
+                    ],
+                },
+                "persist_flow": True,
+            }
+        checkpoint = (
+            resolver_checkpoint_onboarding_desde_perfil(perfil_proveedor)
+            or "onboarding_specialty"
+        )
+        flujo["state"] = checkpoint
+        flujo["mode"] = "registration"
         return {
-            "response": {
-                "success": True,
-                "messages": [
-                    construir_payload_menu_principal(
-                        esta_registrado=True,
-                    )
-                ],
-            },
+            "response": _construir_reanudacion_onboarding(
+                flujo,
+                esta_registrado=False,
+            ),
             "persist_flow": True,
         }
 
@@ -383,6 +414,7 @@ async def manejar_mensaje(
         flujo.get("provider_id") or (perfil_proveedor or {}).get("id")
     )
     esta_verificado_contexto = resolver_estado_registro(flujo, perfil_proveedor)[2]
+    es_operativo_contexto = es_proveedor_operativo(perfil_proveedor)
     if (
         inactividad_reanudable
         and not mensaje_accionable
@@ -402,10 +434,17 @@ async def manejar_mensaje(
                 "new_flow": flujo,
                 "persist_flow": True,
             }
+        if esta_registrado_contexto and not es_operativo_contexto:
+            checkpoint = (
+                resolver_checkpoint_onboarding_desde_perfil(perfil_proveedor)
+                or "onboarding_specialty"
+            )
+            flujo["state"] = checkpoint
+            flujo["mode"] = "registration"
         return {
             "response": _construir_reanudacion_onboarding(
                 flujo,
-                esta_registrado=esta_registrado_contexto,
+                esta_registrado=esta_registrado_contexto and es_operativo_contexto,
             ),
             "new_flow": flujo,
             "persist_flow": True,
@@ -498,6 +537,19 @@ async def enrutar_estado(  # noqa: C901
             "response": construir_respuesta_solicitud_consentimiento(),
             "persist_flow": True,
         }
+
+    if (
+        estado == "awaiting_menu_option"
+        and esta_registrado
+        and perfil_proveedor
+        and not es_proveedor_operativo(perfil_proveedor)
+    ):
+        flujo["state"] = (
+            resolver_checkpoint_onboarding_desde_perfil(perfil_proveedor)
+            or "onboarding_specialty"
+        )
+        flujo["mode"] = "registration"
+        estado = flujo["state"]
 
     respuesta_onboarding = await manejar_contexto_onboarding(
         estado=estado,

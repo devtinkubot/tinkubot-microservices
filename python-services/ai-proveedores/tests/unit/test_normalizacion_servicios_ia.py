@@ -1078,7 +1078,6 @@ def test_asistente_clarificacion_usa_ejemplos_reales(monkeypatch):
         def rpc(self, fn_name, params):
             assert fn_name == "match_provider_services"
             assert params["match_count"] >= 8
-            assert "verified_only" not in params
             return _RpcQuery()
 
     async def _fake_run_supabase(operation, **_kwargs):

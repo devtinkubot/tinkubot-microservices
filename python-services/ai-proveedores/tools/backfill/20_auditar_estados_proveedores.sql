@@ -3,22 +3,20 @@
 -- No modifica datos. Sirve para detectar:
 -- - estados legacy todavía persistidos
 -- - checkpoints de onboarding fuera de la taxonomía actual
--- - inconsistencias entre status, verified, onboarding_complete y onboarding_step
+-- - inconsistencias entre status, onboarding_complete y onboarding_step
 
 select
   status,
-  verified,
   onboarding_complete,
   onboarding_step,
   count(*) as count
 from public.providers
-group by status, verified, onboarding_complete, onboarding_step
+group by status, onboarding_complete, onboarding_step
 order by count desc, status asc nulls first, onboarding_step asc nulls first;
 
 select
   id,
   status,
-  verified,
   onboarding_complete,
   onboarding_step,
   updated_at
@@ -55,7 +53,7 @@ where
   )
   or (
     status = 'pending'
-    and (verified = true or onboarding_complete = true)
+    and onboarding_complete = true
   )
 order by updated_at desc nulls last
 limit 500;
@@ -64,4 +62,4 @@ select
   count(*) as pending_needs_review
 from public.providers
 where status = 'pending'
-  and (verified = true or onboarding_complete = true);
+  and onboarding_complete = true;

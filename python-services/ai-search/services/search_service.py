@@ -560,7 +560,6 @@ class SearchService:
             "query_embedding": embedding,
             "match_count": match_count,
             "city_filter": f"%{city}%" if city else None,
-            "verified_only": False,
             "similarity_threshold": settings.vector_similarity_threshold,
         }
 
@@ -632,7 +631,6 @@ class SearchService:
             city=row.get("city"),
             rating=float(row.get("rating") or 5.0),
             available=self._normalize_available(row.get("available")),
-            verified=row.get("verified", False),
             services=services,
             service_summaries=row.get("service_summaries"),
             experience_range=row.get("experience_range"),

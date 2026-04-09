@@ -260,7 +260,6 @@ class ClienteBusqueda:
                 "city": proveedor.get("city"),
                 "rating": proveedor.get("rating") or 5.0,
                 "available": proveedor.get("available", True),
-                "verified": proveedor.get("verified", False),
                 "services": proveedor.get("services", []),
                 "service_summaries": proveedor.get("service_summaries"),
                 "years_of_experience": proveedor.get("years_of_experience"),
@@ -308,7 +307,6 @@ class ClienteBusqueda:
         """
         calificacion = proveedor.get("rating", 0.0)
         disponible = proveedor.get("available", True)
-        verificado = proveedor.get("verified", False)
 
         # Base: rating normalizado a 0-100
         puntaje = (calificacion / 5.0) * 100
@@ -316,8 +314,6 @@ class ClienteBusqueda:
         # Bonificaciones
         if disponible:
             puntaje += 20
-        if verificado:
-            puntaje += 10
 
         return min(100.0, puntaje)
 

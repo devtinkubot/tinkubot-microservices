@@ -2016,11 +2016,11 @@
                     id="monetization-section-title"
                     tabindex="-1"
                   >
-                    <i class="fas fa-coins me-2 text-warning"></i>
-                    Monetización (solo lectura)
+                    <i class="fas fa-wallet me-2 text-warning"></i>
+                    Wallets y Leads (solo lectura)
                   </h5>
                   <p class="text-muted small mb-0">
-                    Estado de saldos y desempeño de leads por proveedor.
+                    Panel operativo de saldos, consumo de leads y cobertura de feedback por proveedor.
                   </p>
                 </div>
                 <button
@@ -2039,17 +2039,24 @@
                 </button>
               </div>
 
+              <div class="alert alert-secondary small py-2 mb-3">
+                No muestra ingresos ni cobros. Las tasas de contratación se calculan sobre leads enviados o sobre respuestas registradas.
+                <span id="monetization-scope-note" class="d-block mt-1 text-muted"></span>
+                <span id="monetization-freshness-note" class="d-block mt-1 text-muted"></span>
+                <span id="monetization-health-note" class="d-block mt-1 text-muted"></span>
+              </div>
+
               <div class="row g-3 mb-3">
                 <div class="col-md-2">
                   <div class="border rounded p-2 bg-light">
-                    <small class="text-muted d-block">Activos</small>
-                    <strong id="metric-active-providers">—</strong>
+                    <small class="text-muted d-block">Wallets activas</small>
+                    <strong id="metric-active-wallets">—</strong>
                   </div>
                 </div>
                 <div class="col-md-2">
                   <div class="border rounded p-2 bg-light">
-                    <small class="text-muted d-block">Pausados</small>
-                    <strong id="metric-paused-providers">—</strong>
+                    <small class="text-muted d-block">Wallets pausadas</small>
+                    <strong id="metric-paused-wallets">—</strong>
                   </div>
                 </div>
                 <div class="col-md-2">
@@ -2066,8 +2073,26 @@
                 </div>
                 <div class="col-md-2">
                   <div class="border rounded p-2 bg-light">
-                    <small class="text-muted d-block">Hired rate</small>
-                    <strong id="metric-hired-rate-30d">—</strong>
+                    <small class="text-muted d-block">Leads pagados 30d</small>
+                    <strong id="metric-paid-leads-30d">—</strong>
+                  </div>
+                </div>
+                <div class="col-md-2">
+                  <div class="border rounded p-2 bg-light">
+                    <small class="text-muted d-block">Cobertura feedback</small>
+                    <strong id="metric-feedback-coverage-30d">—</strong>
+                  </div>
+                </div>
+                <div class="col-md-2">
+                  <div class="border rounded p-2 bg-light">
+                    <small class="text-muted d-block">Contratación / enviados</small>
+                    <strong id="metric-hire-rate-sent-30d">—</strong>
+                  </div>
+                </div>
+                <div class="col-md-2">
+                  <div class="border rounded p-2 bg-light">
+                    <small class="text-muted d-block">Rating prom. 30d</small>
+                    <strong id="metric-average-rating-30d">—</strong>
                   </div>
                 </div>
                 <div class="col-md-2">
@@ -2082,9 +2107,8 @@
                     id="monetization-status-filter"
                   >
                     <option value="all" selected>Todos</option>
-                    <option value="active">Activos</option>
-                    <option value="paused_paywall">Pausados</option>
-                    <option value="suspended">Suspendidos</option>
+                    <option value="active">Wallets activas</option>
+                    <option value="paused_paywall">Wallets pausadas</option>
                   </select>
                 </div>
               </div>
@@ -2101,14 +2125,14 @@
                 <div class="spinner-border text-primary" role="status">
                   <span class="visually-hidden">Cargando...</span>
                 </div>
-                <p class="mt-2 mb-0">Obteniendo datos de monetización...</p>
+                <p class="mt-2 mb-0">Obteniendo datos operativos de wallets y leads...</p>
               </div>
               <div
                 id="monetization-empty"
                 class="alert alert-info"
                 style="display: none"
               >
-                No hay datos de monetización para mostrar.
+                No hay wallets o actividad de leads para mostrar con el filtro actual.
               </div>
               <div
                 class="table-responsive"
@@ -2120,12 +2144,15 @@
                     <tr>
                       <th>Proveedor</th>
                       <th>Ciudad</th>
-                      <th>Estado</th>
-                      <th>Gratis</th>
-                      <th>Pagados</th>
-                      <th>Leads 30d</th>
-                      <th>Contrató (Sí/No)</th>
-                      <th>Último lead</th>
+                      <th>Estado wallet</th>
+                      <th>Saldo gratis</th>
+                      <th>Saldo pagado</th>
+                      <th>Paid 30d</th>
+                      <th>Free 30d</th>
+                      <th>Cobertura feedback</th>
+                      <th>Contrató / enviados</th>
+                      <th>Rating prom.</th>
+                      <th>Última actividad</th>
                     </tr>
                   </thead>
                   <tbody id="monetization-table-body"></tbody>

@@ -76,7 +76,6 @@ class ProveedorSeleccionado(BaseModel):
     city: Optional[str] = None
     rating: float = Field(default=5.0, ge=0.0, le=5.0)
     available: bool = True
-    verified: bool = False
     professions: List[str] = Field(default_factory=list)
     services: List[str] = Field(default_factory=list)
     years_of_experience: Optional[int] = None

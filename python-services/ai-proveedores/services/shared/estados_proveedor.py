@@ -99,6 +99,20 @@ def normalizar_estado_administrativo(
     return ESTADO_CANONICO_PENDIENTE
 
 
+def es_proveedor_operativo(
+    proveedor: Any = None,
+    *,
+    status: Optional[str] = None,
+    onboarding_complete: Optional[bool] = None,
+) -> bool:
+    """Regla única para determinar si un proveedor ya puede operar plenamente."""
+    estado = normalizar_estado_administrativo(proveedor, status=status)
+    completo = bool(
+        _extraer_campo(proveedor, "onboarding_complete", onboarding_complete)
+    )
+    return estado == ESTADO_CANONICO_APROBADO and completo
+
+
 def es_estado_onboarding(estado: Optional[str]) -> bool:
     return str(estado or "").strip() in STANDARD_ONBOARDING_STATES
 

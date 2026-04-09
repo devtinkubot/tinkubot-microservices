@@ -124,8 +124,7 @@ ON provider_search_index(city_normalized, is_active);
 SELECT * FROM match_provider_services(
     query_embedding := :embedding,
     match_count := 30,
-    city_filter := '%Quito%',
-    verified_only := false
+    city_filter := '%Quito%'
 );
 ```
 

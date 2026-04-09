@@ -48,7 +48,7 @@ SET
   onboarding_step_updated_at = timezone('utc'::text, now()),
   updated_at = timezone('utc'::text, now())
 WHERE status = 'pending'
-  AND verified = true;
+  AND onboarding_complete = true;
 
 UPDATE public.providers
 SET onboarding_step = CASE onboarding_step
