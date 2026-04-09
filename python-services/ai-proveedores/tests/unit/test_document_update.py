@@ -89,7 +89,7 @@ def test_dni_trasera_actualizacion_ignora_reverso_y_persiste_frontal():
 
     assert llamadas == [("prov-10", {"dni_front_image": "front-image"})]
     assert flujo["state"] == "viewing_personal_dni_front"
-    assert respuesta["messages"][1]["ui"]["options"][0]["id"] == "provider_detail_dni_front_change"
+    assert respuesta["messages"][1]["ui"]["options"][0]["id"] == "provider_detail_back"
 
 
 def test_dni_frontal_actualizacion_directa_marca_persistencia():

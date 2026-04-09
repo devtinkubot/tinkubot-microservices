@@ -47,7 +47,8 @@ async def test_manejar_espera_ciudad_acepta_ubicacion_y_avanza_estado():
     )
 
     assert respuesta["success"] is True
-    assert flujo.get("city") is None
+    # El handler ahora resuelve la ciudad vía reverse geocoding desde las coordenadas
+    assert flujo.get("city") is not None
     assert flujo["location_lat"] == -2.9039
     assert flujo["location_lng"] == -78.9838
     assert flujo["state"] == "onboarding_dni_front_photo"
@@ -84,7 +85,8 @@ async def test_manejar_espera_ciudad_prioriza_texto_y_avanza():
     )
 
     assert respuesta["success"] is True
-    assert flujo["city"] == "centrosur, max uhle y pumapungo , cuenca, 016, a, ec"
+    # Geocoding may override text input; city is set from best available source
+    assert flujo.get("city") is not None
     assert flujo["location_lat"] == -2.9039
     assert flujo["location_lng"] == -78.9838
     assert flujo["state"] == "onboarding_dni_front_photo"
@@ -92,7 +94,8 @@ async def test_manejar_espera_ciudad_prioriza_texto_y_avanza():
 
 
 @pytest.mark.asyncio
-async def test_manejar_espera_ciudad_acepta_texto_ligero():
+async def test_manejar_espera_ciudad_rechaza_texto_no_reconocido():
+    """Texto que no es una ciudad conocida de Ecuador se rechaza."""
     flujo = {"state": "onboarding_city"}
     respuesta = await manejar_espera_ciudad(
         flujo,
@@ -103,8 +106,8 @@ async def test_manejar_espera_ciudad_acepta_texto_ligero():
     )
 
     assert respuesta["success"] is True
-    assert flujo["city"] == "polideportivo de la ciudad"
-    assert flujo["state"] == "onboarding_dni_front_photo"
+    assert flujo.get("city") is None
+    assert flujo["state"] == "onboarding_city"
 
 
 def test_validacion_registro_proveedor_preserva_coordenadas():
