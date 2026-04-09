@@ -28,6 +28,7 @@ from pydantic import BaseModel, Field
 from services.availability.disponibilidad_admin import (
     router as router_disponibilidad_admin,
 )
+from services.metrics.router_metricas_admin import router as router_metricas_admin
 from services.maintenance.actualizar_perfil_profesional import (
     actualizar_perfil_profesional,
 )
@@ -104,6 +105,7 @@ app = FastAPI(
     version="2.0.0",
 )
 app.include_router(router_disponibilidad_admin)
+app.include_router(router_metricas_admin)
 
 
 class SolicitudInvalidacionCache(BaseModel):
