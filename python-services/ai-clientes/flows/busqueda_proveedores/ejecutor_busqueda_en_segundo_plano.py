@@ -241,6 +241,24 @@ async def ejecutar_busqueda_y_notificar_en_segundo_plano(
                     motivo="no_provider_available",
                 )
 
+        # Persistir búsqueda en service_requests (métricas de demanda)
+        try:
+            from datetime import datetime
+
+            supabase.table("service_requests").insert(
+                {
+                    "phone": telefono,
+                    "intent": "service_request",
+                    "profession": servicio,
+                    "location_city": ciudad,
+                    "requested_at": datetime.utcnow().isoformat(),
+                    "resolved_at": datetime.utcnow().isoformat(),
+                    "suggested_providers": proveedores_finales,
+                }
+            ).execute()
+        except Exception as exc:
+            logger.warning(f"No se pudo registrar service_request: {exc}")
+
         # Construir mensajes para enviar
         mensajes_por_enviar = await _construir_mensajes_resultados(
             proveedores_finales=proveedores_finales,
