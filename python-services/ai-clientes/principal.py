@@ -31,6 +31,18 @@ from services.seguridad.contenido import ModeradorContenido
 from services.orquestador_retrollamadas import OrquestadorRetrollamadas
 from services.respuesta_whatsapp import normalizar_respuesta_whatsapp
 
+# --- Deduplicación y concurrencia por teléfono ---
+_phone_locks: Dict[str, asyncio.Lock] = {}
+_MSG_SEEN_TTL = 300  # 5 minutos
+
+
+def _get_phone_lock(phone: str) -> asyncio.Lock:
+    """Obtiene o crea un asyncio.Lock por número de teléfono."""
+    if phone not in _phone_locks:
+        _phone_locks[phone] = asyncio.Lock()
+    return _phone_locks[phone]
+
+
 # Configurar logging
 logging.basicConfig(level=getattr(logging, configuracion.log_level))
 logger = logging.getLogger(__name__)
@@ -262,11 +274,42 @@ async def handle_whatsapp_message(payload: Dict[str, Any]):
 
     Este endpoint ahora delega toda la lógica de orquestación al
     OrquestadorConversacional, manteniendo solo la capa HTTP.
+
+    Incluye deduplicación por message_id (Redis) y serialización
+    por teléfono (asyncio.Lock) para evitar procesamiento duplicado
+    y race conditions de estado.
     """
+    # --- Deduplicación por message_id ---
+    message_id = payload.get("id") or ""
+    if message_id and redis_client._connected and redis_client.redis_client:
+        dedup_key = f"msg_seen:{message_id}"
+        try:
+            was_new = await redis_client.redis_client.set(
+                dedup_key, "1", nx=True, ex=_MSG_SEEN_TTL
+            )
+            if not was_new:
+                logger.info(
+                    "🔁 Mensaje duplicado ignorado message_id=%s from=%s",
+                    message_id,
+                    payload.get("from_number", "?"),
+                )
+                return {"messages": []}
+        except Exception as e:
+            logger.warning("⚠️ Dedup check failed, processing anyway: %s", e)
+
+    phone = payload.get("from_number") or payload.get("phone") or ""
+    lock = _get_phone_lock(phone) if phone else None
+
     try:
         if not payload.get("content") and payload.get("message"):
             payload["content"] = payload.get("message")
-        result = await orquestador.procesar_mensaje_whatsapp(payload)
+
+        if lock:
+            async with lock:
+                result = await orquestador.procesar_mensaje_whatsapp(payload)
+        else:
+            result = await orquestador.procesar_mensaje_whatsapp(payload)
+
         return normalizar_respuesta_whatsapp(result)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

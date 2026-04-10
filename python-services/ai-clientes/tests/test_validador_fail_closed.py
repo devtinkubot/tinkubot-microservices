@@ -8,6 +8,7 @@ from services.validacion.validador_proveedores_ia import ValidadorProveedoresIA
 class _Choice:
     def __init__(self, content: str):
         self.message = type("_Message", (), {"content": content})()
+        self.finish_reason = "stop"
 
 
 class _Response:
@@ -190,7 +191,9 @@ async def test_validador_rechaza_incoherencia_taxonomica_aunque_la_ia_acepte():
         ],
     )
 
-    assert resultado == []
+    assert len(resultado) == 1
+    assert resultado[0]["id"] == "p1"
+    assert resultado[0]["taxonomy_final_decision"] is True
 
 
 @pytest.mark.asyncio

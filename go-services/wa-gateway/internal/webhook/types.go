@@ -25,7 +25,8 @@ type WebhookPayload struct {
 	FlowPayload    map[string]any   `json:"flow_payload,omitempty"`
 	Location       *LocationPayload `json:"location,omitempty"`
 	Timestamp      string           `json:"timestamp"`
-	AccountID      string           `json:"account_id"` // "bot-clientes" or "bot-proveedores" - determines routing
+	MessageID      string           `json:"id,omitempty"`      // Meta message ID for idempotency
+	AccountID      string           `json:"account_id"`        // "bot-clientes" or "bot-proveedores" - determines routing
 	MediaBase64    string           `json:"media_base64,omitempty"`
 	MediaMimetype  string           `json:"media_mimetype,omitempty"`
 	MediaFilename  string           `json:"media_filename,omitempty"`

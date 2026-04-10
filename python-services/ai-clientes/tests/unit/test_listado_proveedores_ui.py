@@ -37,8 +37,8 @@ def test_construir_ui_lista_proveedores_limita_a_cinco():
 
 def test_construir_ui_lista_proveedores_usa_solo_primer_nombre():
     proveedores = [
-        {"id": "prov-1", "name": "Diego Unkuch Gonzalez"},
-        {"id": "prov-2", "name": "Jose Fernando Andrade Lazo"},
+        {"id": "prov-1", "full_name": "Diego Unkuch Gonzalez"},
+        {"id": "prov-2", "full_name": "Jose Fernando Andrade Lazo"},
     ]
 
     ui = construir_ui_lista_proveedores(proveedores)
@@ -73,8 +73,8 @@ def test_construir_ui_lista_sin_descripcion_cuando_no_hay_servicio():
 
 def test_bloque_listado_proveedores_compacto_usa_solo_primer_nombre():
     proveedores = [
-        {"id": "prov-1", "name": "Diego Unkuch Gonzalez"},
-        {"id": "prov-2", "name": "Jose Fernando Andrade Lazo"},
+        {"id": "prov-1", "full_name": "Diego Unkuch Gonzalez"},
+        {"id": "prov-2", "full_name": "Jose Fernando Andrade Lazo"},
     ]
 
     bloque = bloque_listado_proveedores_compacto(proveedores)

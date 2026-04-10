@@ -876,6 +876,7 @@ class ServicioDisponibilidad:
             if not lock_adquirido:
                 lock_busy_skip_count += 1
                 proveedores_ocupados.append(telefono)
+                candidatos_disponibles.pop(telefono, None)
                 logger.info(
                     (
                         "availability_lock_busy_skip req_id=%s "
@@ -900,6 +901,7 @@ class ServicioDisponibilidad:
             pendientes = self._decode_if_json_string(pendientes)
             if isinstance(pendientes, list) and pendientes:
                 proveedores_ocupados.append(telefono)
+                candidatos_disponibles.pop(telefono, None)
                 logger.info(
                     (
                         "availability_provider_excluded_busy req_id=%s "

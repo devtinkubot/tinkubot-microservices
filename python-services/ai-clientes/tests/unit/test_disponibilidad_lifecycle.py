@@ -185,7 +185,7 @@ async def test_timeout_envia_push_proactivo_de_caducidad():
 @pytest.mark.asyncio
 async def test_verificar_disponibilidad_cierra_si_todos_ocupados():
     servicio = ServicioDisponibilidad()
-    redis_falso = RedisFalso()
+    redis_falso = RedisFalsoConLock()
     redis_falso.data["availability:provider:593999000001@s.whatsapp.net:pending"] = [
         "req-previo"
     ]

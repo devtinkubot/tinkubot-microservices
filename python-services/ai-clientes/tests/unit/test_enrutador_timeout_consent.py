@@ -153,12 +153,9 @@ async def test_listado_expirado_reinicia_con_prompt_inicial(monkeypatch):
         orquestador, {"from_number": "593999111222@s.whatsapp.net"}
     )
 
-    assert orquestador.repositorio_flujo.last_saved["state"] == "awaiting_service"
-    assert respuesta["messages"][0]["response"] == "¿Te ayudo con otro servicio?"
-    assert (
-        respuesta["messages"][1]["response"]
-        == "*¿Qué necesitas resolver?*. Describe lo que necesitas."
-    )
+    assert orquestador.repositorio_flujo.last_saved["state"] == "confirm_new_search"
+    assert respuesta["messages"][0]["response"] == "*¿Te ayudo con otro servicio?*"
+    assert respuesta["messages"][0]["ui"]["type"] == "buttons"
 
 
 @pytest.mark.asyncio
@@ -182,12 +179,9 @@ async def test_detalle_proveedor_expirado_reinicia_con_prompt_inicial(monkeypatc
         orquestador, {"from_number": "593999111222@s.whatsapp.net"}
     )
 
-    assert orquestador.repositorio_flujo.last_saved["state"] == "awaiting_service"
-    assert respuesta["messages"][0]["response"] == "¿Te ayudo con otro servicio?"
-    assert (
-        respuesta["messages"][1]["response"]
-        == "*¿Qué necesitas resolver?*. Describe lo que necesitas."
-    )
+    assert orquestador.repositorio_flujo.last_saved["state"] == "confirm_new_search"
+    assert respuesta["messages"][0]["response"] == "*¿Te ayudo con otro servicio?*"
+    assert respuesta["messages"][0]["ui"]["type"] == "buttons"
 
 
 @pytest.mark.asyncio

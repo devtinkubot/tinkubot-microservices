@@ -37,7 +37,7 @@ def test_bloque_detalle_proveedor_usa_resumen_corto():
 def test_ui_detalle_proveedor_usa_lista_dinamica():
     ui = ui_detalle_proveedor(
         {
-            "name": "Diego Unkuch Gonzalez",
+            "full_name": "Diego Unkuch Gonzalez",
             "face_photo_url": "https://example.com/foto.jpg",
             "services": ["desarrollo de aplicaciones móviles"],
             "social_media_url": "https://linkedin.com/in/diego-unkuch",
@@ -50,7 +50,7 @@ def test_ui_detalle_proveedor_usa_lista_dinamica():
     assert ui["type"] == "list"
     assert ui["id"] == "provider_detail_menu_v1"
     assert ui["header_type"] == "text"
-    assert ui["header_text"] == "Diego Unkuch Gonzalez"
+    assert ui["header_text"] == "Diego"
     assert "footer_text" not in ui
     assert ui["list_button_text"] == "Ver detalles"
     assert [opt["id"] for opt in ui["options"]] == [

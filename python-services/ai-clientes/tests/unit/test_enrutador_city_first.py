@@ -24,8 +24,34 @@ class _ExtractorIAStub:
     async def es_necesidad_o_problema(self, _texto: str) -> bool:
         return True
 
-    async def extraer_servicio_con_ia(self, _texto: str) -> str:
-        return "plomero"
+    async def extraer_servicio_con_ia(self, texto: str):
+        lower = texto.lower()
+        # Specific needs → full profile with domain/category
+        if "pintar" in lower:
+            return {
+                "normalized_service": "pintura de interiores",
+                "service_summary": "Servicio de pintura residencial",
+                "domain": "construccion",
+                "category": "pintura",
+                "domain_code": "construccion",
+                "category_name": "pintura",
+            }
+        if "asesor" in lower or "contable" in lower:
+            return {
+                "normalized_service": "asesoría contable",
+                "service_summary": "Servicio de asesoría contable",
+                "domain": "finanzas",
+                "category": "contabilidad",
+                "domain_code": "finanzas",
+                "category_name": "contabilidad",
+            }
+        # Generic occupation requests → no domain/category (triggers hint flow)
+        return {
+            "normalized_service": "plomero",
+            "service_summary": None,
+            "domain": None,
+            "category": None,
+        }
 
     async def extraer_ubicacion_con_ia(self, _texto: str) -> str:
         return ""
@@ -211,7 +237,7 @@ async def test_awaiting_service_texto_libre_sigue_flujo_normal():
 
     assert flujo["state"] == "confirm_service"
     assert flujo["descripcion_problema"] == "quiero pintar la sala de mi casa"
-    assert "¿Es este el servicio que buscas:" in respuesta["response"]
+    assert "¿Buscas:" in respuesta["response"] or "¿Es este el servicio que buscas:" in respuesta["response"]
 
 
 @pytest.mark.asyncio

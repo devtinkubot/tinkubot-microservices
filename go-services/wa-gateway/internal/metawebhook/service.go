@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/tinkubot/wa-gateway/internal/webhook"
@@ -63,6 +64,7 @@ type Service struct {
 	sender          Sender
 	outboundSender  OutboundSender
 	mediaDownloader MediaDownloader
+	seenMessages    sync.Map // message_id -> time.Time for dedup
 }
 
 // Enabled reports whether webhook processing is active.
@@ -78,11 +80,29 @@ func NewService(cfg Config, sender Sender, outboundSender OutboundSender, mediaD
 	if cfg.PhoneNumberToAccount == nil {
 		cfg.PhoneNumberToAccount = map[string]string{}
 	}
-	return &Service{
+	svc := &Service{
 		cfg:             cfg,
 		sender:          sender,
 		outboundSender:  outboundSender,
 		mediaDownloader: mediaDownloader,
+	}
+	go svc.cleanupSeenMessages()
+	return svc
+}
+
+// cleanupSeenMessages removes stale entries from the dedup cache every 5 minutes.
+func (s *Service) cleanupSeenMessages() {
+	const ttl = 5 * time.Minute
+	ticker := time.NewTicker(ttl)
+	defer ticker.Stop()
+	for range ticker.C {
+		cutoff := time.Now().Add(-ttl)
+		s.seenMessages.Range(func(key, value any) bool {
+			if ts, ok := value.(time.Time); ok && ts.Before(cutoff) {
+				s.seenMessages.Delete(key)
+			}
+			return true
+		})
 	}
 }
 
@@ -176,6 +196,14 @@ func (s *Service) ProcessEvent(ctx context.Context, signature string, body []byt
 			log.Printf("[MetaWebhook] Account %s disabled by WA_META_ENABLED_ACCOUNTS", accountID)
 			continue
 		}
+		// Dedup: skip if this message_id was already processed
+		if msg.MessageID != "" {
+			if _, loaded := s.seenMessages.LoadOrStore(msg.MessageID, time.Now()); loaded {
+				log.Printf("[MetaWebhook] duplicate_skipped message_id=%s from=%s account=%s", msg.MessageID, msg.From, accountID)
+				continue
+			}
+		}
+
 		inboundTraceID := buildInboundTraceID(accountID, msg)
 
 		// Determine user identifier: prefer BSUID, fallback to phone number
@@ -235,6 +263,7 @@ func (s *Service) ProcessEvent(ctx context.Context, signature string, body []byt
 			SelectedOption: msg.SelectedOption,
 			FlowPayload:    msg.FlowPayload,
 			Timestamp:      time.Now().Format(time.RFC3339),
+			MessageID:      msg.MessageID,
 			AccountID:      accountID,
 		}
 		if msg.Location != nil {
