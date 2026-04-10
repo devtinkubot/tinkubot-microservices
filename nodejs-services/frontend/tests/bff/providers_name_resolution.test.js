@@ -240,7 +240,7 @@ test("obtenerProveedoresOnboarding incluye onboarding_real_phone en la cola", as
       llamadas.some((url) => url.includes("onboarding_real_phone")),
     );
     assert.ok(
-      llamadas.every((url) => !url.includes("onboarding_social_media")),
+      llamadas.some((url) => url.includes("onboarding_social_media")),
     );
   } finally {
     supabaseGet = async () => {

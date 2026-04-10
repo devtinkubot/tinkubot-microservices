@@ -20,6 +20,7 @@ const ONBOARDING_STEPS = [
   "onboarding_experience",
   "onboarding_specialty",
   "onboarding_add_another_service",
+  "onboarding_social_media",
   "onboarding_real_phone",
 ];
 const monetizationLimit =
