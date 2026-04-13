@@ -82,6 +82,11 @@ interface AccionProveedorOpciones {
   documentIdNumber?: string;
 }
 
+type ResultadoRevisionOpcion = {
+  value: ProviderRecord["status"];
+  label: string;
+};
+
 type ModalInstance = {
   show: () => void;
   hide: () => void;
@@ -575,7 +580,8 @@ function actualizarEncabezadoBucket() {
         "Proveedores aprobados o heredados que aún no quedan publicables. Aquí caen las irregularidades y casos por remediar.";
     }
     if (vacio) vacio.textContent = "No hay proveedores incompletos.";
-    if (textoCarga) textoCarga.textContent = "Obteniendo proveedores incompletos...";
+    if (textoCarga)
+      textoCarga.textContent = "Obteniendo proveedores incompletos...";
     return;
   }
 
@@ -1067,8 +1073,14 @@ function actualizarPerfilProfesional(proveedor: ProviderRecord) {
     : [];
   const reviewsUsadas = new Set<string>();
   const experienciaValor = proveedor.experienceRange?.trim() || "Sin definir";
-  const etiquetasRedes = [proveedor.facebookUsername, proveedor.instagramUsername]
-    .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+  const etiquetasRedes = [
+    proveedor.facebookUsername,
+    proveedor.instagramUsername,
+  ]
+    .filter(
+      (item): item is string =>
+        typeof item === "string" && item.trim().length > 0,
+    )
     .map((item) => `@${item.trim().replace(/^@+/, "")}`);
   const etiquetaRedSocial =
     etiquetasRedes.length > 0 ? etiquetasRedes.join(" · ") : null;
@@ -1173,24 +1185,24 @@ function actualizarFormularioPerfilProfesional(proveedor: ProviderRecord) {
   }
   if (botonEnviar) {
     botonEnviar.innerHTML = esEditable
-      ? '<i class="fas fa-save me-1"></i> Guardar perfil profesional'
+      ? '<i class="fas fa-paper-plane me-1"></i> Ejecutar resultado'
       : '<i class="fas fa-paper-plane me-1"></i> Guardar y notificar';
     botonEnviar.classList.toggle("btn-primary", !esEditable);
     botonEnviar.classList.toggle("btn-success", esEditable);
   }
   if (tituloRevision) {
     tituloRevision.textContent = esEditable
-      ? "Completar perfil profesional"
+      ? "Completar o resetear perfil profesional"
       : "Revisión administrativa del onboarding";
   }
   if (ayudaFooter) {
     ayudaFooter.textContent = esEditable
-      ? "Completa experiencia y servicios para mover al proveedor a Operativos."
-      : "Se notificará al proveedor vía WhatsApp con el resultado y el siguiente paso.";
+      ? "Completa experiencia y servicios para mover al proveedor a Operativos, o recházalo para ejecutar un reset fuerte."
+      : "Aprobar notificará el resultado por WhatsApp. Rechazar ejecutará un reset fuerte para que el proveedor vuelva a registrarse.";
   }
   if (checklistLabel && esEditable) {
     checklistLabel.textContent =
-      "La validación de identidad ya está completa. Solo falta completar el perfil profesional.";
+      "La identidad ya fue validada. Completa el perfil para aprobar o rechaza para reiniciar el registro.";
   }
 
   if (esEditable) {
@@ -1207,9 +1219,13 @@ function actualizarOpcionesResultadoRevision(_proveedor: ProviderRecord) {
   );
   if (!estadoSelect) return;
 
-  const opciones = [
-    { value: "approved", label: "Aprobar" },
-    { value: "rejected", label: "Rechazado" },
+  const esEditable = esPerfilProfesionalEditable(_proveedor);
+  const opciones: ResultadoRevisionOpcion[] = [
+    {
+      value: "approved",
+      label: esEditable ? "Completar perfil" : "Aprobar",
+    },
+    { value: "rejected", label: "Rechazar y resetear" },
   ];
 
   estadoSelect.innerHTML = [
@@ -1241,18 +1257,18 @@ function actualizarCopyRevision(_proveedor: ProviderRecord) {
   }
   if (tituloRevision) {
     tituloRevision.textContent = esEditable
-      ? "Completar perfil profesional"
+      ? "Completar o resetear perfil profesional"
       : "Validación administrativa";
   }
   if (checklist) {
     checklist.textContent = esEditable
-      ? "La validación de identidad ya está completa. Solo falta completar el perfil profesional."
+      ? "La identidad ya fue validada. Completa el perfil para aprobar o rechaza para reiniciar el registro."
       : "Confirmo que revisé la información, identidad y contacto del proveedor.";
   }
   if (ayudaFooter) {
     ayudaFooter.textContent = esEditable
-      ? "Completa experiencia y servicios para mover al proveedor a Operativos."
-      : "Se notificará al proveedor vía WhatsApp con el resultado y el siguiente paso.";
+      ? "Completa experiencia y servicios para mover al proveedor a Operativos, o recházalo para ejecutar un reset fuerte."
+      : "Aprobar notificará el resultado por WhatsApp. Rechazar ejecutará un reset fuerte para que el proveedor vuelva a registrarse.";
   }
 }
 
@@ -1295,32 +1311,38 @@ function actualizarVistaOperativo(_proveedor: ProviderRecord) {
   }
   if (botonEnviar) {
     botonEnviar.style.display = esOperativo ? "none" : "";
+    botonEnviar.innerHTML = esEditable
+      ? '<i class="fas fa-paper-plane me-1"></i> Ejecutar resultado'
+      : '<i class="fas fa-paper-plane me-1"></i> Guardar y notificar';
   }
   if (ayudaFooter) {
     ayudaFooter.textContent = esEditable
-      ? "Completa experiencia y servicios para mover al proveedor a Operativos."
+      ? "Completa experiencia y servicios para mover al proveedor a Operativos, o recházalo para ejecutar un reset fuerte."
       : esOperativo
         ? "Detalle operativo de solo lectura."
-        : "Se notificará al proveedor vía WhatsApp con el resultado y el siguiente paso.";
+        : "Aprobar notificará el resultado por WhatsApp. Rechazar ejecutará un reset fuerte para que el proveedor vuelva a registrarse.";
   }
   if (tituloRevision) {
     tituloRevision.textContent = esEditable
-      ? "Completar perfil profesional"
+      ? "Completar o resetear perfil profesional"
       : esOperativo
         ? "Detalle operativo"
         : "Revisión administrativa del onboarding";
   }
 
-  [
-    checkboxDocs,
-    selectorEstado,
-    inputRevisor,
-    inputNombres,
-    inputApellidos,
-    inputCedula,
-  ].forEach((elemento) => {
+  if (checkboxDocs) {
+    checkboxDocs.disabled = esOperativo || esEditable;
+    checkboxDocs.checked = esEditable;
+  }
+  if (selectorEstado) {
+    selectorEstado.disabled = esOperativo;
+  }
+  if (inputRevisor) {
+    inputRevisor.disabled = esOperativo;
+  }
+  [inputNombres, inputApellidos, inputCedula].forEach((elemento) => {
     if (elemento) {
-      elemento.disabled = esOperativo;
+      elemento.disabled = esOperativo || esEditable;
     }
   });
 }
@@ -1667,9 +1689,13 @@ async function ejecutarAccionSobreProveedor(
   mostrarErrorModal();
 
   try {
-    if (accion === "reset") {
+    const ejecutarReset = accion === "reset" || opciones.status === "rejected";
+
+    if (ejecutarReset) {
       const confirmado = window.confirm(
-        "¿Quieres reiniciar la operación activa de este proveedor? Se eliminará su avance actual y podrá registrarse nuevamente.",
+        opciones.status === "rejected"
+          ? "Este rechazo ejecutará un reset fuerte. Se eliminará el avance actual del proveedor y deberá registrarse nuevamente. ¿Deseas continuar?"
+          : "¿Quieres reiniciar la operación activa de este proveedor? Se eliminará su avance actual y podrá registrarse nuevamente.",
       );
       if (!confirmado) {
         return;
@@ -1685,9 +1711,13 @@ async function ejecutarAccionSobreProveedor(
       }
 
       mostrarAviso(
-        respuesta.message ?? "Reset administrativo ejecutado correctamente.",
+        respuesta.message ??
+          (opciones.status === "rejected"
+            ? "Proveedor rechazado y reseteado correctamente."
+            : "Reset administrativo ejecutado correctamente."),
         "success",
       );
+      cerrarModalRevision();
       await cargarProveedoresBucket();
       return;
     }
@@ -1773,7 +1803,24 @@ function manejarAccionModal() {
     "#provider-review-document-id-number",
   );
 
-  if (estado.bucketActivo === "profile_incomplete" && esPerfilProfesionalEditable(proveedor)) {
+  const estadoSeleccionado = (estadoSelect?.value ||
+    "") as ProviderRecord["status"];
+  const reviewer = revisorInput?.value.trim() ?? undefined;
+  const documentFirstNames = nombresInput?.value.trim() ?? "";
+  const documentLastNames = apellidosInput?.value.trim() ?? "";
+  const documentIdNumber = cedulaInput?.value.trim() ?? "";
+  const telefono = limpiarTelefono(
+    proveedor.contactPhone ?? proveedor.phone ?? "",
+  );
+  const esEditable = esPerfilProfesionalEditable(proveedor);
+
+  if (!estadoSeleccionado) {
+    mostrarErrorModal("Selecciona un resultado antes de continuar.");
+    estadoSelect?.focus();
+    return;
+  }
+
+  if (esEditable && estadoSeleccionado === "approved") {
     void (async () => {
       try {
         establecerAccionEnProceso(proveedor.id);
@@ -1787,22 +1834,6 @@ function manejarAccionModal() {
         establecerAccionEnProceso(null);
       }
     })();
-    return;
-  }
-
-  const estadoSeleccionado = (estadoSelect?.value ||
-    "") as ProviderRecord["status"];
-  const reviewer = revisorInput?.value.trim() ?? undefined;
-  const documentFirstNames = nombresInput?.value.trim() ?? "";
-  const documentLastNames = apellidosInput?.value.trim() ?? "";
-  const documentIdNumber = cedulaInput?.value.trim() ?? "";
-  const telefono = limpiarTelefono(
-    proveedor.contactPhone ?? proveedor.phone ?? "",
-  );
-
-  if (!estadoSeleccionado) {
-    mostrarErrorModal("Selecciona un resultado antes de continuar.");
-    estadoSelect?.focus();
     return;
   }
 

@@ -29,6 +29,11 @@ class _QueryEventos:
         self.captured.append(payload)
         return self
 
+    def upsert(self, payload, **_kwargs):
+        self.payload = payload
+        self.captured.append(payload)
+        return self
+
     def execute(self):
         return _Resultado([{"id": self.payload.get("id", "event-1")}])
 
@@ -183,8 +188,22 @@ def test_limpieza_onboarding_expira_72h_y_elimina(monkeypatch):
     assert resultado["deleted"] == 1
     assert eliminaciones[0][1] == "593959091325@s.whatsapp.net"
     assert sent_payloads[0]["payload"]["ui"]["template_name"] == (
-        "provider_onboarding_expired_72h_v1"
+        "provider_reset_v1"
     )
+    assert sent_payloads[0]["payload"]["response"] == (
+        "La informacion ingresada es insuficiente. "
+        "Si quieres retomar nuevamente, inicia un nuevo registro."
+    )
+    assert sent_payloads[0]["payload"]["ui"]["template_components"][0] == {
+        "type": "body",
+        "parameters": [],
+    }
+    assert sent_payloads[0]["payload"]["ui"]["template_components"][1] == {
+        "type": "button",
+        "sub_type": "quick_reply",
+        "index": "0",
+        "parameters": [{"type": "payload", "payload": "registro"}],
+    }
     assert eventos_insertados[0]["event_type"] == "expired_72h"
     assert eventos_insertados[0]["metadata"]["deleted_from_db"] is True
 

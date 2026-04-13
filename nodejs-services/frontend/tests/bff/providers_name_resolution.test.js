@@ -250,7 +250,7 @@ test("obtenerProveedoresOnboarding incluye onboarding_real_phone en la cola", as
 });
 
 test(
-  "obtenerProveedoresPerfilProfesionalIncompleto agrupa irregularidades fuera de onboarding, revisión y operación",
+  "obtenerProveedoresPerfilProfesionalIncompleto solo incluye aprobados incompletos fuera de onboarding, revisión y operación",
   async () => {
     const llamadas = [];
     supabaseGet = async (url) => {
@@ -294,6 +294,14 @@ test(
               has_consent: true,
               experience_range: "1-3 años",
               provider_services: [{ service_name: "Electricidad", display_order: 0 }],
+            },
+            {
+              id: "provider-rejected",
+              status: "rejected",
+              onboarding_complete: true,
+              display_name: "Proveedor rechazado",
+              city: "Loja",
+              has_consent: true,
             },
           ],
         };

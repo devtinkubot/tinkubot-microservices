@@ -157,8 +157,10 @@ async def _registrar_evento(
         "metadata": metadata,
     }
     await run_supabase(
-        lambda: supabase.table(TABLA_EVENTOS).insert(payload).execute(),
-        label=f"{TABLA_EVENTOS}.insert_manual_reset",
+        lambda: supabase.table(TABLA_EVENTOS)
+        .upsert(payload, on_conflict="provider_id,event_type")
+        .execute(),
+        label=f"{TABLA_EVENTOS}.upsert_manual_reset",
     )
 
 
@@ -188,6 +190,10 @@ async def reiniciar_onboarding_proveedor(
 ) -> Dict[str, Any]:
     """Ejecuta un reset fuerte de onboarding para un proveedor."""
     provider_id_limpio = (provider_id or "").strip()
+    logger.info(
+        "↩️ Iniciando reset administrativo provider_id=%s",
+        provider_id_limpio or "<vacio>",
+    )
     resultado = {
         "success": False,
         "providerId": provider_id_limpio,
@@ -255,6 +261,12 @@ async def reiniciar_onboarding_proveedor(
             metadata=metadata_base,
         )
 
+        logger.info(
+            "📨 Reset administrativo enviando template=%s provider_id=%s phone=%s",
+            "provider_reset_v1",
+            provider_id_limpio,
+            provider_phone,
+        )
         envio_ok = await _enviar_whatsapp(
             whatsapp_url,
             whatsapp_account_id,
@@ -276,6 +288,13 @@ async def reiniciar_onboarding_proveedor(
             supabase,
             str(registro.get("phone") or ""),
             provider_id=provider_id_limpio,
+        )
+        logger.info(
+            "🧾 Resultado eliminación reset provider_id=%s success=%s deleted_from_db=%s deleted_from_cache=%s",
+            provider_id_limpio,
+            eliminacion.get("success"),
+            eliminacion.get("deleted_from_db"),
+            eliminacion.get("deleted_from_cache"),
         )
         if not eliminacion.get("success"):
             metadata_base["phase"] = "delete_failed"
@@ -332,6 +351,11 @@ async def reiniciar_onboarding_proveedor(
                     "El proveedor puede registrarse nuevamente."
                 ),
             }
+        )
+        logger.info(
+            "✅ Reset administrativo completado provider_id=%s phone=%s",
+            provider_id_limpio,
+            provider_phone,
         )
         return resultado
     except Exception as exc:

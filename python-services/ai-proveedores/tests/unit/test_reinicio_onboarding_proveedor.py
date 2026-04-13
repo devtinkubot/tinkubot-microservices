@@ -30,6 +30,12 @@ class _Query:
         self.captured.append((self.table_name, "insert", payload))
         return self
 
+    def upsert(self, payload, **_kwargs):
+        self.operation = "upsert"
+        self.payload = payload
+        self.captured.append((self.table_name, "upsert", payload))
+        return self
+
     def update(self, payload):
         self.operation = "update"
         self.payload = payload
@@ -129,13 +135,27 @@ def test_reinicio_onboarding_proveedor_envia_72h_y_elimina(monkeypatch):
     assert resultado["deleted_from_db"] is True
     assert resultado["sent_whatsapp"] is True
     assert sent_payloads[0]["payload"]["ui"]["template_name"] == (
-        "provider_onboarding_expired_72h_v1"
+        "provider_reset_v1"
     )
+    assert sent_payloads[0]["payload"]["response"] == (
+        "La informacion ingresada es insuficiente. "
+        "Si quieres retomar nuevamente, inicia un nuevo registro."
+    )
+    assert sent_payloads[0]["payload"]["ui"]["template_components"][0] == {
+        "type": "body",
+        "parameters": [],
+    }
+    assert sent_payloads[0]["payload"]["ui"]["template_components"][1] == {
+        "type": "button",
+        "sub_type": "quick_reply",
+        "index": "0",
+        "parameters": [{"type": "payload", "payload": "registro"}],
+    }
     assert eliminaciones[0]["provider_id"] == "prov-1"
     assert eliminaciones[0]["telefono"] == "593959091325@s.whatsapp.net"
     assert any(
         entry[0] == "provider_onboarding_lifecycle_events"
-        and entry[1] == "insert"
+        and entry[1] == "upsert"
         for entry in captured
     )
     assert any(

@@ -1777,7 +1777,7 @@
 
                   <div class="provider-detail-section provider-review-form">
                     <h6 id="provider-review-section-title">
-                      Revisión administrativa del onboarding
+                      Validación administrativa
                     </h6>
                     <div id="provider-review-controls-section">
                       <div class="mb-3">
@@ -1843,8 +1843,9 @@
                     class="text-muted small"
                     id="provider-review-footer-help"
                   >
-                    Se notificará al proveedor vía WhatsApp con el resultado y
-                    el siguiente paso.
+                    Aprobar notificará el resultado por WhatsApp. Rechazar
+                    ejecutará un reset fuerte para que el proveedor vuelva a
+                    registrarse.
                   </div>
                   <div class="d-flex gap-2">
                     <button
@@ -2020,7 +2021,8 @@
                     Wallets y Leads (solo lectura)
                   </h5>
                   <p class="text-muted small mb-0">
-                    Panel operativo de saldos, consumo de leads y cobertura de feedback por proveedor.
+                    Panel operativo de saldos, consumo de leads y cobertura de
+                    feedback por proveedor.
                   </p>
                 </div>
                 <button
@@ -2040,10 +2042,20 @@
               </div>
 
               <div class="alert alert-secondary small py-2 mb-3">
-                No muestra ingresos ni cobros. Las tasas de contratación se calculan sobre leads enviados o sobre respuestas registradas.
-                <span id="monetization-scope-note" class="d-block mt-1 text-muted"></span>
-                <span id="monetization-freshness-note" class="d-block mt-1 text-muted"></span>
-                <span id="monetization-health-note" class="d-block mt-1 text-muted"></span>
+                No muestra ingresos ni cobros. Las tasas de contratación se
+                calculan sobre leads enviados o sobre respuestas registradas.
+                <span
+                  id="monetization-scope-note"
+                  class="d-block mt-1 text-muted"
+                ></span>
+                <span
+                  id="monetization-freshness-note"
+                  class="d-block mt-1 text-muted"
+                ></span>
+                <span
+                  id="monetization-health-note"
+                  class="d-block mt-1 text-muted"
+                ></span>
               </div>
 
               <div class="row g-3 mb-3">
@@ -2085,7 +2097,9 @@
                 </div>
                 <div class="col-md-2">
                   <div class="border rounded p-2 bg-light">
-                    <small class="text-muted d-block">Contratación / enviados</small>
+                    <small class="text-muted d-block"
+                      >Contratación / enviados</small
+                    >
                     <strong id="metric-hire-rate-sent-30d">—</strong>
                   </div>
                 </div>
@@ -2125,14 +2139,17 @@
                 <div class="spinner-border text-primary" role="status">
                   <span class="visually-hidden">Cargando...</span>
                 </div>
-                <p class="mt-2 mb-0">Obteniendo datos operativos de wallets y leads...</p>
+                <p class="mt-2 mb-0">
+                  Obteniendo datos operativos de wallets y leads...
+                </p>
               </div>
               <div
                 id="monetization-empty"
                 class="alert alert-info"
                 style="display: none"
               >
-                No hay wallets o actividad de leads para mostrar con el filtro actual.
+                No hay wallets o actividad de leads para mostrar con el filtro
+                actual.
               </div>
               <div
                 class="table-responsive"

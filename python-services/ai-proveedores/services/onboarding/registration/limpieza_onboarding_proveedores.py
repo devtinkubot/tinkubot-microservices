@@ -197,8 +197,10 @@ async def _registrar_evento(
         "metadata": metadata or {},
     }
     await run_supabase(
-        lambda: supabase.table(TABLA_EVENTOS).insert(payload).execute(),
-        label=f"{TABLA_EVENTOS}.insert_{event_type}",
+        lambda: supabase.table(TABLA_EVENTOS)
+        .upsert(payload, on_conflict="provider_id,event_type")
+        .execute(),
+        label=f"{TABLA_EVENTOS}.upsert_{event_type}",
     )
 
 

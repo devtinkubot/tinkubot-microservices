@@ -263,6 +263,7 @@ const esProveedorOperativo = (proveedor) =>
 const esProveedorPerfilProfesionalPendiente = (proveedor) =>
   Boolean(
     proveedor &&
+    proveedor.status === "approved" &&
     !esProveedorEnOnboarding(proveedor) &&
     !esProveedorEnRevisionPendiente(proveedor) &&
     !esProveedorOperativo(proveedor),
@@ -1107,6 +1108,21 @@ const obtenerProveedoresOperativosSupabase = async () => {
   });
 };
 
+const verificarCedulaDuplicada = async (documentIdNumber, excludeProviderId) => {
+  if (!supabaseClient || !documentIdNumber) return null;
+  try {
+    const ruta = `${supabaseProvidersTable}?document_id_number=eq.${encodeURIComponent(documentIdNumber)}&status=eq.approved&id=neq.${encodeURIComponent(excludeProviderId)}&select=id,phone,document_first_names,document_last_names&limit=1`;
+    const response = await supabaseClient.get(ruta);
+    const datos = response.data;
+    if (Array.isArray(datos) && datos.length > 0) {
+      return datos[0];
+    }
+    return null;
+  } catch {
+    return null;
+  }
+};
+
 const construirRutaSupabasePorId = (providerId) => {
   const encodedId = encodeURIComponent(providerId);
   return `${supabaseProvidersTable}?id=eq.${encodedId}&select=*,provider_services(service_name,service_name_normalized,raw_service_text,service_summary,domain_code,category_name,classification_confidence,display_order),provider_certificates(id,file_url,display_order,status,created_at,updated_at)`;
@@ -1376,6 +1392,21 @@ async function revisarProveedor(providerId, payload = {}, requestId = null) {
         message:
           "Completa nombres, apellidos y cédula antes de aprobar el proveedor.",
       };
+    }
+
+    if (estadoFinal === "approved" && documentIdNumber) {
+      const duplicado = await verificarCedulaDuplicada(
+        documentIdNumber,
+        providerId,
+      );
+      if (duplicado) {
+        return {
+          providerId,
+          status: "pending",
+          updatedAt: timestamp,
+          message: `La cédula ${documentIdNumber} ya pertenece a otro proveedor aprobado: ${duplicado.document_first_names} ${duplicado.document_last_names} (${duplicado.phone}). No se puede aprobar con una cédula duplicada.`,
+        };
+      }
     }
 
     if (estadoFinal === "approved") {
