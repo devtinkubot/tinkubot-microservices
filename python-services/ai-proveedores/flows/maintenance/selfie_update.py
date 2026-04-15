@@ -1,4 +1,4 @@
-"""Manejador del estado awaiting_face_photo_update."""
+"""Manejador del estado maintenance_face_photo_update."""
 
 from typing import Any, Dict, Optional
 

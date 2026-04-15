@@ -4,15 +4,16 @@ import types
 from pathlib import Path
 
 imghdr_stub = types.ModuleType("imghdr")
-imghdr_stub.what = lambda *args, **kwargs: None
+setattr(imghdr_stub, "what", lambda *args, **kwargs: None)
 sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import routes.maintenance.handlers.social as modulo_social  # noqa: E402
+from flows.maintenance.experience_step import manejar_espera_experiencia  # noqa: E402
 
 
 def test_mantenimiento_social_reclama_alias_legacy(monkeypatch):
-    flujo = {"state": "awaiting_social_media"}
+    flujo = {"state": "maintenance_social_media"}
     llamadas = []
 
     def _fake_espera_red_social(*args, **kwargs):
@@ -28,7 +29,7 @@ def test_mantenimiento_social_reclama_alias_legacy(monkeypatch):
     resultado = asyncio.run(
         modulo_social.manejar_redes_mantenimiento(
             flujo=flujo,
-            estado="awaiting_social_media",
+            estado="maintenance_social_media",
             texto_mensaje="facebook",
             carga={"selected_option": None},
             supabase=None,
@@ -69,3 +70,31 @@ def test_mantenimiento_social_update_se_mantiene_en_redes(monkeypatch):
     assert resultado["persist_flow"] is True
     assert resultado["response"]["messages"][0]["response"] == "update"
     assert llamadas[0]["flujo"] is flujo
+
+
+def test_mantenimiento_social_avanza_a_dni_frontal_canonicamente():
+    flujo = {"state": "maintenance_social_facebook_username"}
+
+    resultado = modulo_social.manejar_espera_red_social(
+        flujo=flujo,
+        texto_mensaje="@mi_usuario",
+        selected_option=None,
+    )
+
+    assert resultado["success"] is True
+    assert flujo["state"] == "maintenance_dni_front_photo_update"
+
+
+def test_mantenimiento_experiencia_avanza_a_social_canonicamente():
+    flujo = {"state": "maintenance_experience"}
+
+    resultado = asyncio.run(
+        manejar_espera_experiencia(
+            flujo=flujo,
+            texto_mensaje="3 anios",
+            selected_option=None,
+        )
+    )
+
+    assert resultado["success"] is True
+    assert flujo["state"] == "maintenance_social_media"

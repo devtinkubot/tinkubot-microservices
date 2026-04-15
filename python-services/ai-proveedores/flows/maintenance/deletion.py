@@ -1,4 +1,4 @@
-"""Manejador del estado awaiting_deletion_confirmation."""
+"""Manejador del estado maintenance_deletion_confirmation."""
 
 from typing import Any, Dict
 

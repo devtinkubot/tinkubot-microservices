@@ -99,15 +99,16 @@ para mover reglas de negocio que pertenezcan a un solo contexto.
 Estos módulos siguen vivos porque todavía hay rutas o tests que los referencian. No se deben borrar sin una pasada de compatibilidad:
 
 - `flows/maintenance/document_update.py`
-- `flows/maintenance/wait_experience.py`
-- `flows/maintenance/wait_social.py`
-- `flows/maintenance/wait_name.py`
+- `flows/maintenance/certificate_step.py` (antes `wait_certificate.py`)
+- `flows/maintenance/experience_step.py` (antes `wait_experience.py`)
+- `flows/maintenance/social_step.py` (antes `wait_social.py`)
+- `flows/maintenance/name_step.py` (antes `wait_name.py`)
 - `flows/maintenance/services_confirmation.py`
 - `flows/maintenance/confirmation.py`
 - `tests/unit/test_document_update.py`
 - `tests/unit/test_consentimiento_interactive.py`
 
-`wait_social.py` sigue siendo un puente de perfil y completado post-alta, no un paso de onboarding puro.
+`social_step.py` sigue siendo un puente de perfil y completado post-alta, no un paso de onboarding puro.
 
 ### Estados canónicos actuales
 

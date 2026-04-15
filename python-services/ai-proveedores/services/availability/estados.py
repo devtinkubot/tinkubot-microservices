@@ -7,12 +7,17 @@ from services.shared.estados_proveedor import (
     STANDARD_ONBOARDING_STATES,
 )
 
-ESTADO_ESPERANDO_DISPONIBILIDAD = "awaiting_availability_response"
+ESTADO_DISPONIBILIDAD_PENDIENTE_RESPUESTA = "availability_pending_response"
+ESTADO_ESPERANDO_DISPONIBILIDAD = ESTADO_DISPONIBILIDAD_PENDIENTE_RESPUESTA
+ESTADO_DISPONIBILIDAD_PENDIENTE_RESPUESTA_LEGACY = "awaiting_availability_response"
+ESTADO_REVISION_PENDIENTE = "review_pending_verification"
+ESTADO_REVISION_PENDIENTE_LEGACY = "pending_verification"
+
 MANUAL_PHONE_FALLBACK_STATES = frozenset({"onboarding_real_phone"})
 ONBOARDING_STATES = frozenset(
     STANDARD_ONBOARDING_STATES
     | MANUAL_PHONE_FALLBACK_STATES
-    | {"pending_verification", "confirm"}
+    | {ESTADO_REVISION_PENDIENTE, "confirm"}
 )
 MENU_STATES = MENU_POST_REGISTRO_STATES
 PROFILE_COMPLETION_STATES = frozenset(
@@ -60,9 +65,27 @@ MEDIA_STATES = frozenset(
 )
 
 FLOJO_ACTIVO_ESTADOS = frozenset(
-    ONBOARDING_STATES | MENU_STATES | PROFILE_COMPLETION_STATES
+    ONBOARDING_STATES
+    | MENU_STATES
+    | PROFILE_COMPLETION_STATES
+    | MEDIA_STATES
+    | {ESTADO_DISPONIBILIDAD_PENDIENTE_RESPUESTA}
 )
 
 
+def normalizar_estado_disponibilidad(estado: Optional[str]) -> str:
+    texto = str(estado or "").strip()
+    if texto == ESTADO_DISPONIBILIDAD_PENDIENTE_RESPUESTA_LEGACY:
+        return ESTADO_DISPONIBILIDAD_PENDIENTE_RESPUESTA
+    return texto
+
+
+def normalizar_estado_flujo(estado: Optional[str]) -> str:
+    texto = normalizar_estado_disponibilidad(estado)
+    if texto == ESTADO_REVISION_PENDIENTE_LEGACY:
+        return ESTADO_REVISION_PENDIENTE
+    return texto
+
+
 def es_estado_flujo_activo(estado: Optional[str]) -> bool:
-    return estado in FLOJO_ACTIVO_ESTADOS
+    return normalizar_estado_flujo(estado) in FLOJO_ACTIVO_ESTADOS

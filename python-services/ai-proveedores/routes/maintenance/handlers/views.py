@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional
 
 from flows.maintenance.views import manejar_vista_perfil
 
+
 async def manejar_vistas_mantenimiento(
     *,
     flujo: Dict[str, Any],
@@ -36,6 +37,7 @@ async def manejar_vistas_mantenimiento(
             flujo=flujo,
             estado=estado,
             texto_mensaje=texto_mensaje,
+            selected_option=selected_option,
             proveedor_id=flujo.get("provider_id"),
         ),
         "persist_flow": True,

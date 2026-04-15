@@ -18,7 +18,7 @@ from templates.maintenance.documentos import payload_onboarding_dni_frontal
 
 def manejar_inicio_documentos(flujo: Dict[str, Any]) -> Dict[str, Any]:
     """Inicia el flujo de documentación."""
-    flujo["state"] = "awaiting_city"
+    flujo["state"] = "maintenance_city"
     return {
         "success": True,
         "messages": [solicitar_ciudad_actualizacion()],
@@ -27,7 +27,7 @@ def manejar_inicio_documentos(flujo: Dict[str, Any]) -> Dict[str, Any]:
 
 def manejar_inicio_actualizacion_documentos(flujo: Dict[str, Any]) -> Dict[str, Any]:
     """Inicia flujo post-registro de actualización de cédula."""
-    flujo["state"] = "awaiting_dni_front_photo_update"
+    flujo["state"] = "maintenance_dni_front_photo_update"
     return {
         "success": True,
         "messages": [{"response": solicitar_dni_actualizacion()}],

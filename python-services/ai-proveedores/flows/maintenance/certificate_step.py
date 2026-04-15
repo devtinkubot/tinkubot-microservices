@@ -1,4 +1,4 @@
-"""Manejador del estado awaiting_certificate."""
+"""Manejador del estado maintenance_certificate."""
 
 from typing import Any, Dict
 

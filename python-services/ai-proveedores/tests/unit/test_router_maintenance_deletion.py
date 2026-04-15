@@ -4,7 +4,7 @@ import types
 from pathlib import Path
 
 imghdr_stub = types.ModuleType("imghdr")
-imghdr_stub.what = lambda *args, **kwargs: None
+setattr(imghdr_stub, "what", lambda *args, **kwargs: None)
 sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -13,7 +13,7 @@ from routes.maintenance import manejar_eliminacion_proveedor  # noqa: E402
 
 
 def test_mantenimiento_eliminacion_delega_al_handler(monkeypatch):
-    flujo = {"state": "awaiting_deletion_confirmation"}
+    flujo = {"state": "maintenance_deletion_confirmation"}
     llamadas = []
 
     async def _fake_confirmar_eliminacion(**kwargs):

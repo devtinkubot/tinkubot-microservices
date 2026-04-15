@@ -1,5 +1,6 @@
 """Flujos de mantenimiento del proveedor."""
 
+from .certificate_step import manejar_espera_certificado
 from .confirmation import manejar_confirmacion
 from .deletion import manejar_confirmacion_eliminacion
 from .document_update import (
@@ -8,11 +9,13 @@ from .document_update import (
     manejar_inicio_actualizacion_documentos,
     manejar_inicio_documentos,
 )
+from .experience_step import manejar_espera_experiencia
 from .menu import (
     manejar_estado_menu,
     manejar_submenu_informacion_personal,
     manejar_submenu_informacion_profesional,
 )
+from .name_step import manejar_espera_nombre
 from .selfie_update import manejar_actualizacion_selfie
 from .services import (
     manejar_accion_servicios,
@@ -32,9 +35,10 @@ from .services_confirmation import (
     manejar_eliminacion_servicio_registro,
     manejar_reemplazo_servicio_registro,
     manejar_seleccion_reemplazo_servicio_registro,
-    procesar_correccion_manual,
     mostrar_confirmacion_servicios,
+    procesar_correccion_manual,
 )
+from .social_step import manejar_espera_red_social
 from .social_update import manejar_actualizacion_redes_sociales
 from .specialty import (
     manejar_espera_especialidad,
@@ -42,10 +46,6 @@ from .specialty import (
     normalizar_servicios_registro_compartido,
 )
 from .views import manejar_vista_perfil, render_profile_view
-from .wait_certificate import manejar_espera_certificado
-from .wait_experience import manejar_espera_experiencia
-from .wait_name import manejar_espera_nombre
-from .wait_social import manejar_espera_red_social
 
 __all__ = [
     "manejar_estado_menu",

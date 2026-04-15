@@ -4,12 +4,12 @@ import types
 from pathlib import Path
 
 imghdr_stub = types.ModuleType("imghdr")
-imghdr_stub.what = lambda *args, **kwargs: None
+setattr(imghdr_stub, "what", lambda *args, **kwargs: None)
 sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-import routes.maintenance.router as modulo_router  # noqa: E402
 import flows.maintenance.menu as modulo_menu  # noqa: E402
+import routes.maintenance.router as modulo_router  # noqa: E402
 
 
 def test_menu_mantenimiento_solo_atiende_registrados(monkeypatch):
@@ -97,8 +97,11 @@ def test_menu_principal_acepta_selected_option_de_legado():
 
     assert resultado is not None
     assert resultado["persist_flow"] is True
-    assert flujo["state"] == "awaiting_personal_info_action"
-    assert resultado["response"]["messages"][0]["ui"]["id"] == "provider_personal_info_menu_v1"
+    assert flujo["state"] == "maintenance_personal_info_action"
+    assert (
+        resultado["response"]["messages"][0]["ui"]["id"]
+        == "provider_personal_info_menu_v1"
+    )
 
 
 def test_menu_principal_acepta_selected_option_profesional():
@@ -119,7 +122,7 @@ def test_menu_principal_acepta_selected_option_profesional():
 
     assert resultado is not None
     assert resultado["persist_flow"] is True
-    assert flujo["state"] == "awaiting_professional_info_action"
+    assert flujo["state"] == "maintenance_professional_info_action"
     assert (
         resultado["response"]["messages"][0]["ui"]["id"]
         == "provider_professional_info_menu_v1"
@@ -141,7 +144,7 @@ def test_menu_principal_acepta_texto_libre_personal():
         )
     )
 
-    assert flujo["state"] == "awaiting_personal_info_action"
+    assert flujo["state"] == "maintenance_personal_info_action"
     assert resultado["messages"][0]["ui"]["id"] == "provider_personal_info_menu_v1"
 
 
@@ -160,5 +163,5 @@ def test_menu_principal_acepta_texto_libre_profesional():
         )
     )
 
-    assert flujo["state"] == "awaiting_professional_info_action"
+    assert flujo["state"] == "maintenance_professional_info_action"
     assert resultado["messages"][0]["ui"]["id"] == "provider_professional_info_menu_v1"

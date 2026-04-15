@@ -207,7 +207,7 @@ def test_confirmacion_onboarding_async_publica_evento_y_no_ejecuta_registro_sync
     )
 
     assert "Hola Proveedor Test" in respuesta["messages"][0]["response"]
-    assert respuesta["new_flow"]["state"] == "pending_verification"
+    assert respuesta["new_flow"]["state"] == "review_pending_verification"
     assert (
         published["event_type"] == "provider.onboarding.registration.persist_requested"
     )

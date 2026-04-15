@@ -5,7 +5,6 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 from infrastructure.database import run_supabase
-from services.shared.redes_sociales_slots import extraer_redes_sociales_desde_texto
 from services.onboarding.event_payloads import payload_redes
 from services.onboarding.event_publisher import (
     EVENT_TYPE_SOCIAL,
@@ -13,6 +12,7 @@ from services.onboarding.event_publisher import (
     publicar_evento_onboarding,
 )
 from services.shared import es_skip_value
+from services.shared.redes_sociales_slots import extraer_redes_sociales_desde_texto
 from services.shared.whatsapp_identity import normalizar_telefono_canonico
 from templates.onboarding.redes_sociales import (
     REDES_SOCIALES_SKIP_ID,
@@ -105,7 +105,7 @@ async def manejar_espera_red_social_onboarding(
 ) -> Dict[str, Any]:
     """Procesa el paso opcional de redes sociales durante onboarding."""
     if _debe_omitir_redes(texto_mensaje, selected_option):
-        flujo["state"] = "pending_verification"
+        flujo["state"] = "review_pending_verification"
         if onboarding_async_persistence_enabled():
             _asegurar_phone_en_flujo(flujo)
             await publicar_evento_onboarding(
@@ -114,7 +114,7 @@ async def manejar_espera_red_social_onboarding(
                 payload=payload_redes(
                     facebook_username=None,
                     instagram_username=None,
-                    checkpoint="pending_verification",
+                    checkpoint="review_pending_verification",
                 ),
             )
         return {
@@ -143,7 +143,7 @@ async def manejar_espera_red_social_onboarding(
             payload=payload_redes(
                 facebook_username=facebook_username,
                 instagram_username=instagram_username,
-                checkpoint="pending_verification",
+                checkpoint="review_pending_verification",
             ),
         )
     else:
@@ -163,7 +163,7 @@ async def manejar_espera_red_social_onboarding(
                 ],
             }
 
-    flujo["state"] = "pending_verification"
+    flujo["state"] = "review_pending_verification"
     return {
         "success": True,
         "messages": [{"response": _mensaje_final_onboarding()}],

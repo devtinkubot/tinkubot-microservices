@@ -130,7 +130,7 @@ async def manejar_confirmacion_onboarding(
             provider_id = str(flujo.get("provider_id") or "").strip() or None
             flujo_evento = dict(flujo)
             flujo_nuevo = {
-                "state": "pending_verification",
+                "state": "review_pending_verification",
                 "has_consent": True,
                 "registration_allowed": False,
                 "awaiting_verification": True,
@@ -153,7 +153,7 @@ async def manejar_confirmacion_onboarding(
                         exclude_none=True,
                     ),
                     flujo=flujo_evento,
-                    checkpoint="pending_verification",
+                    checkpoint="review_pending_verification",
                 ),
             )
             await reiniciar_flujo(telefono)
@@ -177,9 +177,7 @@ async def manejar_confirmacion_onboarding(
         ):
             return {
                 "success": True,
-                "messages": [
-                    {"response": mensaje_no_pude_guardar_servicio()}
-                ],
+                "messages": [{"response": mensaje_no_pude_guardar_servicio()}],
                 "new_flow": {
                     "state": "onboarding_specialty",
                     "has_consent": True,
@@ -223,7 +221,7 @@ async def manejar_confirmacion_onboarding(
                 ],
                 "reset_flow": True,
                 "new_flow": {
-                    "state": "pending_verification",
+                    "state": "review_pending_verification",
                     "has_consent": True,
                     "registration_allowed": False,
                     "provider_id": proveedor_id,

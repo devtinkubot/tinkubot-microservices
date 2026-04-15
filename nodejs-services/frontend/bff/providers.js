@@ -242,10 +242,12 @@ const esProveedorEnOnboarding = (proveedor) =>
     ONBOARDING_STEPS.includes(limpiarTexto(proveedor.onboardingStep) || ""),
   );
 
+const ESTADOS_REVISION_PENDIENTE = ["pending_verification", "review_pending_verification"];
+
 const esProveedorEnRevisionPendiente = (proveedor) =>
   Boolean(
     proveedor &&
-    limpiarTexto(proveedor.onboardingStep) === "pending_verification",
+    ESTADOS_REVISION_PENDIENTE.includes(limpiarTexto(proveedor.onboardingStep)),
   );
 
 const esProveedorOperativo = (proveedor) =>
@@ -902,7 +904,7 @@ const construirRutaSupabasePendientes = (incluirEstado = true) => {
   ];
 
   if (incluirEstado) {
-    parametrosBase.push("onboarding_step=eq.pending_verification");
+    parametrosBase.push("onboarding_step=in.(pending_verification,review_pending_verification)");
   }
 
   return `${supabaseProvidersTable}?${parametrosBase.join("&")}`;

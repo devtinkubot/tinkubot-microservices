@@ -2,24 +2,33 @@
 
 from typing import Any, Dict, Optional, Tuple
 
-from services.shared.identidad_proveedor import (
-    resolver_nombre_visible_proveedor,
-)
 from services.shared.estados_proveedor import (
     normalizar_estado_administrativo as normalizar_estado_administrativo_comun,
+)
+from services.shared.identidad_proveedor import (
+    resolver_nombre_visible_proveedor,
 )
 
 from .menu import poner_flujo_en_menu_revision
 from .messages import construir_respuesta_revision, construir_respuesta_verificado
 from .progress import (
+    ESTADO_REVISION_PENDIENTE,
     determinar_estado_registro,
     es_perfil_onboarding_completo,
+    normalizar_checkpoint_onboarding,
     resolver_checkpoint_onboarding_desde_perfil,
 )
 
 ESTADOS_APROBADOS_OPERATIVOS = {"approved"}
 ESTADOS_BLOQUEO_REVISION = {"rejected"}
 MAX_INTENTOS_REVISION_SIN_RESPUESTA = 3
+
+
+def _normalizar_estado_revision_flujo(flujo: Dict[str, Any]) -> str:
+    estado_actual = normalizar_checkpoint_onboarding(flujo.get("state")) or ""
+    if estado_actual == ESTADO_REVISION_PENDIENTE:
+        flujo["state"] = ESTADO_REVISION_PENDIENTE
+    return estado_actual
 
 
 def _copiar_campo_si_presente(
@@ -190,7 +199,7 @@ def manejar_pendiente_revision(
         return None
     flujo.update(
         {
-            "state": "pending_verification",
+            "state": ESTADO_REVISION_PENDIENTE,
             "has_consent": True,
             "provider_id": proveedor_id,
         }
@@ -206,7 +215,9 @@ def manejar_aprobacion_reciente(
     esta_verificado: bool,
 ) -> Optional[Dict[str, Any]]:
     """Notifica cuando un perfil pasa de pendiente a verificado."""
-    if flujo.get("state") != "pending_verification" or not esta_verificado:
+    if _normalizar_estado_revision_flujo(flujo) != ESTADO_REVISION_PENDIENTE:
+        return None
+    if not esta_verificado:
         return None
     if flujo.get("verification_notified"):
         poner_flujo_en_menu_revision(flujo, verification_notified=True)
@@ -220,7 +231,7 @@ def _perfil_sigue_en_revision(
     perfil_proveedor: Optional[Dict[str, Any]],
 ) -> bool:
     """Indica si el proveedor sigue en revisión administrativa."""
-    if flujo.get("state") == "pending_verification":
+    if _normalizar_estado_revision_flujo(flujo) == ESTADO_REVISION_PENDIENTE:
         return True
     if not perfil_proveedor:
         return False
@@ -248,7 +259,7 @@ def manejar_bloqueo_revision_posterior(
         return None
 
     intentos_previos = int(flujo.get("pending_review_attempts") or 0)
-    flujo["state"] = "pending_verification"
+    flujo["state"] = ESTADO_REVISION_PENDIENTE
     flujo["has_consent"] = True
     if perfil_proveedor and perfil_proveedor.get("id"):
         flujo["provider_id"] = perfil_proveedor.get("id")

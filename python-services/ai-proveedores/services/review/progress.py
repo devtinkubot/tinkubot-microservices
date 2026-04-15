@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 from services.shared.estados_proveedor import (
     CHECKPOINT_MENU_FINAL,
@@ -11,6 +11,9 @@ from services.shared.estados_proveedor import (
     MENU_POST_REGISTRO_STATES,
     es_proveedor_operativo,
 )
+
+ESTADO_REVISION_PENDIENTE = "review_pending_verification"
+ESTADO_REVISION_PENDIENTE_LEGACY = "pending_verification"
 
 
 def _texto_limpio(valor: Any) -> str:
@@ -49,6 +52,8 @@ def normalizar_checkpoint_onboarding(checkpoint: Optional[str]) -> Optional[str]
     texto = _texto_limpio(checkpoint)
     if not texto:
         return None
+    if texto == ESTADO_REVISION_PENDIENTE_LEGACY:
+        return ESTADO_REVISION_PENDIENTE
     return texto
 
 
@@ -61,7 +66,7 @@ def resolver_checkpoint_onboarding_desde_perfil(
     checkpoint = normalizar_checkpoint_onboarding(
         perfil_proveedor.get("onboarding_step")
     )
-    if checkpoint in CHECKPOINTS_ONBOARDING:
+    if checkpoint in CHECKPOINTS_ONBOARDING or checkpoint == ESTADO_REVISION_PENDIENTE:
         return checkpoint
     return inferir_checkpoint_onboarding_desde_perfil(perfil_proveedor)
 
@@ -109,7 +114,7 @@ def inferir_checkpoint_onboarding_desde_perfil(
 
     estado = _estado_administrativo_compatible(perfil_proveedor)
     if estado in {"pending", "rejected"}:
-        return "pending_verification"
+        return ESTADO_REVISION_PENDIENTE
     if estado == "approved":
         return "onboarding_specialty"
     return CHECKPOINT_MENU_FINAL
@@ -137,6 +142,9 @@ def determinar_checkpoint_onboarding(
 
     if estado in MENU_POST_REGISTRO_STATES:
         return None
+
+    if estado == ESTADO_REVISION_PENDIENTE:
+        return estado
 
     if estado == "awaiting_menu_option":
         if flujo.get("mode") == "registration" or not es_perfil_onboarding_completo(

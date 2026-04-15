@@ -4,16 +4,20 @@ import types
 from pathlib import Path
 
 imghdr_stub = types.ModuleType("imghdr")
-imghdr_stub.what = lambda *args, **kwargs: None
+setattr(imghdr_stub, "what", lambda *args, **kwargs: None)
 sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from flows.maintenance.document_update import (
+from flows.maintenance.document_update import (  # noqa: E402
     manejar_dni_frontal_actualizacion,
     manejar_dni_trasera_actualizacion,
+    manejar_inicio_actualizacion_documentos,
+    manejar_inicio_documentos,
 )
-from flows.onboarding.handlers.documentos import (
+from flows.onboarding.handlers.documentos import (  # noqa: E402
     manejar_dni_frontal_onboarding as manejar_dni_frontal,
+)
+from flows.onboarding.handlers.documentos import (  # noqa: E402
     manejar_foto_perfil_onboarding as manejar_selfie_registro,
 )
 
@@ -29,6 +33,24 @@ def test_dni_frontal_actualizacion_marca_persistencia():
     assert flujo["state"] == "awaiting_menu_option"
     assert flujo["dni_front_image"] == "front-image"
     assert respuesta["messages"][0]["response"] == "__persistir_dni_frontal__"
+
+
+def test_inicio_documentos_mantenimiento_usa_estado_canonicamente():
+    flujo = {}
+
+    respuesta = manejar_inicio_documentos(flujo)
+
+    assert respuesta["success"] is True
+    assert flujo["state"] == "maintenance_city"
+
+
+def test_inicio_actualizacion_documentos_usa_estado_canonicamente():
+    flujo = {}
+
+    respuesta = manejar_inicio_actualizacion_documentos(flujo)
+
+    assert respuesta["success"] is True
+    assert flujo["state"] == "maintenance_dni_front_photo_update"
 
 
 def test_dni_trasera_actualizacion_persiste_solo_frontal_y_vuelve_menu():
@@ -109,7 +131,9 @@ def test_dni_frontal_registro_persiste_de_inmediato_y_avanza():
     llamadas = []
 
     async def subir_medios_identidad(proveedor_id, payload):
-        llamadas.append((proveedor_id, payload.get("phone"), payload.get("dni_front_image")))
+        llamadas.append(
+            (proveedor_id, payload.get("phone"), payload.get("dni_front_image"))
+        )
 
     flujo = {}
 

@@ -31,21 +31,21 @@ STANDARD_ONBOARDING_STATES = frozenset(
 CHECKPOINTS_ONBOARDING = frozenset(
     STANDARD_ONBOARDING_STATES
     | {
-        "pending_verification",
+        "review_pending_verification",
         "confirm",
     }
 )
 
 MENU_POST_REGISTRO_STATES = frozenset(
     {
-        "awaiting_personal_info_action",
-        "awaiting_professional_info_action",
-        "awaiting_deletion_confirmation",
-        "awaiting_active_service_action",
-        "awaiting_service_remove",
-        "awaiting_face_photo_update",
-        "awaiting_dni_front_photo_update",
-        "awaiting_dni_back_photo_update",
+        "maintenance_personal_info_action",
+        "maintenance_professional_info_action",
+        "maintenance_deletion_confirmation",
+        "maintenance_active_service_action",
+        "maintenance_service_remove",
+        "maintenance_face_photo_update",
+        "maintenance_dni_front_photo_update",
+        "maintenance_dni_back_photo_update",
         "viewing_personal_name",
         "viewing_personal_city",
         "viewing_personal_photo",

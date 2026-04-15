@@ -4,14 +4,14 @@ import types
 from pathlib import Path
 
 imghdr_stub = types.ModuleType("imghdr")
-imghdr_stub.what = lambda *args, **kwargs: None
+setattr(imghdr_stub, "what", lambda *args, **kwargs: None)
 sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-import routes.maintenance.info as modulo_info  # noqa: E402
 import flows.maintenance.menu as modulo_menu  # noqa: E402
 import flows.maintenance.views as modulo_views  # noqa: E402
 import routes.maintenance.handlers.profile as modulo_profile  # noqa: E402
+import routes.maintenance.info as modulo_info  # noqa: E402
 from routes.maintenance import (  # noqa: E402
     manejar_informacion_personal_mantenimiento,
     manejar_informacion_profesional_mantenimiento,
@@ -19,7 +19,7 @@ from routes.maintenance import (  # noqa: E402
 
 
 def test_mantenimiento_info_personal_delega(monkeypatch):
-    flujo = {"state": "awaiting_personal_info_action"}
+    flujo = {"state": "maintenance_personal_info_action"}
     llamadas = []
 
     async def _fake_personal(**kwargs):
@@ -46,7 +46,7 @@ def test_mantenimiento_info_personal_delega(monkeypatch):
 
 
 def test_mantenimiento_info_profesional_delega(monkeypatch):
-    flujo = {"state": "awaiting_professional_info_action"}
+    flujo = {"state": "maintenance_professional_info_action"}
     llamadas = []
 
     async def _fake_profesional(**kwargs):
@@ -86,7 +86,7 @@ def test_submenu_personal_muestra_solo_opciones_editables():
 
 
 def test_submenu_personal_acepta_texto_libre_y_regresa_menu():
-    flujo = {"state": "awaiting_personal_info_action", "display_name": "Ana"}
+    flujo = {"state": "maintenance_personal_info_action", "display_name": "Ana"}
 
     resultado_ubicacion = asyncio.run(
         modulo_menu.manejar_submenu_informacion_personal(
@@ -114,7 +114,7 @@ def test_submenu_personal_acepta_texto_libre_y_regresa_menu():
 
 
 def test_submenu_personal_bloquea_alias_legacy_de_datos_sensibles():
-    flujo = {"state": "awaiting_personal_info_action", "display_name": "Ana"}
+    flujo = {"state": "maintenance_personal_info_action", "display_name": "Ana"}
 
     resultado = asyncio.run(
         modulo_menu.manejar_submenu_informacion_personal(
@@ -125,12 +125,12 @@ def test_submenu_personal_bloquea_alias_legacy_de_datos_sensibles():
         )
     )
 
-    assert flujo["state"] == "awaiting_personal_info_action"
+    assert flujo["state"] == "maintenance_personal_info_action"
     assert resultado["messages"][0]["ui"]["id"] == "provider_personal_info_menu_v1"
 
 
 def test_submenu_profesional_acepta_texto_libre_y_regresa_menu():
-    flujo = {"state": "awaiting_professional_info_action", "services": ["Plomeria"]}
+    flujo = {"state": "maintenance_professional_info_action", "services": ["Plomeria"]}
 
     resultado_servicios = asyncio.run(
         modulo_menu.manejar_submenu_informacion_profesional(
@@ -181,7 +181,7 @@ def test_vista_servicios_acepta_regresar_por_texto_libre():
         )
     )
 
-    assert flujo["state"] == "awaiting_professional_info_action"
+    assert flujo["state"] == "maintenance_professional_info_action"
     assert resultado["messages"][0]["ui"]["id"] == "provider_professional_info_menu_v1"
 
 
@@ -201,7 +201,7 @@ def test_vista_legacy_personal_sensible_redirige_a_submenu():
         )
     )
 
-    assert flujo["state"] == "awaiting_personal_info_action"
+    assert flujo["state"] == "maintenance_personal_info_action"
     assert "profile_edit_mode" not in flujo
     assert "profile_return_state" not in flujo
     assert resultado["messages"][0]["ui"]["id"] == "provider_personal_info_menu_v1"
@@ -229,7 +229,10 @@ def test_handler_perfil_bloquea_estados_sensibles_de_maintenance():
     )
 
     assert resultado is not None
-    assert flujo["state"] == "awaiting_personal_info_action"
+    assert flujo["state"] == "maintenance_personal_info_action"
     assert "profile_edit_mode" not in flujo
     assert "profile_return_state" not in flujo
-    assert resultado["response"]["messages"][0]["ui"]["id"] == "provider_personal_info_menu_v1"
+    assert (
+        resultado["response"]["messages"][0]["ui"]["id"]
+        == "provider_personal_info_menu_v1"
+    )

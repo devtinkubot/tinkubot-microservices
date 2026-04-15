@@ -6,7 +6,10 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from services.availability.estados import es_estado_flujo_activo
+from services.availability.estados import (
+    es_estado_flujo_activo,
+    normalizar_estado_disponibilidad,
+)
 from services.shared import (
     RESPUESTAS_DISPONIBILIDAD_AFIRMATIVAS,
     RESPUESTAS_DISPONIBILIDAD_NEGATIVAS,
@@ -164,6 +167,7 @@ async def _registrar_respuesta_disponibilidad_si_aplica(
     texto_mensaje: str,
     estado_actual: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
+    estado_actual = normalizar_estado_disponibilidad(estado_actual)
     decision = _parsear_respuesta_disponibilidad(texto_mensaje)
     if not decision:
         return None

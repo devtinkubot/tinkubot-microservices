@@ -143,7 +143,7 @@ def test_manejar_estado_inicial_en_revision_devuelve_menu_normal():
     )
 
 
-def test_manejar_estado_inicial_rejected_permanece_en_pending_verification():
+def test_manejar_estado_inicial_rejected_permanece_en_review_pending_verification():
     flujo = {
         "has_consent": True,
         "full_name": "Proveedor Rechazado",
@@ -263,7 +263,7 @@ def test_manejar_estado_inicial_aprobado_incompleto_reanuda_remediacion():
 
 def test_manejar_aprobacion_reciente_notifica_una_sola_vez():
     flujo = {
-        "state": "pending_verification",
+        "state": "review_pending_verification",
         "full_name": "Proveedor Aprobado",
     }
 
@@ -277,7 +277,7 @@ def test_manejar_aprobacion_reciente_notifica_una_sola_vez():
     assert flujo["verification_notified"] is True
     assert "aprobado" in primera_respuesta["messages"][0]["response"].lower()
 
-    flujo["state"] = "pending_verification"
+    flujo["state"] = "review_pending_verification"
     segunda_respuesta = manejar_aprobacion_reciente(
         flujo=flujo,
         esta_verificado=True,
@@ -289,7 +289,7 @@ def test_manejar_aprobacion_reciente_notifica_una_sola_vez():
 
 def test_bloqueo_revision_posterior_limita_respuestas():
     flujo = {
-        "state": "pending_verification",
+        "state": "review_pending_verification",
         "full_name": "Proveedor En Revision",
     }
 
@@ -333,7 +333,7 @@ def test_manejar_bloqueo_revision_posterior_detecta_perfil_completo_pendiente():
     )
 
     assert respuesta is not None
-    assert flujo["state"] == "pending_verification"
+    assert flujo["state"] == "review_pending_verification"
     assert flujo["provider_id"] == "prov-review"
     assert flujo["pending_review_attempts"] == 1
     assert "en revisión" in respuesta["messages"][0]["response"].lower()
@@ -468,7 +468,10 @@ def test_checkpoint_onboarding_detecta_perfil_completo():
     }
 
     assert es_perfil_onboarding_completo(perfil) is True
-    assert inferir_checkpoint_onboarding_desde_perfil(perfil) == "pending_verification"
+    assert (
+        inferir_checkpoint_onboarding_desde_perfil(perfil)
+        == "review_pending_verification"
+    )
 
 
 def test_checkpoint_onboarding_aprobado_sin_full_name_sigue_en_menu():

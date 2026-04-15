@@ -24,6 +24,7 @@ def test_normalizar_estado_administrativo_solo_acepta_estado_canonico():
 
 def test_taxonomia_de_onboarding_mantiene_fronteras_claras():
     assert "onboarding_real_phone" in STANDARD_ONBOARDING_STATES
-    assert "pending_verification" in CHECKPOINTS_ONBOARDING
+    assert "review_pending_verification" in CHECKPOINTS_ONBOARDING
     assert "awaiting_menu_option" in ONBOARDING_REANUDACION_STATES
-    assert "awaiting_dni_front_photo_update" in MENU_POST_REGISTRO_STATES
+    assert "maintenance_personal_info_action" in MENU_POST_REGISTRO_STATES
+    assert "maintenance_dni_front_photo_update" in MENU_POST_REGISTRO_STATES

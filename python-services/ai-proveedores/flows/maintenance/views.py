@@ -11,18 +11,21 @@ from services.maintenance.constantes import (
     CERTIFICADOS_MAXIMOS,
     SERVICIOS_MAXIMOS,
 )
+from services.shared.identidad_proveedor import (
+    resolver_nombre_visible_proveedor,
+)
 from services.shared.redes_sociales_slots import (
     SOCIAL_NETWORK_FACEBOOK,
     SOCIAL_NETWORK_INSTAGRAM,
     resolver_redes_sociales,
 )
-from services.shared.identidad_proveedor import (
-    resolver_nombre_visible_proveedor,
-)
 from templates.maintenance import (
     preguntar_nuevo_servicio_con_ejemplos_dinamicos,
     solicitar_red_social_actualizacion,
     solicitar_selfie_actualizacion,
+)
+from templates.maintenance.ciudad import (
+    solicitar_ciudad_actualizacion,
 )
 from templates.maintenance.menus import (
     CERTIFICATE_ADD_ID,
@@ -75,9 +78,6 @@ from templates.maintenance.views_labels import (
     valor_no_registrada,
     valor_no_registrado,
 )
-from templates.maintenance.ciudad import (
-    solicitar_ciudad_actualizacion,
-)
 from templates.shared import (
     descripcion_cedula_frontal_actual,
     descripcion_cedula_reverso_actual,
@@ -85,8 +85,8 @@ from templates.shared import (
     mensaje_datos_registro,
 )
 
-PERSONAL_PARENT_STATE = "awaiting_personal_info_action"
-PROFESSIONAL_PARENT_STATE = "awaiting_professional_info_action"
+PERSONAL_PARENT_STATE = "maintenance_personal_info_action"
+PROFESSIONAL_PARENT_STATE = "maintenance_professional_info_action"
 PERSONAL_STATES_SOLO_LECTURA = frozenset(
     {
         "viewing_personal_name",
@@ -208,11 +208,18 @@ async def render_profile_view(
 
     if estado == "viewing_professional_service":
         servicios = list(flujo.get("services") or [])
-        indice = int(flujo.get("selected_service_index") or -1)
-        if indice < 0 or indice >= len(servicios):
+        raw_idx = flujo.get("selected_service_index")
+        indice = int(raw_idx) if raw_idx is not None else -1
+        if indice < 0 or indice >= SERVICIOS_MAXIMOS:
             flujo.pop("selected_service_index", None)
             flujo["state"] = "viewing_professional_services"
             return payload_detalle_servicios(servicios, SERVICIOS_MAXIMOS)
+        if indice >= len(servicios):
+            return payload_detalle_servicio_individual(
+                indice=indice,
+                servicio="",
+                registrado=False,
+            )
         return payload_detalle_servicio_individual(
             indice=indice,
             servicio=servicios[indice],
@@ -292,9 +299,10 @@ async def manejar_vista_perfil(  # noqa: C901
     flujo: Dict[str, Any],
     estado: str,
     texto_mensaje: str,
+    selected_option: Optional[str] = None,
     proveedor_id: Optional[str],
 ) -> Dict[str, Any]:
-    texto = (texto_mensaje or "").strip().lower()
+    texto = (selected_option or texto_mensaje or "").strip().lower()
 
     if estado in PERSONAL_STATES_SOLO_LECTURA:
         flujo.pop("profile_edit_mode", None)
@@ -384,20 +392,16 @@ async def manejar_vista_perfil(  # noqa: C901
                 }
             if 0 <= posicion < SERVICIOS_MAXIMOS:
                 flujo["selected_service_index"] = posicion
-                flujo["profile_edit_mode"] = "provider_service_add"
-                flujo["profile_return_state"] = "viewing_professional_services"
-                flujo["state"] = "maintenance_service_add"
-                respuesta = await preguntar_nuevo_servicio_con_ejemplos_dinamicos(
-                    indice=posicion + 1,
-                    maximo=SERVICIOS_MAXIMOS,
-                )
-                flujo["service_examples_lookup"] = (
-                    respuesta.get("service_examples_lookup") or {}
-                )
+                flujo["state"] = "viewing_professional_service"
                 return {
                     "success": True,
-                    "response": respuesta["response"],
-                    "ui": respuesta["ui"],
+                    "messages": [
+                        await render_profile_view(
+                            flujo=flujo,
+                            estado="viewing_professional_service",
+                            proveedor_id=proveedor_id,
+                        )
+                    ],
                 }
         if texto == DETAIL_ACTION_SERVICES_ADD:
             cantidad_actual = _cantidad_servicios_para_nuevo_ingreso(flujo)
@@ -441,9 +445,11 @@ async def manejar_vista_perfil(  # noqa: C901
             }
 
     if estado == "viewing_professional_service":
-        indice = int(flujo.get("selected_service_index") or -1)
+        raw_idx = flujo.get("selected_service_index")
+        indice = int(raw_idx) if raw_idx is not None else -1
         servicios_actuales = list(flujo.get("services") or [])
-        if indice < 0 or indice >= len(servicios_actuales):
+        es_slot_vacio = indice >= len(servicios_actuales)
+        if indice < 0 or indice >= SERVICIOS_MAXIMOS:
             flujo.pop("selected_service_index", None)
             flujo["state"] = "viewing_professional_services"
             return {
@@ -457,7 +463,9 @@ async def manejar_vista_perfil(  # noqa: C901
                 ],
             }
         if texto == DETAIL_ACTION_SERVICE_CHANGE:
-            flujo["profile_edit_mode"] = "provider_service_replace"
+            flujo["profile_edit_mode"] = (
+                "provider_service_add" if es_slot_vacio else "provider_service_replace"
+            )
             flujo["profile_return_state"] = "viewing_professional_services"
             flujo["state"] = "maintenance_service_add"
             respuesta = await preguntar_nuevo_servicio_con_ejemplos_dinamicos(
@@ -472,7 +480,7 @@ async def manejar_vista_perfil(  # noqa: C901
                 "response": respuesta["response"],
                 "ui": respuesta["ui"],
             }
-        if texto == DETAIL_ACTION_SERVICE_DELETE:
+        if texto == DETAIL_ACTION_SERVICE_DELETE and not es_slot_vacio:
             servicios_finales = await eliminar_servicio_proveedor(
                 str(proveedor_id or ""),
                 indice,

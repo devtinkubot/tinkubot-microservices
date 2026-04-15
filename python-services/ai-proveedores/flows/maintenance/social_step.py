@@ -4,13 +4,13 @@ from typing import Any, Dict, Optional
 
 from flows.maintenance.context import es_contexto_mantenimiento
 from flows.validators.input import parsear_entrada_red_social
+from services.shared import es_skip_value
 from services.shared.redes_sociales_slots import (
     SOCIAL_NETWORK_FACEBOOK,
     SOCIAL_NETWORK_INSTAGRAM,
     parsear_username_red_social,
     resolver_redes_sociales,
 )
-from services.shared import es_skip_value
 from templates.maintenance import (
     payload_confirmacion_resumen,
 )
@@ -41,7 +41,7 @@ def _estado_usuario_red_social(
     tipo_red: str,
 ) -> str:
     estado = str(flujo.get("state") or "").strip()
-    if estado == "awaiting_social_media" or estado.startswith("onboarding_"):
+    if estado.startswith("onboarding_"):
         return (
             ONBOARDING_FACEBOOK_USERNAME_STATE
             if tipo_red == SOCIAL_NETWORK_FACEBOOK
@@ -127,7 +127,7 @@ def manejar_espera_red_social(
             }
 
         if flujo.get("profile_completion_mode"):
-            flujo["state"] = "awaiting_social_media"
+            flujo["state"] = "maintenance_social_media"
             return {
                 "success": True,
                 "messages": [
@@ -138,7 +138,7 @@ def manejar_espera_red_social(
                 ],
             }
 
-        flujo["state"] = "awaiting_dni_front_photo"
+        flujo["state"] = "maintenance_dni_front_photo_update"
         return {
             "success": True,
             "messages": [{"response": mensaje_validacion_identidad_cedula()}],
@@ -169,7 +169,7 @@ def manejar_espera_red_social(
                     ],
                 }
             if flujo.get("profile_completion_mode"):
-                flujo["state"] = "awaiting_certificate"
+                flujo["state"] = "maintenance_certificate"
                 return {"success": True, "messages": [payload_certificado_opcional()]}
         texto_normalizado = "omitir"
     if seleccion == SOCIAL_FACEBOOK_ID:
@@ -256,10 +256,10 @@ def manejar_espera_red_social(
         }
 
     if flujo.get("profile_completion_mode"):
-        flujo["state"] = "awaiting_certificate"
+        flujo["state"] = "maintenance_certificate"
         return {"success": True, "messages": [payload_certificado_opcional()]}
 
-    flujo["state"] = "awaiting_dni_front_photo"
+    flujo["state"] = "maintenance_dni_front_photo_update"
     return {
         "success": True,
         "messages": [{"response": mensaje_validacion_identidad_cedula()}],

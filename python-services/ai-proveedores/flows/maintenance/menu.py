@@ -299,7 +299,7 @@ async def manejar_estado_menu(
     if _es_opcion_info_personal(texto_normalizado, opcion_menu) or (
         seleccion == MENU_ID_INFO_PERSONAL
     ):
-        flujo["state"] = "awaiting_personal_info_action"
+        flujo["state"] = "maintenance_personal_info_action"
         return {
             "success": True,
             "messages": [payload_submenu_informacion_personal()],
@@ -308,14 +308,14 @@ async def manejar_estado_menu(
     if _es_opcion_info_profesional(texto_normalizado, opcion_menu) or (
         seleccion == MENU_ID_INFO_PROFESIONAL
     ):
-        flujo["state"] = "awaiting_professional_info_action"
+        flujo["state"] = "maintenance_professional_info_action"
         return {
             "success": True,
             "messages": [payload_submenu_informacion_profesional()],
         }
 
     if seleccion == MENU_ID_ELIMINAR_REGISTRO:
-        flujo["state"] = "awaiting_deletion_confirmation"
+        flujo["state"] = "maintenance_deletion_confirmation"
         return {
             "success": True,
             "messages": [{"response": solicitar_confirmacion_eliminacion()}],

@@ -1,7 +1,7 @@
 """Boundary de disponibilidad para el contexto provider-facing."""
 
 from services.availability.estados import (
-    ESTADO_ESPERANDO_DISPONIBILIDAD,
+    ESTADO_DISPONIBILIDAD_PENDIENTE_RESPUESTA,
     FLOJO_ACTIVO_ESTADOS,
     MEDIA_STATES,
     MENU_STATES,
@@ -9,6 +9,7 @@ from services.availability.estados import (
     PROFILE_COMPLETION_STATES,
     STANDARD_ONBOARDING_STATES,
     es_estado_flujo_activo,
+    normalizar_estado_disponibilidad,
 )
 from services.availability.processor import (
     AVAILABILITY_RESULT_TTL_SECONDS,
@@ -28,7 +29,7 @@ __all__ = [
     "CLAVE_CICLO_SOLICITUD",
     "CLAVE_CONTEXTO_DISPONIBILIDAD",
     "CLAVE_PENDIENTES_DISPONIBILIDAD",
-    "ESTADO_ESPERANDO_DISPONIBILIDAD",
+    "ESTADO_DISPONIBILIDAD_PENDIENTE_RESPUESTA",
     "FLOJO_ACTIVO_ESTADOS",
     "MEDIA_STATES",
     "MENU_STATES",
@@ -40,4 +41,5 @@ __all__ = [
     "_registrar_respuesta_disponibilidad_si_aplica",
     "_resolver_alias_disponibilidad",
     "es_estado_flujo_activo",
+    "normalizar_estado_disponibilidad",
 ]

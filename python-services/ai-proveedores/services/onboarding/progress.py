@@ -139,7 +139,7 @@ def inferir_checkpoint_onboarding_desde_perfil(
 
     estado = _estado_administrativo_compatible(perfil_proveedor)
     if estado in {"pending", "rejected"}:
-        return "pending_verification"
+        return "review_pending_verification"
     if estado == "approved":
         return "onboarding_specialty"
     return CHECKPOINT_MENU_FINAL

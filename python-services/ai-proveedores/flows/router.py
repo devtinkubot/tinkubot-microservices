@@ -18,13 +18,13 @@ from services import (
     agregar_certificado_proveedor,
     eliminar_registro_proveedor,
 )
+from services.onboarding.progress import resolver_checkpoint_onboarding_desde_perfil
 from services.review.messages import construir_respuesta_revision
 from services.review.state import (
     manejar_bloqueo_revision_posterior,
     resolver_estado_registro,
     sincronizar_flujo_con_perfil,
 )
-from services.onboarding.progress import resolver_checkpoint_onboarding_desde_perfil
 from services.shared import es_comando_reinicio
 from services.shared.estados_proveedor import (
     ONBOARDING_REANUDACION_STATES,
@@ -180,7 +180,7 @@ async def _manejar_timeout_inactividad(
         flujo["mode"] = "registration"
         mensajes_timeout.append(construir_payload_menu_principal(esta_registrado=False))
     elif esta_pendiente_timeout and not esta_verificado_timeout:
-        flujo["state"] = "pending_verification"
+        flujo["state"] = "review_pending_verification"
     else:
         es_operativo_timeout = es_proveedor_operativo(perfil_proveedor)
         if esta_registrado_timeout and not es_operativo_timeout:
@@ -194,7 +194,9 @@ async def _manejar_timeout_inactividad(
                 _construir_reanudacion_onboarding(
                     flujo,
                     esta_registrado=False,
-                )["messages"][1]
+                )[
+                    "messages"
+                ][1]
             )
         else:
             flujo["state"] = "awaiting_menu_option"
@@ -279,7 +281,7 @@ async def _manejar_flujo_sin_estado(
         )
         if respuesta_bloqueo is not None:
             return {"response": respuesta_bloqueo, "persist_flow": True}
-        flujo["state"] = "pending_verification"
+        flujo["state"] = "review_pending_verification"
         return {
             "response": construir_respuesta_revision(
                 resolver_nombre_visible_proveedor(proveedor=flujo)
@@ -423,7 +425,7 @@ async def manejar_mensaje(
         flujo["last_seen_at_prev"] = flujo.get("last_seen_at") or ahora_iso
         flujo["last_seen_at"] = ahora_iso
         if esta_registrado_contexto and not esta_verificado_contexto:
-            flujo["state"] = "pending_verification"
+            flujo["state"] = "review_pending_verification"
             flujo["has_consent"] = True
             if perfil_proveedor and perfil_proveedor.get("id"):
                 flujo["provider_id"] = perfil_proveedor.get("id")

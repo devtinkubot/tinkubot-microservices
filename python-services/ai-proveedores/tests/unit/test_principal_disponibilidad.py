@@ -8,6 +8,9 @@ setattr(imghdr_stub, "what", lambda *args, **kwargs: None)
 sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from services.availability.estados import (  # noqa: E402
+    ESTADO_DISPONIBILIDAD_PENDIENTE_RESPUESTA,
+)
 from services.availability.processor import (  # noqa: E402
     _registrar_respuesta_disponibilidad_si_aplica,
     _resolver_alias_disponibilidad,
@@ -121,13 +124,45 @@ def test_resuelve_alias_disponibilidad_a_telefono_canonico():
     assert resultado == telefono_real
 
 
-def test_respuesta_disponibilidad_sin_pendientes_pending_verification_no_intercepta():
+def test_respuesta_disponibilidad_review_no_intercepta():
     telefono = "593999111225@s.whatsapp.net"
     redis_falso = RedisFalso()
 
     resultado = asyncio.run(
         _registrar_respuesta_disponibilidad_si_aplica(
-            redis_falso, telefono, "1", "pending_verification"
+            redis_falso,
+            telefono,
+            "1",
+            "review_pending_verification",
+        )
+    )
+
+    assert resultado is None
+
+
+def test_respuesta_disponibilidad_legacy_estado_espera_se_normaliza():
+    telefono = "593999111235@s.whatsapp.net"
+    redis_falso = RedisFalso()
+
+    resultado = asyncio.run(
+        _registrar_respuesta_disponibilidad_si_aplica(
+            redis_falso, telefono, "1", "awaiting_availability_response"
+        )
+    )
+
+    assert resultado is None
+
+
+def test_respuesta_disponibilidad_canonica_se_reconoce_como_estado_activo():
+    telefono = "593999111236@s.whatsapp.net"
+    redis_falso = RedisFalso()
+
+    resultado = asyncio.run(
+        _registrar_respuesta_disponibilidad_si_aplica(
+            redis_falso,
+            telefono,
+            "1",
+            ESTADO_DISPONIBILIDAD_PENDIENTE_RESPUESTA,
         )
     )
 

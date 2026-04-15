@@ -14,7 +14,9 @@ import flows.onboarding.router as modulo_onboarding_router  # noqa: E402
 import flows.router as modulo_router  # noqa: E402
 from flows.router import enrutar_estado, manejar_mensaje  # noqa: E402
 from routes.availability import manejar_estado_disponibilidad  # noqa: E402
-from services.availability import ESTADO_ESPERANDO_DISPONIBILIDAD  # noqa: E402
+from services.availability import (  # noqa: E402
+    ESTADO_DISPONIBILIDAD_PENDIENTE_RESPUESTA,
+)
 from templates.onboarding.inicio import ONBOARDING_REGISTER_BUTTON_ID  # noqa: E402
 
 
@@ -39,13 +41,13 @@ def _ejecutar_enrutado(flujo, texto_mensaje, opcion_menu=None):
     )
 
 
-def test_estado_esperando_disponibilidad_mantiene_flujo():
-    flujo = {"state": ESTADO_ESPERANDO_DISPONIBILIDAD}
+def test_estado_disponibilidad_pendiente_mantiene_flujo():
+    flujo = {"state": ESTADO_DISPONIBILIDAD_PENDIENTE_RESPUESTA}
     resultado = _ejecutar_enrutado(flujo, "hola")
 
     assert resultado is not None
     assert resultado["persist_flow"] is True
-    assert flujo["state"] == ESTADO_ESPERANDO_DISPONIBILIDAD
+    assert flujo["state"] == ESTADO_DISPONIBILIDAD_PENDIENTE_RESPUESTA
     assert (
         "solicitud pendiente de disponibilidad"
         in resultado["response"]["messages"][0]["response"].lower()
@@ -54,8 +56,8 @@ def test_estado_esperando_disponibilidad_mantiene_flujo():
     assert "no disponible" in resultado["response"]["messages"][0]["response"].lower()
 
 
-def test_estado_esperando_disponibilidad_permite_volver_menu():
-    flujo = {"state": ESTADO_ESPERANDO_DISPONIBILIDAD}
+def test_estado_disponibilidad_pendiente_permite_volver_menu():
+    flujo = {"state": ESTADO_DISPONIBILIDAD_PENDIENTE_RESPUESTA}
     resultado = _ejecutar_enrutado(flujo, "menu")
 
     assert resultado is not None
@@ -65,12 +67,12 @@ def test_estado_esperando_disponibilidad_permite_volver_menu():
 
 
 def test_router_availability_directo_regresa_recordatorio():
-    flujo = {"state": ESTADO_ESPERANDO_DISPONIBILIDAD}
+    flujo = {"state": ESTADO_DISPONIBILIDAD_PENDIENTE_RESPUESTA}
 
     resultado = asyncio.run(
         manejar_estado_disponibilidad(
             flujo=flujo,
-            estado=ESTADO_ESPERANDO_DISPONIBILIDAD,
+            estado=ESTADO_DISPONIBILIDAD_PENDIENTE_RESPUESTA,
             texto_mensaje="hola",
             opcion_menu=None,
             esta_registrado=True,
@@ -79,7 +81,7 @@ def test_router_availability_directo_regresa_recordatorio():
 
     assert resultado is not None
     assert resultado["persist_flow"] is True
-    assert flujo["state"] == ESTADO_ESPERANDO_DISPONIBILIDAD
+    assert flujo["state"] == ESTADO_DISPONIBILIDAD_PENDIENTE_RESPUESTA
     assert (
         "solicitud pendiente de disponibilidad"
         in resultado["response"]["messages"][0]["response"].lower()
@@ -87,12 +89,12 @@ def test_router_availability_directo_regresa_recordatorio():
 
 
 def test_router_availability_directo_vuelve_al_menu():
-    flujo = {"state": ESTADO_ESPERANDO_DISPONIBILIDAD}
+    flujo = {"state": ESTADO_DISPONIBILIDAD_PENDIENTE_RESPUESTA}
 
     resultado = asyncio.run(
         manejar_estado_disponibilidad(
             flujo=flujo,
-            estado=ESTADO_ESPERANDO_DISPONIBILIDAD,
+            estado=ESTADO_DISPONIBILIDAD_PENDIENTE_RESPUESTA,
             texto_mensaje="menu",
             opcion_menu=None,
             esta_registrado=True,
@@ -103,6 +105,24 @@ def test_router_availability_directo_vuelve_al_menu():
     assert resultado["persist_flow"] is True
     assert flujo["state"] == "awaiting_menu_option"
     assert resultado["response"]["messages"]
+
+
+def test_router_availability_legacy_state_se_normaliza_al_canonico():
+    flujo = {"state": "awaiting_availability_response"}
+
+    resultado = asyncio.run(
+        manejar_estado_disponibilidad(
+            flujo=flujo,
+            estado="awaiting_availability_response",
+            texto_mensaje="hola",
+            opcion_menu=None,
+            esta_registrado=True,
+        )
+    )
+
+    assert resultado is not None
+    assert resultado["persist_flow"] is True
+    assert flujo["state"] == ESTADO_DISPONIBILIDAD_PENDIENTE_RESPUESTA
 
 
 def test_reset_solo_devuelve_mensaje_de_reinicio():
@@ -194,7 +214,11 @@ def test_numero_sin_provider_id_usa_estado_canonico(monkeypatch):
             "response": {
                 "success": True,
                 "messages": [
-                    {"response": "Para continuar con tu registro, necesitamos estos datos"}
+                    {
+                        "response": (
+                            "Para continuar con tu registro, necesitamos estos datos"
+                        )
+                    }
                 ],
             },
             "persist_flow": True,

@@ -2,8 +2,8 @@
 
 from typing import Any, Dict, Optional
 
+from flows.maintenance.social_step import manejar_espera_red_social
 from flows.maintenance.social_update import manejar_actualizacion_redes_sociales
-from flows.maintenance.wait_social import manejar_espera_red_social
 
 MAINTENANCE_UPDATE_STATES = {
     "maintenance_social_facebook_username",
@@ -16,10 +16,6 @@ MAINTENANCE_SELECTION_STATES = {
     "maintenance_social_instagram_username",
 }
 
-STATE_ALIAS_TO_MAINTENANCE = {
-    "awaiting_social_media": "maintenance_social_media",
-}
-
 
 async def manejar_redes_mantenimiento(
     *,
@@ -30,7 +26,7 @@ async def manejar_redes_mantenimiento(
     supabase: Any,
 ) -> Optional[Dict[str, Any]]:
     """Resuelve estados de redes sociales dentro de maintenance."""
-    estado_normalizado = STATE_ALIAS_TO_MAINTENANCE.get(estado or "", estado or "")
+    estado_normalizado = estado or ""
     if estado_normalizado in MAINTENANCE_UPDATE_STATES:
         return {
             "response": await manejar_actualizacion_redes_sociales(

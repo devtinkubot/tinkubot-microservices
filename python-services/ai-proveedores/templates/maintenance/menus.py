@@ -509,15 +509,18 @@ def payload_detalle_servicio_individual(
     *,
     indice: int,
     servicio: str,
+    registrado: bool = True,
 ) -> Dict[str, Any]:
+    options = [
+        {"id": DETAIL_ACTION_SERVICE_CHANGE, "title": "Cambiar"},
+    ]
+    if registrado:
+        options.append({"id": DETAIL_ACTION_SERVICE_DELETE, "title": "Eliminar"})
+    options.append({"id": DETAIL_ACTION_BACK, "title": "Regresar"})
     return _payload_botones_detalle(
         header_text=f"Servicio {indice + 1}",
         body=f"*Servicio actual*\n{str(servicio or '').strip() or 'No registrado'}",
-        options=[
-            {"id": DETAIL_ACTION_SERVICE_CHANGE, "title": "Cambiar"},
-            {"id": DETAIL_ACTION_SERVICE_DELETE, "title": "Eliminar"},
-            {"id": DETAIL_ACTION_BACK, "title": "Regresar"},
-        ],
+        options=options,
     )
 
 

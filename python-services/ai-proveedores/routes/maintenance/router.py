@@ -64,7 +64,7 @@ async def manejar_contexto_mantenimiento(
     selected_option: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """Resuelve los estados de maintenance que ya no deben vivir en router global."""
-    if estado == "awaiting_personal_info_action":
+    if estado == "maintenance_personal_info_action":
         respuesta = await manejar_informacion_personal_mantenimiento(
             flujo=flujo,
             texto_mensaje=texto_mensaje,
@@ -73,7 +73,7 @@ async def manejar_contexto_mantenimiento(
         )
         return {"response": respuesta, "persist_flow": True}
 
-    if estado == "awaiting_professional_info_action":
+    if estado == "maintenance_professional_info_action":
         respuesta = await manejar_informacion_profesional_mantenimiento(
             flujo=flujo,
             texto_mensaje=texto_mensaje,
@@ -82,7 +82,7 @@ async def manejar_contexto_mantenimiento(
         )
         return {"response": respuesta, "persist_flow": True}
 
-    if estado == "awaiting_deletion_confirmation":
+    if estado == "maintenance_deletion_confirmation":
         respuesta = await manejar_eliminacion_proveedor(
             flujo=flujo,
             texto_mensaje=texto_mensaje,
@@ -134,6 +134,7 @@ async def manejar_contexto_mantenimiento(
         estado=estado,
         texto_mensaje=texto_mensaje,
         opcion_menu=opcion_menu,
+        selected_option=selected_option,
     )
     if respuesta is not None:
         return respuesta

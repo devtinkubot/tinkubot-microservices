@@ -399,7 +399,7 @@ async def manejar_accion_servicios(
                     },
                 ],
             }
-        flujo["state"] = "awaiting_service_remove"
+        flujo["state"] = "maintenance_service_remove"
         return {
             "success": True,
             "messages": [
@@ -417,7 +417,9 @@ async def manejar_accion_servicios(
 
     return {
         "success": True,
-        "messages": [{"response": _menu_servicios_desde_flujo(flujo, servicios_actuales)}],
+        "messages": [
+            {"response": _menu_servicios_desde_flujo(flujo, servicios_actuales)}
+        ],
     }
 
 

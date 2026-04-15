@@ -55,10 +55,10 @@ from services.maintenance.validacion_semantica import (  # noqa: E402
 from templates.maintenance import (  # noqa: E402
     mensaje_correccion_servicios,
 )
+from templates.maintenance.menus import SERVICE_SLOT_PREFIX  # noqa: E402
 from templates.maintenance.registration import (  # noqa: E402
     SERVICE_EDIT_REPLACE_ID,
 )
-from templates.maintenance.menus import SERVICE_SLOT_PREFIX  # noqa: E402
 from templates.onboarding import (  # noqa: E402
     payload_servicios_onboarding_con_imagen,
     preguntar_servicios_onboarding,
@@ -132,7 +132,9 @@ async def test_menu_servicios_texto_libre_reenvia_botones():
     )
 
     assert resultado["success"] is True
-    assert resultado["messages"][0]["response"]["ui"]["id"] == "provider_services_menu_v1"
+    assert (
+        resultado["messages"][0]["response"]["ui"]["id"] == "provider_services_menu_v1"
+    )
 
 
 @pytest.mark.asyncio
@@ -197,15 +199,25 @@ async def test_resolver_servicio_best_effort_persiste_si_taxonomia_cierra(
         return {
             "ok": True,
             "service_detail": {
-                "raw_service_text": "Desarrollo de apps moviles con IA, incluye soporte y mantenimiento.",
-                "service_name": "Desarrollo de aplicaciones móviles con inteligencia artificial",
-                "service_summary": "Desarrollo de aplicaciones móviles que incorporan inteligencia artificial, incluyendo soporte y mantenimiento.",
+                "raw_service_text": (
+                    "Desarrollo de apps moviles con IA, incluye soporte y mantenimiento."  # noqa: E501
+                ),
+                "service_name": (
+                    "Desarrollo de aplicaciones móviles con inteligencia artificial"
+                ),
+                "service_summary": (
+                    "Desarrollo de aplicaciones móviles que incorporan inteligencia "
+                    "artificial, incluyendo soporte y mantenimiento."
+                ),
                 "domain_code": "tecnologia",
                 "category_name": "Tecnología",
                 "classification_confidence": 1.0,
                 "requires_review": False,
                 "needs_clarification": False,
-                "review_reason": "El servicio está claramente definido y se ajusta a la categoría de tecnología.",
+                "review_reason": (
+                    "El servicio está claramente definido y se ajusta a la categoría "
+                    "de tecnología."
+                ),
             },
         }
 
@@ -216,7 +228,7 @@ async def test_resolver_servicio_best_effort_persiste_si_taxonomia_cierra(
     )
 
     resultado = await resolver_servicio_onboarding_best_effort(
-        texto_mensaje="Desarrollo de apps moviles con IA, incluye soporte y mantenimiento.",
+        texto_mensaje="Desarrollo de apps moviles con IA, incluye soporte y mantenimiento.",  # noqa: E501
         cliente_openai=object(),
         provider_id="prov-1",
     )
@@ -238,7 +250,9 @@ async def test_resolver_servicio_best_effort_falla_si_falta_taxonomia(
             "service_detail": {
                 "raw_service_text": "Gestion de proyectos tics",
                 "service_name": "Gestión de proyectos TIC",
-                "service_summary": "Gestión de proyectos relacionados con tecnologías de la información.",
+                "service_summary": (
+                    "Gestión de proyectos relacionados con tecnologías de la información."  # noqa: E501
+                ),
                 "domain_code": "tecnologia",
                 "category_name": None,
                 "classification_confidence": 0.52,
@@ -262,9 +276,9 @@ async def test_resolver_servicio_best_effort_falla_si_falta_taxonomia(
 
     assert resultado["ok"] is False
     assert resultado["error_reason"] == "classification_incomplete"
-    assert (
-        resultado["response"]
-        == "No pude cerrar ese servicio. Escríbelo otra vez con más detalle o usa una especialidad más exacta."
+    assert resultado["response"] == (
+        "No pude cerrar ese servicio. Escríbelo otra vez con más detalle o usa "
+        "una especialidad más exacta."
     )
 
 
@@ -619,7 +633,9 @@ def test_validar_servicio_semanticamente_recorta_normalized_service_visible():
 def test_validar_servicio_semanticamente_reintenta_modo_estricto():
     class _Respuesta:
         def __init__(self, content):
-            self.choices = [type("C", (), {"message": type("M", (), {"content": content})()})()]
+            self.choices = [
+                type("C", (), {"message": type("M", (), {"content": content})()})()
+            ]
 
     class _Completions:
         def __init__(self):
@@ -680,7 +696,9 @@ def test_validar_servicio_semanticamente_reintenta_modo_estricto():
 def test_validar_servicio_semanticamente_falla_si_sigue_incompleto():
     class _Respuesta:
         def __init__(self, content):
-            self.choices = [type("C", (), {"message": type("M", (), {"content": content})()})()]
+            self.choices = [
+                type("C", (), {"message": type("M", (), {"content": content})()})()
+            ]
 
     class _Completions:
         def __init__(self):
@@ -880,7 +898,7 @@ def test_confirmacion_servicio_onboarding_avanza_al_siguiente_servicio(monkeypat
         )
     )
 
-    assert flujo["state"] == "pending_verification"
+    assert flujo["state"] == "review_pending_verification"
     assert flujo["servicios_temporales"] == ["desarrollo web"]
     assert respuesta["success"] is True
     assert respuesta["messages"][0]["response"]
@@ -903,7 +921,7 @@ def test_confirmacion_tercer_servicio_onboarding_va_a_consentimiento():
         )
     )
 
-    assert flujo["state"] == "pending_verification"
+    assert flujo["state"] == "review_pending_verification"
     assert flujo["servicios_temporales"] == [
         "servicio 1",
         "servicio 2",
@@ -1348,7 +1366,7 @@ def test_confirmacion_servicios_acepta_resumen_y_pasa_a_experiencia():
         )
     )
 
-    assert flujo["state"] == "pending_verification"
+    assert flujo["state"] == "review_pending_verification"
     assert flujo["specialty"] == "desarrollo web, cableado estructurado"
     assert "revisión" in respuesta["messages"][0]["response"].lower()
 
@@ -1582,12 +1600,15 @@ def test_texto_embedding_canonico_usa_gramatica_estable():
     )
 
     assert texto == (
-        "desarrollo de software a medida con soporte y mantenimiento | tecnologia | servicios tecnologicos"
+        "desarrollo de software a medida con soporte y mantenimiento | tecnologia "
+        "| servicios tecnologicos"
     )
 
 
 def test_reclasificacion_masiva_usa_service_summary_en_embedding():
-    from tools.maintenance import reclasificar_provider_services_masivo as modulo_reclasificar
+    from tools.maintenance import (
+        reclasificar_provider_services_masivo as modulo_reclasificar,
+    )
 
     row = modulo_reclasificar.ProviderServiceRow(
         id="row-1",
@@ -1608,10 +1629,12 @@ def test_reclasificacion_masiva_usa_service_summary_en_embedding():
         "confidence": 0.97,
     }
 
-    payload, needs_embedding, accepted, embedding_text = modulo_reclasificar._build_update_payload(  # noqa: SLF001
-        row=row,
-        resolved=resolved,
-        conflict_free_name_update=True,
+    payload, needs_embedding, accepted, embedding_text = (
+        modulo_reclasificar._build_update_payload(  # noqa: SLF001
+            row=row,
+            resolved=resolved,
+            conflict_free_name_update=True,
+        )
     )
 
     assert embedding_text == modulo_clasificacion.construir_texto_embedding_canonico(
@@ -1670,11 +1693,11 @@ async def test_insertar_servicios_proveedor_usa_texto_embedding_canonico(monkeyp
         _fake_run_supabase,
     )
     monkeypatch.setattr(
-        "services.onboarding.registration.registro_proveedor.clasificar_servicios_livianos",
+        "services.onboarding.registration.registro_proveedor.clasificar_servicios_livianos",  # noqa: E501
         _fake_clasificar_servicios_livianos,
     )
     monkeypatch.setattr(
-        "services.onboarding.registration.registro_proveedor.construir_texto_embedding_canonico",
+        "services.onboarding.registration.registro_proveedor.construir_texto_embedding_canonico",  # noqa: E501
         lambda **_kwargs: "canon-text",
     )
 
@@ -1685,12 +1708,15 @@ async def test_insertar_servicios_proveedor_usa_texto_embedding_canonico(monkeyp
     resultado = await insertar_servicios_proveedor(
         supabase=_SupabaseStub(),
         proveedor_id="prov-1",
-        servicios=[{"service_name": "Desarrollo de software", "raw_service_text": "dev"}],
+        servicios=[
+            {"service_name": "Desarrollo de software", "raw_service_text": "dev"}
+        ],
         servicio_embeddings=_EmbeddingsStub(),
     )
 
     assert resultado["inserted_count"] == 1
     assert captured["texto"] == "canon-text"
+
 
 def test_actualizar_servicios_persiste_servicio_sin_canonizacion_taxonomica(
     monkeypatch,

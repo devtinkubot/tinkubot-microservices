@@ -2,18 +2,17 @@
 
 from typing import Any, Dict, Optional
 
-from templates.maintenance.menus import payload_submenu_informacion_personal
-
+from flows.maintenance.certificate_step import manejar_espera_certificado
 from flows.maintenance.context import es_contexto_mantenimiento
 from flows.maintenance.document_update import manejar_inicio_documentos
+from flows.maintenance.experience_step import manejar_espera_experiencia
 from flows.maintenance.phone_city import (
     manejar_espera_ciudad_onboarding,
     manejar_espera_real_phone_onboarding,
 )
 from flows.maintenance.selfie_update import manejar_actualizacion_selfie
-from flows.maintenance.wait_certificate import manejar_espera_certificado
-from flows.maintenance.wait_experience import manejar_espera_experiencia
-from flows.maintenance.wait_social import manejar_espera_red_social
+from flows.maintenance.social_step import manejar_espera_red_social
+from templates.maintenance.menus import payload_submenu_informacion_personal
 
 MAINTENANCE_PROFILE_STATES = {
     "maintenance_experience",
@@ -28,17 +27,6 @@ MAINTENANCE_PROFILE_STATES = {
     "maintenance_social_media",
     "maintenance_social_facebook_username",
     "maintenance_social_instagram_username",
-}
-
-STATE_ALIAS_TO_MAINTENANCE = {
-    "awaiting_experience": "maintenance_experience",
-    "awaiting_real_phone": "maintenance_real_phone",
-    "awaiting_city": "maintenance_city",
-    "awaiting_certificate": "maintenance_certificate",
-    "awaiting_face_photo_update": "maintenance_face_photo_update",
-    "awaiting_dni": "maintenance_dni",
-    "awaiting_dni_front_photo_update": "maintenance_dni_front_photo_update",
-    "awaiting_dni_back_photo_update": "maintenance_dni_back_photo_update",
 }
 
 ONBOARDING_TO_MAINTENANCE_STATES = {
@@ -68,8 +56,6 @@ def _normalizar_estado(flujo: Dict[str, Any]) -> None:
     if _debe_traducir_onboarding_a_mantenimiento(flujo, estado):
         flujo["state"] = ONBOARDING_TO_MAINTENANCE_STATES[estado]
         return
-    if estado in STATE_ALIAS_TO_MAINTENANCE:
-        flujo["state"] = STATE_ALIAS_TO_MAINTENANCE[estado]
 
 
 def _respuesta_retirada_informacion_sensible(
@@ -77,7 +63,7 @@ def _respuesta_retirada_informacion_sensible(
 ) -> Dict[str, Any]:
     flujo.pop("profile_edit_mode", None)
     flujo.pop("profile_return_state", None)
-    flujo["state"] = "awaiting_personal_info_action"
+    flujo["state"] = "maintenance_personal_info_action"
     return {
         "success": True,
         "messages": [payload_submenu_informacion_personal()],
@@ -99,7 +85,7 @@ async def manejar_perfil_mantenimiento(
     estado_original = str(estado or "").strip()
     estado_normalizado = ONBOARDING_TO_MAINTENANCE_STATES.get(
         estado_original,
-        STATE_ALIAS_TO_MAINTENANCE.get(estado_original, estado_original),
+        estado_original,
     )
     if (
         not es_contexto_mantenimiento(flujo)

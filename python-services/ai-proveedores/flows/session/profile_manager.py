@@ -8,18 +8,16 @@ desde Supabase, con un sistema de caché en Redis para optimizar el rendimiento.
 import logging
 import os
 import re
-from uuid import UUID
 from typing import Any, Dict, Optional, cast
+from uuid import UUID
 
 from config import configuracion
+from infrastructure.database import run_supabase
 from infrastructure.redis import cliente_redis
 from services import garantizar_campos_obligatorios_proveedor
-from services.shared.estados_proveedor import normalizar_estado_administrativo
-from utils import (
-    extraer_servicios_almacenados as extraer_servicios_guardados,
-)
-from infrastructure.database import run_supabase
 from services.onboarding.whatsapp_identity import resolver_provider_id_por_identidad
+from services.shared.estados_proveedor import normalizar_estado_administrativo
+from utils import extraer_servicios_almacenados as extraer_servicios_guardados
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +33,7 @@ TTL_MARCA_PERFIL_ELIMINADO_SEGUNDOS = int(
 
 _PRIORIDAD_ESTADO_PERFIL = {
     "approved": 500,
-    "pending_verification": 300,
+    "review_pending_verification": 300,
     "pending": 200,
     "rejected": 100,
 }
@@ -48,8 +46,8 @@ _PRIORIDAD_ORIGEN_PERFIL = {
 
 def _normalizar_estado_para_prioridad(estado: str) -> str:
     estado_normalizado = normalizar_estado_administrativo(status=estado)
-    if str(estado or "").strip().lower() == "pending_verification":
-        return "pending_verification"
+    if str(estado or "").strip().lower() == "review_pending_verification":
+        return "review_pending_verification"
     return estado_normalizado
 
 

@@ -135,14 +135,14 @@ test("obtenerResumenEstadosProveedores toma las cantidades de Nuevos y Operativo
   supabaseGet = async (url) => {
     llamadas.push(url);
 
-    if (url.includes("onboarding_step=eq.pending_verification")) {
+    if (url.includes("onboarding_step=in.(pending_verification,review_pending_verification)")) {
       return {
         data: [
           {
             id: "provider-new-1",
             status: "pending",
             display_name: "Proveedor Nuevo 1",
-            onboarding_step: "pending_verification",
+            onboarding_step: "review_pending_verification",
           },
           {
             id: "provider-new-2",
@@ -194,7 +194,7 @@ test("obtenerResumenEstadosProveedores toma las cantidades de Nuevos y Operativo
     assert.equal(resumen.summary.newPending, 2);
     assert.equal(resumen.summary.profileComplete, 1);
     assert.ok(
-      llamadas.some((url) => url.includes("onboarding_step=eq.pending_verification")),
+      llamadas.some((url) => url.includes("onboarding_step=in.(pending_verification,review_pending_verification)")),
     );
     assert.ok(
       llamadas.some(

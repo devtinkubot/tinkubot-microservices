@@ -2,7 +2,10 @@
 
 from typing import Any, Dict, Optional
 
-from services.availability import ESTADO_ESPERANDO_DISPONIBILIDAD
+from services.availability import (
+    ESTADO_DISPONIBILIDAD_PENDIENTE_RESPUESTA,
+    normalizar_estado_disponibilidad,
+)
 from services.shared import es_salida_menu
 
 from .menu import construir_respuesta_menu
@@ -18,7 +21,10 @@ async def manejar_estado_disponibilidad(
     esta_registrado: bool,
 ) -> Optional[Dict[str, Any]]:
     """Resuelve el estado de espera de disponibilidad."""
-    if estado != ESTADO_ESPERANDO_DISPONIBILIDAD:
+    estado = normalizar_estado_disponibilidad(estado)
+    if estado == ESTADO_DISPONIBILIDAD_PENDIENTE_RESPUESTA:
+        flujo["state"] = ESTADO_DISPONIBILIDAD_PENDIENTE_RESPUESTA
+    if estado != ESTADO_DISPONIBILIDAD_PENDIENTE_RESPUESTA:
         return None
 
     if es_salida_menu(texto_mensaje, opcion_menu):

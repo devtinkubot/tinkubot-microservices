@@ -7,7 +7,7 @@ from infrastructure.redis import cliente_redis
 from infrastructure.storage import subir_medios_identidad
 from models import RecepcionMensajeWhatsApp
 from services.availability import (
-    ESTADO_ESPERANDO_DISPONIBILIDAD,
+    ESTADO_DISPONIBILIDAD_PENDIENTE_RESPUESTA,
 )
 from services.availability import (
     _hay_contexto_disponibilidad_activo as hay_contexto_disp_impl,
@@ -17,6 +17,13 @@ from services.availability import (
 )
 from services.availability import (
     _resolver_alias_disponibilidad as resolver_alias_disp_impl,
+)
+from services.availability import (
+    normalizar_estado_disponibilidad,
+)
+from services.maintenance.servicios_sync import (
+    normalizar_lista_servicios_flujo,
+    sincronizar_servicios_si_cambiaron,
 )
 from services.onboarding.event_payloads import payload_servicios
 from services.onboarding.event_publisher import (
@@ -31,10 +38,6 @@ from services.onboarding.session import (
     obtener_perfil_proveedor_cacheado,
 )
 from services.onboarding.vista import obtener_vista_onboarding
-from services.maintenance.servicios_sync import (
-    normalizar_lista_servicios_flujo,
-    sincronizar_servicios_si_cambiaron,
-)
 from services.shared import interpretar_respuesta
 from services.shared.ingreso_whatsapp import (
     es_mensaje_interactivo_duplicado,
@@ -68,7 +71,9 @@ def _payload_evento_servicios(flujo: Dict[str, Any]) -> Dict[str, Any]:
         or (servicios[-1] if servicios else "")
     ).strip()
     service_position = max(len(servicios) - 1, 0)
-    checkpoint = str(flujo.get("state") or "").strip() or "onboarding_add_another_service"
+    checkpoint = (
+        str(flujo.get("state") or "").strip() or "onboarding_add_another_service"
+    )
     return payload_servicios(
         services=servicios,
         raw_service_text=raw_service_text,
@@ -96,7 +101,7 @@ async def _registrar_respuesta_disponibilidad_si_aplica(
     )
 
 
-async def procesar_mensaje_whatsapp(
+async def procesar_mensaje_whatsapp(  # noqa: C901
     *,
     solicitud: RecepcionMensajeWhatsApp,
     supabase: Any,
@@ -187,15 +192,19 @@ async def procesar_mensaje_whatsapp(
     )
     flujo = vista_onboarding["flujo"]
     perfil_proveedor = vista_onboarding["perfil_proveedor"]
+    estado_disponibilidad = normalizar_estado_disponibilidad(flujo.get("state"))
+    if estado_disponibilidad == ESTADO_DISPONIBILIDAD_PENDIENTE_RESPUESTA:
+        flujo["state"] = ESTADO_DISPONIBILIDAD_PENDIENTE_RESPUESTA
 
     hay_contexto_disponibilidad = await _hay_contexto_disponibilidad_activo(
         telefono_disponibilidad
     )
     if hay_contexto_disponibilidad and flujo.get("state") in {"awaiting_menu_option"}:
-        flujo["state"] = ESTADO_ESPERANDO_DISPONIBILIDAD
+        flujo["state"] = ESTADO_DISPONIBILIDAD_PENDIENTE_RESPUESTA
     elif (
         not hay_contexto_disponibilidad
-        and flujo.get("state") == ESTADO_ESPERANDO_DISPONIBILIDAD
+        and normalizar_estado_disponibilidad(flujo.get("state"))
+        == ESTADO_DISPONIBILIDAD_PENDIENTE_RESPUESTA
     ):
         flujo["state"] = "awaiting_menu_option"
     respuesta_disponibilidad = await _registrar_respuesta_disponibilidad_si_aplica(
@@ -211,7 +220,10 @@ async def procesar_mensaje_whatsapp(
             flujo.get("state"),
             solicitud.selected_option,
         )
-        if flujo.get("state") == ESTADO_ESPERANDO_DISPONIBILIDAD:
+        if (
+            normalizar_estado_disponibilidad(flujo.get("state"))
+            == ESTADO_DISPONIBILIDAD_PENDIENTE_RESPUESTA
+        ):
             flujo["state"] = "awaiting_menu_option"
             await establecer_flujo(telefono, flujo)
         return normalizar_respuesta_whatsapp(respuesta_disponibilidad)

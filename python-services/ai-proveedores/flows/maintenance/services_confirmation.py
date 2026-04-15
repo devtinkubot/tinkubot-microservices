@@ -192,7 +192,7 @@ async def manejar_confirmacion_servicio_perfil(
 
             cantidad = len(flujo.get("servicios_temporales") or [])
             if cantidad >= SERVICIOS_MINIMOS_PERFIL_PROFESIONAL:
-                flujo["state"] = "pending_verification"
+                flujo["state"] = "review_pending_verification"
                 return construir_respuesta_revision(
                     resolver_nombre_visible_proveedor(proveedor=flujo)
                 )
@@ -266,7 +266,7 @@ async def manejar_confirmacion_servicio_perfil(
 
         cantidad = len(flujo.get("servicios_temporales") or [])
         if cantidad >= SERVICIOS_MINIMOS_PERFIL_PROFESIONAL:
-            flujo["state"] = "pending_verification"
+            flujo["state"] = "review_pending_verification"
             return construir_respuesta_revision(
                 resolver_nombre_visible_proveedor(proveedor=flujo)
             )
@@ -566,7 +566,7 @@ async def manejar_confirmacion_servicios(
                 ],
             }
 
-        flujo["state"] = "pending_verification"
+        flujo["state"] = "review_pending_verification"
         return construir_respuesta_revision(
             resolver_nombre_visible_proveedor(proveedor=flujo)
         )

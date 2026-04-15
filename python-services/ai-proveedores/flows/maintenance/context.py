@@ -4,15 +4,15 @@ from typing import Any, Mapping
 
 REGISTERED_MAINTENANCE_STATES = {
     "awaiting_menu_option",
-    "awaiting_deletion_confirmation",
-    "awaiting_personal_info_action",
-    "awaiting_professional_info_action",
-    "awaiting_face_photo_update",
-    "awaiting_dni_front_photo_update",
-    "awaiting_dni_back_photo_update",
-    "awaiting_experience",
-    "awaiting_social_media",
-    "awaiting_certificate",
+    "maintenance_deletion_confirmation",
+    "maintenance_personal_info_action",
+    "maintenance_professional_info_action",
+    "maintenance_face_photo_update",
+    "maintenance_dni_front_photo_update",
+    "maintenance_dni_back_photo_update",
+    "maintenance_experience",
+    "maintenance_social_media",
+    "maintenance_certificate",
 }
 
 

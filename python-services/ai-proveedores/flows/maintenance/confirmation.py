@@ -169,7 +169,7 @@ async def manejar_confirmacion(
                 ],
                 "reset_flow": True,
                 "new_flow": {
-                    "state": "pending_verification",
+                    "state": "review_pending_verification",
                     "has_consent": True,
                     "registration_allowed": False,
                     "provider_id": proveedor_id,

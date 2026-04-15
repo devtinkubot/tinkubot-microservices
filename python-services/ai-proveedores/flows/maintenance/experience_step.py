@@ -1,4 +1,4 @@
-"""Manejador del estado awaiting_experience para perfil/completado."""
+"""Manejador del estado maintenance_experience para perfil/completado."""
 
 from typing import Any, Dict, Optional
 
@@ -6,11 +6,9 @@ from flows.maintenance.views import render_profile_view
 from services.maintenance.estado_operativo import (
     formatear_rango_experiencia,
 )
-from utils import (
-    extraer_anios_experiencia as parsear_anios_experiencia,
-)
 from templates.maintenance.experiencia import payload_experiencia_mantenimiento
 from templates.maintenance.registration import payload_red_social_opcional_estado
+from utils import extraer_anios_experiencia as parsear_anios_experiencia
 
 
 def _resolver_anios_experiencia(
@@ -59,7 +57,7 @@ async def manejar_espera_experiencia(
         }
 
     if flujo.get("profile_completion_mode"):
-        flujo["state"] = "awaiting_social_media"
+        flujo["state"] = "maintenance_social_media"
         return {
             "success": True,
             "messages": [
@@ -70,5 +68,13 @@ async def manejar_espera_experiencia(
             ],
         }
 
-    flujo["state"] = "awaiting_social_media"
-    return {"success": True, "messages": [payload_red_social_opcional_estado()]}
+    flujo["state"] = "maintenance_social_media"
+    return {
+        "success": True,
+        "messages": [
+            payload_red_social_opcional_estado(
+                facebook_username=flujo.get("facebook_username"),
+                instagram_username=flujo.get("instagram_username"),
+            )
+        ],
+    }

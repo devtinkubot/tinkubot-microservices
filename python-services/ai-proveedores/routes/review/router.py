@@ -6,6 +6,10 @@ from services.review.menu import poner_flujo_en_menu_revision
 from services.review.messages import (
     construir_respuesta_revision_con_menu,
 )
+from services.review.progress import (
+    ESTADO_REVISION_PENDIENTE,
+    normalizar_checkpoint_onboarding,
+)
 from services.review.state import (
     manejar_aprobacion_reciente,
     manejar_bloqueo_revision_posterior,
@@ -33,34 +37,26 @@ def manejar_contexto_revision(
         flujo, perfil_proveedor
     )
 
-    estado_actual = str(flujo.get("state") or "").strip()
-    if estado_actual == "pending_verification" and not esta_verificado:
-        respuesta_bloqueo = manejar_bloqueo_revision_posterior(
-            flujo,
-            perfil_proveedor,
-            esta_verificado=False,
-        )
-        if respuesta_bloqueo is not None:
-            return respuesta_bloqueo
+    estado_actual = normalizar_checkpoint_onboarding(flujo.get("state")) or ""
+    if estado_actual == ESTADO_REVISION_PENDIENTE:
+        flujo["state"] = ESTADO_REVISION_PENDIENTE
 
-    es_pendiente = esta_pendiente_revision or (
-        estado_actual == "pending_verification" and not esta_verificado
-    )
-
-    if es_pendiente:
-        respuesta_pendiente = manejar_pendiente_revision(
-            flujo, provider_id, esta_pendiente_revision
-        )
-        if respuesta_pendiente:
-            return respuesta_pendiente
-
-    if estado_actual == "pending_verification" and esta_verificado:
+    if estado_actual == ESTADO_REVISION_PENDIENTE and esta_verificado:
         respuesta_verificacion = manejar_aprobacion_reciente(
             flujo,
             esta_verificado,
         )
         if respuesta_verificacion:
             return respuesta_verificacion
+
+    if estado_actual == ESTADO_REVISION_PENDIENTE or esta_pendiente_revision:
+        respuesta_pendiente = manejar_pendiente_revision(
+            flujo,
+            provider_id,
+            True,
+        )
+        if respuesta_pendiente:
+            return respuesta_pendiente
 
     return manejar_bloqueo_revision_posterior(
         flujo,
