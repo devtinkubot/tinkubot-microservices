@@ -15,6 +15,7 @@ from typing import Any, Dict, Optional
 
 import httpx
 
+from contracts.repositorio_leads import IRepositorioLeadEvents
 from contracts.repositorios import IRepositorioClientes, IRepositorioFlujo
 from flows.busqueda_proveedores.coordinador_busqueda import (
     coordinar_busqueda_completa,
@@ -42,6 +43,7 @@ from flows.mensajes import (
 )
 from flows.validadores import validar_entrada_servicio
 from infrastructure.database import run_supabase
+from infrastructure.persistencia.repositorio_lead_events import RepositorioLeadEvents
 from services.sesion_clientes import (
     procesar_comando_reinicio,
     sincronizar_cliente,
@@ -273,6 +275,7 @@ class OrquestadorConversacional:
         servicio_consentimiento=None,
         repositorio_flujo: Optional[IRepositorioFlujo] = None,
         repositorio_clientes: Optional[IRepositorioClientes] = None,
+        repositorio_lead_events: Optional[IRepositorioLeadEvents] = None,
         logger=None,
     ):
         """
@@ -293,6 +296,8 @@ class OrquestadorConversacional:
                 (opcional, para backward compatibility)
             repositorio_clientes: RepositorioClientesSupabase
                 (opcional, para backward compatibility)
+            repositorio_lead_events: Repositorio de lead events
+                (opcional, para backward compatibility)
             logger: Logger opcional (usa __name__ si None)
         """
         self.redis_client = redis_client
@@ -309,6 +314,11 @@ class OrquestadorConversacional:
         self.servicio_consentimiento = servicio_consentimiento
         self.repositorio_flujo = repositorio_flujo
         self.repositorio_clientes = repositorio_clientes
+        self.repositorio_lead_events = (
+            repositorio_lead_events
+            if repositorio_lead_events is not None
+            else (RepositorioLeadEvents(supabase) if supabase else None)
+        )
 
         # Constantes/config usadas por el router
         self.greetings = GREETINGS
@@ -422,34 +432,13 @@ class OrquestadorConversacional:
 
     async def obtener_servicios_populares_recientes(self, limite: int = 5) -> list[str]:
         """Obtiene servicios más solicitados en los últimos 30 días."""
-        if not self.supabase:
+        if not self.repositorio_lead_events:
             return []
         try:
-            desde = (datetime.utcnow() - timedelta(days=30)).isoformat()
-            respuesta = await run_supabase(
-                lambda: self.supabase.table("lead_events")
-                .select("service,created_at")
-                .gte("created_at", desde)
-                .order("created_at", desc=True)
-                .limit(500)
-                .execute(),
-                etiqueta="lead_events.popular_30d",
+            return await self.repositorio_lead_events.obtener_servicios_populares(
+                dias=30,
+                limite=limite,
             )
-            filas = respuesta.data or []
-            conteo: Dict[str, int] = {}
-            etiqueta_por_clave: Dict[str, str] = {}
-            for fila in filas:
-                servicio = ((fila or {}).get("service") or "").strip()
-                if not servicio:
-                    continue
-                clave = servicio.lower()
-                conteo[clave] = conteo.get(clave, 0) + 1
-                etiqueta_por_clave.setdefault(clave, servicio)
-            ordenadas = sorted(
-                conteo.items(),
-                key=lambda item: (-item[1], item[0]),
-            )
-            return [etiqueta_por_clave[k] for k, _ in ordenadas[:limite]]
         except Exception as exc:
             self.logger.warning("No se pudo obtener servicios populares: %s", exc)
             return []

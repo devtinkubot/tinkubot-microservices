@@ -17,9 +17,13 @@ from config.configuracion import configuracion
 from infrastructure.persistencia.cliente_redis import cliente_redis as redis_client
 from infrastructure.clientes.busqueda import ClienteBusqueda
 from services.sesiones.gestor_sesiones import gestor_sesiones
-from services.proveedores.disponibilidad import servicio_disponibilidad
+from services.proveedores.disponibilidad import ServicioDisponibilidad
 from services.orquestador_conversacion import OrquestadorConversacional
 from infrastructure.persistencia.repositorio_clientes import RepositorioClientesSupabase
+from infrastructure.persistencia.repositorio_lead_events import RepositorioLeadEvents
+from infrastructure.persistencia.repositorio_metricas_rotacion import (
+    RepositorioMetricasRotacion,
+)
 from infrastructure.persistencia.repositorio_flujo import RepositorioFlujoRedis
 from services.validacion.validador_proveedores_ia import ValidadorProveedoresIA
 from services.extraccion.extractor_necesidad_ia import ExtractorNecesidadIA
@@ -105,6 +109,8 @@ supabase = (
 
 # Repositorios
 repositorio_clientes = RepositorioClientesSupabase(supabase)
+repositorio_lead_events = RepositorioLeadEvents(supabase)
+repositorio_metricas = RepositorioMetricasRotacion(supabase)
 repositorio_flujo = RepositorioFlujoRedis(redis_client)
 
 # Servicios de dominio
@@ -136,6 +142,10 @@ servicio_consentimiento = ServicioConsentimiento(
     logger=logger,
 )
 
+servicio_disponibilidad = ServicioDisponibilidad(
+    repositorio_metricas=repositorio_metricas,
+)
+
 # Inicializar orquestador conversacional con nuevos servicios
 orquestador = OrquestadorConversacional(
     redis_client=redis_client,
@@ -147,6 +157,7 @@ orquestador = OrquestadorConversacional(
     servicio_consentimiento=servicio_consentimiento,
     repositorio_flujo=repositorio_flujo,
     repositorio_clientes=repositorio_clientes,
+    repositorio_lead_events=repositorio_lead_events,
     logger=logger,
 )
 

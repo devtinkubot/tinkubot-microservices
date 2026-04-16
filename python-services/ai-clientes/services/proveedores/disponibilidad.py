@@ -11,6 +11,9 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 from infrastructure.database import run_supabase
+from infrastructure.persistencia.repositorio_metricas_rotacion import (
+    RepositorioMetricasRotacion,
+)
 from services.proveedores.identidad import resolver_nombre_visible_proveedor
 
 logger = logging.getLogger(__name__)
@@ -32,7 +35,7 @@ MENSAJE_SOLICITUD_CADUCADA = (
 class ServicioDisponibilidad:
     """Servicio para verificar disponibilidad contactando proveedores."""
 
-    def __init__(self) -> None:
+    def __init__(self, repositorio_metricas: Optional[Any] = None) -> None:
         self.whatsapp_url = os.getenv("WHATSAPP_CLIENTES_URL", "http://wa-gateway:7000")
         self.account_id = os.getenv(
             "WHATSAPP_PROVEEDORES_ACCOUNT_ID", "bot-proveedores"
@@ -66,6 +69,7 @@ class ServicioDisponibilidad:
             "excluded_missing_real_phone_total": 0,
             "excluded_missing_real_phone_last_provider_ids": [],
         }
+        self.repositorio_metricas = repositorio_metricas
 
     @staticmethod
     def _decode_if_json_string(value: Any) -> Any:
@@ -228,95 +232,19 @@ class ServicioDisponibilidad:
         provider_ids: List[str],
     ) -> Dict[str, Dict[str, Any]]:
         """Carga señales recientes para priorizar a quién ofrecer oportunidad."""
-        if not supabase or not provider_ids:
-            return {}
-
-        since_iso = (
-            datetime.utcnow() - timedelta(days=AVAILABILITY_ROTATION_WINDOW_DAYS)
-        ).isoformat()
-
         try:
-            eventos_resp = await run_supabase(
-                lambda: supabase.table("lead_events")
-                .select("id,provider_id,created_at")
-                .eq("event_type", "contact_shared")
-                .gte("created_at", since_iso)
-                .in_("provider_id", provider_ids)
-                .order("created_at", desc=True)
-                .limit(5000)
-                .execute(),
-                etiqueta="lead_events.rotation_30d",
+            repositorio_metricas = self.repositorio_metricas
+            if repositorio_metricas is None and supabase is not None:
+                repositorio_metricas = RepositorioMetricasRotacion(supabase)
+            if repositorio_metricas is None:
+                return {}
+            return await repositorio_metricas.obtener_metricas_proveedores(
+                provider_ids,
+                dias=AVAILABILITY_ROTATION_WINDOW_DAYS,
             )
-            eventos = eventos_resp.data or []
         except Exception as exc:
-            logger.warning("⚠️ No se pudo cargar lead_events para rotación: %s", exc)
+            logger.warning("⚠️ No se pudo cargar métricas de rotación: %s", exc)
             return {}
-
-        lead_ids = [
-            self._normalizar_provider_id(evento.get("id"))
-            for evento in eventos
-            if self._normalizar_provider_id(evento.get("id"))
-        ]
-        feedback_por_lead: Dict[str, Dict[str, Any]] = {}
-
-        if lead_ids:
-            try:
-                feedback_resp = await run_supabase(
-                    lambda: supabase.table("lead_feedback")
-                    .select("lead_event_id,hired,rating")
-                    .in_("lead_event_id", lead_ids)
-                    .execute(),
-                    etiqueta="lead_feedback.rotation_30d",
-                )
-                feedback_rows = feedback_resp.data or []
-                for row in feedback_rows:
-                    lead_event_id = self._normalizar_provider_id(
-                        row.get("lead_event_id")
-                    )
-                    if lead_event_id:
-                        feedback_por_lead[lead_event_id] = row
-            except Exception as exc:
-                logger.warning(
-                    "⚠️ No se pudo cargar lead_feedback para rotación: %s", exc
-                )
-
-        metricas: Dict[str, Dict[str, Any]] = {
-            provider_id: {
-                "opportunities_30d": 0,
-                "contracts_30d": 0,
-                "feedback_count_30d": 0,
-                "rating": None,
-            }
-            for provider_id in provider_ids
-        }
-        ratings_por_proveedor: Dict[str, List[float]] = defaultdict(list)
-
-        for evento in eventos:
-            provider_id = self._normalizar_provider_id(evento.get("provider_id"))
-            lead_id = self._normalizar_provider_id(evento.get("id"))
-            if not provider_id or provider_id not in metricas:
-                continue
-
-            metricas[provider_id]["opportunities_30d"] += 1
-            feedback = feedback_por_lead.get(lead_id)
-            if not feedback:
-                continue
-
-            hired = feedback.get("hired")
-            if isinstance(hired, bool):
-                metricas[provider_id]["feedback_count_30d"] += 1
-                if hired:
-                    metricas[provider_id]["contracts_30d"] += 1
-
-            rating = feedback.get("rating")
-            if isinstance(rating, (int, float)):
-                ratings_por_proveedor[provider_id].append(float(rating))
-
-        for provider_id, valores in ratings_por_proveedor.items():
-            if valores:
-                metricas[provider_id]["rating"] = sum(valores) / len(valores)
-
-        return metricas
 
     async def _seleccionar_candidatos_rotacion(
         self,
@@ -1265,4 +1193,4 @@ class ServicioDisponibilidad:
         await self._client.aclose()
 
 
-servicio_disponibilidad = ServicioDisponibilidad()
+# servicio_disponibilidad = ServicioDisponibilidad()
