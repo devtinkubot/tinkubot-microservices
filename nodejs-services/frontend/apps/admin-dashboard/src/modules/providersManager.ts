@@ -1,4 +1,7 @@
-import { cargarProveedoresBucket, enlazarEventos } from "./providers/providersEventHandlers";
+import {
+  cargarProveedoresBucket,
+  enlazarEventos,
+} from "./providers/providersEventHandlers";
 import { actualizarEncabezadoBucket } from "./providers/providersRenderer";
 import { obtenerBucketActivo } from "./providers/providersState";
 
@@ -8,9 +11,11 @@ function inicializar(): void {
   void cargarProveedoresBucket();
 }
 
+const recargar = cargarProveedoresBucket;
+
 export const ProvidersManager = {
   iniciar: inicializar,
-  recargar: cargarProveedoresBucket,
+  recargar: recargar,
 };
 
 export type ProvidersManagerModule = typeof ProvidersManager;
