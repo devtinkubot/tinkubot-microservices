@@ -11,19 +11,18 @@ from time import perf_counter
 from typing import Any, Dict, Optional
 
 import uvicorn
+from dependencies import deps
 from config import configuracion
 from fastapi import FastAPI, Header
 from fastapi.middleware.cors import CORSMiddleware
 from flows.onboarding.handlers.servicios import (
     resolver_servicio_onboarding_best_effort,
 )
-from infrastructure.database import run_supabase, set_supabase_client
-from infrastructure.embeddings.servicio_embeddings import ServicioEmbeddings
+from infrastructure.database import run_supabase
 from infrastructure.redis import cliente_redis  # noqa: F401
 from infrastructure.storage import subir_medios_identidad
 from models import RecepcionMensajeWhatsApp, RespuestaSalud
 from models.proveedores import SolicitudCreacionProveedor
-from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 from services.availability.disponibilidad_admin import (
     router as router_disponibilidad_admin,
@@ -47,7 +46,6 @@ from services.shared.orquestacion_whatsapp import (
 from services.shared.orquestacion_whatsapp import (
     procesar_mensaje_whatsapp,
 )
-from supabase import Client, create_client
 
 _es_mensaje_interactivo_duplicado = _ingreso_whatsapp.es_mensaje_interactivo_duplicado
 _es_mensaje_multimedia_duplicado = _ingreso_whatsapp.es_mensaje_multimedia_duplicado
@@ -66,36 +64,13 @@ TIEMPO_INACTIVIDAD_SESION_SEGUNDOS = configuracion.ttl_flujo_segundos
 logging.basicConfig(level=getattr(logging, NIVEL_LOG))
 logger = logging.getLogger(__name__)
 
-# Inicializar clientes de Supabase y OpenAI
-supabase: Optional[Client] = None
-cliente_openai: Optional[AsyncOpenAI] = None
+# Inicializar dependencias centralizadas
+deps.inicializar()
 
-servicio_embeddings: Optional[ServicioEmbeddings] = None
-
-if URL_SUPABASE and CLAVE_SERVICIO_SUPABASE:
-    supabase = create_client(URL_SUPABASE, CLAVE_SERVICIO_SUPABASE)
-    set_supabase_client(supabase)  # Establecer cliente global
-    logger.info("✅ Conectado a Supabase")
-else:
-    logger.warning("⚠️ No se configuró Supabase")
-
-if CLAVE_API_OPENAI:
-    cliente_openai = AsyncOpenAI(api_key=CLAVE_API_OPENAI)
-    logger.info("✅ Conectado a OpenAI (Async)")
-
-    # Inicializar servicio de embeddings
-    servicio_embeddings = ServicioEmbeddings(
-        cliente_openai=cliente_openai,
-        modelo=configuracion.modelo_embeddings,
-        cache_ttl=configuracion.ttl_cache_embeddings,
-        timeout=configuracion.tiempo_espera_embeddings,
-    )
-    logger.info(
-        "✅ Servicio de embeddings inicializado (modelo: %s)",
-        configuracion.modelo_embeddings,
-    )
-else:
-    logger.warning("⚠️ No se configuró OpenAI - embeddings no disponibles")
+# Aliases backward-compatible — TODO: eliminar en siguiente iteración
+supabase = deps.supabase
+cliente_openai = deps.cliente_openai
+servicio_embeddings = deps.servicio_embeddings
 
 
 # Crear aplicación FastAPI

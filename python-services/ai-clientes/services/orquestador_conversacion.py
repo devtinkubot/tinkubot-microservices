@@ -844,6 +844,10 @@ class OrquestadorConversacional:
                 flujo=flujo,
                 enviar_mensaje_callback=self.enviar_texto_whatsapp,
                 guardar_flujo_callback=self.guardar_flujo,
+                buscar_proveedores_fn=(
+                    self.buscador.buscar if self.buscador else None
+                ),
+                supabase_client=self.supabase,
             )
             mensajes = []
             if respuesta_ciudad.get("response"):

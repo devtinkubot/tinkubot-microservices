@@ -2,13 +2,11 @@
 
 from typing import Any, Dict, Optional
 
+from dependencies import deps
 from flows.maintenance.context import es_contexto_mantenimiento
-from flows.maintenance.services import (
-    manejar_accion_servicios,
-    manejar_accion_servicios_activos,
-    manejar_agregar_servicios,
-    manejar_confirmacion_agregar_servicios,
-    manejar_eliminar_servicio,
+from flows.maintenance.services import ManejadorServicios
+from infrastructure.database.repositorio_servicios import (
+    RepositorioServiciosSupabase,
 )
 from flows.maintenance.services_confirmation import (
     manejar_accion_edicion_servicios_registro,
@@ -125,10 +123,11 @@ async def _manejar_estado_simple(
     selected_option: Optional[str],
     cliente_openai: Any,
     servicio_embeddings: Any,
+    manejador_servicios: ManejadorServicios,
 ) -> Optional[Dict[str, Any]]:
     if estado_normalizado == "maintenance_service_action":
         _forzar_estado_mantenimiento(flujo, estado_normalizado)
-        respuesta = await manejar_accion_servicios(
+        respuesta = await manejador_servicios.manejar_accion_servicios(
             flujo=flujo,
             texto_mensaje=texto_mensaje,
             opcion_menu=opcion_menu,
@@ -136,7 +135,7 @@ async def _manejar_estado_simple(
         )
     elif estado_normalizado == "maintenance_active_service_action":
         _forzar_estado_mantenimiento(flujo, estado_normalizado)
-        respuesta = await manejar_accion_servicios_activos(
+        respuesta = await manejador_servicios.manejar_accion_servicios_activos(
             flujo=flujo,
             texto_mensaje=texto_mensaje,
             opcion_menu=opcion_menu,
@@ -144,7 +143,7 @@ async def _manejar_estado_simple(
         )
     elif estado_normalizado == "maintenance_service_add":
         _forzar_estado_mantenimiento(flujo, estado_normalizado)
-        respuesta = await manejar_agregar_servicios(
+        respuesta = await manejador_servicios.manejar_agregar_servicios(
             flujo=flujo,
             proveedor_id=flujo.get("provider_id"),
             texto_mensaje=texto_mensaje,
@@ -154,7 +153,7 @@ async def _manejar_estado_simple(
         )
     elif estado_normalizado == "maintenance_service_add_confirmation":
         _forzar_estado_mantenimiento(flujo, estado_normalizado)
-        respuesta = await manejar_confirmacion_agregar_servicios(
+        respuesta = await manejador_servicios.manejar_confirmacion_agregar_servicios(
             flujo=flujo,
             proveedor_id=flujo.get("provider_id"),
             texto_mensaje=texto_mensaje,
@@ -164,7 +163,7 @@ async def _manejar_estado_simple(
         )
     elif estado_normalizado == "maintenance_service_remove":
         _forzar_estado_mantenimiento(flujo, estado_normalizado)
-        respuesta = await manejar_eliminar_servicio(
+        respuesta = await manejador_servicios.manejar_eliminar_servicio(
             flujo=flujo,
             proveedor_id=flujo.get("provider_id"),
             texto_mensaje=texto_mensaje,
@@ -321,6 +320,8 @@ async def manejar_servicios_mantenimiento(
     if es_legacy and not es_contexto_mantenimiento(flujo):
         return None
 
+    manejador_servicios = ManejadorServicios(RepositorioServiciosSupabase(deps.supabase))
+
     respuesta_simple = await _manejar_estado_simple(
         estado_normalizado=estado_normalizado,
         flujo=flujo,
@@ -330,6 +331,7 @@ async def manejar_servicios_mantenimiento(
         selected_option=carga.get("selected_option"),
         cliente_openai=cliente_openai,
         servicio_embeddings=servicio_embeddings,
+        manejador_servicios=manejador_servicios,
     )
     if respuesta_simple is not None:
         return respuesta_simple

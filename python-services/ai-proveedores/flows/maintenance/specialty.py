@@ -4,6 +4,7 @@ import logging
 import re
 from typing import Any, Dict, List, Optional
 
+from dependencies import deps
 from services.maintenance.asistente_clarificacion import (
     construir_mensaje_clarificacion_servicio,
 )
@@ -65,12 +66,7 @@ _EJEMPLOS_SERVICIO = {
 
 
 def _resolver_supabase_runtime() -> Any:
-    try:
-        from principal import supabase  # Import dinámico por acoplamiento runtime
-
-        return supabase
-    except Exception:
-        return None
+    return deps.supabase
 
 
 def _maximo_servicios(flujo: Dict[str, Any]) -> int:

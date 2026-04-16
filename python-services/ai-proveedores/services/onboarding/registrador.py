@@ -7,6 +7,7 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, Optional
 
+from dependencies import deps
 from infrastructure.database import run_supabase
 
 logger = logging.getLogger(__name__)
@@ -19,7 +20,7 @@ async def registrar_consentimiento(
     respuesta: str,
 ) -> None:
     """Persistir el consentimiento del onboarding en Supabase."""
-    from principal import supabase  # Import dinámico para evitar circular import
+    supabase = deps.supabase
 
     if not supabase:
         return

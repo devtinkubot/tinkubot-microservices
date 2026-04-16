@@ -37,6 +37,8 @@ async def ejecutar_busqueda_y_notificar_en_segundo_plano(
     flujo: Dict[str, Any],
     enviar_mensaje_callback: Any,  # Callable async que retorna bool
     guardar_flujo_callback: Any,  # Callable async que guarda estado
+    buscar_proveedores_fn: Any = None,
+    supabase_client: Any = None,
 ) -> None:
     """
     Ejecuta búsqueda + disponibilidad y envía resultado vía WhatsApp en segundo plano.
@@ -54,6 +56,8 @@ async def ejecutar_busqueda_y_notificar_en_segundo_plano(
             Firma: (telefono: str, mensaje: str) -> bool
         guardar_flujo_callback: Función para actualizar el estado del flujo.
             Firma: (telefono: str, flujo: Dict[str, Any]) -> Awaitable[None]
+        buscar_proveedores_fn: Función asíncrona para buscar proveedores.
+        supabase_client: Cliente Supabase para la verificación de disponibilidad.
 
     Returns:
         None (ejecuta en segundo plano)
@@ -93,7 +97,6 @@ async def ejecutar_busqueda_y_notificar_en_segundo_plano(
         )
 
         # Ejecutar búsqueda (verificar cache de prefetch primero)
-        from principal import buscar_proveedores, supabase
         from services.proveedores.disponibilidad import servicio_disponibilidad
 
         resultado_busqueda = None
@@ -114,10 +117,14 @@ async def ejecutar_busqueda_y_notificar_en_segundo_plano(
             logger.debug(f"prefetch cache check failed: {exc}")
 
         if resultado_busqueda is None:
+            if buscar_proveedores_fn is None:
+                raise RuntimeError(
+                    "buscar_proveedores_fn no fue inyectado en segundo plano"
+                )
             logger.info(
                 f"🔍 Ejecutando búsqueda de proveedores: service='{servicio}', city='{ciudad}'"
             )
-            resultado_busqueda = await buscar_proveedores(
+            resultado_busqueda = await buscar_proveedores_fn(
                 servicio,
                 ciudad,
                 radio_km=10.0,
@@ -217,7 +224,7 @@ async def ejecutar_busqueda_y_notificar_en_segundo_plano(
                     descripcion_problema=descripcion_problema,
                     candidatos=candidatos,
                     cliente_redis=redis_client,
-                    supabase=supabase,
+                    supabase=supabase_client,
                 )
             )
             aceptados = resultado_disponibilidad.get("aceptados") or []

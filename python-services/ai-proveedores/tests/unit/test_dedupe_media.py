@@ -9,9 +9,9 @@ imghdr_stub.what = lambda *args, **kwargs: None
 sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from principal import (  # noqa: E402
-    _es_mensaje_interactivo_duplicado,
-    _es_mensaje_multimedia_duplicado,
+from services.shared.ingreso_whatsapp import (  # noqa: E402
+    es_mensaje_interactivo_duplicado as _es_mensaje_interactivo_duplicado,
+    es_mensaje_multimedia_duplicado as _es_mensaje_multimedia_duplicado,
 )
 
 
@@ -29,7 +29,12 @@ class _RedisStub:
 @pytest.mark.asyncio
 async def test_dedupe_multimedia_ignora_reentrega_con_mismo_message_id(monkeypatch):
     redis_stub = _RedisStub()
-    monkeypatch.setattr("principal.cliente_redis", redis_stub)
+    principal_stub = types.ModuleType("principal")
+    principal_stub.cliente_redis = redis_stub
+    monkeypatch.setitem(sys.modules, "principal", principal_stub)
+    monkeypatch.setattr(
+        "services.shared.ingreso_whatsapp.cliente_redis", redis_stub
+    )
 
     carga = {"id": "wamid-1", "image_base64": "abc123"}
 
@@ -51,7 +56,12 @@ async def test_dedupe_multimedia_ignora_reentrega_con_mismo_message_id(monkeypat
 @pytest.mark.asyncio
 async def test_dedupe_interactivo_ignora_reentrega_con_mismo_message_id(monkeypatch):
     redis_stub = _RedisStub()
-    monkeypatch.setattr("principal.cliente_redis", redis_stub)
+    principal_stub = types.ModuleType("principal")
+    principal_stub.cliente_redis = redis_stub
+    monkeypatch.setitem(sys.modules, "principal", principal_stub)
+    monkeypatch.setattr(
+        "services.shared.ingreso_whatsapp.cliente_redis", redis_stub
+    )
 
     carga = {
         "id": "wamid-interactive-1",
@@ -77,7 +87,12 @@ async def test_dedupe_interactivo_ignora_reentrega_con_mismo_message_id(monkeypa
 @pytest.mark.asyncio
 async def test_dedupe_interactivo_accion_unica(monkeypatch):
     redis_stub = _RedisStub()
-    monkeypatch.setattr("principal.cliente_redis", redis_stub)
+    principal_stub = types.ModuleType("principal")
+    principal_stub.cliente_redis = redis_stub
+    monkeypatch.setitem(sys.modules, "principal", principal_stub)
+    monkeypatch.setattr(
+        "services.shared.ingreso_whatsapp.cliente_redis", redis_stub
+    )
 
     primera = await _es_mensaje_interactivo_duplicado(
         "593999111222@s.whatsapp.net",
@@ -107,7 +122,12 @@ async def test_dedupe_interactivo_confirmacion_servicio_sin_message_id(
     monkeypatch,
 ):
     redis_stub = _RedisStub()
-    monkeypatch.setattr("principal.cliente_redis", redis_stub)
+    principal_stub = types.ModuleType("principal")
+    principal_stub.cliente_redis = redis_stub
+    monkeypatch.setitem(sys.modules, "principal", principal_stub)
+    monkeypatch.setattr(
+        "services.shared.ingreso_whatsapp.cliente_redis", redis_stub
+    )
 
     carga = {
         "message_type": "interactive_button_reply",

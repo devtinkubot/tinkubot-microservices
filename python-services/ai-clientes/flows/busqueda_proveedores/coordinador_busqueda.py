@@ -23,6 +23,8 @@ async def coordinar_busqueda_completa(
     flujo: Dict[str, Any],
     enviar_mensaje_callback: Any,  # Callable async que retorna bool
     guardar_flujo_callback: Any,  # Callable async que guarda estado
+    buscar_proveedores_fn: Any = None,
+    supabase_client: Any = None,
 ) -> Optional[str]:
     """
     Coordina la búsqueda completa de proveedores desde cualquier estado.
@@ -38,6 +40,8 @@ async def coordinar_busqueda_completa(
             Firma: async (telefono: str, mensaje: str) -> bool
         guardar_flujo_callback: Función para actualizar el estado del flujo.
             Firma: async (telefono: str, flujo: Dict[str, Any]) -> None
+        buscar_proveedores_fn: Función asíncrona para buscar proveedores.
+        supabase_client: Cliente Supabase para la búsqueda en segundo plano.
 
     Returns:
         Mensaje de confirmación si se inició la búsqueda, None en caso contrario.
@@ -87,6 +91,8 @@ async def coordinar_busqueda_completa(
                 flujo=flujo,
                 enviar_mensaje_callback=enviar_mensaje_callback,
                 guardar_flujo_callback=guardar_flujo_callback,
+                buscar_proveedores_fn=buscar_proveedores_fn,
+                supabase_client=supabase_client,
             )
         )
 

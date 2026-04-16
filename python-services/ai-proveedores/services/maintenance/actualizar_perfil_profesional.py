@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 from typing import Dict, List, Optional
 
+from dependencies import deps
 from infrastructure.database import run_supabase
 
 from .actualizar_servicios import actualizar_servicios
@@ -24,7 +25,7 @@ async def actualizar_perfil_profesional(
     instagram_username: Optional[str] = None,
 ) -> Dict[str, object]:
     """Persiste la parte profesional del perfil luego del onboarding básico."""
-    from principal import supabase  # Import dinámico para evitar circular import
+    supabase = deps.supabase
 
     if not proveedor_id:
         raise ValueError("proveedor_id es requerido")

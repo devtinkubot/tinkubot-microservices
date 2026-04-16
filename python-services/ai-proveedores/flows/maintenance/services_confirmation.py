@@ -65,10 +65,14 @@ from templates.maintenance.registration import (
     preguntar_siguiente_servicio_registro,
 )
 from templates.shared import mensaje_perfecto_guardar_perfil_profesional
+from flows.maintenance.presentadores.confirmacion_servicios import (
+    PresentadorConfirmacion,
+)
 
 logger = logging.getLogger(__name__)
 
 _FLUJO_KEY_EDIT_INDEX = "service_edit_index"
+_PRESENTADOR_CONFIRMACION = PresentadorConfirmacion()
 
 
 def _estado_contextual(
@@ -95,15 +99,7 @@ def _maximo_visible(flujo: Dict[str, Any]) -> int:
 
 
 def _payload_resumen_perfil(flujo: Dict[str, Any]) -> Dict[str, Any]:
-    return payload_confirmacion_resumen(
-        construir_resumen_confirmacion_perfil_profesional(
-            experience_range=flujo.get("experience_range"),
-            facebook_username=flujo.get("facebook_username"),
-            instagram_username=flujo.get("instagram_username"),
-            certificate_uploaded=bool(flujo.get("certificate_uploaded")),
-            services=list(flujo.get("servicios_temporales") or []),
-        )
-    )
+    return _PRESENTADOR_CONFIRMACION.payload_resumen_perfil(flujo)
 
 
 def _resolver_confirmacion_basica(
@@ -212,7 +208,9 @@ async def manejar_confirmacion_servicio_perfil(
 
         return {
             "success": True,
-            "messages": [{"response": mensaje_confirmar_o_corregir_servicio()}],
+            "messages": [
+                _PRESENTADOR_CONFIRMACION.respuesta_confirmar_o_corregir_servicio()
+            ],
         }
 
     if not candidato:
@@ -288,7 +286,9 @@ async def manejar_confirmacion_servicio_perfil(
 
     return {
         "success": True,
-        "messages": [{"response": mensaje_confirmar_o_corregir_servicio()}],
+        "messages": [
+            _PRESENTADOR_CONFIRMACION.respuesta_confirmar_o_corregir_servicio()
+        ],
     }
 
 
@@ -303,13 +303,13 @@ async def manejar_confirmacion_perfil_profesional(
         flujo["state"] = "maintenance_profile_completion_finalize"
         return {
             "success": True,
-            "messages": [{"response": mensaje_perfecto_guardar_perfil_profesional()}],
+            "messages": [_PRESENTADOR_CONFIRMACION.respuesta_perfecto_guardar_perfil()],
         }
     if opcion == "reject":
         flujo["state"] = "maintenance_profile_completion_edit_action"
         return {
             "success": True,
-            "messages": [{"response": mensaje_menu_edicion_perfil_profesional()}],
+            "messages": [_PRESENTADOR_CONFIRMACION.respuesta_menu_edicion_perfil()],
         }
     return {"success": True, "messages": [_payload_resumen_perfil(flujo)]}
 
@@ -332,7 +332,7 @@ async def manejar_edicion_perfil_profesional(
         )
         return {
             "success": True,
-            "messages": [{"response": preguntar_experiencia_general()}],
+            "messages": [_PRESENTADOR_CONFIRMACION.respuesta_preguntar_experiencia()],
         }
     if seleccion == "2" or texto == "2":
         flujo["profile_edit_mode"] = "social_media"
@@ -342,7 +342,7 @@ async def manejar_edicion_perfil_profesional(
         )
         return {
             "success": True,
-            "messages": [payload_red_social_opcional()],
+            "messages": [_PRESENTADOR_CONFIRMACION.respuesta_red_social_opcional()],
         }
     if seleccion == "3" or texto == "3":
         flujo["profile_edit_mode"] = "certificate"
@@ -350,7 +350,10 @@ async def manejar_edicion_perfil_profesional(
             flujo,
             maintenance="maintenance_certificate",
         )
-        return {"success": True, "messages": [payload_certificado_opcional()]}
+        return {
+            "success": True,
+            "messages": [_PRESENTADOR_CONFIRMACION.respuesta_certificado_opcional()],
+        }
     if seleccion in {"4", "5", "6"} or texto in {"4", "5", "6"}:
         indice = int(seleccion or texto) - 4
         flujo["profile_edit_mode"] = "service"
@@ -363,11 +366,11 @@ async def manejar_edicion_perfil_profesional(
             "success": True,
             "messages": [
                 {
-                    "response": preguntar_siguiente_servicio_registro(
+                    "response": _PRESENTADOR_CONFIRMACION.respuesta_preguntar_siguiente_servicio(
                         indice + 1,
                         maximo_visible,
                         SERVICIOS_MINIMOS_PERFIL_PROFESIONAL,
-                    )
+                    )["response"]
                 }
             ],
         }
@@ -377,7 +380,7 @@ async def manejar_edicion_perfil_profesional(
 
     return {
         "success": True,
-        "messages": [{"response": mensaje_menu_edicion_perfil_profesional()}],
+        "messages": [_PRESENTADOR_CONFIRMACION.respuesta_menu_edicion_perfil()],
     }
 
 
@@ -395,10 +398,10 @@ def mostrar_confirmacion_servicios(
         "success": True,
         "messages": [
             {
-                "response": mensaje_resumen_servicios_registro(
+                "response": _PRESENTADOR_CONFIRMACION.respuesta_resumen_servicios_registro(
                     servicios_transformados,
                     maximo_visible,
-                )
+                )["response"]
             }
         ],
     }
@@ -430,7 +433,7 @@ async def manejar_decision_agregar_otro_servicio(
             "success": True,
             "messages": [
                 {
-                    "response": preguntar_siguiente_servicio_registro(
+                    "response": _PRESENTADOR_CONFIRMACION.respuesta_preguntar_siguiente_servicio(
                         len(servicios) + 1,
                         maximo_visible,
                         (
@@ -438,7 +441,7 @@ async def manejar_decision_agregar_otro_servicio(
                             if flujo.get("profile_completion_mode")
                             else None
                         ),
-                    )
+                    )["response"]
                 }
             ],
         }
@@ -456,16 +459,16 @@ async def manejar_decision_agregar_otro_servicio(
                 "success": True,
                 "messages": [
                     {
-                        "response": mensaje_debes_registrar_mas_servicios(
+                        "response": _PRESENTADOR_CONFIRMACION.respuesta_debes_registrar_mas_servicios(
                             SERVICIOS_MINIMOS_PERFIL_PROFESIONAL
-                        )
+                        )["response"]
                     },
                     {
-                        "response": preguntar_siguiente_servicio_registro(
+                        "response": _PRESENTADOR_CONFIRMACION.respuesta_preguntar_siguiente_servicio(
                             len(servicios) + 1,
                             maximo_visible,
                             SERVICIOS_MINIMOS_PERFIL_PROFESIONAL,
-                        )
+                        )["response"]
                     },
                 ],
             }
@@ -477,17 +480,19 @@ async def manejar_decision_agregar_otro_servicio(
             "success": True,
             "messages": [
                 {
-                    "response": mensaje_resumen_servicios_registro(
+                    "response": _PRESENTADOR_CONFIRMACION.respuesta_resumen_servicios_registro(
                         servicios,
                         maximo_visible,
-                    )
+                    )["response"]
                 }
             ],
         }
 
     return {
         "success": True,
-        "messages": [{"response": mensaje_error_opcion_agregar_otro()}],
+        "messages": [
+            _PRESENTADOR_CONFIRMACION.respuesta_error_opcion_agregar_otro()
+        ],
     }
 
 
@@ -505,10 +510,10 @@ async def manejar_confirmacion_servicios(
             "success": True,
             "messages": [
                 {
-                    "response": mensaje_resumen_servicios_registro(
+                    "response": _PRESENTADOR_CONFIRMACION.respuesta_resumen_servicios_registro(
                         list(flujo.get("servicios_temporales") or []),
                         maximo_visible,
-                    )
+                    )["response"]
                 }
             ],
         }
@@ -532,7 +537,11 @@ async def manejar_confirmacion_servicios(
             return {
                 "success": True,
                 "messages": [
-                    {"response": mensaje_debes_registrar_al_menos_un_servicio()}
+                    {
+                        "response": _PRESENTADOR_CONFIRMACION.respuesta_debes_registrar_al_menos_un_servicio()[
+                            "response"
+                        ]
+                    }
                 ],
             }
         if (
@@ -543,15 +552,15 @@ async def manejar_confirmacion_servicios(
                 "success": True,
                 "messages": [
                     {
-                        "response": mensaje_debes_registrar_mas_servicios(
+                        "response": _PRESENTADOR_CONFIRMACION.respuesta_debes_registrar_mas_servicios(
                             SERVICIOS_MINIMOS_PERFIL_PROFESIONAL
-                        )
+                        )["response"]
                     },
                     {
-                        "response": mensaje_resumen_servicios_registro(
+                        "response": _PRESENTADOR_CONFIRMACION.respuesta_resumen_servicios_registro(
                             servicios_temporales,
                             maximo_visible,
-                        )
+                        )["response"]
                     },
                 ],
             }
@@ -562,7 +571,7 @@ async def manejar_confirmacion_servicios(
             return {
                 "success": True,
                 "messages": [
-                    {"response": mensaje_perfecto_guardar_perfil_profesional()}
+                    _PRESENTADOR_CONFIRMACION.respuesta_perfecto_guardar_perfil()
                 ],
             }
 
@@ -579,12 +588,12 @@ async def manejar_confirmacion_servicios(
         return {
             "success": True,
             "messages": [
-                {"response": mensaje_correccion_servicios()},
+                _PRESENTADOR_CONFIRMACION.respuesta_correccion_servicios(),
                 {
-                    "response": mensaje_menu_edicion_servicios_registro(
+                    "response": _PRESENTADOR_CONFIRMACION.respuesta_mensaje_edicion_servicios_registro(
                         list(flujo.get("servicios_temporales") or []),
                         maximo_visible,
-                    )
+                    )["response"]
                 },
             ],
         }
@@ -593,10 +602,10 @@ async def manejar_confirmacion_servicios(
         "success": True,
         "messages": [
             {
-                "response": mensaje_resumen_servicios_registro(
+                "response": _PRESENTADOR_CONFIRMACION.respuesta_resumen_servicios_registro(
                     list(flujo.get("servicios_temporales") or []),
                     maximo_visible,
-                )
+                )["response"]
             }
         ],
     }
@@ -621,7 +630,7 @@ async def manejar_accion_edicion_servicios_registro(
         return {
             "success": True,
             "messages": [
-                payload_detalle_servicios(
+                _PRESENTADOR_CONFIRMACION.respuesta_payload_detalle_servicios(
                     servicios,
                     maximo_visible,
                 )
@@ -636,11 +645,11 @@ async def manejar_accion_edicion_servicios_registro(
         return {
             "success": True,
             "messages": [
-                payload_menu_edicion_servicios_registro(
+                _PRESENTADOR_CONFIRMACION.respuesta_payload_menu_edicion_servicios_registro(
                     servicios,
                     maximo_visible,
                 ),
-                {"response": preguntar_numero_servicio_eliminar()},
+                _PRESENTADOR_CONFIRMACION.respuesta_preguntar_numero_servicio_eliminar(),
             ],
         }
 
@@ -650,16 +659,16 @@ async def manejar_accion_edicion_servicios_registro(
                 "success": True,
                 "messages": [
                     {
-                        "response": mensaje_limite_servicios_temporales(
+                        "response": _PRESENTADOR_CONFIRMACION.respuesta_mensaje_limite_temporal(
                             maximo_visible,
                             bool(flujo.get("profile_completion_mode")),
-                        )
+                        )["response"]
                     },
                     {
-                        "response": mensaje_menu_edicion_servicios_registro(
+                        "response": _PRESENTADOR_CONFIRMACION.respuesta_mensaje_edicion_servicios_registro(
                             servicios,
                             maximo_visible,
-                        )
+                        )["response"]
                     },
                 ],
             }
@@ -671,10 +680,10 @@ async def manejar_accion_edicion_servicios_registro(
             "success": True,
             "messages": [
                 {
-                    "response": preguntar_siguiente_servicio_registro(
+                    "response": _PRESENTADOR_CONFIRMACION.respuesta_preguntar_siguiente_servicio(
                         len(servicios) + 1,
                         maximo_visible,
-                    )
+                    )["response"]
                 }
             ],
         }
@@ -688,10 +697,10 @@ async def manejar_accion_edicion_servicios_registro(
             "success": True,
             "messages": [
                 {
-                    "response": mensaje_resumen_servicios_registro(
+                    "response": _PRESENTADOR_CONFIRMACION.respuesta_resumen_servicios_registro(
                         servicios,
                         maximo_visible,
-                    )
+                    )["response"]
                 }
             ],
         }
@@ -699,7 +708,7 @@ async def manejar_accion_edicion_servicios_registro(
     return {
         "success": True,
         "messages": [
-            payload_menu_edicion_servicios_registro(
+            _PRESENTADOR_CONFIRMACION.respuesta_payload_menu_edicion_servicios_registro(
                 servicios,
                 maximo_visible,
             )
@@ -736,7 +745,9 @@ async def manejar_seleccion_reemplazo_servicio_registro(
     if indice is None:
         return {
             "success": True,
-            "messages": [{"response": preguntar_numero_servicio_reemplazar()}],
+            "messages": [
+                _PRESENTADOR_CONFIRMACION.respuesta_preguntar_numero_servicio_reemplazar()
+            ],
         }
 
     flujo[_FLUJO_KEY_EDIT_INDEX] = indice
@@ -748,10 +759,10 @@ async def manejar_seleccion_reemplazo_servicio_registro(
         "success": True,
         "messages": [
             {
-                "response": preguntar_nuevo_servicio_reemplazo(
+                "response": _PRESENTADOR_CONFIRMACION.respuesta_preguntar_nuevo_servicio_reemplazo(
                     indice + 1,
                     servicios[indice],
-                )
+                )["response"]
             }
         ],
     }
@@ -799,12 +810,12 @@ async def manejar_reemplazo_servicio_registro(
     return {
         "success": True,
         "messages": [
-            {"response": mensaje_servicio_actualizado(nuevo)},
+            _PRESENTADOR_CONFIRMACION.respuesta_mensaje_servicio_actualizado(nuevo),
             {
-                "response": mensaje_resumen_servicios_registro(
+                "response": _PRESENTADOR_CONFIRMACION.respuesta_resumen_servicios_registro(
                     servicios,
                     maximo_visible,
-                )
+                )["response"]
             },
         ],
     }
@@ -828,7 +839,9 @@ async def manejar_eliminacion_servicio_registro(
     if indice is None:
         return {
             "success": True,
-            "messages": [{"response": preguntar_numero_servicio_eliminar()}],
+            "messages": [
+                _PRESENTADOR_CONFIRMACION.respuesta_preguntar_numero_servicio_eliminar()
+            ],
         }
 
     eliminado = servicios.pop(indice)
@@ -842,9 +855,11 @@ async def manejar_eliminacion_servicio_registro(
         return {
             "success": True,
             "messages": [
-                {"response": mensaje_servicio_eliminado_registro(eliminado)},
-                {"response": mensaje_debes_registrar_al_menos_un_servicio()},
-                {"response": preguntar_siguiente_servicio_registro(1, maximo_visible)},
+                _PRESENTADOR_CONFIRMACION.respuesta_mensaje_servicio_eliminado(eliminado),
+                _PRESENTADOR_CONFIRMACION.respuesta_debes_registrar_al_menos_un_servicio(),
+                _PRESENTADOR_CONFIRMACION.respuesta_preguntar_siguiente_servicio(
+                    1, maximo_visible
+                ),
             ],
         }
     flujo["state"] = _estado_contextual(
@@ -854,12 +869,12 @@ async def manejar_eliminacion_servicio_registro(
     return {
         "success": True,
         "messages": [
-            {"response": mensaje_servicio_eliminado_registro(eliminado)},
+            _PRESENTADOR_CONFIRMACION.respuesta_mensaje_servicio_eliminado(eliminado),
             {
-                "response": mensaje_resumen_servicios_registro(
+                "response": _PRESENTADOR_CONFIRMACION.respuesta_resumen_servicios_registro(
                     servicios,
                     maximo_visible,
-                )
+                )["response"]
             },
         ],
     }
@@ -897,12 +912,12 @@ async def manejar_agregar_servicio_desde_edicion_registro(
     return {
         "success": True,
         "messages": [
-            {"response": mensaje_servicio_actualizado(nuevo)},
+            _PRESENTADOR_CONFIRMACION.respuesta_mensaje_servicio_actualizado(nuevo),
             {
-                "response": mensaje_resumen_servicios_registro(
+                "response": _PRESENTADOR_CONFIRMACION.respuesta_resumen_servicios_registro(
                     servicios,
                     maximo_visible,
-                )
+                )["response"]
             },
         ],
     }

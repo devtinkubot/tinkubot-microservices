@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 from uuid import uuid4
 
+from dependencies import deps
 from infrastructure.database import run_supabase
 from services.onboarding import session as onboarding_session
 from services.onboarding.event_payloads import (
@@ -87,9 +88,7 @@ async def asegurar_proveedor_persistido_tras_consentimiento_onboarding(
 ) -> tuple[Optional[Dict[str, Any]], Optional[str]]:
     """Asegura que el proveedor exista en Supabase tras consentir."""
     if supabase is None:
-        from principal import supabase as supabase_local
-
-        supabase = supabase_local
+        supabase = deps.supabase
 
     proveedor_id = (perfil_proveedor or {}).get("id")
     if proveedor_id:
@@ -272,9 +271,7 @@ async def procesar_respuesta_consentimiento_onboarding(
     """Procesa la respuesta de consentimiento del onboarding."""
 
     if supabase is None:
-        from principal import supabase as supabase_local
-
-        supabase = supabase_local
+        supabase = deps.supabase
 
     texto_mensaje = (carga.get("message") or carga.get("content") or "").strip()
     opcion = _resolver_opcion_consentimiento(carga)

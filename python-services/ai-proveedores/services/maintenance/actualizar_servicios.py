@@ -10,6 +10,7 @@ from collections import Counter
 from importlib import import_module
 from typing import Any, List, Optional
 
+from dependencies import deps
 from infrastructure.database import run_supabase
 from services.maintenance.estado_operativo import (
     perfil_profesional_completo,
@@ -82,10 +83,8 @@ async def actualizar_servicios(proveedor_id: str, servicios: List[str]) -> List[
     Raises:
         Exception: Si hay un error al actualizar en la base de datos
     """
-    from principal import (  # Import dinámico para evitar circular import
-        servicio_embeddings,
-        supabase,
-    )
+    supabase = deps.supabase
+    servicio_embeddings = deps.servicio_embeddings
 
     if not supabase:
         return sanitizar_servicios(servicios)
@@ -167,11 +166,8 @@ async def agregar_servicios_proveedor(
     que en WhatsApp introduce latencia suficiente para disparar reintentos
     del gateway.
     """
-    from principal import (  # Import dinámico para evitar circular import
-        servicio_embeddings,
-        supabase,
-    )
-
+    supabase = deps.supabase
+    servicio_embeddings = deps.servicio_embeddings
     servicios_limpios = sanitizar_servicios(nuevos_servicios)
     if not servicios_limpios:
         if not supabase:
@@ -251,8 +247,7 @@ async def eliminar_servicio_proveedor(
     Este camino evita reescribir todos los servicios con embeddings, que es más
     costoso y más frágil que borrar una sola fila y reordenar lo que queda.
     """
-    from principal import supabase
-
+    supabase = deps.supabase
     if not supabase:
         return []
 

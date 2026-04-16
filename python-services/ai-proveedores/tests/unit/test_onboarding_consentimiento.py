@@ -89,9 +89,7 @@ async def test_consentimiento_onboarding_aceptado_actualiza_flujo_y_registra(
 async def test_consentimiento_onboarding_aceptado_crea_borrador_si_no_hay_provider_id(
     monkeypatch,
 ):
-    principal_stub = types.ModuleType("principal")
-    principal_stub.supabase = object()
-    monkeypatch.setitem(sys.modules, "principal", principal_stub)
+    monkeypatch.setattr("dependencies.deps.supabase", object())
 
     captured: Dict[str, Any] = {}
     flujo = {
