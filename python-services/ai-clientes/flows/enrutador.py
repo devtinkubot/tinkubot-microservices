@@ -505,7 +505,7 @@ async def enrutar_estado(  # noqa: C901
                             f"⚠️ Error enviando confirmación de disponibilidad: {exc}"
                         )
 
-                from services.proveedores.disponibilidad import servicio_disponibilidad
+                from principal import servicio_disponibilidad
 
                 candidatos = [
                     {
@@ -529,7 +529,6 @@ async def enrutar_estado(  # noqa: C901
                         ),
                         candidatos=candidatos,
                         cliente_redis=orquestador.redis_client,
-                        supabase=orquestador.supabase,
                     )
                 )
                 aceptados = resultado_disponibilidad.get("aceptados") or []

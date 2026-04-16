@@ -1,4 +1,5 @@
 import logging
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -31,7 +32,8 @@ class _OrquestadorStub:
         self.repositorio_flujo = None
         self.gestor_sesiones = _GestorSesionesStub()
         self.logger = logging.getLogger("test-enrutador-no-disponibilidad")
-        self.redis_client = object()
+        self.redis_client = AsyncMock()
+        self.redis_client.get.return_value = None
         self.farewell_message = "Hasta luego"
         self.max_confirm_attempts = 3
         self.supabase = None
@@ -67,6 +69,11 @@ async def test_searching_sin_aceptados_separa_mensaje_y_confirmacion(monkeypatch
     )
     monkeypatch.setattr(
         "services.proveedores.disponibilidad.servicio_disponibilidad",
+        servicio_stub,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "principal.servicio_disponibilidad",
         servicio_stub,
         raising=False,
     )

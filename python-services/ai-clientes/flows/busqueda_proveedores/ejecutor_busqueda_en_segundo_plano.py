@@ -97,7 +97,7 @@ async def ejecutar_busqueda_y_notificar_en_segundo_plano(
         )
 
         # Ejecutar búsqueda (verificar cache de prefetch primero)
-        from services.proveedores.disponibilidad import servicio_disponibilidad
+        from principal import servicio_disponibilidad
 
         resultado_busqueda = None
         try:

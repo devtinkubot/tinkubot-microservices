@@ -1181,6 +1181,3 @@ class ServicioDisponibilidad:
     async def close(self) -> None:
         """Cerrar cliente HTTP compartido."""
         await self._client.aclose()
-
-
-# servicio_disponibilidad = ServicioDisponibilidad()
