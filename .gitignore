@@ -120,3 +120,4 @@ AGENTS.md
 
 # Grok local
 .grok/
+.env
