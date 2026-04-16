@@ -146,21 +146,6 @@ servicio_disponibilidad = ServicioDisponibilidad(
     repositorio_metricas=repositorio_metricas,
 )
 
-# Inicializar orquestador conversacional con nuevos servicios
-orquestador = OrquestadorConversacional(
-    redis_client=redis_client,
-    supabase=supabase,
-    gestor_sesiones=gestor_sesiones,
-    buscador=buscador,
-    validador=validador,
-    extractor_ia=extractor_ia,
-    servicio_consentimiento=servicio_consentimiento,
-    repositorio_flujo=repositorio_flujo,
-    repositorio_clientes=repositorio_clientes,
-    repositorio_lead_events=repositorio_lead_events,
-    logger=logger,
-)
-
 moderador_contenido = ModeradorContenido(
     redis_client=redis_client,
     cliente_openai=cliente_openai,
@@ -198,9 +183,20 @@ retrollamadas = OrquestadorRetrollamadas(
     supabase_base_url=configuracion.supabase_url,
 )
 
-logger.info("🔧 Inyectando callbacks en el orquestador...")
-orquestador.inyectar_callbacks(**retrollamadas.build())
-logger.info("✅ Callbacks inyectados correctamente")
+# Inicializar orquestador conversacional con composición explícita
+orquestador = OrquestadorConversacional(
+    redis_client=redis_client,
+    gestor_sesiones=gestor_sesiones,
+    buscador=buscador,
+    validador=validador,
+    extractor_ia=extractor_ia,
+    servicio_consentimiento=servicio_consentimiento,
+    repositorio_flujo=repositorio_flujo,
+    repositorio_clientes=repositorio_clientes,
+    repositorio_lead_events=repositorio_lead_events,
+    callbacks_source=retrollamadas,
+    logger=logger,
+)
 
 async def buscar_proveedores(
     servicio: str,

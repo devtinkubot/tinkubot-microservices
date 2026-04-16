@@ -10,10 +10,6 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 import httpx
-from infrastructure.database import run_supabase
-from infrastructure.persistencia.repositorio_metricas_rotacion import (
-    RepositorioMetricasRotacion,
-)
 from services.proveedores.identidad import resolver_nombre_visible_proveedor
 
 logger = logging.getLogger(__name__)
@@ -35,7 +31,11 @@ MENSAJE_SOLICITUD_CADUCADA = (
 class ServicioDisponibilidad:
     """Servicio para verificar disponibilidad contactando proveedores."""
 
-    def __init__(self, repositorio_metricas: Optional[Any] = None) -> None:
+    def __init__(self, repositorio_metricas: Any) -> None:
+        if repositorio_metricas is None:
+            raise ValueError(
+                "repositorio_metricas es obligatorio en ServicioDisponibilidad"
+            )
         self.whatsapp_url = os.getenv("WHATSAPP_CLIENTES_URL", "http://wa-gateway:7000")
         self.account_id = os.getenv(
             "WHATSAPP_PROVEEDORES_ACCOUNT_ID", "bot-proveedores"
@@ -228,17 +228,11 @@ class ServicioDisponibilidad:
     async def _cargar_metricas_rotacion(
         self,
         *,
-        supabase: Any,
         provider_ids: List[str],
     ) -> Dict[str, Dict[str, Any]]:
         """Carga señales recientes para priorizar a quién ofrecer oportunidad."""
         try:
-            repositorio_metricas = self.repositorio_metricas
-            if repositorio_metricas is None and supabase is not None:
-                repositorio_metricas = RepositorioMetricasRotacion(supabase)
-            if repositorio_metricas is None:
-                return {}
-            return await repositorio_metricas.obtener_metricas_proveedores(
+            return await self.repositorio_metricas.obtener_metricas_proveedores(
                 provider_ids,
                 dias=AVAILABILITY_ROTATION_WINDOW_DAYS,
             )
@@ -250,7 +244,6 @@ class ServicioDisponibilidad:
         self,
         *,
         candidatos: List[Dict[str, Any]],
-        supabase: Any,
     ) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
         """Selecciona el cupo de candidatos aplicando rotación justa."""
         candidatos_limpios: List[Dict[str, Any]] = []
@@ -274,12 +267,11 @@ class ServicioDisponibilidad:
         }
         if limite <= 0:
             return [], contexto
-        if not supabase or len(candidatos_limpios) <= AVAILABILITY_DISPATCH_CAP:
+        if len(candidatos_limpios) <= AVAILABILITY_DISPATCH_CAP:
             contexto["rotation_applied"] = False
             return candidatos_limpios[:limite], contexto
 
         metricas = await self._cargar_metricas_rotacion(
-            supabase=supabase,
             provider_ids=[item["provider_id"] for item in candidatos_limpios],
         )
         if not metricas:
@@ -679,7 +671,6 @@ class ServicioDisponibilidad:
         descripcion_problema: Optional[str],
         candidatos: List[Dict[str, Any]],
         cliente_redis: Any,
-        supabase: Any = None,
     ) -> Dict[str, Any]:
         """
         Verifica disponibilidad consultando por WhatsApp a cada proveedor.
@@ -772,7 +763,6 @@ class ServicioDisponibilidad:
         candidatos_ordenados, contexto_rotacion = (
             await self._seleccionar_candidatos_rotacion(
                 candidatos=list(candidatos_por_telefono.values()),
-                supabase=supabase,
             )
         )
         candidatos_disponibles: Dict[str, Dict[str, Any]] = {

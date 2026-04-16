@@ -40,16 +40,58 @@ class _RepoClientesStub:
         }
 
 
+class _RepoFlujoStub:
+    async def guardar(self, *args, **kwargs):
+        return None
+
+
+class _RepositorioLeadEventsStub:
+    async def obtener_servicios_populares(self, *args, **kwargs):
+        return []
+
+
+class _CallbacksSourceStub:
+    async def guardar_flujo(self, *args, **kwargs):
+        return None
+
+    async def limpiar_ubicacion_cliente(self, *args, **kwargs):
+        return None
+
+    async def limpiar_ciudad_cliente(self, *args, **kwargs):
+        return None
+
+    async def limpiar_consentimiento_cliente(self, *args, **kwargs):
+        return None
+
+    async def resetear_flujo(self, *args, **kwargs):
+        return None
+
+    async def solicitar_consentimiento(self, *args, **kwargs):
+        return None
+
+    async def enviar_texto_whatsapp(self, *args, **kwargs):
+        return None
+
+
+def _crear_orquestador(repo_clientes):
+    return OrquestadorConversacional(
+        redis_client=None,
+        gestor_sesiones=_GestorSesionesStub(),
+        buscador=object(),
+        validador=object(),
+        extractor_ia=_ExtractorIAStub(),
+        servicio_consentimiento=object(),
+        repositorio_flujo=_RepoFlujoStub(),
+        repositorio_clientes=repo_clientes,
+        repositorio_lead_events=_RepositorioLeadEventsStub(),
+        callbacks_source=_CallbacksSourceStub(),
+    )
+
+
 @pytest.mark.asyncio
 async def test_detectar_y_actualizar_ciudad_resuelve_por_lat_lng(monkeypatch):
     repo_clientes = _RepoClientesStub()
-    orchestrator = OrquestadorConversacional(
-        redis_client=None,
-        supabase=None,
-        gestor_sesiones=_GestorSesionesStub(),
-        extractor_ia=_ExtractorIAStub(),
-        repositorio_clientes=repo_clientes,
-    )
+    orchestrator = _crear_orquestador(repo_clientes)
 
     async def _resolver(_lat: float, _lng: float) -> Optional[str]:
         return "Cuenca"
@@ -74,13 +116,7 @@ async def test_detectar_y_actualizar_ciudad_resuelve_por_lat_lng(monkeypatch):
 @pytest.mark.asyncio
 async def test_awaiting_city_reusa_ciudad_confirmada_desde_ubicacion(monkeypatch):
     repo_clientes = _RepoClientesStub()
-    orchestrator = OrquestadorConversacional(
-        redis_client=None,
-        supabase=None,
-        gestor_sesiones=_GestorSesionesStub(),
-        extractor_ia=_ExtractorIAStub(),
-        repositorio_clientes=repo_clientes,
-    )
+    orchestrator = _crear_orquestador(repo_clientes)
     orchestrator.enviar_texto_whatsapp = lambda *args, **kwargs: None
     orchestrator.guardar_flujo = lambda *args, **kwargs: None
 
@@ -134,13 +170,7 @@ async def test_resolver_ciudad_desde_coordenadas_prefiere_county_sobre_municipal
     monkeypatch,
 ):
     repo_clientes = _RepoClientesStub()
-    orchestrator = OrquestadorConversacional(
-        redis_client=None,
-        supabase=None,
-        gestor_sesiones=_GestorSesionesStub(),
-        extractor_ia=_ExtractorIAStub(),
-        repositorio_clientes=repo_clientes,
-    )
+    orchestrator = _crear_orquestador(repo_clientes)
 
     class _FakeResponse:
         status_code = 200

@@ -43,46 +43,27 @@ class RedisFalsoConLock(RedisFalso):
         self.redis_client = RedisRawFalso(self.data)
 
 
-class _SupabaseQueryRotacionFalso:
-    def __init__(self, table_name: str, tables: dict[str, list[dict]]):
-        self.table_name = table_name
-        self.tables = tables
+class _RepositorioMetricasRotacionFalso:
+    def __init__(self, metricas_por_provider: dict[str, dict] | None = None):
+        self.metricas_por_provider = metricas_por_provider or {}
 
-    def select(self, *_args, **_kwargs):
-        return self
-
-    def eq(self, *_args, **_kwargs):
-        return self
-
-    def gte(self, *_args, **_kwargs):
-        return self
-
-    def in_(self, *_args, **_kwargs):
-        return self
-
-    def order(self, *_args, **_kwargs):
-        return self
-
-    def limit(self, *_args, **_kwargs):
-        return self
-
-    def execute(self):
-        from types import SimpleNamespace
-
-        return SimpleNamespace(data=self.tables.get(self.table_name, []))
+    async def obtener_metricas_proveedores(self, provider_ids, dias=30):
+        _ = dias
+        return {
+            provider_id: self.metricas_por_provider.get(provider_id, {})
+            for provider_id in provider_ids
+        }
 
 
-class _SupabaseRotacionFalso:
-    def __init__(self, tables: dict[str, list[dict]]):
-        self.tables = tables
-
-    def table(self, table_name: str):
-        return _SupabaseQueryRotacionFalso(table_name, self.tables)
+def _crear_servicio(metricas_por_provider: dict[str, dict] | None = None):
+    return ServicioDisponibilidad(
+        repositorio_metricas=_RepositorioMetricasRotacionFalso(metricas_por_provider)
+    )
 
 
 @pytest.mark.asyncio
 async def test_verificar_disponibilidad_sin_candidatos_cierra_ciclo():
-    servicio = ServicioDisponibilidad()
+    servicio = _crear_servicio()
     redis_falso = RedisFalso()
 
     resultado = await servicio.verificar_disponibilidad(
@@ -105,7 +86,7 @@ async def test_verificar_disponibilidad_sin_candidatos_cierra_ciclo():
 
 @pytest.mark.asyncio
 async def test_marcar_presentada_y_cerrar_solicitud_actualiza_ciclo():
-    servicio = ServicioDisponibilidad()
+    servicio = _crear_servicio()
     redis_falso = RedisFalso()
     request_id = "search-prueba-123"
 
@@ -131,7 +112,7 @@ async def test_marcar_presentada_y_cerrar_solicitud_actualiza_ciclo():
 
 @pytest.mark.asyncio
 async def test_timeout_envia_push_proactivo_de_caducidad():
-    servicio = ServicioDisponibilidad()
+    servicio = _crear_servicio()
     redis_falso = RedisFalsoConLock()
     mensajes_enviados = []
 
@@ -184,7 +165,7 @@ async def test_timeout_envia_push_proactivo_de_caducidad():
 
 @pytest.mark.asyncio
 async def test_verificar_disponibilidad_cierra_si_todos_ocupados():
-    servicio = ServicioDisponibilidad()
+    servicio = _crear_servicio()
     redis_falso = RedisFalsoConLock()
     redis_falso.data["availability:provider:593999000001@s.whatsapp.net:pending"] = [
         "req-previo"
@@ -231,7 +212,7 @@ async def test_verificar_disponibilidad_cierra_si_todos_ocupados():
 
 @pytest.mark.asyncio
 async def test_verificar_disponibilidad_excluye_ocupados_y_consulta_libres():
-    servicio = ServicioDisponibilidad()
+    servicio = _crear_servicio()
     redis_falso = RedisFalsoConLock()
     redis_falso.data["availability:provider:593999000001@s.whatsapp.net:pending"] = [
         "req-previo"
@@ -279,7 +260,7 @@ async def test_verificar_disponibilidad_excluye_ocupados_y_consulta_libres():
 
 @pytest.mark.asyncio
 async def test_verificar_disponibilidad_prioriza_real_phone_sobre_lid():
-    servicio = ServicioDisponibilidad()
+    servicio = _crear_servicio()
     redis_falso = RedisFalsoConLock()
     mensajes_enviados = []
 
@@ -328,7 +309,7 @@ async def test_verificar_disponibilidad_prioriza_real_phone_sobre_lid():
 
 @pytest.mark.asyncio
 async def test_verificar_disponibilidad_excluye_lid_sin_real_phone():
-    servicio = ServicioDisponibilidad()
+    servicio = _crear_servicio()
     redis_falso = RedisFalsoConLock()
     mensajes_enviados = []
 
@@ -366,7 +347,28 @@ async def test_verificar_disponibilidad_excluye_lid_sin_real_phone():
 
 @pytest.mark.asyncio
 async def test_verificar_disponibilidad_limita_y_rotaciona_cupo_de_diez():
-    servicio = ServicioDisponibilidad()
+    counts = {
+        "prov-1": 5,
+        "prov-2": 4,
+        "prov-3": 2,
+        "prov-4": 2,
+        "prov-5": 6,
+    }
+    for idx in range(6, 16):
+        provider_id = f"prov-{idx}"
+        counts[provider_id] = 1
+
+    metricas_por_provider = {
+        provider_id: {
+            "opportunities_30d": total,
+            "contracts_30d": total,
+            "feedback_count_30d": total,
+            "rating": 5.0 if provider_id != "prov-5" else 4.0,
+        }
+        for provider_id, total in counts.items()
+    }
+
+    servicio = _crear_servicio(metricas_por_provider)
     redis_falso = RedisFalsoConLock()
     servicio.timeout_seconds = 0
     servicio.grace_seconds = 0
@@ -383,58 +385,6 @@ async def test_verificar_disponibilidad_limita_y_rotaciona_cupo_de_diez():
 
     servicio._enviar_whatsapp = enviar_whatsapp_falso
 
-    lead_events = []
-    feedback_rows = []
-    counts = {
-        "prov-1": 5,
-        "prov-2": 4,
-        "prov-3": 2,
-        "prov-4": 2,
-        "prov-5": 6,
-    }
-    for provider_id, total in counts.items():
-        for idx in range(total):
-            lead_id = f"{provider_id}-lead-{idx}"
-            lead_events.append(
-                {
-                    "id": lead_id,
-                    "provider_id": provider_id,
-                    "created_at": "2026-03-19T00:00:00Z",
-                }
-            )
-            feedback_rows.append(
-                {
-                    "lead_event_id": lead_id,
-                    "hired": True,
-                    "rating": 5.0 if provider_id != "prov-5" else 4.0,
-                }
-            )
-
-    for idx in range(6, 16):
-        provider_id = f"prov-{idx}"
-        lead_id = f"{provider_id}-lead-0"
-        lead_events.append(
-            {
-                "id": lead_id,
-                "provider_id": provider_id,
-                "created_at": "2026-03-19T00:00:00Z",
-            }
-        )
-        feedback_rows.append(
-            {
-                "lead_event_id": lead_id,
-                "hired": False,
-                "rating": 5.0,
-            }
-        )
-
-    supabase_falso = _SupabaseRotacionFalso(
-        {
-            "lead_events": lead_events,
-            "lead_feedback": feedback_rows,
-        }
-    )
-
     resultado = await servicio.verificar_disponibilidad(
         req_id="search-rotacion",
         servicio="electricista",
@@ -449,7 +399,6 @@ async def test_verificar_disponibilidad_limita_y_rotaciona_cupo_de_diez():
             for idx in range(1, 16)
         ],
         cliente_redis=redis_falso,
-        supabase=supabase_falso,
     )
 
     assert resultado["lock_acquired_count"] == 10
@@ -472,7 +421,7 @@ async def test_verificar_disponibilidad_limita_y_rotaciona_cupo_de_diez():
 
 @pytest.mark.asyncio
 async def test_lock_atomico_descarta_proveedor_ocupado():
-    servicio = ServicioDisponibilidad()
+    servicio = _crear_servicio()
     redis_falso = RedisFalsoConLock()
     telefono = "593999000010@s.whatsapp.net"
     redis_falso.data[f"availability:provider:{telefono}:lock"] = "otra-solicitud"
@@ -512,7 +461,7 @@ async def test_lock_atomico_descarta_proveedor_ocupado():
 
 @pytest.mark.asyncio
 async def test_lock_atomico_se_libera_al_finalizar():
-    servicio = ServicioDisponibilidad()
+    servicio = _crear_servicio()
     redis_falso = RedisFalsoConLock()
     servicio.timeout_seconds = 0
     servicio.grace_seconds = 0
@@ -548,7 +497,7 @@ async def test_lock_atomico_se_libera_al_finalizar():
 
 @pytest.mark.asyncio
 async def test_lock_release_owner_mismatch_no_libera():
-    servicio = ServicioDisponibilidad()
+    servicio = _crear_servicio()
     redis_falso = RedisFalsoConLock()
     telefono = "593999000012@s.whatsapp.net"
     lock_key = f"availability:provider:{telefono}:lock"

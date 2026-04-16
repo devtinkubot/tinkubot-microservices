@@ -1,9 +1,21 @@
 from services.proveedores.disponibilidad import ServicioDisponibilidad
 
 
+class _RepositorioMetricasRotacionFalso:
+    async def obtener_metricas_proveedores(self, provider_ids, dias=30):
+        _ = provider_ids, dias
+        return {}
+
+
+def _crear_servicio():
+    return ServicioDisponibilidad(
+        repositorio_metricas=_RepositorioMetricasRotacionFalso()
+    )
+
+
 def test_mensaje_disponibilidad_incluye_timeout_por_defecto(monkeypatch):
     monkeypatch.delenv("AVAILABILITY_TIMEOUT_SECONDS", raising=False)
-    servicio = ServicioDisponibilidad()
+    servicio = _crear_servicio()
     mensaje = servicio._mensaje_disponibilidad_fallback()
 
     assert "Tienes 3 min para responder." in mensaje
@@ -11,14 +23,14 @@ def test_mensaje_disponibilidad_incluye_timeout_por_defecto(monkeypatch):
 
 def test_mensaje_disponibilidad_incluye_timeout_configurado(monkeypatch):
     monkeypatch.setenv("AVAILABILITY_TIMEOUT_SECONDS", "180")
-    servicio = ServicioDisponibilidad()
+    servicio = _crear_servicio()
     mensaje = servicio._mensaje_disponibilidad_fallback()
 
     assert "Tienes 3 min para responder." in mensaje
 
 
 def test_mensaje_disponibilidad_contexto_usa_primer_nombre_y_copy_nuevo():
-    servicio = ServicioDisponibilidad()
+    servicio = _crear_servicio()
 
     mensaje = servicio._mensaje_disponibilidad_contexto(
         nombre="Diego Unkuch Gonzalez",
@@ -42,7 +54,7 @@ def test_mensaje_disponibilidad_contexto_usa_primer_nombre_y_copy_nuevo():
 
 
 def test_ui_disponibilidad_expone_template_esperado():
-    servicio = ServicioDisponibilidad()
+    servicio = _crear_servicio()
 
     ui = servicio._ui_disponibilidad(
         servicio="desarrollo y mantenimiento de aplicaciones móviles",

@@ -42,8 +42,6 @@ from flows.mensajes import (
     verificar_ciudad_y_proceder,
 )
 from flows.validadores import validar_entrada_servicio
-from infrastructure.database import run_supabase
-from infrastructure.persistencia.repositorio_lead_events import RepositorioLeadEvents
 from services.sesion_clientes import (
     procesar_comando_reinicio,
     sincronizar_cliente,
@@ -267,15 +265,15 @@ class OrquestadorConversacional:
     def __init__(
         self,
         redis_client,
-        supabase,
         gestor_sesiones,
-        buscador=None,
-        validador=None,
-        extractor_ia=None,
-        servicio_consentimiento=None,
-        repositorio_flujo: Optional[IRepositorioFlujo] = None,
-        repositorio_clientes: Optional[IRepositorioClientes] = None,
-        repositorio_lead_events: Optional[IRepositorioLeadEvents] = None,
+        buscador,
+        validador,
+        extractor_ia,
+        servicio_consentimiento,
+        repositorio_flujo: IRepositorioFlujo,
+        repositorio_clientes: IRepositorioClientes,
+        repositorio_lead_events: IRepositorioLeadEvents,
+        callbacks_source: Any,
         logger=None,
     ):
         """
@@ -283,42 +281,45 @@ class OrquestadorConversacional:
 
         Args:
             redis_client: Cliente Redis para persistencia de flujo
-            supabase: Cliente Supabase para datos de clientes
             gestor_sesiones: Gestor de sesiones para historial
             buscador: Servicio BuscadorProveedores
-                (opcional, para backward compatibility)
             validador: Servicio ValidadorProveedoresIA
-                (opcional, para backward compatibility)
-            extractor_ia: Servicio ExtractorNecesidadIA (requerido)
+            extractor_ia: Servicio ExtractorNecesidadIA
             servicio_consentimiento: Servicio ServicioConsentimiento
-                (opcional, para backward compatibility)
             repositorio_flujo: RepositorioFlujoRedis
-                (opcional, para backward compatibility)
             repositorio_clientes: RepositorioClientesSupabase
-                (opcional, para backward compatibility)
             repositorio_lead_events: Repositorio de lead events
-                (opcional, para backward compatibility)
+            callbacks_source: Objeto con callbacks legacy para composición
             logger: Logger opcional (usa __name__ si None)
         """
         self.redis_client = redis_client
-        self.supabase = supabase
         self.gestor_sesiones = gestor_sesiones
         self.logger = logger or logging.getLogger(__name__)
-        if extractor_ia is None:
-            raise ValueError("extractor_ia es obligatorio en OrquestadorConversacional")
-
-        # Nuevos servicios (inyectados opcionalmente para backward compatibility)
+        if any(
+            dependencia is None
+            for dependencia in (
+                buscador,
+                validador,
+                extractor_ia,
+                servicio_consentimiento,
+                repositorio_flujo,
+                repositorio_clientes,
+                repositorio_lead_events,
+                callbacks_source,
+            )
+        ):
+            raise ValueError(
+                "Todas las dependencias de OrquestadorConversacional son obligatorias"
+            )
+        # Dependencias de dominio
         self.buscador = buscador
         self.validador = validador
         self.extractor_ia = extractor_ia
         self.servicio_consentimiento = servicio_consentimiento
         self.repositorio_flujo = repositorio_flujo
         self.repositorio_clientes = repositorio_clientes
-        self.repositorio_lead_events = (
-            repositorio_lead_events
-            if repositorio_lead_events is not None
-            else (RepositorioLeadEvents(supabase) if supabase else None)
-        )
+        self.repositorio_lead_events = repositorio_lead_events
+        self._callbacks_source = callbacks_source
 
         # Constantes/config usadas por el router
         self.greetings = GREETINGS
@@ -327,51 +328,12 @@ class OrquestadorConversacional:
         # Nombres en español para extracción de servicio
         self.extraer_servicio_y_ubicacion = extraer_servicio_y_ubicacion
 
-        # Inyectar callbacks necesarios
-        self._setup_callbacks()
-
-    def _setup_callbacks(self):
-        """
-        Configura callbacks para funciones auxiliares.
-
-        NOTA: Estas funciones deben inyectarse desde main.py después de instanciar
-        el orquestador para evitar dependencias circulares.
-
-        Si los nuevos servicios están inyectados, los callbacks usarán los servicios.
-        Si no, se mantienen los callbacks globales para backward compatibility.
-        """
-        # Los callbacks se inyectan desde main.py, pero si tenemos los nuevos servicios
-        # podemos usarlos directamente en lugar de depender de callbacks globales
-        pass
-
-    def inyectar_callbacks(self, **callbacks):
-        """
-        Inyecta callbacks desde main.py para evitar dependencias circulares.
-
-        Args:
-            **callbacks: Dict con las funciones a inyectar:
-                - obtener_o_crear_cliente
-                - solicitar_consentimiento
-                - manejar_respuesta_consentimiento
-                - resetear_flujo
-                - obtener_flujo
-                - guardar_flujo
-                - actualizar_ciudad_cliente
-                - verificar_si_bloqueado
-                - validar_contenido_con_ia
-                - buscar_proveedores
-                - enviar_prompt_proveedor
-                - enviar_prompt_confirmacion
-                - limpiar_ciudad_cliente
-                - limpiar_ubicacion_cliente
-                - limpiar_consentimiento_cliente
-                - mensaje_conexion_formal
-                - preparar_proveedor_para_detalle
-                - programar_solicitud_retroalimentacion
-                - enviar_texto_whatsapp
-        """
-        for name, func in callbacks.items():
-            setattr(self, name, func)
+    def __getattr__(self, name: str):
+        try:
+            return getattr(self._callbacks_source, name)
+        except AttributeError:
+            pass
+        raise AttributeError(f"{type(self).__name__!s} object has no attribute {name!r}")
 
     async def procesar_mensaje_whatsapp(
         self, payload: Dict[str, Any]
@@ -432,8 +394,6 @@ class OrquestadorConversacional:
 
     async def obtener_servicios_populares_recientes(self, limite: int = 5) -> list[str]:
         """Obtiene servicios más solicitados en los últimos 30 días."""
-        if not self.repositorio_lead_events:
-            return []
         try:
             return await self.repositorio_lead_events.obtener_servicios_populares(
                 dias=30,
@@ -606,12 +566,7 @@ class OrquestadorConversacional:
         longitud = _parsear_coordenada((ubicacion or {}).get("longitude"))
         cliente_id_resuelto = flujo.get("customer_id") or cliente_id
 
-        if (
-            cliente_id_resuelto
-            and latitud is not None
-            and longitud is not None
-            and self.repositorio_clientes
-        ):
+        if cliente_id_resuelto and latitud is not None and longitud is not None:
             perfil_con_ubicacion = await self.repositorio_clientes.actualizar_ubicacion(
                 cliente_id_resuelto, latitud, longitud
             )
@@ -642,19 +597,10 @@ class OrquestadorConversacional:
             ciudad_normalizada = ciudad_detectada
             ciudad_actual = (flujo.get("city") or "").strip()
             if ciudad_normalizada.lower() != ciudad_actual.lower():
-                # Usar repositorio si está disponible, sino callback
-                if self.repositorio_clientes:
-                    perfil_actualizado = (
-                        await self.repositorio_clientes.actualizar_ciudad(
-                            flujo.get("customer_id") or cliente_id_resuelto,
-                            ciudad_normalizada,
-                        )
-                    )
-                else:
-                    perfil_actualizado = await self.actualizar_ciudad_cliente(
-                        flujo.get("customer_id") or cliente_id_resuelto,
-                        ciudad_normalizada,
-                    )
+                perfil_actualizado = await self.repositorio_clientes.actualizar_ciudad(
+                    flujo.get("customer_id") or cliente_id_resuelto,
+                    ciudad_normalizada,
+                )
                 if perfil_actualizado:
                     flujo["city"] = perfil_actualizado.get("city")
                     flujo["city_confirmed"] = True
@@ -817,13 +763,9 @@ class OrquestadorConversacional:
             return await responder(flujo, respuesta)
 
         # 4. Verificar ciudad existente (optimización)
-        # Usar repositorio si está disponible, sino callback
-        if self.repositorio_clientes:
-            perfil_cliente = await self.repositorio_clientes.obtener_o_crear(
-                telefono=telefono
-            )
-        else:
-            perfil_cliente = await self.obtener_o_crear_cliente(telefono)
+        perfil_cliente = await self.repositorio_clientes.obtener_o_crear(
+            telefono=telefono
+        )
         respuesta_ciudad = await verificar_ciudad_y_proceder(flujo, perfil_cliente)
 
         # 5. Si tiene ciudad, disparar búsqueda
@@ -836,7 +778,6 @@ class OrquestadorConversacional:
                 buscar_proveedores_fn=(
                     self.buscador.buscar if self.buscador else None
                 ),
-                supabase_client=self.supabase,
             )
             mensajes = []
             if respuesta_ciudad.get("response"):
@@ -859,11 +800,7 @@ class OrquestadorConversacional:
     ) -> Dict[str, Any]:
         """Procesa el estado 'awaiting_city'."""
         cliente_id = flujo.get("customer_id")
-        # Usar repositorio si está disponible, sino callback
-        if self.repositorio_clientes:
-            await self.repositorio_clientes.obtener_o_crear(telefono=telefono)
-        else:
-            await self.obtener_o_crear_cliente(telefono)
+        await self.repositorio_clientes.obtener_o_crear(telefono=telefono)
 
         # Si no hay servicio previo y el usuario escribe un servicio aquí, reencaminarlo
         if texto and not flujo.get("service"):
@@ -907,11 +844,7 @@ class OrquestadorConversacional:
                         "city_confirmed": False,
                     }
                 )
-                # Usar repositorio si está disponible, sino callback
-                if self.repositorio_flujo:
-                    await self.repositorio_flujo.guardar(telefono, flujo)
-                else:
-                    await self.guardar_flujo(telefono, flujo)
+                await self.repositorio_flujo.guardar(telefono, flujo)
                 return await responder(
                     flujo,
                     solicitar_ciudad_con_servicio(valor_servicio),
@@ -947,19 +880,10 @@ class OrquestadorConversacional:
             entrada_normalizada = ciudad_entrada.strip().title()
             flujo_actualizado["city"] = entrada_normalizada
             flujo_actualizado["city_confirmed"] = True
-            # Usar repositorio si está disponible, sino callback
-            if self.repositorio_clientes:
-                resultado_actualizacion = (
-                    await self.repositorio_clientes.actualizar_ciudad(
-                        flujo_actualizado.get("customer_id") or cliente_id,
-                        entrada_normalizada,
-                    )
-                )
-            else:
-                resultado_actualizacion = await self.actualizar_ciudad_cliente(
-                    flujo_actualizado.get("customer_id") or cliente_id,
-                    entrada_normalizada,
-                )
+            resultado_actualizacion = await self.repositorio_clientes.actualizar_ciudad(
+                flujo_actualizado.get("customer_id") or cliente_id,
+                entrada_normalizada,
+            )
             if resultado_actualizacion:
                 flujo_actualizado["city_confirmed_at"] = resultado_actualizacion.get(
                     "city_confirmed_at"
@@ -985,18 +909,9 @@ class OrquestadorConversacional:
             flujo=flujo_actualizado,
             ciudad_normalizada=ciudad_del_flujo,
             cliente_id=flujo_actualizado.get("customer_id") or cliente_id,
-            # Usar repositorio si está disponible, sino callback
-            actualizar_ciudad_cliente_callback=(
-                self.repositorio_clientes.actualizar_ciudad
-                if self.repositorio_clientes
-                else self.actualizar_ciudad_cliente
-            ),
+            actualizar_ciudad_cliente_callback=self.repositorio_clientes.actualizar_ciudad,
             enviar_mensaje_callback=self.enviar_texto_whatsapp,
-            guardar_flujo_callback=(
-                self.repositorio_flujo.guardar
-                if self.repositorio_flujo
-                else self.guardar_flujo
-            ),
+            guardar_flujo_callback=self.repositorio_flujo.guardar,
         )
         # Guardar mensaje en sesión si existe response
         if resultado.get("messages") and resultado["messages"][0].get("response"):
@@ -1028,10 +943,7 @@ class OrquestadorConversacional:
                         flujo["searching_dispatched"] = False
                         flujo.pop("searching_started_at", None)
 
-                        if self.repositorio_flujo:
-                            await self.repositorio_flujo.guardar(telefono, flujo)
-                        else:
-                            await self.guardar_flujo(telefono, flujo)
+                        await self.repositorio_flujo.guardar(telefono, flujo)
 
                         return {
                             "response": (
@@ -1043,10 +955,7 @@ class OrquestadorConversacional:
                     self.logger.error(f"❌ Error verificando timeout: {e}")
                     flujo["searching_dispatched"] = False
                     flujo.pop("searching_started_at", None)
-                    if self.repositorio_flujo:
-                        await self.repositorio_flujo.guardar(telefono, flujo)
-                    else:
-                        await self.guardar_flujo(telefono, flujo)
+                    await self.repositorio_flujo.guardar(telefono, flujo)
 
             return {
                 "response": (
