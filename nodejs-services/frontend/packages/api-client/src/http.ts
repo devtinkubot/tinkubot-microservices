@@ -39,5 +39,9 @@ export async function realizarSolicitudHttp<T = unknown>(
     throw new Error(mensaje);
   }
 
+  // La respuesta ya pasó por el chequeo de `ok`; sin un validador runtime
+  // (por ejemplo Zod) no podemos reconstruir `T` con seguridad aquí.
+  // Devolvemos `null` tipado para mantener el contrato genérico sin ocultar
+  // el hecho de que el payload puede no estar presente.
   return (cuerpo as T) ?? (null as T);
 }
