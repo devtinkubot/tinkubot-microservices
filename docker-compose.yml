@@ -81,6 +81,14 @@ services:
     networks:
       - wa-gateway-ipv4
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
     healthcheck:
       test:
         [
@@ -111,6 +119,14 @@ services:
     networks:
       - wa-gateway-ipv4
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
 
   # AI Service Clientes - Procesamiento con sesiones integradas
   ai-clientes:
@@ -162,6 +178,20 @@ services:
     networks:
       - wa-gateway-ipv4
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   # AI Service Proveedores - Procesamiento con sesiones integradas
   ai-proveedores:
@@ -210,6 +240,20 @@ services:
     networks:
       - wa-gateway-ipv4
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   provider-onboarding-worker:
     build:
@@ -238,10 +282,18 @@ services:
       redis:
         condition: service_healthy
       ai-proveedores:
-        condition: service_started
+        condition: service_healthy
     networks:
       - wa-gateway-ipv4
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
 
   # Provider Prefetch Worker - Pre-fetches search results during client confirmation
   provider-prefetch-worker:
@@ -271,6 +323,14 @@ services:
     networks:
       - wa-gateway-ipv4
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
 
   # AI Search Service - Servicio de búsqueda optimizado con IA
   ai-search:
@@ -302,6 +362,20 @@ services:
     networks:
       - wa-gateway-ipv4
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
 
 networks:

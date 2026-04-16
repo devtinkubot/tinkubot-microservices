@@ -33,4 +33,6 @@ RUN npm prune --omit=dev
 EXPOSE 5000
 
 # Comando para iniciar la aplicación
+RUN groupadd -g 10001 appgroup && useradd -u 10001 -g appgroup -m -s /bin/bash appuser && chown -R appuser:appgroup /app
+USER appuser
 CMD ["npm", "start"]

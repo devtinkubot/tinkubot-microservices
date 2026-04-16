@@ -35,4 +35,6 @@ ENV LANG=C.UTF-8
 
 COPY --from=build /app/_build/prod/rel/provider_prefetch_worker ./
 
+RUN groupadd -g 10001 appgroup && useradd -u 10001 -g appgroup -m appuser && chown -R appuser:appgroup /app
+USER appuser
 CMD ["/app/bin/provider_prefetch_worker", "start"]

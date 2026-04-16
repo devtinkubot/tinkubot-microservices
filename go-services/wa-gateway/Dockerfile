@@ -43,6 +43,8 @@ RUN mkdir -p data
 COPY --from=builder /build/wa-gateway .
 
 # Expose port
+RUN addgroup -g 10001 appgroup && adduser -u 10001 -G appgroup -s /bin/sh -D appuser && chown -R appuser:appgroup /app
+USER appuser
 EXPOSE 7000
 
 # Health check
