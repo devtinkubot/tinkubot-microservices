@@ -67,12 +67,6 @@ logger = logging.getLogger(__name__)
 # Inicializar dependencias centralizadas
 deps.inicializar()
 
-# Aliases backward-compatible — TODO: eliminar en siguiente iteración
-supabase = deps.supabase
-cliente_openai = deps.cliente_openai
-servicio_embeddings = deps.servicio_embeddings
-
-
 # Crear aplicación FastAPI
 app = FastAPI(
     title="AI Service Proveedores - Mejorado",
@@ -174,10 +168,10 @@ async def startup_event():
         "✅ Session Timeout simple habilitado (%ss de inactividad)",
         TIEMPO_INACTIVIDAD_SESION_SEGUNDOS,
     )
-    if supabase:
+    if deps.supabase:
         app.state.onboarding_cleanup_task = asyncio.create_task(
             bucle_limpieza_onboarding(
-                supabase=supabase,
+                supabase=deps.supabase,
                 whatsapp_url=configuracion.whatsapp_proveedores_url,
                 whatsapp_account_id=configuracion.whatsapp_proveedores_account_id,
                 warning_hours=configuracion.provider_onboarding_warning_hours,
@@ -229,7 +223,7 @@ async def _sincronizar_servicios_si_cambiaron(
     provider_id = str(
         flujo_actual.get("provider_id") or flujo_anterior.get("provider_id") or ""
     ).strip()
-    if not provider_id or not supabase:
+    if not provider_id or not deps.supabase:
         return False
 
     servicios_previos = normalizar_lista_servicios_flujo(flujo_anterior)
@@ -262,10 +256,13 @@ async def health_check() -> RespuestaSalud:
     try:
         # Verificar conexión a Supabase
         estado_supabase = "not_configured"
-        if supabase:
+        if deps.supabase:
             try:
                 await run_supabase(
-                    lambda: supabase.table("providers").select("id").limit(1).execute()
+                    lambda: deps.supabase.table("providers")
+                    .select("id")
+                    .limit(1)
+                    .execute()
                 )
                 estado_supabase = "connected"
             except Exception:
@@ -318,7 +315,7 @@ async def cleanup_provider_onboarding(
         return {"success": False, "message": "Unauthorized"}
 
     return await ejecutar_limpieza_onboarding(
-        supabase=supabase,
+        supabase=deps.supabase,
         whatsapp_url=configuracion.whatsapp_proveedores_url,
         whatsapp_account_id=configuracion.whatsapp_proveedores_account_id,
         warning_hours=configuracion.provider_onboarding_warning_hours,
@@ -341,7 +338,7 @@ async def reset_provider_onboarding(
         return {"success": False, "message": "provider_id is required"}
 
     return await reiniciar_onboarding_proveedor(
-        supabase=supabase,
+        supabase=deps.supabase,
         provider_id=provider_id_limpio,
         whatsapp_url=configuracion.whatsapp_proveedores_url,
         whatsapp_account_id=configuracion.whatsapp_proveedores_account_id,
@@ -367,8 +364,8 @@ async def resolver_servicio_onboarding_interno(
 
     resultado = await resolver_servicio_onboarding_best_effort(
         texto_mensaje=solicitud.raw_service_text,
-        cliente_openai=cliente_openai,
-        servicio_embeddings=servicio_embeddings,
+        cliente_openai=deps.cliente_openai,
+        servicio_embeddings=deps.servicio_embeddings,
         provider_id=solicitud.provider_id,
     )
     return RespuestaResolverServicioOnboarding(**resultado)
@@ -389,7 +386,7 @@ async def registrar_proveedor_onboarding_interno(
             error_reason="unauthorized",
         )
 
-    if not supabase:
+    if not deps.supabase:
         return RespuestaRegistrarProveedorOnboarding(
             ok=False,
             error_reason="Supabase no configurado",
@@ -401,9 +398,9 @@ async def registrar_proveedor_onboarding_interno(
         )
 
         provider = await registrar_proveedor_en_base_datos(
-            supabase,
+            deps.supabase,
             solicitud.provider_data,
-            servicio_embeddings,
+            deps.servicio_embeddings,
         )
         if not provider or provider.get("registration_blocked_reason"):
             return RespuestaRegistrarProveedorOnboarding(
@@ -461,7 +458,7 @@ async def actualizar_perfil_profesional_admin_interno(
             error_reason="unauthorized",
         )
 
-    if not supabase:
+    if not deps.supabase:
         return RespuestaActualizarPerfilProfesionalProveedor(
             ok=False,
             error_reason="supabase_not_configured",
@@ -476,7 +473,7 @@ async def actualizar_perfil_profesional_admin_interno(
 
     try:
         perfil = await run_supabase(
-            lambda: supabase.table("providers")
+            lambda: deps.supabase.table("providers")
             .select("id,status")
             .eq("id", provider_id)
             .single()
@@ -555,7 +552,7 @@ async def aprobar_review_gobernanza(
     if token_esperado and token != token_esperado:
         return {"success": False, "message": "Unauthorized"}
 
-    if not supabase:
+    if not deps.supabase:
         return {"success": False, "message": "Supabase no configurado"}
 
     try:
@@ -564,8 +561,8 @@ async def aprobar_review_gobernanza(
         )
 
         resultado = await aprobar_review_catalogo_servicio(
-            supabase=supabase,
-            servicio_embeddings=servicio_embeddings,
+            supabase=deps.supabase,
+            servicio_embeddings=deps.servicio_embeddings,
             review_id=(review_id or "").strip(),
             domain_code=solicitud.domain_code,
             category_name=solicitud.category_name,
@@ -591,7 +588,7 @@ async def rechazar_review_gobernanza(
     if token_esperado and token != token_esperado:
         return {"success": False, "message": "Unauthorized"}
 
-    if not supabase:
+    if not deps.supabase:
         return {"success": False, "message": "Supabase no configurado"}
 
     try:
@@ -600,7 +597,7 @@ async def rechazar_review_gobernanza(
         )
 
         resultado = await rechazar_review_catalogo_servicio(
-            supabase=supabase,
+            supabase=deps.supabase,
             review_id=(review_id or "").strip(),
             reviewer=solicitud.reviewer,
             notes=solicitud.notes,
@@ -620,7 +617,7 @@ async def auto_asignar_reviews_gobernanza_endpoint(
     if token_esperado and token != token_esperado:
         return {"success": False, "message": "Unauthorized"}
 
-    if not supabase:
+    if not deps.supabase:
         return {"success": False, "message": "Supabase no configurado"}
 
     try:
@@ -629,9 +626,9 @@ async def auto_asignar_reviews_gobernanza_endpoint(
         )
 
         resultado = await auto_asignar_reviews_gobernanza_pendientes(
-            supabase=supabase,
-            servicio_embeddings=servicio_embeddings,
-            cliente_openai=cliente_openai,
+            supabase=deps.supabase,
+            servicio_embeddings=deps.servicio_embeddings,
+            cliente_openai=deps.cliente_openai,
             limit=solicitud.limit,
             min_confidence=solicitud.min_confidence,
             reviewer=solicitud.reviewer,
@@ -653,7 +650,7 @@ async def planificar_mantenimiento_taxonomia_endpoint(
     if token_esperado and token != token_esperado:
         return {"success": False, "message": "Unauthorized"}
 
-    if not supabase:
+    if not deps.supabase:
         return {"success": False, "message": "Supabase no configurado"}
 
     try:
@@ -662,7 +659,7 @@ async def planificar_mantenimiento_taxonomia_endpoint(
         )
 
         resultado = await planificar_mantenimiento_taxonomia(
-            supabase=supabase,
+            supabase=deps.supabase,
             suggestion_ids=solicitud.suggestion_ids,
             cluster_keys=solicitud.cluster_keys,
             review_notes=solicitud.review_notes,
@@ -686,9 +683,9 @@ async def manejar_mensaje_whatsapp(  # noqa: C901
     try:
         return await procesar_mensaje_whatsapp(
             solicitud=solicitud,
-            supabase=supabase,
-            servicio_embeddings=servicio_embeddings,
-            cliente_openai=cliente_openai,
+            supabase=deps.supabase,
+            servicio_embeddings=deps.servicio_embeddings,
+            cliente_openai=deps.cliente_openai,
             logger=logger,
             subir_medios_identidad_fn=subir_medios_identidad,
         )

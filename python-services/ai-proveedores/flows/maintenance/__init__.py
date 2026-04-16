@@ -17,13 +17,7 @@ from .menu import (
 )
 from .name_step import manejar_espera_nombre
 from .selfie_update import manejar_actualizacion_selfie
-from .services import (
-    manejar_accion_servicios,
-    manejar_accion_servicios_activos,
-    manejar_agregar_servicios,
-    manejar_confirmacion_agregar_servicios,
-    manejar_eliminar_servicio,
-)
+from .services import ManejadorServicios
 from .services_confirmation import (
     manejar_accion_edicion_servicios_registro,
     manejar_agregar_servicio_desde_edicion_registro,
@@ -53,11 +47,7 @@ __all__ = [
     "manejar_submenu_informacion_profesional",
     "manejar_vista_perfil",
     "render_profile_view",
-    "manejar_accion_servicios",
-    "manejar_accion_servicios_activos",
-    "manejar_agregar_servicios",
-    "manejar_confirmacion_agregar_servicios",
-    "manejar_eliminar_servicio",
+    "ManejadorServicios",
     "manejar_confirmacion",
     "manejar_confirmacion_eliminacion",
     "manejar_inicio_documentos",

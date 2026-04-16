@@ -177,7 +177,7 @@ async def manejar_mensaje(orquestador, carga: Dict[str, Any]) -> Dict[str, Any]:
         try:
             ultima_vista_dt = datetime.fromisoformat(ultima_vista_cruda)
             delta_segundos = (ahora_utc - ultima_vista_dt).total_seconds()
-            if delta_segundos > 300:  # 5 minutos
+            if delta_segundos > 3600:  # 1 hora
                 orquestador.logger.info(
                     "⏰ Timeout inactividad detectado phone=%s state=%s "
                     "delta=%ss last_seen_ref=%s",  # noqa: E501
@@ -445,6 +445,11 @@ async def enrutar_estado(  # noqa: C901
                         enviar_mensaje_callback=orquestador.enviar_texto_whatsapp,
                         guardar_flujo_callback=lambda _telefono, data: orquestador.guardar_flujo(  # noqa: E501
                             _telefono, data
+                        ),
+                        buscar_proveedores_fn=(
+                            orquestador.buscador.buscar
+                            if getattr(orquestador, "buscador", None)
+                            else None
                         ),
                     ),
                 )
@@ -818,6 +823,11 @@ async def enrutar_estado(  # noqa: C901
                 perfil_cliente=perfil,
                 enviar_mensaje_callback=orquestador.enviar_texto_whatsapp,
                 guardar_flujo_callback=orquestador.guardar_flujo,
+                buscar_proveedores_fn=(
+                    orquestador.buscador.buscar
+                    if getattr(orquestador, "buscador", None)
+                    else None
+                ),
             )
 
         async def resolver_servicio_canonico(servicio: str) -> Optional[str]:

@@ -111,6 +111,7 @@ async def transicionar_a_busqueda_desde_servicio(
     perfil_cliente: Optional[Dict[str, Any]],
     enviar_mensaje_callback: Any,  # Callable async que retorna bool
     guardar_flujo_callback: Any,  # Callable async que guarda estado
+    buscar_proveedores_fn: Any = None,
 ) -> Dict[str, Any]:
     """
     Transiciona desde el estado awaiting_service hacia búsqueda.
@@ -166,6 +167,7 @@ async def transicionar_a_busqueda_desde_servicio(
                 flujo=flujo,
                 enviar_mensaje_callback=enviar_mensaje_callback,
                 guardar_flujo_callback=guardar_flujo_callback,
+                buscar_proveedores_fn=buscar_proveedores_fn,
             )
 
             if mensaje_confirmacion:
@@ -196,6 +198,7 @@ async def transicionar_a_busqueda_desde_ciudad(
     actualizar_ciudad_cliente_callback: Any,  # Callable async
     enviar_mensaje_callback: Any,  # Callable async que retorna bool
     guardar_flujo_callback: Any,  # Callable async que guarda estado
+    buscar_proveedores_fn: Any = None,
 ) -> Dict[str, Any]:
     """
     Transiciona desde el estado awaiting_city hacia búsqueda.
@@ -272,6 +275,7 @@ async def transicionar_a_busqueda_desde_ciudad(
             flujo=flujo,
             enviar_mensaje_callback=enviar_mensaje_callback,
             guardar_flujo_callback=guardar_flujo_callback,
+            buscar_proveedores_fn=buscar_proveedores_fn,
         )
 
         if mensaje_confirmacion:

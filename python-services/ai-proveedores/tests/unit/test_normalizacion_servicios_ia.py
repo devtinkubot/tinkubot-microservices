@@ -4,6 +4,7 @@ import sys
 import types
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -13,11 +14,7 @@ sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import flows.maintenance.services as modulo_services  # noqa: E402
-from flows.maintenance.services import (  # noqa: E402
-    manejar_accion_servicios,
-    manejar_agregar_servicios,
-    manejar_confirmacion_agregar_servicios,
-)
+from flows.maintenance.services import ManejadorServicios  # noqa: E402
 from flows.maintenance.services_confirmation import (  # noqa: E402
     manejar_accion_edicion_servicios_registro,
     manejar_confirmacion_servicio_perfil,
@@ -84,6 +81,14 @@ class _TransformadorOK:
         return ["desarrollo web"]
 
 
+def _crear_manejador_servicios():
+    repositorio = MagicMock()
+    repositorio.actualizar_servicios = AsyncMock(return_value=["Plomería"])
+    repositorio.agregar_servicios = AsyncMock(return_value=["Plomería"])
+    repositorio.eliminar_servicio = AsyncMock(return_value=["Plomería"])
+    return ManejadorServicios(repositorio=repositorio)
+
+
 @pytest.mark.asyncio
 async def test_transformador_servicios_separa_y_limpia_sin_ai():
     transformador = modulo_transformador.TransformadorServicios(cliente_openai=object())
@@ -122,9 +127,10 @@ def test_prompt_servicios_onboarding_usa_env_override(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_menu_servicios_texto_libre_reenvia_botones():
+    manejador = _crear_manejador_servicios()
     flujo = {"state": "maintenance_service_action", "services": ["Plomería"]}
 
-    resultado = await manejar_accion_servicios(
+    resultado = await manejador.manejar_accion_servicios(
         flujo=flujo,
         texto_mensaje="hola",
         opcion_menu=None,
@@ -1152,6 +1158,7 @@ def test_decision_agregar_otro_no_pasa_a_resumen_final():
 
 
 def test_confirmacion_agregar_servicios_re_normaliza_correccion_manual(monkeypatch):
+    manejador = _crear_manejador_servicios()
     monkeypatch.setattr(modulo_services, "TransformadorServicios", _TransformadorOK)
 
     async def _fake_validar_servicio_semanticamente(**kwargs):
@@ -1181,7 +1188,7 @@ def test_confirmacion_agregar_servicios_re_normaliza_correccion_manual(monkeypat
     }
 
     respuesta = asyncio.run(
-        manejar_confirmacion_agregar_servicios(
+        manejador.manejar_confirmacion_agregar_servicios(
             flujo=flujo,
             proveedor_id="prov-123",
             texto_mensaje="plomero para destapar lavamanos",
@@ -1475,6 +1482,7 @@ def test_eliminacion_servicio_en_edicion():
 
 
 def test_agregar_servicios_acepta_servicio_sin_bloqueo_taxonomico(monkeypatch):
+    manejador = _crear_manejador_servicios()
     class _TransformadorGenerico:
         def __init__(self, cliente_openai, modelo=None):
             self.cliente_openai = cliente_openai
@@ -1510,7 +1518,7 @@ def test_agregar_servicios_acepta_servicio_sin_bloqueo_taxonomico(monkeypatch):
     )
 
     respuesta = asyncio.run(
-        manejar_agregar_servicios(
+        manejador.manejar_agregar_servicios(
             flujo={"state": "maintenance_service_add", "services": []},
             proveedor_id="prov-1",
             texto_mensaje="transporte de mercancías",

@@ -131,7 +131,7 @@ async def test_buscador_prefiere_service_summary_en_consulta(monkeypatch):
     )
 
     assert (
-        cliente_busqueda.buscar_proveedores.await_args.kwargs["consulta"]
+        cliente_busqueda.buscar_proveedores.await_args_list[0].kwargs["consulta"]
         == "Proveer soporte técnico y desarrollo para una aplicación móvil con problemas. tecnología desarrollo de software"
     )
 
@@ -208,3 +208,89 @@ async def test_buscador_limita_validacion_a_candidatos_mas_relevantes(monkeypatc
     ]
     assert len(proveedores_enviados) == 2
     assert [p["id"] for p in proveedores_enviados] == ["prov-1", "prov-3"]
+
+
+@pytest.mark.asyncio
+async def test_buscador_reintenta_con_consulta_mas_corta_si_la_canonica_no_encuentra():
+    cliente_busqueda = AsyncMock()
+    cliente_busqueda.buscar_proveedores = AsyncMock(
+        side_effect=[
+            {
+                "ok": True,
+                "providers": [],
+                "total": 0,
+                "search_metadata": {"strategy": "embeddings", "search_time_ms": 210},
+            },
+            {
+                "ok": True,
+                "providers": [
+                    {
+                        "id": "prov-1",
+                        "first_name": "Proveedor",
+                        "last_name": "Uno",
+                        "services": [
+                            "Desarrollo de aplicaciones móviles con inteligencia artificial"
+                        ],
+                        "similarity_score": 0.91,
+                        "semantic_alignment_score": 0.89,
+                        "retrieval_score": 0.93,
+                        "classification_confidence": 1.0,
+                        "rating": 5.0,
+                    }
+                ],
+                "total": 1,
+                "search_metadata": {"strategy": "embeddings", "search_time_ms": 180},
+            },
+        ]
+    )
+    validador_ia = AsyncMock()
+    validador_ia.validar_proveedores = AsyncMock(
+        return_value=[
+            {
+                "id": "prov-1",
+                "first_name": "Proveedor",
+                "last_name": "Uno",
+                "services": [
+                    "Desarrollo de aplicaciones móviles con inteligencia artificial"
+                ],
+                "similarity_score": 0.91,
+                "semantic_alignment_score": 0.89,
+                "retrieval_score": 0.93,
+                "classification_confidence": 1.0,
+                "rating": 5.0,
+            }
+        ]
+    )
+
+    buscador = BuscadorProveedores(
+        cliente_busqueda=cliente_busqueda,
+        validador_ia=validador_ia,
+        logger=logging.getLogger("test_buscador"),
+    )
+
+    resultado = await buscador.buscar(
+        profesion="arreglar app de la empresa y dar soporte",
+        ciudad="cuenca",
+        descripcion_problema="Un desarrollador de apps moviles para que arregle la app de la empresa, que de soporte",
+        domain="tecnología",
+        category="desarrollo de aplicaciones móviles",
+        search_profile={
+            "primary_service": "arreglar app de la empresa y dar soporte",
+            "service_summary": "Servicio para reparar y brindar soporte a la aplicación móvil de la empresa.",
+            "domain": "tecnología",
+            "category": "desarrollo de aplicaciones móviles",
+        },
+    )
+
+    assert cliente_busqueda.buscar_proveedores.await_count == 2
+    assert (
+        cliente_busqueda.buscar_proveedores.await_args_list[0].kwargs["consulta"]
+        == "Servicio para reparar y brindar soporte a la aplicación móvil de la empresa. tecnología desarrollo de aplicaciones móviles"
+    )
+    assert (
+        cliente_busqueda.buscar_proveedores.await_args_list[1].kwargs["consulta"]
+        == "desarrollo de aplicaciones móviles"
+    )
+    assert resultado["ok"] is True
+    assert resultado["total"] == 1
+    assert len(resultado["providers"]) == 1

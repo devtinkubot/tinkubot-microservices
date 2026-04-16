@@ -109,10 +109,16 @@ async def ejecutar_busqueda_y_notificar_en_segundo_plano(
                 telefono, servicio, ciudad, redis_client
             )
             if cached:
-                resultado_busqueda = cached
+                proveedores_cache = cached.get("providers") or []
                 logger.info(
-                    f"⚡ Prefetch cache hit: {len(cached.get('providers') or [])} proveedores"
+                    f"⚡ Prefetch cache hit: {len(proveedores_cache)} proveedores"
                 )
+                if proveedores_cache:
+                    resultado_busqueda = cached
+                else:
+                    logger.info(
+                        "⚡ Prefetch cache vacío, usando búsqueda viva para validar resultados"
+                    )
         except Exception as exc:
             logger.debug(f"prefetch cache check failed: {exc}")
 
@@ -224,7 +230,6 @@ async def ejecutar_busqueda_y_notificar_en_segundo_plano(
                     descripcion_problema=descripcion_problema,
                     candidatos=candidatos,
                     cliente_redis=redis_client,
-                    supabase=supabase_client,
                 )
             )
             aceptados = resultado_disponibilidad.get("aceptados") or []
@@ -252,7 +257,7 @@ async def ejecutar_busqueda_y_notificar_en_segundo_plano(
         try:
             from datetime import datetime
 
-            supabase.table("service_requests").insert(
+            supabase_client.table("service_requests").insert(
                 {
                     "phone": telefono,
                     "intent": "service_request",

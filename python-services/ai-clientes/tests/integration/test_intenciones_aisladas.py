@@ -164,8 +164,14 @@ async def test_intenciones_aisladas_confirman_y_disparan_busqueda(
     )
 
     async def fake_transicionar_a_busqueda_desde_servicio(
-        telefono, flujo, perfil_cliente, enviar_mensaje_callback, guardar_flujo_callback
+        telefono,
+        flujo,
+        perfil_cliente,
+        enviar_mensaje_callback,
+        guardar_flujo_callback,
+        buscar_proveedores_fn=None,
     ):
+        _ = buscar_proveedores_fn
         orquestador.confirm_calls.append(
             {
                 "telefono": telefono,

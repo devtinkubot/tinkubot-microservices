@@ -168,6 +168,54 @@ class BuscadorProveedores:
             proveedores = resultado.get("providers", [])
             total = resultado.get("total", len(proveedores))
 
+            if not proveedores:
+                # La consulta canónica puede quedar demasiado específica.
+                # Si no trae nada, probamos variantes más cortas antes de rendirnos.
+                consultas_fallback = self._build_fallback_queries(
+                    profesion=profesion,
+                    service_summary=service_summary or None,
+                    descripcion_problema=descripcion_problema,
+                    domain=domain,
+                    domain_code=domain_code,
+                    category=category,
+                    category_name=category_name,
+                )
+                for consulta_fallback in consultas_fallback:
+                    if not consulta_fallback or consulta_fallback == consulta:
+                        continue
+                    self.logger.info(
+                        "🔁 Reintentando búsqueda con query más corta: '%s'",
+                        consulta_fallback,
+                    )
+                    resultado_fallback = await self.cliente_busqueda.buscar_proveedores(
+                        consulta=consulta_fallback,
+                        ciudad=ciudad,
+                        descripcion_problema=descripcion_problema or profesion,
+                        service_candidate=profesion,
+                        domain=domain,
+                        category=category,
+                        domain_code=domain_code,
+                        category_name=category_name,
+                        search_profile=profile,
+                        limite=configuracion.search_candidate_limit,
+                    )
+                    if not resultado_fallback.get("ok"):
+                        continue
+                    proveedores_fallback = resultado_fallback.get("providers", [])
+                    if proveedores_fallback:
+                        resultado = resultado_fallback
+                        proveedores = proveedores_fallback
+                        total = resultado.get("total", len(proveedores))
+                        consulta = consulta_fallback
+                        metadatos_fallback = resultado.get("search_metadata", {})
+                        self.logger.info(
+                            "✅ Fallback de búsqueda recuperó %s proveedores "
+                            "(estrategia: %s)",
+                            len(proveedores),
+                            metadatos_fallback.get("strategy"),
+                        )
+                        break
+
             metadatos = resultado.get("search_metadata", {})
             self.logger.info(
                 f"✅ Búsqueda local en {ciudad}: {total} proveedores "
@@ -267,6 +315,36 @@ class BuscadorProveedores:
 
         fallback = str(descripcion_problema or "").strip()
         return fallback or str(profesion or "").strip()
+
+    @staticmethod
+    def _build_fallback_queries(
+        *,
+        profesion: str,
+        service_summary: Optional[str] = None,
+        descripcion_problema: Optional[str] = None,
+        domain: Optional[str] = None,
+        domain_code: Optional[str] = None,
+        category: Optional[str] = None,
+        category_name: Optional[str] = None,
+    ) -> list[str]:
+        """Construye consultas de respaldo de menor a mayor especificidad."""
+        consultas = [
+            str(category or "").strip(),
+            str(category_name or "").strip(),
+            str(service_summary or profesion or "").strip(),
+            str(descripcion_problema or "").strip(),
+            str(domain_code or domain or "").strip(),
+            str(profesion or "").strip(),
+        ]
+        vistas: list[str] = []
+        vistos = set()
+        for consulta in consultas:
+            normalizada = consulta.lower().strip()
+            if not normalizada or normalizada in vistos:
+                continue
+            vistos.add(normalizada)
+            vistas.append(consulta)
+        return vistas
 
     def _priorizar_candidatos_para_validacion(
         self, proveedores: list[Dict[str, Any]]

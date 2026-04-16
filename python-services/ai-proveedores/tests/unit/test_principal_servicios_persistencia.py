@@ -2,6 +2,7 @@ import asyncio
 import sys
 import types
 from pathlib import Path
+from unittest.mock import MagicMock
 
 imghdr_stub = types.ModuleType("imghdr")
 imghdr_stub.what = lambda *args, **kwargs: None
@@ -18,7 +19,7 @@ def test_sincronizar_servicios_si_cambiaron_persiste_cambios(monkeypatch):
         llamadas.append((proveedor_id, list(servicios)))
         return ["Plomeria", "Electricidad"]
 
-    monkeypatch.setattr(principal, "supabase", object())
+    monkeypatch.setattr("dependencies.deps.supabase", MagicMock())
     monkeypatch.setattr(principal, "actualizar_servicios", _fake_actualizar_servicios)
 
     flujo_anterior = {"provider_id": "prov-1", "services": ["Plomeria"]}
@@ -47,7 +48,7 @@ def test_sincronizar_servicios_si_cambiaron_ignora_listas_iguales(monkeypatch):
         llamadas.append((proveedor_id, list(servicios)))
         return list(servicios)
 
-    monkeypatch.setattr(principal, "supabase", object())
+    monkeypatch.setattr("dependencies.deps.supabase", MagicMock())
     monkeypatch.setattr(principal, "actualizar_servicios", _fake_actualizar_servicios)
 
     flujo_anterior = {"provider_id": "prov-1", "services": ["Plomeria"]}

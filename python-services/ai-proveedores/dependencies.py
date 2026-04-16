@@ -23,8 +23,8 @@ class DependenciasServicio:
         self.servicio_embeddings: Optional[ServicioEmbeddings] = None
 
     def inicializar(self) -> None:
-        url = configuracion.supabase_url or os.getenv("SUPABASE_URL", "")
-        clave = configuracion.supabase_service_key
+        url = os.getenv("SUPABASE_URL", "")
+        clave = os.getenv("SUPABASE_SERVICE_KEY", "")
         clave_openai = os.getenv("OPENAI_API_KEY", "")
 
         if url and clave:

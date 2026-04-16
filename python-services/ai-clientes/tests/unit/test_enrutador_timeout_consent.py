@@ -37,6 +37,7 @@ class _ConsentServiceStub:
 class _OrquestadorStub:
     def __init__(self):
         self.repositorio_flujo = _RepoFlujoStub()
+        self.gestor_sesiones = self
         self.servicio_consentimiento = _ConsentServiceStub()
         self.logger = logging.getLogger("test-timeout-consent")
         self.farewell_message = "Hasta luego"
@@ -82,6 +83,9 @@ class _OrquestadorStub:
         return dict(proveedor)
 
     async def programar_solicitud_retroalimentacion(self, *args, **kwargs):
+        return None
+
+    async def guardar_sesion(self, *args, **kwargs):
         return None
 
 
@@ -188,7 +192,7 @@ async def test_detalle_proveedor_expirado_reinicia_con_prompt_inicial(monkeypatc
 async def test_timeout_sin_consent_vuelve_a_consentimiento(monkeypatch):
     flow = {
         "state": "awaiting_consent",
-        "last_seen_at_prev": _iso_minutes_from_now(-10),
+        "last_seen_at_prev": _iso_minutes_from_now(-61),
     }
 
     async def _fake_pre(_orq, _carga):
@@ -204,6 +208,27 @@ async def test_timeout_sin_consent_vuelve_a_consentimiento(monkeypatch):
     assert orquestador.repositorio_flujo.last_saved["state"] == "awaiting_consent"
     assert respuesta["messages"][0]["response"] == TIMEOUT_MSG
     assert respuesta["messages"][1]["response"] == "CONSENT_PROMPT"
+
+
+@pytest.mark.asyncio
+async def test_timeout_sin_consent_antes_de_una_hora_no_reinicia(monkeypatch):
+    flow = {
+        "state": "awaiting_consent",
+        "last_seen_at_prev": _iso_minutes_from_now(-59),
+    }
+
+    async def _fake_pre(_orq, _carga):
+        return _pre_enrutado(flow, False)
+
+    monkeypatch.setattr("flows.enrutador.pre_enrutar_mensaje", _fake_pre)
+    orquestador = _OrquestadorStub()
+
+    respuesta = await manejar_mensaje(
+        orquestador, {"from_number": "593999111222@s.whatsapp.net"}
+    )
+
+    assert orquestador.repositorio_flujo.was_reset is False
+    assert TIMEOUT_MSG not in str(respuesta)
 
 
 @pytest.mark.asyncio
