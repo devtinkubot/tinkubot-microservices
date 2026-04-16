@@ -90,9 +90,9 @@ WHATSAPP_CLIENTES_ACCOUNT_ID = os.getenv(
 )
 
 # Supabase client (opcional) para persistencia
-URL_SUPABASE = configuracion.supabase_url
+URL_SUPABASE = os.getenv("SUPABASE_URL", "")
 # settings expone la clave JWT de servicio para Supabase
-CLAVE_SUPABASE = configuracion.supabase_service_key
+CLAVE_SUPABASE = os.getenv("SUPABASE_SERVICE_KEY", "")
 supabase = (
     create_client(URL_SUPABASE, CLAVE_SUPABASE)
     if (URL_SUPABASE and CLAVE_SUPABASE)
