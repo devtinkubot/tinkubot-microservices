@@ -3,7 +3,7 @@
 from typing import Any, Dict, Optional
 
 from flows.maintenance.views import render_profile_view
-from services.maintenance.estado_operativo import (
+from services.shared.estado_operativo import (
     formatear_rango_experiencia,
 )
 from templates.maintenance.experiencia import payload_experiencia_mantenimiento

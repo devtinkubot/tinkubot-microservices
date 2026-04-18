@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional
 
 from infrastructure.database import run_supabase
 
-from .estado_operativo import perfil_profesional_completo
+from services.shared.estado_operativo import perfil_profesional_completo
 
 logger = logging.getLogger(__name__)
 

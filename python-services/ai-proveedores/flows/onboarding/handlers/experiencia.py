@@ -2,7 +2,7 @@
 
 from typing import Any, Dict, Optional
 
-from services.onboarding.estado_operativo import (
+from services.shared.estado_operativo import (
     formatear_rango_experiencia,
 )
 from services.onboarding.event_payloads import payload_experiencia

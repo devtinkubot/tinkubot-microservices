@@ -9,7 +9,7 @@ from infrastructure.database import run_supabase
 
 from .actualizar_servicios import actualizar_servicios
 from .actualizar_servicios import _obtener_telefono_proveedor
-from .estado_operativo import (
+from services.shared.estado_operativo import (
     perfil_profesional_completo,
 )
 

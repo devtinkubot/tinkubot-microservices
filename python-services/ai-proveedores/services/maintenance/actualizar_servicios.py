@@ -12,7 +12,7 @@ from typing import Any, List, Optional
 
 from dependencies import deps
 from infrastructure.database import run_supabase
-from services.maintenance.estado_operativo import (
+from services.shared.estado_operativo import (
     perfil_profesional_completo,
 )
 from services.maintenance.revision_catalogo import (

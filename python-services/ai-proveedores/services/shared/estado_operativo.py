@@ -1,4 +1,4 @@
-"""Reglas locales de estado operativo para onboarding."""
+"""Reglas compartidas de estado operativo para proveedores."""
 
 from typing import Iterable, Optional
 
@@ -12,6 +12,7 @@ EXPERIENCE_RANGE_10_PLUS = "Más de 10 años"
 
 
 def normalizar_experiencia(experience_value: Optional[int]) -> int:
+    """Convierte la experiencia a entero no negativo."""
     try:
         valor = int(experience_value or 0)
     except (TypeError, ValueError):
@@ -20,6 +21,7 @@ def normalizar_experiencia(experience_value: Optional[int]) -> int:
 
 
 def formatear_rango_experiencia(experience_value: Optional[int]) -> str:
+    """Convierte años de experiencia en un rango legible."""
     valor = normalizar_experiencia(experience_value)
     if valor < 1:
         return EXPERIENCE_RANGE_UNDER_1
@@ -33,6 +35,7 @@ def formatear_rango_experiencia(experience_value: Optional[int]) -> str:
 
 
 def contar_servicios_validos(servicios: Optional[Iterable[str]]) -> int:
+    """Cuenta servicios no vacíos."""
     return sum(1 for servicio in (servicios or []) if str(servicio or "").strip())
 
 
@@ -41,6 +44,7 @@ def perfil_profesional_completo(
     experience_range: Optional[str],
     servicios: Optional[Iterable[str]],
 ) -> bool:
+    """Indica si el proveedor ya cumple el mínimo para recibir solicitudes."""
     return (
         bool(str(experience_range or "").strip())
         and contar_servicios_validos(servicios) >= MINIMO_SERVICIOS_OPERATIVOS

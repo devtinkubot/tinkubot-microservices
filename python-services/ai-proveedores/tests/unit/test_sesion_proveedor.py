@@ -9,7 +9,7 @@ imghdr_stub.what = lambda *args, **kwargs: None
 sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from services.maintenance.estado_operativo import (  # noqa: E402
+from services.shared.estado_operativo import (  # noqa: E402
     perfil_profesional_completo,
 )
 from services.onboarding.progress import (  # noqa: E402

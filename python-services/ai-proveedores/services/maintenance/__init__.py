@@ -16,7 +16,7 @@ from .certificados import (
     eliminar_certificado_proveedor,
     listar_certificados_proveedor,
 )
-from .estado_operativo import (
+from services.shared.estado_operativo import (
     MINIMO_SERVICIOS_OPERATIVOS,
     contar_servicios_validos,
     normalizar_experiencia,
