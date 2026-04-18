@@ -15,7 +15,6 @@ from .menu import (
     manejar_submenu_informacion_personal,
     manejar_submenu_informacion_profesional,
 )
-from .name_step import manejar_espera_nombre
 from .selfie_update import manejar_actualizacion_selfie
 from .services import ManejadorServicios
 from .services_confirmation import (
@@ -59,7 +58,6 @@ __all__ = [
     "manejar_espera_certificado",
     "manejar_espera_experiencia",
     "manejar_espera_especialidad",
-    "manejar_espera_nombre",
     "manejar_espera_red_social",
     "manejar_confirmacion_servicio_perfil",
     "manejar_confirmacion_perfil_profesional",

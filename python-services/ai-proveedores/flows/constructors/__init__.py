@@ -11,7 +11,6 @@ from .menu import (
     construir_menu_principal,
     construir_respuesta_menu_registro,
 )
-from .services import construir_menu_servicios
 from .verification import (
     construir_respuesta_revision_perfil_profesional,
     construir_respuesta_revision,
@@ -31,5 +30,4 @@ __all__ = [
     "construir_respuesta_revision_con_menu",
     "construir_respuesta_solicitud_consentimiento",
     "construir_respuesta_consentimiento_aceptado",
-    "construir_menu_servicios",
 ]

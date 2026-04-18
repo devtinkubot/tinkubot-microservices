@@ -1,6 +1,5 @@
 """Servicios de gestión de servicios y perfil de proveedores."""
 
-from .actualizar_datos_personales import actualizar_nombre_proveedor
 from .actualizar_documentos_identidad import actualizar_documentos_identidad
 from .actualizar_perfil_profesional import actualizar_perfil_profesional
 from .actualizar_redes_sociales import actualizar_redes_sociales
@@ -29,7 +28,6 @@ __all__ = [
     "agregar_servicios_proveedor",
     "actualizar_redes_sociales",
     "actualizar_selfie",
-    "actualizar_nombre_proveedor",
     "actualizar_documentos_identidad",
     "eliminar_servicio_proveedor",
     "agregar_certificado_proveedor",
