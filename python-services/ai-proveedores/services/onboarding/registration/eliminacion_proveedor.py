@@ -19,10 +19,8 @@ from services.onboarding.session import (
     marcar_perfil_eliminado,
     reiniciar_flujo,
 )
-from services.onboarding.whatsapp_identity import (
-    obtener_identidades_proveedor,
-    resolver_provider_id_por_identidad,
-)
+from services.onboarding.whatsapp_identity import obtener_identidades_proveedor
+from services.shared.whatsapp_identity import resolver_provider_id_por_identidad
 
 logger = logging.getLogger(__name__)
 

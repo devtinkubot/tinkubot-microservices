@@ -15,7 +15,7 @@ from config import configuracion
 from infrastructure.database import run_supabase
 from infrastructure.redis import cliente_redis
 from services import garantizar_campos_obligatorios_proveedor
-from services.onboarding.whatsapp_identity import resolver_provider_id_por_identidad
+from services.shared.whatsapp_identity import resolver_provider_id_por_identidad
 from services.shared.estados_proveedor import normalizar_estado_administrativo
 from utils import extraer_servicios_almacenados as extraer_servicios_guardados
 

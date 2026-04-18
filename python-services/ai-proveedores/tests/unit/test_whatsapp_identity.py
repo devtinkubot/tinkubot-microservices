@@ -13,12 +13,14 @@ sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from services.onboarding.whatsapp_identity import (  # noqa: E402
+    persistir_identities_whatsapp,
+)
+from services.shared.whatsapp_identity import (  # noqa: E402
     clasificar_identidad_whatsapp,
     construir_candidatos_identidad_whatsapp,
-    persistir_identities_whatsapp,
     normalizar_identidad_whatsapp,
+    normalizar_telefono_canonico,
 )
-from services.shared.whatsapp_identity import normalizar_telefono_canonico  # noqa: E402
 
 
 def test_normalizar_telefono_canonico_preserva_bsuid_como_lid():
