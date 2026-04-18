@@ -13,7 +13,7 @@ from services.maintenance.constantes import (
     SERVICIOS_MAXIMOS_ONBOARDING,
     SERVICIOS_MINIMOS_PERFIL_PROFESIONAL,
 )
-from services.maintenance.validacion_semantica import (
+from services.shared.validacion_semantica import (
     validar_servicio_semanticamente,
 )
 from templates.maintenance import mensaje_ejemplo_servicio_seleccionado

@@ -5,22 +5,12 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[2]
 CONTEXTS = {"onboarding", "maintenance", "review", "availability"}
 
-# Esta lista congela el estado actual mientras reducimos el acoplamiento.
-# Cualquier cruce nuevo entre contextos debe pasar por revisión explícita.
-LEGACY_CROSS_CONTEXT_IMPORTS = {
-    (
-        "flows/onboarding/handlers/servicios.py",
-        "services.maintenance.validacion_semantica",
-    ),
-    (
-        "services/onboarding/registration/registro_proveedor.py",
-        "services.maintenance.validacion_semantica",
-    ),
-}
+# Ya no debería existir cruce operativo entre onboarding/maintenance para la
+# validación semántica; cualquier reintroducción se considera regresión.
+LEGACY_CROSS_CONTEXT_IMPORTS = set()
 
 
 def _iter_python_files() -> list[Path]:

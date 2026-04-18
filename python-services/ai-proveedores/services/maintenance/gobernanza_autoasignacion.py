@@ -12,10 +12,10 @@ from services.maintenance.clasificacion_semantica import (
 from services.maintenance.gobernanza_admin import (
     aprobar_review_catalogo_servicio,
 )
-from utils import normalizar_texto_para_busqueda
-from services.maintenance.validacion_semantica import (
+from services.shared.validacion_semantica import (
     validar_servicio_semanticamente,
 )
+from utils import normalizar_texto_para_busqueda
 
 _PLACEHOLDER_NULLS = {"null", "none", "undefined", "n/a", "na"}
 _AUTO_ASSIGN_MIN_CONFIDENCE = 0.82

@@ -163,10 +163,27 @@ def test_submenu_servicios_reserva_ultima_fila_para_regresar():
         10,
     )
 
+    assert payload["response"] == (
+        "Selecciona un servicio para ver, agregar, cambiar o eliminar."
+    )
     opciones = payload["ui"]["options"]
     assert len(opciones) == 10
     assert opciones[-1]["id"] == "provider_service_back"
     assert opciones[-1]["title"] == "Regresar"
+
+
+def test_detalle_servicio_vacio_usa_boton_agregar():
+    payload = modulo_views.payload_detalle_servicio_individual(
+        indice=2,
+        servicio="",
+        registrado=False,
+    )
+
+    assert "no tiene un servicio registrado" in payload["response"].lower()
+    opciones = payload["ui"]["options"]
+
+    assert opciones[0]["id"] == "provider_detail_service_change"
+    assert opciones[0]["title"] == "Agregar"
 
 
 def test_vista_servicios_acepta_regresar_por_texto_libre():
@@ -183,6 +200,45 @@ def test_vista_servicios_acepta_regresar_por_texto_libre():
 
     assert flujo["state"] == "maintenance_professional_info_action"
     assert resultado["messages"][0]["ui"]["id"] == "provider_professional_info_menu_v1"
+
+
+def test_vista_servicio_vacio_envia_prompt_en_messages(monkeypatch):
+    flujo = {
+        "state": "viewing_professional_service",
+        "services": ["Plomeria"],
+        "selected_service_index": 2,
+    }
+
+    async def _fake_prompt(**_kwargs):
+        return {
+            "response": "Escribe una habilidad o servicio que ofreces a tus clientes.",
+            "ui": {
+                "type": "buttons",
+                "id": "provider_service_examples_v1",
+                "options": [{"id": "a", "title": "Ejemplo"}],
+            },
+            "service_examples_lookup": {"a": {"title": "Ejemplo"}},
+        }
+
+    monkeypatch.setattr(
+        modulo_views,
+        "preguntar_nuevo_servicio_con_ejemplos_dinamicos",
+        _fake_prompt,
+    )
+
+    resultado = asyncio.run(
+        modulo_views.manejar_vista_perfil(
+            flujo=flujo,
+            estado="viewing_professional_service",
+            texto_mensaje="provider_detail_service_change",
+            proveedor_id="prov-1",
+        )
+    )
+
+    assert flujo["state"] == "maintenance_service_add"
+    assert flujo["profile_return_state"] == "viewing_professional_service"
+    assert resultado["messages"][0]["response"].startswith("Escribe una habilidad")
+    assert resultado["messages"][0]["ui"]["id"] == "provider_service_examples_v1"
 
 
 def test_vista_legacy_personal_sensible_redirige_a_submenu():

@@ -1,5 +1,0 @@
-# Ignorar solo archivos temporales y borradores locales
-*.tmp
-*.bak
-*~
-.DS_Store

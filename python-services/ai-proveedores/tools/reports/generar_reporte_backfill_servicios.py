@@ -10,7 +10,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, List, Optional
 
 from supabase import Client, create_client
 
@@ -18,10 +18,10 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from utils import normalizar_texto_para_busqueda  # noqa: E402
-from services.maintenance.validacion_semantica import (  # noqa: E402
+from services.shared.validacion_semantica import (  # noqa: E402
     validar_servicio_semanticamente,
 )
+from utils import normalizar_texto_para_busqueda  # noqa: E402
 
 PAGE_SIZE = 1000
 
@@ -289,7 +289,13 @@ async def _build_groups(rows: List[Dict[str, Any]]) -> List[ServiceGroup]:
             ServiceGroup(
                 normalized_key=normalized_key,
                 count=len(items),
-                provider_count=len({str(item.get("provider_id")) for item in items if item.get("provider_id")}),
+                provider_count=len(
+                    {
+                        str(item.get("provider_id"))
+                        for item in items
+                        if item.get("provider_id")
+                    }
+                ),
                 examples=_dedupe_preserve(
                     [str(item.get("service_name") or "").strip() for item in items],
                     limit=3,
@@ -329,18 +335,23 @@ def _render_section(title: str, groups: List[ServiceGroup]) -> List[str]:
         return lines
 
     lines.append(
-        "| Decision | Servicio normalizado | Ejemplos | Filas | Proveedores | Dominio sugerido | Categoría sugerida | Riesgo genérico | Confianza | Razón |"
+        "| Decision | Servicio normalizado | Ejemplos | Filas | Proveedores | "
+        "Dominio sugerido | Categoría sugerida | Riesgo genérico | Confianza | "
+        "Razón |"
     )
-    lines.append(
-        "| --- | --- | --- | ---: | ---: | --- | --- | --- | ---: | --- |"
-    )
+    lines.append("| --- | --- | --- | ---: | ---: | --- | --- | --- | ---: | --- |")
     for group in groups:
         examples = "<br>".join(group.examples) or "-"
         domain = group.suggested_domain_code or "-"
         category = group.suggested_category_name or "-"
         reason = group.reason.replace("|", "/")
         lines.append(
-            f"| pending | `{group.normalized_key}` | {examples} | {group.count} | {group.provider_count} | `{domain}` | {category} | {group.generic_risk} | {group.classification_confidence:.2f} | {reason} |"
+            (
+                f"| pending | `{group.normalized_key}` | {examples} | "
+                f"{group.count} | {group.provider_count} | `{domain}` | "
+                f"{category} | {group.generic_risk} | "
+                f"{group.classification_confidence:.2f} | {reason} |"
+            )
         )
     lines.append("")
     return lines
@@ -350,7 +361,9 @@ def _render_markdown(rows: List[Dict[str, Any]], groups: List[ServiceGroup]) -> 
     total_rows = len(rows)
     total_unique = len(groups)
     with_suggestions = sum(
-        1 for item in groups if item.suggested_domain_code and item.suggested_category_name
+        1
+        for item in groups
+        if item.suggested_domain_code and item.suggested_category_name
     )
     high_risk = sum(1 for item in groups if item.generic_risk == "high")
     medium_risk = sum(1 for item in groups if item.generic_risk == "medium")
@@ -367,7 +380,9 @@ def _render_markdown(rows: List[Dict[str, Any]], groups: List[ServiceGroup]) -> 
             item for item in groups if item.recommended_action == "accept"
         ],
         "Excluir del Backfill": [
-            item for item in groups if item.recommended_action == "exclude_from_backfill"
+            item
+            for item in groups
+            if item.recommended_action == "exclude_from_backfill"
         ],
     }
 
@@ -387,10 +402,13 @@ def _render_markdown(rows: List[Dict[str, Any]], groups: List[ServiceGroup]) -> 
         "",
         "## Cómo revisar",
         "",
-        "- Cambia la columna `Decision` según tu criterio: `accept`, `edit`, `needs_clarification`, `exclude_from_backfill`.",
+        "- Cambia la columna `Decision` según tu criterio: `accept`, `edit`, "
+        "`needs_clarification`, `exclude_from_backfill`.",
         "- Ajusta dominio y categoría sugeridos cuando no te convenzan.",
-        "- Usa primero la sección `Genéricos / Ambiguos`; esos casos no deberían ir directo a Supabase.",
-        "- Después de revisar este documento, el siguiente paso será convertir estas decisiones en un backfill aprobado.",
+        "- Usa primero la sección `Genéricos / Ambiguos`; esos casos no "
+        "deberían ir directo a Supabase.",
+        "- Después de revisar este documento, el siguiente paso será "
+        "convertir estas decisiones en un backfill aprobado.",
         "",
     ]
 

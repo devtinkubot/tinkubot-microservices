@@ -36,7 +36,9 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from infrastructure.embeddings.servicio_embeddings import ServicioEmbeddings  # noqa: E402
+from infrastructure.embeddings.servicio_embeddings import (  # noqa: E402
+    ServicioEmbeddings,
+)
 from services.maintenance.clasificacion_semantica import (  # noqa: E402
     construir_service_summary,
     construir_texto_embedding_canonico,
@@ -45,7 +47,7 @@ from services.maintenance.clasificacion_semantica import (  # noqa: E402
 from services.maintenance.revision_catalogo import (  # noqa: E402
     generar_sugerencia_revision_catalogo_servicio,
 )
-from services.maintenance.validacion_semantica import (  # noqa: E402
+from services.shared.validacion_semantica import (  # noqa: E402
     validar_servicio_semanticamente,
 )
 from utils import normalizar_texto_para_busqueda  # noqa: E402
@@ -161,9 +163,13 @@ def _build_update_payload(
 ) -> tuple[Dict[str, Any], bool, bool, str]:
     service_detail = dict(resolved)
 
-    resolved_service_name = _normalize_optional_text(
-        service_detail.get("normalized_service") or service_detail.get("service_name")
-    ) or row.service_name
+    resolved_service_name = (
+        _normalize_optional_text(
+            service_detail.get("normalized_service")
+            or service_detail.get("service_name")
+        )
+        or row.service_name
+    )
     resolved_service_summary = _normalize_optional_text(
         service_detail.get("service_summary")
     ) or construir_service_summary(
@@ -216,16 +222,20 @@ def _build_update_payload(
         category_name=resolved_category_name,
     )
     needs_embedding = (
-        row.service_embedding is None or current_embedding_text != resolved_embedding_text
+        row.service_embedding is None
+        or current_embedding_text != resolved_embedding_text
     )
 
     payload: Dict[str, Any] = {}
     if conflict_free_name_update and row.service_name != resolved_service_name:
         payload["service_name"] = resolved_service_name
-    if (row.raw_service_text or "") != (resolved.get("raw_service_text") or row.raw_service_text or ""):
-        payload["raw_service_text"] = _normalize_optional_text(
-            resolved.get("raw_service_text")
-        ) or row.raw_service_text
+    if (row.raw_service_text or "") != (
+        resolved.get("raw_service_text") or row.raw_service_text or ""
+    ):
+        payload["raw_service_text"] = (
+            _normalize_optional_text(resolved.get("raw_service_text"))
+            or row.raw_service_text
+        )
     if row.service_summary != resolved_service_summary:
         payload["service_summary"] = resolved_service_summary
     if row.domain_code != resolved_domain_code:
@@ -316,9 +326,12 @@ async def _run(
             skipped += 1
             continue
 
-        candidate_name = _normalize_optional_text(
-            resolved.get("normalized_service") or row.service_name
-        ) or row.service_name
+        candidate_name = (
+            _normalize_optional_text(
+                resolved.get("normalized_service") or row.service_name
+            )
+            or row.service_name
+        )
         normalized_candidate = normalizar_texto_para_busqueda(candidate_name)
         conflict_free_name_update = not _has_name_conflict(
             client,
@@ -338,9 +351,7 @@ async def _run(
                 cliente_openai=embeddings.client,
                 raw_service_text=texto_base,
                 service_name=_normalize_optional_text(
-                    resolved.get("normalized_service")
-                    or row.service_name
-                    or texto_base
+                    resolved.get("normalized_service") or row.service_name or texto_base
                 )
                 or texto_base,
                 dominios_catalogo=dominios_catalogo,
@@ -379,10 +390,12 @@ async def _run(
                     "needs_clarification": False,
                     "requires_review": False,
                 }
-                payload, needs_embedding, accepted, embedding_text = _build_update_payload(
-                    row=row,
-                    resolved=resolved,
-                    conflict_free_name_update=conflict_free_name_update,
+                payload, needs_embedding, accepted, embedding_text = (
+                    _build_update_payload(
+                        row=row,
+                        resolved=resolved,
+                        conflict_free_name_update=conflict_free_name_update,
+                    )
                 )
 
         if not accepted:
@@ -426,9 +439,7 @@ async def _run(
                     or resolved.get("suggested_domain_code"),
                     "category_name": resolved.get("category_name")
                     or resolved.get("proposed_category_name"),
-                    "classification_confidence": resolved.get(
-                        "confidence"
-                    ),
+                    "classification_confidence": resolved.get("confidence"),
                     "updated_fields": sorted(payload.keys()),
                     "needs_embedding": needs_embedding,
                 },
@@ -457,7 +468,10 @@ def main() -> None:
     parser.add_argument(
         "--apply",
         action="store_true",
-        help="Aplica los cambios en Supabase. Sin este flag el script solo hace dry-run.",
+        help=(
+            "Aplica los cambios en Supabase. Sin este flag el script solo hace "
+            "dry-run."
+        ),
     )
     parser.add_argument(
         "--provider-id",
@@ -487,14 +501,14 @@ def main() -> None:
     args = parser.parse_args()
 
     asyncio.run(
-            _run(
-                apply_changes=args.apply,
-                provider_id=args.provider_id,
-                limit=args.limit,
-                include_ambiguous=args.include_ambiguous,
-                include_complete=args.all,
-            )
+        _run(
+            apply_changes=args.apply,
+            provider_id=args.provider_id,
+            limit=args.limit,
+            include_ambiguous=args.include_ambiguous,
+            include_complete=args.all,
         )
+    )
 
 
 if __name__ == "__main__":

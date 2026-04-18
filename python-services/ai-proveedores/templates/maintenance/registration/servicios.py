@@ -14,7 +14,9 @@ SERVICE_ACTION_BACK_ID = "provider_service_action_back"
 
 
 def _formatear_lista_servicios(servicios: List[str]) -> str:
-    return "\n".join([f"{idx + 1}. {servicio}" for idx, servicio in enumerate(servicios)])
+    return "\n".join(
+        [f"{idx + 1}. {servicio}" for idx, servicio in enumerate(servicios)]
+    )
 
 
 def preguntar_siguiente_servicio_registro(
@@ -166,18 +168,8 @@ def payload_menu_servicios_acciones(
     max_servicios: int,
 ) -> Dict[str, Any]:
     """Muestra el menú de gestión de servicios con botones."""
-    servicios_formateados = "\n".join([f"• {servicio}" for servicio in servicios])
-    cuerpo = [
-        f"*Gestión de Servicios*",
-        "",
-        f"Registrados: {len(servicios)}",
-        "",
-    ]
-    if servicios_formateados:
-        cuerpo.extend([servicios_formateados, ""])
-    cuerpo.extend(["Elige una acción para continuar."])
     return {
-        "response": "\n".join(cuerpo).strip(),
+        "response": "Selecciona una acción para continuar.",
         "ui": {
             "type": "buttons",
             "id": "provider_services_menu_v1",

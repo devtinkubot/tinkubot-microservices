@@ -46,7 +46,7 @@ from services.maintenance import (  # noqa: E402
 from services.maintenance.asistente_clarificacion import (  # noqa: E402
     construir_mensaje_clarificacion_servicio,
 )
-from services.maintenance.validacion_semantica import (  # noqa: E402
+from services.shared.validacion_semantica import (  # noqa: E402
     validar_servicio_semanticamente,
 )
 from templates.maintenance import (  # noqa: E402
@@ -139,7 +139,166 @@ async def test_menu_servicios_texto_libre_reenvia_botones():
 
     assert resultado["success"] is True
     assert (
-        resultado["messages"][0]["response"]["ui"]["id"] == "provider_services_menu_v1"
+        resultado["messages"][0]["response"] == "Selecciona una acción para continuar."
+    )
+    assert resultado["messages"][0]["ui"]["id"] == "provider_services_menu_v1"
+
+
+@pytest.mark.asyncio
+async def test_confirmacion_servicios_error_retorna_solo_ui(monkeypatch):
+    manejador = _crear_manejador_servicios()
+    manejador.repositorio.actualizar_servicios = AsyncMock(
+        side_effect=RuntimeError("boom")
+    )
+    monkeypatch.setattr(
+        modulo_services,
+        "_marcar_confirmacion_servicio_consumida",
+        AsyncMock(return_value=True),
+    )
+    flujo = {
+        "state": "maintenance_service_add_confirmation",
+        "services": ["Plomería"],
+        "service_add_temporales": ["Jardinería"],
+        "service_add_confirmation_nonce": "nonce-1",
+    }
+
+    resultado = await manejador.manejar_confirmacion_agregar_servicios(
+        flujo=flujo,
+        proveedor_id="prov-1",
+        texto_mensaje="Agregar",
+        selected_option="provider_service_confirm",
+        cliente_openai=object(),
+    )
+
+    assert resultado["success"] is True
+    assert (
+        resultado["messages"][0]["response"] == "Selecciona una acción para continuar."
+    )
+    assert resultado["messages"][0]["ui"]["id"] == "provider_services_menu_v1"
+
+
+@pytest.mark.asyncio
+async def test_confirmacion_servicio_desde_tarjeta_retorna_detalle_individual(
+    monkeypatch,
+):
+    manejador = _crear_manejador_servicios()
+    manejador.repositorio.agregar_servicios = AsyncMock(
+        return_value=[
+            "Plomería",
+            "Electricidad",
+            "Jardinería",
+            "Pintura",
+            (
+                "Servicio de desarrollo, diseño y mantenimiento de "
+                "aplicaciones y páginas web."
+            ),
+        ]
+    )
+    monkeypatch.setattr(
+        modulo_services,
+        "_marcar_confirmacion_servicio_consumida",
+        AsyncMock(return_value=True),
+    )
+    flujo = {
+        "state": "maintenance_service_add_confirmation",
+        "services": ["Plomería", "Electricidad", "Jardinería", "Pintura"],
+        "selected_service_index": 4,
+        "profile_return_state": "viewing_professional_service",
+        "profile_edit_mode": "provider_service_add",
+        "service_add_temporales": [
+            {
+                "service_name": "desarrollo de aplicaciones web",
+                "service_summary": (
+                    "Servicio de desarrollo, diseño y mantenimiento de "
+                    "aplicaciones y páginas web."
+                ),
+                "raw_service_text": (
+                    "Desarrollo de aplicaciones web, paginas web, incluye "
+                    "diseño y mantenimiento."
+                ),
+            }
+        ],
+        "service_add_confirmation_nonce": "nonce-1",
+    }
+
+    resultado = await manejador.manejar_confirmacion_agregar_servicios(
+        flujo=flujo,
+        proveedor_id="prov-1",
+        texto_mensaje="Agregar",
+        selected_option="profile_service_confirm",
+        cliente_openai=object(),
+    )
+
+    assert flujo["state"] == "viewing_professional_service"
+    assert resultado["messages"][0]["ui"]["id"] == "provider_detail_actions_v1"
+    assert resultado["messages"][0]["ui"]["header_text"] == "Servicio 5"
+    assert "Servicio actual" in resultado["messages"][0]["response"]
+    assert (
+        "Servicio de desarrollo, diseño y mantenimiento"
+        in resultado["messages"][0]["response"]
+    )
+    assert [
+        opcion["title"] for opcion in resultado["messages"][0]["ui"]["options"]
+    ] == [
+        "Cambiar",
+        "Eliminar",
+        "Regresar",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_confirmacion_servicio_sin_retorno_state_retorna_detalle(
+    monkeypatch,
+):
+    manejador = _crear_manejador_servicios()
+    manejador.repositorio.agregar_servicios = AsyncMock(
+        return_value=[
+            "Plomería",
+            "Electricidad",
+            "Jardinería",
+            "Pintura",
+            "Servicio de soporte técnico para redes.",
+        ]
+    )
+    monkeypatch.setattr(
+        modulo_services,
+        "_marcar_confirmacion_servicio_consumida",
+        AsyncMock(return_value=True),
+    )
+    flujo = {
+        "state": "maintenance_service_add_confirmation",
+        "services": ["Plomería", "Electricidad", "Jardinería", "Pintura"],
+        "selected_service_index": 6,
+        "profile_edit_mode": "provider_service_add",
+        "profile_edit_service_index": 6,
+        "service_add_temporales": [
+            {
+                "service_name": "soporte tecnico redes",
+                "service_summary": "Servicio de soporte técnico para redes.",
+                "raw_service_text": (
+                    "Mantenimiento de computadores de escritorio, laptops, "
+                    "impresoras."
+                ),
+            }
+        ],
+        "service_add_confirmation_nonce": "nonce-1",
+    }
+
+    resultado = await manejador.manejar_confirmacion_agregar_servicios(
+        flujo=flujo,
+        proveedor_id="prov-1",
+        texto_mensaje="Agregar",
+        selected_option="profile_service_confirm",
+        cliente_openai=object(),
+    )
+
+    assert flujo["state"] == "viewing_professional_service"
+    assert resultado["messages"][0]["ui"]["id"] == "provider_detail_actions_v1"
+    assert resultado["messages"][0]["ui"]["header_text"] == "Servicio 7"
+    assert "Servicio actual" in resultado["messages"][0]["response"]
+    assert (
+        "Servicio de soporte técnico para redes."
+        in resultado["messages"][0]["response"]
     )
 
 
@@ -1184,7 +1343,13 @@ def test_confirmacion_agregar_servicios_re_normaliza_correccion_manual(monkeypat
     flujo = {
         "state": "maintenance_service_add_confirmation",
         "services": ["Pintura interior"],
-        "service_add_temporales": ["plomería"],
+        "service_add_temporales": [
+            {
+                "service_name": "plomería",
+                "service_summary": "Servicio de plomería.",
+                "raw_service_text": "plomería",
+            }
+        ],
     }
 
     respuesta = asyncio.run(
@@ -1197,8 +1362,14 @@ def test_confirmacion_agregar_servicios_re_normaliza_correccion_manual(monkeypat
     )
 
     assert flujo["state"] == "maintenance_service_add_confirmation"
-    assert flujo["service_add_temporales"] == ["plomería"]
-    assert "plomería" in respuesta["messages"][0]["response"]
+    assert flujo["service_add_temporales"][0]["service_name"] == "plomería"
+    assert flujo["service_add_temporales"][0]["service_summary"] == (
+        "Servicio de plomería."
+    )
+    assert "Servicio de plomería." in respuesta["messages"][0]["response"]
+    assert (
+        respuesta["messages"][0]["ui"]["id"] == "provider_service_add_confirmation_v1"
+    )
 
 
 def test_espera_especialidad_bloquea_servicio_generico_critico(monkeypatch):
@@ -1483,6 +1654,7 @@ def test_eliminacion_servicio_en_edicion():
 
 def test_agregar_servicios_acepta_servicio_sin_bloqueo_taxonomico(monkeypatch):
     manejador = _crear_manejador_servicios()
+
     class _TransformadorGenerico:
         def __init__(self, cliente_openai, modelo=None):
             self.cliente_openai = cliente_openai
@@ -1526,7 +1698,13 @@ def test_agregar_servicios_acepta_servicio_sin_bloqueo_taxonomico(monkeypatch):
         )
     )
 
-    assert "transporte de mercancías" in respuesta["messages"][0]["response"]
+    assert "Servicios detectados" in respuesta["messages"][0]["response"]
+    assert (
+        "Servicio de transporte de mercancías." in respuesta["messages"][0]["response"]
+    )
+    assert (
+        respuesta["messages"][0]["ui"]["id"] == "provider_service_add_confirmation_v1"
+    )
 
 
 def test_sanitizador_preserva_texto_natural_para_ui_y_embeddings():

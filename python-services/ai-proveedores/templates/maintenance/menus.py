@@ -230,10 +230,7 @@ def payload_ejemplos_servicios_personalizados(
         },
     ]
     return {
-        "response": (
-            "Toca un dominio para ver un servicio real que se agrega con frecuencia. "
-            "Después puedes escribir el tuyo directamente."
-        ),
+        "response": "",
         "ui": {
             "type": "list",
             "id": SERVICE_EXAMPLE_LIST_ID,
@@ -492,7 +489,9 @@ def payload_detalle_servicios(
         }
     )
     return {
-        "response": "Servicios. Elige lo que deseas gestionar.",
+        "response": (
+            "Selecciona un servicio para ver, agregar, cambiar o eliminar."
+        ),
         "ui": {
             "type": "list",
             "id": "provider_services_v2",
@@ -512,14 +511,21 @@ def payload_detalle_servicio_individual(
     registrado: bool = True,
 ) -> Dict[str, Any]:
     options = [
-        {"id": DETAIL_ACTION_SERVICE_CHANGE, "title": "Cambiar"},
+        {
+            "id": DETAIL_ACTION_SERVICE_CHANGE,
+            "title": "Cambiar" if registrado else "Agregar",
+        },
     ]
     if registrado:
         options.append({"id": DETAIL_ACTION_SERVICE_DELETE, "title": "Eliminar"})
     options.append({"id": DETAIL_ACTION_BACK, "title": "Regresar"})
     return _payload_botones_detalle(
         header_text=f"Servicio {indice + 1}",
-        body=f"*Servicio actual*\n{str(servicio or '').strip() or 'No registrado'}",
+        body=(
+            f"Servicio actual: *{servicio}*."
+            if registrado and str(servicio or "").strip()
+            else "Este espacio no tiene un servicio registrado todavía."
+        ),
         options=options,
     )
 

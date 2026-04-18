@@ -416,8 +416,12 @@ async def manejar_vista_perfil(  # noqa: C901
             )
             return {
                 "success": True,
-                "response": respuesta["response"],
-                "ui": respuesta["ui"],
+                "messages": [
+                    {
+                        "response": respuesta.get("response") or "",
+                        "ui": respuesta["ui"],
+                    }
+                ],
             }
         if texto == DETAIL_ACTION_SERVICES_REMOVE:
             flujo["state"] = _estado_compatibilidad_mantenimiento(
@@ -466,7 +470,8 @@ async def manejar_vista_perfil(  # noqa: C901
             flujo["profile_edit_mode"] = (
                 "provider_service_add" if es_slot_vacio else "provider_service_replace"
             )
-            flujo["profile_return_state"] = "viewing_professional_services"
+            flujo["profile_edit_service_index"] = indice
+            flujo["profile_return_state"] = "viewing_professional_service"
             flujo["state"] = "maintenance_service_add"
             respuesta = await preguntar_nuevo_servicio_con_ejemplos_dinamicos(
                 indice=indice + 1,
@@ -477,8 +482,12 @@ async def manejar_vista_perfil(  # noqa: C901
             )
             return {
                 "success": True,
-                "response": respuesta["response"],
-                "ui": respuesta["ui"],
+                "messages": [
+                    {
+                        "response": respuesta.get("response") or "",
+                        "ui": respuesta["ui"],
+                    }
+                ],
             }
         if texto == DETAIL_ACTION_SERVICE_DELETE and not es_slot_vacio:
             servicios_finales = await eliminar_servicio_proveedor(

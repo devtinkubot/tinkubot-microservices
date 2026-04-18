@@ -7,19 +7,19 @@ from typing import Any, Dict, List, Optional
 from infrastructure.database import run_supabase
 from infrastructure.embeddings.servicio_embeddings import ServicioEmbeddings
 from models.proveedores import SolicitudCreacionProveedor
-from services.maintenance.validacion_semantica import (
-    validar_servicio_semanticamente,
-)
 from services.onboarding.registration.catalogo_servicios import (
     clasificar_servicios_livianos,
     construir_service_summary,
     construir_texto_embedding_canonico,
 )
 from services.onboarding.registration.constantes import DISPLAY_ORDER_MAX_DB
-from services.onboarding.whatsapp_identity import persistir_identities_whatsapp
 from services.onboarding.registration.normalizacion import (
     garantizar_campos_obligatorios_proveedor,
     normalizar_datos_proveedor,
+)
+from services.onboarding.whatsapp_identity import persistir_identities_whatsapp
+from services.shared.validacion_semantica import (
+    validar_servicio_semanticamente,
 )
 from supabase import Client
 from utils import normalizar_texto_para_busqueda
@@ -563,15 +563,23 @@ async def registrar_proveedor_en_base_datos(
                     resultado_insercion["requested_count"],
                     len(resultado_insercion["failed_services"]),
                 )
-                if resultado_insercion["inserted_count"] != resultado_insercion["requested_count"]:
+                if (
+                    resultado_insercion["inserted_count"]
+                    != resultado_insercion["requested_count"]
+                ):
                     logger.warning(
-                        "⚠️ Registro detenido porque no se pudieron cerrar todos los servicios"
+                        "⚠️ Registro detenido porque no se pudieron cerrar "
+                        "todos los servicios"
                     )
                     return {
                         "id": id_proveedor,
-                        "phone": registro_insertado.get("phone", datos_normalizados["phone"]),
-                        "registration_blocked_reason": "service_classification_incomplete",
-                        "error_reason": "service_classification_incomplete",
+                        "phone": registro_insertado.get(
+                            "phone", datos_normalizados["phone"]
+                        ),
+                        "registration_blocked_reason": (
+                            "service_classification_incomplete"
+                        ),
+                        "error_reason": ("service_classification_incomplete"),
                         "services_normalized": servicios_normalizados,
                         "service_entries": service_entries,
                         "failed_services": resultado_insercion["failed_services"],

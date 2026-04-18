@@ -28,6 +28,7 @@ from services.review.state import (
 from services.shared import es_comando_reinicio
 from services.shared.estados_proveedor import (
     ONBOARDING_REANUDACION_STATES,
+    STANDARD_ONBOARDING_STATES,
     es_proveedor_operativo,
 )
 from services.shared.identidad_proveedor import (
@@ -56,6 +57,46 @@ from templates.shared import (
 
 TIEMPO_INACTIVIDAD_SESION_SEGUNDOS = configuracion.ttl_flujo_segundos
 TIEMPO_AVISO_INACTIVIDAD_SEGUNDOS = configuracion.provider_inactivity_warning_seconds
+
+_ESTADOS_ONBOARDING_OBSOLETOS_POST_APROBACION = STANDARD_ONBOARDING_STATES | {"confirm"}
+
+
+def _redirigir_proveedor_aprobado_a_menu(
+    flujo: Dict[str, Any],
+    perfil_proveedor: Optional[Dict[str, Any]],
+    logger: Any,
+    telefono: str,
+) -> Optional[Dict[str, Any]]:
+    """Desbloquea al proveedor aprobado que quedó stuck en un estado de onboarding.
+
+    Pasa cuando el admin aprueba mid-onboarding: la BD dice operativo pero el
+    flujo Redis conserva un checkpoint obsoleto. Sin este bypass el router trata
+    los mensajes como respuestas del onboarding residual.
+    """
+    if not es_proveedor_operativo(perfil_proveedor):
+        return None
+    estado_actual = str(flujo.get("state") or "").strip()
+    if estado_actual not in _ESTADOS_ONBOARDING_OBSOLETOS_POST_APROBACION:
+        return None
+    logger.info(
+        "🧭 router.redirigir_proveedor_aprobado telefono=%s state_obsoleto=%s "
+        "→ awaiting_menu_option",
+        telefono,
+        estado_actual,
+    )
+    flujo["state"] = "awaiting_menu_option"
+    flujo["mode"] = "operativo"
+    flujo.pop("selected_service_index", None)
+    return {
+        "response": {
+            "success": True,
+            "messages": [
+                construir_payload_menu_principal(esta_registrado=True),
+            ],
+        },
+        "new_flow": flujo,
+        "persist_flow": True,
+    }
 
 
 def _mensaje_onboarding_requiere_procesamiento(
@@ -471,6 +512,15 @@ async def manejar_mensaje(
         esta_pendiente_revision,
     ) = resolver_estado_registro(flujo, perfil_proveedor)
     flujo["esta_registrado"] = esta_registrado
+
+    respuesta_redireccion = _redirigir_proveedor_aprobado_a_menu(
+        flujo=flujo,
+        perfil_proveedor=perfil_proveedor,
+        logger=logger,
+        telefono=telefono,
+    )
+    if respuesta_redireccion is not None:
+        return respuesta_redireccion
 
     resultado_enrutado = await enrutar_estado(
         estado=flujo.get("state"),

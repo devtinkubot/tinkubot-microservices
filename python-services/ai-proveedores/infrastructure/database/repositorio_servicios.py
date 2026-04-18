@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections import Counter
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from infrastructure.database import run_supabase
 from services.maintenance.estado_operativo import perfil_profesional_completo
@@ -40,9 +40,18 @@ class RepositorioServiciosSupabase:
         return sanitizar_servicios(servicios)
 
     async def actualizar_servicios(
-        self, proveedor_id: str, servicios: List[str]
+        self, proveedor_id: str, servicios: List[Any]
     ) -> List[str]:
-        servicios_limpios = sanitizar_servicios(servicios)
+        servicios_limpios = sanitizar_servicios(
+            [
+                (
+                    str(item.get("service_name") or "").strip()
+                    if isinstance(item, dict)
+                    else str(item or "").strip()
+                )
+                for item in servicios
+            ]
+        )
         try:
             await run_supabase(
                 lambda: self._supabase.table("provider_services")
@@ -55,14 +64,15 @@ class RepositorioServiciosSupabase:
             if servicios_limpios:
                 resultado_insercion = await self._insertar_servicios_proveedor(
                     proveedor_id=proveedor_id,
-                    servicios=servicios_limpios,
+                    servicios=servicios,
                 )
                 inserted_count = int(resultado_insercion.get("inserted_count", 0))
                 failed_services = resultado_insercion.get("failed_services", [])
                 if inserted_count != len(servicios_limpios) or failed_services:
                     raise RuntimeError(
                         "Inserción parcial de servicios: "
-                        f"esperados={len(servicios_limpios)} insertados={inserted_count} "
+                        f"esperados={len(servicios_limpios)} "
+                        f"insertados={inserted_count} "
                         f"fallidos={len(failed_services)}"
                     )
 
@@ -70,7 +80,8 @@ class RepositorioServiciosSupabase:
                 if Counter(servicios_persistidos) != Counter(servicios_limpios):
                     raise RuntimeError(
                         "Verificación fallida tras actualización de servicios: "
-                        f"esperados={servicios_limpios} persistidos={servicios_persistidos}"
+                        f"esperados={servicios_limpios} "
+                        f"persistidos={servicios_persistidos}"
                     )
 
             await self._limpiar_flags_y_cache_proveedor(
@@ -98,9 +109,17 @@ class RepositorioServiciosSupabase:
         return servicios_limpios
 
     async def agregar_servicios(
-        self, proveedor_id: str, nuevos_servicios: List[str]
+        self, proveedor_id: str, nuevos_servicios: List[Any]
     ) -> List[str]:
-        servicios_limpios = sanitizar_servicios(nuevos_servicios)
+        servicios_normalizados = [
+            (
+                str(item.get("service_name") or "").strip()
+                if isinstance(item, dict)
+                else str(item or "").strip()
+            )
+            for item in nuevos_servicios
+        ]
+        servicios_limpios = sanitizar_servicios(servicios_normalizados)
         if not servicios_limpios:
             if not self._supabase:
                 return []
@@ -115,11 +134,16 @@ class RepositorioServiciosSupabase:
         servicios_existentes = sanitizar_servicios(
             [str(fila.get("service_name") or "").strip() for fila in filas_actuales]
         )
-        servicios_a_insertar = [
-            servicio
-            for servicio in servicios_limpios
-            if servicio not in servicios_existentes
-        ]
+        servicios_a_insertar = []
+        for item in nuevos_servicios:
+            nombre = (
+                str(item.get("service_name") or "").strip()
+                if isinstance(item, dict)
+                else str(item or "").strip()
+            )
+            if not nombre or nombre in servicios_existentes:
+                continue
+            servicios_a_insertar.append(item if isinstance(item, dict) else nombre)
         if not servicios_a_insertar:
             return servicios_existentes
 
@@ -181,7 +205,9 @@ class RepositorioServiciosSupabase:
         fila_eliminada = filas[indice_servicio]
         row_id = fila_eliminada.get("id")
         if not row_id:
-            raise RuntimeError(f"provider_services sin id para proveedor {proveedor_id}")
+            raise RuntimeError(
+                f"provider_services sin id para proveedor {proveedor_id}"
+            )
 
         try:
             await self._eliminar_fila_servicio(
@@ -197,7 +223,9 @@ class RepositorioServiciosSupabase:
             )
             raise
 
-        filas_restantes = [fila for idx, fila in enumerate(filas) if idx != indice_servicio]
+        filas_restantes = [
+            fila for idx, fila in enumerate(filas) if idx != indice_servicio
+        ]
         try:
             await self._reindexar_filas_restantes(
                 proveedor_id=proveedor_id,
@@ -230,13 +258,11 @@ class RepositorioServiciosSupabase:
         self,
         *,
         proveedor_id: str,
-        servicios: List[str],
+        servicios: List[Any],
         display_order_start: int = 0,
         mark_first_as_primary: bool = True,
     ) -> Dict[str, Any]:
         from services.maintenance.registro_servicios import insertar_servicios_proveedor
-
-        from infrastructure.embeddings.servicio_embeddings import ServicioEmbeddings
 
         return await insertar_servicios_proveedor(
             supabase=self._supabase,

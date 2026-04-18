@@ -4,9 +4,6 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from infrastructure.database import get_supabase_client
-from services.maintenance.validacion_semantica import (
-    validar_servicio_semanticamente,
-)
 from services.onboarding.registration.constantes import SERVICIOS_MAXIMOS_ONBOARDING
 from services.shared import (
     RESPUESTAS_AGREGAR_SERVICIO_AFIRMATIVAS,
@@ -15,6 +12,9 @@ from services.shared import (
     SELECCION_AGREGAR_SERVICIO_NEGATIVA,
     normalizar_respuesta_binaria,
     normalizar_texto_interaccion,
+)
+from services.shared.validacion_semantica import (
+    validar_servicio_semanticamente,
 )
 from templates.onboarding.redes_sociales import (
     payload_redes_sociales_onboarding_con_imagen,
@@ -87,11 +87,13 @@ def _servicio_completo_para_guardar(detalle: Dict[str, Any]) -> bool:
 
 
 def _estado_resolucion_servicio(validacion: Dict[str, Any]) -> str:
-    estado = str(
-        validacion.get("status")
-        or validacion.get("domain_resolution_status")
-        or ""
-    ).strip().lower()
+    estado = (
+        str(
+            validacion.get("status") or validacion.get("domain_resolution_status") or ""
+        )
+        .strip()
+        .lower()
+    )
     if estado in {"accepted", "matched"}:
         return "matched"
     if estado in {"rejected"}:
@@ -325,7 +327,9 @@ async def resolver_servicio_onboarding_best_effort(
         "error_reason": str(
             resultado.get("response") or "service_classification_incomplete"
         ),
-        "response": str(resultado.get("response") or mensaje_no_pude_guardar_servicio()),
+        "response": str(
+            resultado.get("response") or mensaje_no_pude_guardar_servicio()
+        ),
     }
 
 

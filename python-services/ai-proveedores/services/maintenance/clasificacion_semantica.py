@@ -322,12 +322,10 @@ async def clasificar_servicios_livianos(
     if not cliente_openai:
         return fallback
     catalogo_dominios = await obtener_catalogo_dominios_liviano(supabase)
-    codigos_catalogo = {
-        item["code"] for item in catalogo_dominios if item.get("code")
-    }
+    codigos_catalogo = {item["code"] for item in catalogo_dominios if item.get("code")}
 
     resultados: List[Dict[str, Any]] = []
-    from services.maintenance.validacion_semantica import (
+    from services.shared.validacion_semantica import (
         enriquecer_servicio_semanticamente,
     )
 
@@ -344,9 +342,9 @@ async def clasificar_servicios_livianos(
             logger.warning("⚠️ No se pudo enriquecer servicio '%s': %s", servicio, exc)
             fila = {}
 
-        normalized_service_visible = str(
-            fila.get("normalized_service") or servicio
-        ).strip() or servicio
+        normalized_service_visible = (
+            str(fila.get("normalized_service") or servicio).strip() or servicio
+        )
         normalized_domain = normalizar_domain_code_operativo(
             fila.get("resolved_domain_code") or fila.get("domain_code")
         )
@@ -354,19 +352,17 @@ async def clasificar_servicios_livianos(
             normalized_domain if normalized_domain in codigos_catalogo else None
         )
         category_name = (
-            str(fila.get("proposed_category_name") or fila.get("category_name") or "")
-            .strip()
+            str(
+                fila.get("proposed_category_name") or fila.get("category_name") or ""
+            ).strip()
             or None
         )
-        service_summary = (
-            str(
-                fila.get("proposed_service_summary") or fila.get("service_summary") or ""
-            ).strip()
-            or construir_service_summary(
-                service_name=normalized_service_visible,
-                category_name=category_name,
-                domain_code=normalized_domain,
-            )
+        service_summary = str(
+            fila.get("proposed_service_summary") or fila.get("service_summary") or ""
+        ).strip() or construir_service_summary(
+            service_name=normalized_service_visible,
+            category_name=category_name,
+            domain_code=normalized_domain,
         )
         confidence = max(0.0, min(1.0, float(fila.get("confidence") or 0.0)))
         resultados.append(
@@ -378,9 +374,7 @@ async def clasificar_servicios_livianos(
                     fila.get("domain_resolution_status")
                     if fila.get("domain_resolution_status")
                     else (
-                        "matched"
-                        if resolved_domain_code
-                        else "catalog_review_required"
+                        "matched" if resolved_domain_code else "catalog_review_required"
                     )
                 ),
                 "category_name": category_name,

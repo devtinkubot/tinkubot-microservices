@@ -284,7 +284,11 @@ async def _clasificar_servicio_con_ia(
                             "clarification_question": {"type": ["string", "null"]},
                             "status": {
                                 "type": "string",
-                                "enum": ["accepted", "clarification_required", "rejected"],
+                                "enum": [
+                                    "accepted",
+                                    "clarification_required",
+                                    "rejected",
+                                ],
                             },
                         },
                         "required": [
@@ -435,7 +439,8 @@ async def enriquecer_servicio_semanticamente(
                 fallback.get("normalized_service") or service_name
             ).strip()
             or service_name,
-            reason=str(fallback.get("reason") or "ai_rejected").strip() or "ai_rejected",
+            reason=str(fallback.get("reason") or "ai_rejected").strip()
+            or "ai_rejected",
             domain_resolution_status="rejected",
             confidence=float(fallback.get("confidence") or heuristico["confidence"]),
         )

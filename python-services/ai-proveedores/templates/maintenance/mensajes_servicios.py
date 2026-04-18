@@ -186,9 +186,24 @@ def error_normalizar_servicio() -> str:
     )
 
 
-def mensaje_confirmacion_servicios_menu(servicios: List[str]) -> str:
+def _texto_visible_servicio(servicio: Any) -> str:
+    if isinstance(servicio, dict):
+        return (
+            str(
+                servicio.get("service_summary")
+                or servicio.get("service_name")
+                or servicio.get("raw_service_text")
+                or ""
+            ).strip()
+        )
+    return str(servicio or "").strip()
+
+
+def mensaje_confirmacion_servicios_menu(servicios: List[Any]) -> str:
     """Solicita confirmación de servicios transformados en menú de servicios."""
-    servicios_formateados = "\n".join([f"• {servicio}" for servicio in servicios])
+    servicios_formateados = "\n".join(
+        [f"• {_texto_visible_servicio(servicio)}" for servicio in servicios]
+    )
     return f"""*Servicios detectados:*
 
 {servicios_formateados}
@@ -198,15 +213,10 @@ def mensaje_confirmacion_servicios_menu(servicios: List[str]) -> str:
 Usa los botones para continuar o corregir.""".strip()
 
 
-def payload_confirmacion_servicios_menu(servicios: List[str]) -> Dict[str, Any]:
+def payload_confirmacion_servicios_menu(servicios: List[Any]) -> Dict[str, Any]:
     """Solicita confirmación de servicios con botones."""
-    servicios_formateados = "\n".join([f"• {servicio}" for servicio in servicios])
     return {
-        "response": f"""*Servicios detectados:*
-
-{servicios_formateados}
-
-¿Los agrego a tu perfil?""".strip(),
+        "response": mensaje_confirmacion_servicios_menu(servicios),
         "ui": {
             "type": "buttons",
             "id": "provider_service_add_confirmation_v1",
