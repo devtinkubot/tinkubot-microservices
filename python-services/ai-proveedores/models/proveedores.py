@@ -10,6 +10,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from models.tipos_compartidos import PhoneJID
+
 SERVICIOS_MAXIMOS = int(os.getenv("PROVIDER_MAX_SERVICES", "10"))
 
 
@@ -64,7 +66,7 @@ class SolicitudCreacionProveedor(BaseModel):
         location_lng: Longitud de ubicación (opcional)
     """
 
-    phone: str = Field(..., min_length=3, max_length=160)
+    phone: PhoneJID = Field(..., min_length=3, max_length=160)
     account_id: Optional[str] = None
     from_number: Optional[str] = None
     user_id: Optional[str] = None
@@ -74,17 +76,17 @@ class SolicitudCreacionProveedor(BaseModel):
     # profession: ELIMINADO - Ahora se usa provider_services
     services_list: List[str] = Field(default_factory=list)
     service_entries: List[Dict[str, Any]] = Field(default_factory=list)
-    experience_range: Optional[str] = None
+    experience_range: Optional[str] = Field(default=None, max_length=100)
     onboarding_complete: bool = False
-    facebook_username: Optional[str] = None
-    instagram_username: Optional[str] = None
-    display_name: Optional[str] = None
-    formatted_name: Optional[str] = None
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
-    document_first_names: Optional[str] = None
-    document_last_names: Optional[str] = None
-    document_id_number: Optional[str] = None
+    facebook_username: Optional[str] = Field(default=None, max_length=100)
+    instagram_username: Optional[str] = Field(default=None, max_length=100)
+    display_name: Optional[str] = Field(default=None, max_length=255)
+    formatted_name: Optional[str] = Field(default=None, max_length=255)
+    first_name: Optional[str] = Field(default=None, max_length=100)
+    last_name: Optional[str] = Field(default=None, max_length=100)
+    document_first_names: Optional[str] = Field(default=None, max_length=255)
+    document_last_names: Optional[str] = Field(default=None, max_length=255)
+    document_id_number: Optional[str] = Field(default=None, max_length=30)
     dni_front_photo_url: Optional[str] = None
     dni_back_photo_url: Optional[str] = None
     face_photo_url: Optional[str] = None
@@ -126,15 +128,6 @@ class SolicitudCreacionProveedor(BaseModel):
             digitos = valor
         if not re.fullmatch(r"\d{10,20}", digitos):
             raise ValueError("número real inválido")
-        return valor
-
-    @field_validator("phone")
-    @classmethod
-    def validate_phone_jid(cls, v: str) -> str:
-        """Valida formato JID completo user@server."""
-        valor = (v or "").strip()
-        if not re.fullmatch(r"[^@\s]+@[^@\s]+", valor):
-            raise ValueError("phone debe tener formato user@server")
         return valor
 
 
@@ -183,17 +176,17 @@ class RespuestaProveedor(BaseModel):
     total_services: int  # Contador de servicios
     rating: float
     available: bool
-    experience_range: Optional[str] = None
+    experience_range: Optional[str] = Field(default=None, max_length=100)
     onboarding_complete: bool = False
-    facebook_username: Optional[str] = None
-    instagram_username: Optional[str] = None
-    display_name: Optional[str] = None
-    formatted_name: Optional[str] = None
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
-    document_first_names: Optional[str] = None
-    document_last_names: Optional[str] = None
-    document_id_number: Optional[str] = None
+    facebook_username: Optional[str] = Field(default=None, max_length=100)
+    instagram_username: Optional[str] = Field(default=None, max_length=100)
+    display_name: Optional[str] = Field(default=None, max_length=255)
+    formatted_name: Optional[str] = Field(default=None, max_length=255)
+    first_name: Optional[str] = Field(default=None, max_length=100)
+    last_name: Optional[str] = Field(default=None, max_length=100)
+    document_first_names: Optional[str] = Field(default=None, max_length=255)
+    document_last_names: Optional[str] = Field(default=None, max_length=255)
+    document_id_number: Optional[str] = Field(default=None, max_length=30)
     dni_front_photo_url: Optional[str] = None
     dni_back_photo_url: Optional[str] = None
     face_photo_url: Optional[str] = None

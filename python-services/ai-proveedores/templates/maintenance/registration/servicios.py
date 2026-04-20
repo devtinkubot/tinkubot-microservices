@@ -161,22 +161,3 @@ def mensaje_error_opcion_agregar_otro() -> str:
 
 def mensaje_error_opcion_edicion_servicios() -> str:
     return "Usa los botones para corregir la lista de servicios."
-
-
-def payload_menu_servicios_acciones(
-    servicios: List[str],
-    max_servicios: int,
-) -> Dict[str, Any]:
-    """Muestra el menú de gestión de servicios con botones."""
-    return {
-        "response": "Selecciona una acción para continuar.",
-        "ui": {
-            "type": "buttons",
-            "id": "provider_services_menu_v1",
-            "options": [
-                {"id": SERVICE_ACTION_ADD_ID, "title": "Agregar"},
-                {"id": SERVICE_ACTION_DELETE_ID, "title": "Eliminar"},
-                {"id": SERVICE_ACTION_BACK_ID, "title": "Volver"},
-            ],
-        },
-    }

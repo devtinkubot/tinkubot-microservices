@@ -58,6 +58,7 @@ from templates.maintenance.menus import (
     payload_lista_certificados,
     payload_lista_eliminar_servicios,
     payload_lista_redes_sociales,
+    payload_menu_post_registro_proveedor,
     payload_submenu_informacion_personal,
     payload_submenu_informacion_profesional,
 )
@@ -210,6 +211,12 @@ async def render_profile_view(
         servicios = list(flujo.get("services") or [])
         raw_idx = flujo.get("selected_service_index")
         indice = int(raw_idx) if raw_idx is not None else -1
+        if flujo.get("selected_service_is_empty"):
+            return payload_detalle_servicio_individual(
+                indice=max(indice, 0),
+                servicio="",
+                registrado=False,
+            )
         if indice < 0 or indice >= SERVICIOS_MAXIMOS:
             flujo.pop("selected_service_index", None)
             flujo["state"] = "viewing_professional_services"
@@ -379,6 +386,7 @@ async def manejar_vista_perfil(  # noqa: C901
                 posicion = -1
             if 0 <= posicion < len(servicios_actuales):
                 flujo["selected_service_index"] = posicion
+                flujo.pop("selected_service_is_empty", None)
                 flujo["state"] = "viewing_professional_service"
                 return {
                     "success": True,
@@ -392,6 +400,7 @@ async def manejar_vista_perfil(  # noqa: C901
                 }
             if 0 <= posicion < SERVICIOS_MAXIMOS:
                 flujo["selected_service_index"] = posicion
+                flujo["selected_service_is_empty"] = True
                 flujo["state"] = "viewing_professional_service"
                 return {
                     "success": True,
@@ -452,7 +461,9 @@ async def manejar_vista_perfil(  # noqa: C901
         raw_idx = flujo.get("selected_service_index")
         indice = int(raw_idx) if raw_idx is not None else -1
         servicios_actuales = list(flujo.get("services") or [])
-        es_slot_vacio = indice >= len(servicios_actuales)
+        es_slot_vacio = bool(flujo.get("selected_service_is_empty")) or (
+            indice >= len(servicios_actuales)
+        )
         if indice < 0 or indice >= SERVICIOS_MAXIMOS:
             flujo.pop("selected_service_index", None)
             flujo["state"] = "viewing_professional_services"
@@ -495,14 +506,14 @@ async def manejar_vista_perfil(  # noqa: C901
                 indice,
             )
             flujo["services"] = servicios_finales
-            flujo.pop("selected_service_index", None)
-            flujo["state"] = "viewing_professional_services"
+            flujo["selected_service_is_empty"] = True
+            flujo["state"] = "viewing_professional_service"
             return {
                 "success": True,
                 "messages": [
                     await render_profile_view(
                         flujo=flujo,
-                        estado="viewing_professional_services",
+                        estado="viewing_professional_service",
                         proveedor_id=proveedor_id,
                     )
                 ],
@@ -723,13 +734,8 @@ async def manejar_vista_perfil(  # noqa: C901
                 ],
             }
 
+    flujo["state"] = "awaiting_menu_option"
     return {
         "success": True,
-        "messages": [
-            await render_profile_view(
-                flujo=flujo,
-                estado=estado,
-                proveedor_id=proveedor_id,
-            )
-        ],
+        "messages": [payload_menu_post_registro_proveedor()],
     }

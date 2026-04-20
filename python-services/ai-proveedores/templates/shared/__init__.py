@@ -54,10 +54,8 @@ from .mensajes_interaccion import (
     mensaje_ya_tenias_esos_servicios,
 )
 from .mensajes_sesion import (
-    informar_reanudacion_inactividad,
     informar_reinicio_con_eliminacion,
     informar_reinicio_conversacion,
-    informar_timeout_inactividad,
 )
 
 __all__ = [
@@ -113,6 +111,4 @@ __all__ = [
     "mensaje_certificado_actualizado",
     "informar_reinicio_conversacion",
     "informar_reinicio_con_eliminacion",
-    "informar_timeout_inactividad",
-    "informar_reanudacion_inactividad",
 ]

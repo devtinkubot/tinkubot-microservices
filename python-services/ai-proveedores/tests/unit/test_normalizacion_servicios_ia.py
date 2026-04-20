@@ -126,7 +126,7 @@ def test_prompt_servicios_onboarding_usa_env_override(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_menu_servicios_texto_libre_reenvia_botones():
+async def test_menu_servicios_texto_libre_vuelve_menu_principal():
     manejador = _crear_manejador_servicios()
     flujo = {"state": "maintenance_service_action", "services": ["Plomería"]}
 
@@ -138,14 +138,12 @@ async def test_menu_servicios_texto_libre_reenvia_botones():
     )
 
     assert resultado["success"] is True
-    assert (
-        resultado["messages"][0]["response"] == "Selecciona una acción para continuar."
-    )
-    assert resultado["messages"][0]["ui"]["id"] == "provider_services_menu_v1"
+    assert resultado["messages"][0]["ui"]["id"] == "provider_main_menu_v1"
+    assert resultado["messages"][0]["ui"]["header_text"] == "Menu - Principal"
 
 
 @pytest.mark.asyncio
-async def test_confirmacion_servicios_error_retorna_solo_ui(monkeypatch):
+async def test_confirmacion_servicios_error_retorna_menu_principal(monkeypatch):
     manejador = _crear_manejador_servicios()
     manejador.repositorio.actualizar_servicios = AsyncMock(
         side_effect=RuntimeError("boom")
@@ -171,10 +169,8 @@ async def test_confirmacion_servicios_error_retorna_solo_ui(monkeypatch):
     )
 
     assert resultado["success"] is True
-    assert (
-        resultado["messages"][0]["response"] == "Selecciona una acción para continuar."
-    )
-    assert resultado["messages"][0]["ui"]["id"] == "provider_services_menu_v1"
+    assert resultado["messages"][0]["ui"]["id"] == "provider_main_menu_v1"
+    assert resultado["messages"][0]["ui"]["header_text"] == "Menu - Principal"
 
 
 @pytest.mark.asyncio
@@ -2028,3 +2024,14 @@ def test_actualizar_servicios_persiste_servicio_sin_canonizacion_taxonomica(
     resultado = asyncio.run(actualizar_servicios("prov-1", ["laboralista"]))
 
     assert resultado == ["laboralista"]
+
+
+def test_phone_jid_invalido_rechazado():
+    from models.proveedores import SolicitudCreacionProveedor
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        SolicitudCreacionProveedor(
+            phone="numero_sin_arroba",
+            city="Quito",
+        )

@@ -7,7 +7,7 @@ parámetros de limpieza automática del onboarding.
 from typing import Optional
 
 from pydantic import AliasChoices, Field
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class ConfiguracionServicio(BaseSettings):
@@ -85,10 +85,6 @@ class ConfiguracionServicio(BaseSettings):
         default="https://nominatim.openstreetmap.org/search",
         validation_alias="PROVIDER_NOMINATIM_SEARCH_URL",
     )
-    provider_inactivity_warning_seconds: int = Field(
-        default=3600,
-        validation_alias="PROVIDER_INACTIVITY_WARNING_SECONDS",
-    )
     provider_onboarding_consent_image_url: str = Field(
         default=(
             "https://euescxureboitxqjduym.supabase.co/storage/v1/object/sign/"
@@ -149,13 +145,12 @@ class ConfiguracionServicio(BaseSettings):
         validation_alias="PROVIDER_ONBOARDING_STREAM_MAXLEN",
     )
 
-    class Config:
-        """Configuración de pydantic-settings para cargar variables de entorno."""
-
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        extra = "ignore"  # Ignorar variables extra no definidas
-        case_sensitive = False  # Permitir variables en mayúsculas o minúsculas
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        case_sensitive=False,
+    )
 
 
 # Instancia global de configuración accesible desde toda la aplicación

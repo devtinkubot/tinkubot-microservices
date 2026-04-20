@@ -45,7 +45,6 @@ from templates.maintenance.registration.servicios import (
     SERVICE_ACTION_ADD_ID,
     SERVICE_ACTION_BACK_ID,
     SERVICE_ACTION_DELETE_ID,
-    payload_menu_servicios_acciones,
 )
 from templates.shared import (
     mensaje_indica_servicio_exacto,
@@ -540,6 +539,7 @@ class ManejadorServicios:
         flujo["state"] = estado_retorno or "maintenance_service_action"
         flujo.pop(_FLUJO_KEY_SERVICIOS_TEMP, None)
         flujo.pop(_FLUJO_KEY_SERVICIOS_CONFIRMACION_NONCE, None)
+        flujo.pop("selected_service_is_empty", None)
         if reemplazo_activo:
             flujo.pop("profile_edit_mode", None)
             flujo.pop("selected_service_index", None)
@@ -610,7 +610,7 @@ class ManejadorServicios:
         ):
             return {
                 "success": True,
-                "messages": [payload_lista_eliminar_servicios(servicios_actuales)],
+                "messages": [_menu_servicios_desde_flujo(flujo, servicios_actuales)],
             }
 
         try:
@@ -654,10 +654,7 @@ def _menu_servicios_desde_flujo(
     flujo: Dict[str, Any],
     servicios: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    servicios_actuales = (
-        servicios if servicios is not None else (flujo.get("services") or [])
-    )
-    return payload_menu_servicios_acciones(servicios_actuales, SERVICIOS_MAXIMOS)
+    return _menu_principal_desde_flujo(flujo)
 
 
 def _nombre_canonico_servicio(servicio: Any) -> str:

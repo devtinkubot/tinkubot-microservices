@@ -1,4 +1,4 @@
-"""Mensajes compartidos de sesión, reinicio y timeout."""
+"""Mensajes compartidos de sesión y reinicio."""
 
 
 def informar_reinicio_conversacion() -> str:
@@ -9,16 +9,3 @@ def informar_reinicio_conversacion() -> str:
 def informar_reinicio_con_eliminacion() -> str:
     """Informa que el registro fue eliminado y se reinicia el flujo."""
     return "Tu registro fue eliminado. Reiniciemos desde el inicio."
-
-
-def informar_timeout_inactividad() -> str:
-    """Informa que la sesión expiró por inactividad y se reinició."""
-    return "No tuve respuesta y *reinicié la conversación* para ayudarte mejor."
-
-
-def informar_reanudacion_inactividad() -> str:
-    """Informa que hubo inactividad, pero el flujo sigue en el mismo paso."""
-    return (
-        "⌛ He detectado un momento de inactividad. *Retomamos el último "
-        "paso para continuar.*"
-    )

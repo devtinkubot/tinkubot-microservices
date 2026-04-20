@@ -11,8 +11,8 @@ from time import perf_counter
 from typing import Any, Dict, Optional
 
 import uvicorn
-from dependencies import deps
 from config import configuracion
+from dependencies import deps
 from fastapi import FastAPI, Header
 from fastapi.middleware.cors import CORSMiddleware
 from flows.onboarding.handlers.servicios import (
@@ -24,21 +24,23 @@ from infrastructure.storage import subir_medios_identidad
 from models import RecepcionMensajeWhatsApp, RespuestaSalud
 from models.proveedores import SolicitudCreacionProveedor
 from pydantic import BaseModel, Field
+
+from models.tipos_compartidos import PhoneJID
 from services.availability.disponibilidad_admin import (
     router as router_disponibilidad_admin,
 )
-from services.metrics.router_metricas_admin import router as router_metricas_admin
 from services.maintenance.actualizar_perfil_profesional import (
     actualizar_perfil_profesional,
 )
 from services.maintenance.actualizar_servicios import actualizar_servicios
+from services.maintenance.servicios_sync import normalizar_lista_servicios_flujo
+from services.metrics.router_metricas_admin import router as router_metricas_admin
 from services.onboarding.registration import reiniciar_onboarding_proveedor
 from services.onboarding.session import invalidar_cache_perfil_proveedor
 from services.onboarding.worker import (
     bucle_limpieza_onboarding,
     ejecutar_limpieza_onboarding,
 )
-from services.maintenance.servicios_sync import normalizar_lista_servicios_flujo
 from services.shared import ingreso_whatsapp as _ingreso_whatsapp
 from services.shared.orquestacion_whatsapp import (
     normalizar_respuesta_whatsapp as normalizar_respuesta_whatsapp_impl,
@@ -58,8 +60,6 @@ CLAVE_API_OPENAI = os.getenv("OPENAI_API_KEY", "")
 NIVEL_LOG = os.getenv("LOG_LEVEL", "INFO")
 TIEMPO_ESPERA_SUPABASE_SEGUNDOS = float(os.getenv("SUPABASE_TIMEOUT_SECONDS", "5"))
 UMBRAL_LENTO_MS = int(os.getenv("SLOW_QUERY_THRESHOLD_MS", "800"))
-TIEMPO_INACTIVIDAD_SESION_SEGUNDOS = configuracion.ttl_flujo_segundos
-
 # Configurar logging
 logging.basicConfig(level=getattr(logging, NIVEL_LOG))
 logger = logging.getLogger(__name__)
@@ -78,7 +78,7 @@ app.include_router(router_metricas_admin)
 
 
 class SolicitudInvalidacionCache(BaseModel):
-    phone: str
+    phone: PhoneJID
 
 
 class SolicitudAprobacionGovernanceReview(BaseModel):
@@ -156,6 +156,7 @@ class RespuestaActualizarPerfilProfesionalProveedor(BaseModel):
     experience_range: Optional[str] = None
     facebook_username: Optional[str] = None
     instagram_username: Optional[str] = None
+    onboarding_complete: Optional[bool] = None
     error_reason: Optional[str] = None
 
 
@@ -164,10 +165,6 @@ class RespuestaActualizarPerfilProfesionalProveedor(BaseModel):
 
 @app.on_event("startup")
 async def startup_event():
-    logger.info(
-        "✅ Session Timeout simple habilitado (%ss de inactividad)",
-        TIEMPO_INACTIVIDAD_SESION_SEGUNDOS,
-    )
     if deps.supabase:
         app.state.onboarding_cleanup_task = asyncio.create_task(
             bucle_limpieza_onboarding(

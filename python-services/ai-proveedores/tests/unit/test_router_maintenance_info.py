@@ -2,6 +2,7 @@ import asyncio
 import sys
 import types
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 imghdr_stub = types.ModuleType("imghdr")
 setattr(imghdr_stub, "what", lambda *args, **kwargs: None)
@@ -202,6 +203,22 @@ def test_vista_servicios_acepta_regresar_por_texto_libre():
     assert resultado["messages"][0]["ui"]["id"] == "provider_professional_info_menu_v1"
 
 
+def test_vista_servicios_texto_invalido_vuelve_menu_principal():
+    flujo = {"state": "viewing_professional_services", "services": ["Plomeria"]}
+
+    resultado = asyncio.run(
+        modulo_views.manejar_vista_perfil(
+            flujo=flujo,
+            estado="viewing_professional_services",
+            texto_mensaje="hola",
+            proveedor_id="prov-1",
+        )
+    )
+
+    assert flujo["state"] == "awaiting_menu_option"
+    assert resultado["messages"][0]["ui"]["id"] == "provider_main_menu_v1"
+
+
 def test_vista_servicio_vacio_envia_prompt_en_messages(monkeypatch):
     flujo = {
         "state": "viewing_professional_service",
@@ -239,6 +256,58 @@ def test_vista_servicio_vacio_envia_prompt_en_messages(monkeypatch):
     assert flujo["profile_return_state"] == "viewing_professional_service"
     assert resultado["messages"][0]["response"].startswith("Escribe una habilidad")
     assert resultado["messages"][0]["ui"]["id"] == "provider_service_examples_v1"
+
+
+def test_vista_servicio_eliminar_retorna_mismo_slot_vacio(monkeypatch):
+    flujo = {
+        "state": "viewing_professional_service",
+        "services": [
+            "Servicio 1",
+            "Servicio 2",
+            "Servicio 3",
+            "Servicio 4",
+            "Servicio 5",
+            "Servicio 6",
+        ],
+        "selected_service_index": 5,
+    }
+
+    monkeypatch.setattr(
+        modulo_views,
+        "eliminar_servicio_proveedor",
+        AsyncMock(
+            return_value=[
+                "Servicio 1",
+                "Servicio 2",
+                "Servicio 3",
+                "Servicio 4",
+                "Servicio 5",
+            ]
+        ),
+    )
+
+    resultado = asyncio.run(
+        modulo_views.manejar_vista_perfil(
+            flujo=flujo,
+            estado="viewing_professional_service",
+            texto_mensaje="provider_detail_service_delete",
+            proveedor_id="prov-1",
+        )
+    )
+
+    assert flujo["state"] == "viewing_professional_service"
+    assert flujo["selected_service_is_empty"] is True
+    assert resultado["messages"][0]["ui"]["header_text"] == "Servicio 6"
+    assert (
+        "no tiene un servicio registrado"
+        in resultado["messages"][0]["response"].lower()
+    )
+    assert [
+        opcion["title"] for opcion in resultado["messages"][0]["ui"]["options"]
+    ] == [
+        "Agregar",
+        "Regresar",
+    ]
 
 
 def test_vista_legacy_personal_sensible_redirige_a_submenu():

@@ -51,7 +51,6 @@ from .servicios import (
     mensaje_maximo_servicios_registro,
     mensaje_menu_edicion_servicios_registro,
     payload_menu_edicion_servicios_registro,
-    payload_menu_servicios_acciones,
     mensaje_resumen_servicios_registro,
     mensaje_servicio_actualizado,
     mensaje_servicio_duplicado_registro,
@@ -116,5 +115,4 @@ __all__ = [
     "SERVICE_ACTION_DELETE_ID",
     "SERVICE_ACTION_BACK_ID",
     "payload_menu_edicion_servicios_registro",
-    "payload_menu_servicios_acciones",
 ]
