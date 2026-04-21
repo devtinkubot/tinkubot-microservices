@@ -7,7 +7,7 @@ setattr(imghdr_stub, "what", lambda *args, **kwargs: None)
 sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-import routes.review.router as modulo_review  # noqa: E402
+import flows.review.router as modulo_review  # noqa: E402
 
 
 def test_revision_pendiente_no_muestra_menu():

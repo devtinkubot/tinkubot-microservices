@@ -1,6 +1,6 @@
 """Entradas por contexto del flujo de proveedores."""
 
-from .availability import manejar_estado_disponibilidad
+from flows.availability import manejar_estado_disponibilidad
 from .maintenance import (
     manejar_contexto_mantenimiento,
     manejar_eliminacion_proveedor,
@@ -9,7 +9,7 @@ from .maintenance import (
     manejar_menu_proveedor,
 )
 from .onboarding import manejar_contexto_onboarding
-from .review import (
+from flows.review import (
     manejar_estado_revision_inicial,
     manejar_revision_proveedor,
 )

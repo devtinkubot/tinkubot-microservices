@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import flows.onboarding.router as modulo_onboarding_router  # noqa: E402
 import flows.router as modulo_router  # noqa: E402
 from flows.router import enrutar_estado, manejar_mensaje  # noqa: E402
-from routes.availability import manejar_estado_disponibilidad  # noqa: E402
+from flows.availability import manejar_estado_disponibilidad  # noqa: E402
 from services.availability import (  # noqa: E402
     ESTADO_DISPONIBILIDAD_PENDIENTE_RESPUESTA,
 )

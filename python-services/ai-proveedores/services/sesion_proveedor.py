@@ -6,7 +6,7 @@ from flows.constructors import (
     construir_payload_menu_principal,
     construir_respuesta_solicitud_consentimiento,
 )
-from routes.review.router import manejar_estado_revision_inicial
+from flows.review.router import manejar_estado_revision_inicial
 from services.review.state import (
     manejar_aprobacion_reciente as _manejar_aprobacion_reciente,
     manejar_bloqueo_revision_posterior as _manejar_bloqueo_revision_posterior,

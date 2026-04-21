@@ -7,10 +7,10 @@ from flows.constructors import (
     construir_respuesta_solicitud_consentimiento,
 )
 from flows.session import reiniciar_flujo
-from routes.availability import manejar_estado_disponibilidad
+from flows.availability import manejar_estado_disponibilidad
 from routes.maintenance import manejar_contexto_mantenimiento
 from routes.onboarding import manejar_contexto_onboarding
-from routes.review.router import manejar_revision_proveedor
+from flows.review.router import manejar_revision_proveedor
 from services import (
     actualizar_perfil_profesional,
     agregar_certificado_proveedor,
