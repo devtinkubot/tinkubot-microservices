@@ -7,7 +7,6 @@ import asyncio
 import logging
 import os
 from datetime import datetime
-from time import perf_counter
 from typing import Any, Dict, Optional
 
 import uvicorn
@@ -21,7 +20,7 @@ from flows.onboarding.handlers.servicios import (
 from infrastructure.database import run_supabase
 from infrastructure.redis import cliente_redis  # noqa: F401
 from infrastructure.storage import subir_medios_identidad
-from models import RecepcionMensajeWhatsApp, RespuestaSalud
+from models import RespuestaSalud
 from models.proveedores import SolicitudCreacionProveedor
 from pydantic import BaseModel, Field
 
@@ -35,6 +34,7 @@ from services.maintenance.actualizar_perfil_profesional import (
 from services.maintenance.actualizar_servicios import actualizar_servicios
 from services.maintenance.servicios_sync import normalizar_lista_servicios_flujo
 from services.metrics.router_metricas_admin import router as router_metricas_admin
+from routers.whatsapp import router as router_whatsapp
 from services.onboarding.registration import reiniciar_onboarding_proveedor
 from services.onboarding.session import invalidar_cache_perfil_proveedor
 from services.onboarding.worker import (
@@ -44,9 +44,6 @@ from services.onboarding.worker import (
 from services.shared import ingreso_whatsapp as _ingreso_whatsapp
 from services.shared.orquestacion_whatsapp import (
     normalizar_respuesta_whatsapp as normalizar_respuesta_whatsapp_impl,
-)
-from services.shared.orquestacion_whatsapp import (
-    procesar_mensaje_whatsapp,
 )
 
 _es_mensaje_interactivo_duplicado = _ingreso_whatsapp.es_mensaje_interactivo_duplicado
@@ -59,7 +56,6 @@ CLAVE_SERVICIO_SUPABASE = configuracion.supabase_service_key
 CLAVE_API_OPENAI = os.getenv("OPENAI_API_KEY", "")
 NIVEL_LOG = os.getenv("LOG_LEVEL", "INFO")
 TIEMPO_ESPERA_SUPABASE_SEGUNDOS = float(os.getenv("SUPABASE_TIMEOUT_SECONDS", "5"))
-UMBRAL_LENTO_MS = int(os.getenv("SLOW_QUERY_THRESHOLD_MS", "800"))
 # Configurar logging
 logging.basicConfig(level=getattr(logging, NIVEL_LOG))
 logger = logging.getLogger(__name__)
@@ -75,6 +71,7 @@ app = FastAPI(
 )
 app.include_router(router_disponibilidad_admin)
 app.include_router(router_metricas_admin)
+app.include_router(router_whatsapp)
 
 
 class SolicitudInvalidacionCache(BaseModel):
@@ -668,42 +665,6 @@ async def planificar_mantenimiento_taxonomia_endpoint(
         logger.error("❌ Error planificando mantenimiento de taxonomía: %s", exc)
         return {"success": False, "message": str(exc)}
 
-
-@app.post("/handle-whatsapp-message")
-async def manejar_mensaje_whatsapp(  # noqa: C901
-    solicitud: RecepcionMensajeWhatsApp,
-) -> Dict[str, Any]:
-    """
-    Recibir y procesar mensajes entrantes de WhatsApp
-    """
-    inicio_tiempo = perf_counter()
-    try:
-        return await procesar_mensaje_whatsapp(
-            solicitud=solicitud,
-            supabase=deps.supabase,
-            servicio_embeddings=deps.servicio_embeddings,
-            cliente_openai=deps.cliente_openai,
-            logger=logger,
-            subir_medios_identidad_fn=subir_medios_identidad,
-        )
-
-    except Exception as error:
-        import traceback
-
-        logger.error(
-            f"❌ Error procesando mensaje WhatsApp: {error}\n{traceback.format_exc()}"
-        )
-        return {"success": False, "message": f"Error procesando mensaje: {str(error)}"}
-    finally:
-        ms_transcurridos = (perf_counter() - inicio_tiempo) * 1000
-        if ms_transcurridos >= UMBRAL_LENTO_MS:
-            logger.info(
-                "perf_handler_whatsapp",
-                extra={
-                    "elapsed_ms": round(ms_transcurridos, 2),
-                    "threshold_ms": UMBRAL_LENTO_MS,
-                },
-            )
 
 
 if __name__ == "__main__":

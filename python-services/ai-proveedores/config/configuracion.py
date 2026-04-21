@@ -24,6 +24,10 @@ class ConfiguracionServicio(BaseSettings):
 
     # Configuración de timeouts
     ttl_flujo_segundos: int = 3600
+    slow_query_threshold_ms: int = Field(
+        default=800,
+        validation_alias="SLOW_QUERY_THRESHOLD_MS",
+    )
 
     # Configuración de puertos
     proveedores_service_port: int = 8002
