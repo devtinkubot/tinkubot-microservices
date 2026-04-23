@@ -9,11 +9,10 @@ La estructura física del servicio está organizada por responsabilidad:
 - `config/`: parámetros de entorno y configuración operativa.
 - `models/`: esquemas y modelos de dominio.
 - `flows/`: orquestación de conversación y transiciones.
-- `routes/`: fronteras explícitas por contexto.
+- `principal.py`: punto de entrada de la aplicación FastAPI.
 - `services/`: lógica de negocio y helpers reutilizables.
 - `templates/`: copys, payloads y mensajes visibles para el usuario.
 - `infrastructure/`: integración técnica con Redis, Supabase, OpenAI y storage.
-- `principal.py`: punto de entrada de la aplicación.
 - `utils/`: helpers puros y sin acoplamiento al flujo.
 - `tools/`: scripts y procesos manuales de mantenimiento.
 - `tests/`: validación automatizada.
@@ -26,7 +25,6 @@ Alta inicial del proveedor, captura de datos y envío a revisión.
 
 Rutas y piezas relevantes:
 
-- `routes/onboarding/`
 - `flows/onboarding/`
 - `services/onboarding/`
 - `templates/onboarding/`
@@ -47,7 +45,7 @@ Estado de espera entre el alta y el uso operativo.
 
 Rutas y piezas relevantes:
 
-- `routes/review/`
+- `flows/review/`
 - `services/review/`
 - `templates/review/`
 
@@ -57,7 +55,6 @@ Menú operativo del proveedor ya registrado.
 
 Rutas y piezas relevantes:
 
-- `routes/maintenance/`
 - `flows/maintenance/`
 - `services/maintenance/`
 - `templates/maintenance/`
@@ -68,7 +65,7 @@ Respuesta a disponibilidad del proveedor cuando existe una solicitud entrante.
 
 Rutas y piezas relevantes:
 
-- `routes/availability/`
+- `flows/availability/`
 - `services/availability/`
 
 ## Capas compartidas

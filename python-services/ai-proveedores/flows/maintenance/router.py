@@ -2,7 +2,7 @@
 
 from typing import Any, Dict, Optional
 
-from .deletion import manejar_eliminacion_proveedor
+from .deletion import manejar_confirmacion_eliminacion
 from .handlers import (
     manejar_perfil_mantenimiento,
     manejar_redes_mantenimiento,
@@ -59,8 +59,8 @@ async def manejar_contexto_mantenimiento(
     cliente_openai: Any,
     servicio_embeddings: Any,
     subir_medios_identidad: Any,
-    agregar_certificado_proveedor: Any,
-    actualizar_perfil_profesional: Any,
+    agregar_certificado_proveedor,
+    actualizar_perfil_profesional,
     selected_option: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """Resuelve los estados de maintenance que ya no deben vivir en router global."""
@@ -83,7 +83,7 @@ async def manejar_contexto_mantenimiento(
         return {"response": respuesta, "persist_flow": True}
 
     if estado == "maintenance_deletion_confirmation":
-        respuesta = await manejar_eliminacion_proveedor(
+        respuesta = await manejar_confirmacion_eliminacion(
             flujo=flujo,
             texto_mensaje=texto_mensaje,
             supabase=supabase,

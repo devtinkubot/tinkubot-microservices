@@ -9,7 +9,7 @@ La arquitectura del servicio ya está separada por capas:
 - `config/`: configuración y parámetros operativos.
 - `models/`: contratos y modelos de dominio.
 - `flows/`: orquestación y transiciones.
-- `routes/`: fronteras explícitas por contexto.
+- `principal.py`: punto de entrada de la aplicación FastAPI.
 - `services/`: lógica de negocio.
 - `templates/`: copys y payloads visibles.
 - `infrastructure/`: integraciones técnicas.
@@ -23,7 +23,6 @@ La arquitectura del servicio ya está separada por capas:
 
 El alta inicial del proveedor vive en:
 
-- `routes/onboarding/`
 - `flows/onboarding/`
 - `services/onboarding/`
 - `templates/onboarding/`
@@ -42,7 +41,7 @@ Este contexto cubre:
 
 La revisión es la frontera entre alta y operación:
 
-- `routes/review/`
+- `flows/review/`
 - `services/review/`
 - `templates/review/`
 
@@ -56,7 +55,6 @@ Este contexto cubre:
 
 El menú operativo del proveedor ya registrado vive en:
 
-- `routes/maintenance/`
 - `flows/maintenance/`
 - `services/maintenance/`
 - `templates/maintenance/`
@@ -74,7 +72,7 @@ Este contexto cubre:
 
 La disponibilidad es un contexto separado y no forma parte del onboarding:
 
-- `routes/availability/`
+- `flows/availability/`
 - `services/availability/`
 
 Este contexto cubre:
@@ -96,7 +94,7 @@ para mover reglas de negocio que pertenezcan a un solo contexto.
 
 ## 7. Compatibilidad y legado
 
-Estos módulos siguen vivos porque todavía hay rutas o tests que los referencian. No se deben borrar sin una pasada de compatibilidad:
+Estos módulos siguen vivos porque todavía hay tests o consumidores históricos que los referencian. No se deben borrar sin una pasada de compatibilidad:
 
 - `flows/maintenance/document_update.py`
 - `flows/maintenance/certificate_step.py` (antes `wait_certificate.py`)

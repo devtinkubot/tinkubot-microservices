@@ -4,10 +4,8 @@ from typing import Any, Dict, Optional
 
 from dependencies import deps
 from flows.maintenance.context import es_contexto_mantenimiento
+from flows.maintenance.menu import construir_menu_principal_mantenimiento
 from flows.maintenance.services import ManejadorServicios
-from infrastructure.database.repositorio_servicios import (
-    RepositorioServiciosSupabase,
-)
 from flows.maintenance.services_confirmation import (
     manejar_accion_edicion_servicios_registro,
     manejar_agregar_servicio_desde_edicion_registro,
@@ -21,7 +19,9 @@ from flows.maintenance.services_confirmation import (
     manejar_seleccion_reemplazo_servicio_registro,
 )
 from flows.maintenance.specialty import manejar_espera_especialidad
-from ..menu import construir_menu_principal_mantenimiento
+from infrastructure.database.repositorio_servicios import (
+    RepositorioServiciosSupabase,
+)
 
 MANTENANCE_STATES = {
     "maintenance_service_action",
@@ -320,7 +320,9 @@ async def manejar_servicios_mantenimiento(
     if es_legacy and not es_contexto_mantenimiento(flujo):
         return None
 
-    manejador_servicios = ManejadorServicios(RepositorioServiciosSupabase(deps.supabase))
+    manejador_servicios = ManejadorServicios(
+        RepositorioServiciosSupabase(deps.supabase)
+    )
 
     respuesta_simple = await _manejar_estado_simple(
         estado_normalizado=estado_normalizado,

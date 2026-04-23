@@ -2,15 +2,15 @@
 
 from typing import Any, Dict, Optional
 
+from flows.availability import manejar_estado_disponibilidad
 from flows.constructors import (
     construir_payload_menu_principal,
     construir_respuesta_solicitud_consentimiento,
 )
-from flows.session import reiniciar_flujo
-from flows.availability import manejar_estado_disponibilidad
-from routes.maintenance import manejar_contexto_mantenimiento
-from routes.onboarding import manejar_contexto_onboarding
+from flows.maintenance.router import manejar_contexto_mantenimiento
+from flows.onboarding.router import manejar_contexto_onboarding
 from flows.review.router import manejar_revision_proveedor
+from flows.session import reiniciar_flujo
 from services import (
     actualizar_perfil_profesional,
     agregar_certificado_proveedor,

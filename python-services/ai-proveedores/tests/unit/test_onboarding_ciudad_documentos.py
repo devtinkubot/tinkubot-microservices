@@ -5,13 +5,12 @@ from pathlib import Path
 import pytest
 
 imghdr_stub = types.ModuleType("imghdr")
-imghdr_stub.what = lambda *args, **kwargs: None
+setattr(imghdr_stub, "what", lambda *args, **kwargs: None)
 sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import flows.onboarding.router as modulo_onboarding_router  # noqa: E402
-import routes.onboarding.router as modulo_routes_onboarding  # noqa: E402
-from routes.maintenance.handlers.profile import (  # noqa: E402
+from flows.maintenance.handlers.profile import (  # noqa: E402
     manejar_perfil_mantenimiento,
 )
 from flows.onboarding.handlers.ciudad import (  # noqa: E402
@@ -71,7 +70,9 @@ async def test_foto_perfil_onboarding_avanza_a_experiencia():
     assert flujo["face_image"] == "face-image"
     assert flujo["phone"] == "593999111299@s.whatsapp.net"
     assert flujo["state"] == "onboarding_experience"
-    assert respuesta["messages"][0]["response"] == "Selecciona tus *años de experiencia*."
+    assert respuesta["messages"][0]["response"] == (
+        "Selecciona tus *años de experiencia*."
+    )
 
 
 @pytest.mark.asyncio
@@ -183,7 +184,7 @@ async def test_router_onboarding_add_another_service_enruta_decision(monkeypatch
 async def test_boundary_onboarding_sin_consentimiento_pide_consentimiento():
     flujo = {}
 
-    respuesta = await modulo_routes_onboarding.manejar_contexto_onboarding(
+    respuesta = await modulo_onboarding_router.manejar_contexto_onboarding(
         estado=None,
         flujo=flujo,
         telefono="593999111299@s.whatsapp.net",
@@ -211,7 +212,7 @@ async def test_boundary_onboarding_sin_consentimiento_pide_consentimiento():
 async def test_boundary_onboarding_no_reclama_registrado_sin_consentimiento():
     flujo = {"state": "onboarding_city", "has_consent": False, "provider_id": "prov-1"}
 
-    respuesta = await modulo_routes_onboarding.manejar_contexto_onboarding(
+    respuesta = await modulo_onboarding_router.manejar_contexto_onboarding(
         estado="onboarding_city",
         flujo=flujo,
         telefono="593999111299@s.whatsapp.net",
@@ -245,7 +246,7 @@ async def test_boundary_onboarding_registrado_sigue_manejando_paso_activo(monkey
         return {"success": True, "messages": [{"response": "ok onboarding"}]}
 
     monkeypatch.setattr(
-        modulo_routes_onboarding,
+        modulo_onboarding_router,
         "manejar_estado_onboarding",
         _fake_manejar_estado_onboarding,
     )
@@ -256,7 +257,7 @@ async def test_boundary_onboarding_registrado_sigue_manejando_paso_activo(monkey
         "provider_id": "prov-1",
     }
 
-    respuesta = await modulo_routes_onboarding.manejar_contexto_onboarding(
+    respuesta = await modulo_onboarding_router.manejar_contexto_onboarding(
         estado="onboarding_dni_front_photo",
         flujo=flujo,
         telefono="593999111299@s.whatsapp.net",
@@ -282,7 +283,7 @@ async def test_boundary_onboarding_registrado_sigue_manejando_paso_activo(monkey
 async def test_boundary_onboarding_no_reclama_menu_principal():
     flujo = {"state": "awaiting_menu_option", "has_consent": False}
 
-    respuesta = await modulo_routes_onboarding.manejar_contexto_onboarding(
+    respuesta = await modulo_onboarding_router.manejar_contexto_onboarding(
         estado="awaiting_menu_option",
         flujo=flujo,
         telefono="593999111299@s.whatsapp.net",
@@ -339,12 +340,12 @@ async def test_boundary_onboarding_consentimiento_se_procesa_antes_del_guard(
         return {"success": True, "messages": [{"response": "ok consent"}]}
 
     monkeypatch.setattr(
-        modulo_routes_onboarding,
+        modulo_onboarding_router,
         "manejar_estado_onboarding",
         _fake_estado_onboarding,
     )
 
-    respuesta = await modulo_routes_onboarding.manejar_contexto_onboarding(
+    respuesta = await modulo_onboarding_router.manejar_contexto_onboarding(
         estado="onboarding_consent",
         flujo=flujo,
         telefono="593999111299@s.whatsapp.net",
@@ -375,12 +376,12 @@ async def test_boundary_onboarding_delega_estado_real(monkeypatch):
         return {"success": True, "messages": [{"response": "ok boundary"}]}
 
     monkeypatch.setattr(
-        modulo_routes_onboarding,
+        modulo_onboarding_router,
         "manejar_estado_onboarding",
         _fake_estado_onboarding,
     )
 
-    respuesta = await modulo_routes_onboarding.manejar_contexto_onboarding(
+    respuesta = await modulo_onboarding_router.manejar_contexto_onboarding(
         estado="onboarding_city",
         flujo=flujo,
         telefono="593999111299@s.whatsapp.net",

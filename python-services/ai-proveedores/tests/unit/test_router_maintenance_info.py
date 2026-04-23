@@ -9,11 +9,11 @@ setattr(imghdr_stub, "what", lambda *args, **kwargs: None)
 sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+import flows.maintenance.handlers.profile as modulo_profile  # noqa: E402
+import flows.maintenance.info as modulo_info  # noqa: E402
 import flows.maintenance.menu as modulo_menu  # noqa: E402
 import flows.maintenance.views as modulo_views  # noqa: E402
-import routes.maintenance.handlers.profile as modulo_profile  # noqa: E402
-import routes.maintenance.info as modulo_info  # noqa: E402
-from routes.maintenance import (  # noqa: E402
+from flows.maintenance.info import (  # noqa: E402
     manejar_informacion_personal_mantenimiento,
     manejar_informacion_profesional_mantenimiento,
 )

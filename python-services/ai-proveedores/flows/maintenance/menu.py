@@ -338,3 +338,13 @@ async def manejar_estado_menu(
         "success": True,
         "messages": [_payload_menu_principal_desde_flujo(flujo)],
     }
+
+
+def construir_menu_principal_mantenimiento(
+    *,
+    esta_registrado: bool = True,
+) -> Dict[str, Any]:
+    """Construye el payload estándar del menú principal de maintenance."""
+    return construir_payload_menu_principal(
+        esta_registrado=esta_registrado,
+    )

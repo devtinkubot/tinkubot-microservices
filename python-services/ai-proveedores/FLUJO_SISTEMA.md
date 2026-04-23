@@ -10,12 +10,10 @@ Este documento describe el recorrido operativo del servicio con la arquitectura 
 
 ## Capas de ejecución
 
-- `routes/onboarding/`: entrada explícita al alta del proveedor.
-- `routes/review/`: control del estado de revisión y reanudación.
-- `routes/maintenance/`: menú operativo del proveedor registrado.
-- `routes/availability/`: respuesta a solicitudes de disponibilidad.
 - `flows/onboarding/`: transición interna del alta.
 - `flows/maintenance/`: transición y orquestación del menú operativo.
+- `flows/review/`: control del estado de revisión y reanudación.
+- `flows/availability/`: respuesta a solicitudes de disponibilidad.
 - `services/onboarding/`: lógica de alta y persistencia asociada.
 - `services/review/`: policy, mensajes y estado de revisión.
 - `services/maintenance/`: lógica de negocio post-alta.
@@ -31,7 +29,7 @@ Este documento describe el recorrido operativo del servicio con la arquitectura 
 1. WhatsApp -> principal.py
 2. principal.py -> flows/router.py
 3. Router decide entre onboarding, review, maintenance o availability
-4. Cada contexto usa su route, flow, service y templates correspondientes
+4. Cada contexto usa su flow, service y templates correspondientes
 5. Los mensajes visibles salen desde templates/
 6. Las utilidades técnicas salen desde `services/shared/`; las reglas de
    negocio viven en el contexto dueño.
@@ -42,7 +40,6 @@ Este documento describe el recorrido operativo del servicio con la arquitectura 
 
 El alta inicial vive en:
 
-- `routes/onboarding/router.py`
 - `flows/onboarding/router.py`
 - `flows/onboarding/handlers/`
 - `services/onboarding/`
@@ -75,7 +72,7 @@ Regla operativa:
 
 La revisión vive en:
 
-- `routes/review/router.py`
+- `flows/review/router.py`
 - `services/review/state.py`
 - `services/review/messages.py`
 - `templates/review/`
@@ -90,10 +87,6 @@ Responsabilidades:
 
 El menú operativo vive en:
 
-- `routes/maintenance/router.py`
-- `routes/maintenance/info.py`
-- `routes/maintenance/deletion.py`
-- `routes/maintenance/handlers/`
 - `flows/maintenance/`
 - `services/maintenance/`
 - `templates/maintenance/`
@@ -117,7 +110,7 @@ Regla operativa:
 
 La disponibilidad vive en:
 
-- `routes/availability/router.py`
+- `flows/availability/router.py`
 - `services/availability/processor.py`
 - `services/availability/disponibilidad_admin.py`
 

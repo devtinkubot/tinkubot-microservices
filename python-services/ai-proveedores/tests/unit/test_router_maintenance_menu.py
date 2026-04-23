@@ -9,7 +9,7 @@ sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import flows.maintenance.menu as modulo_menu  # noqa: E402
-import routes.maintenance.router as modulo_router  # noqa: E402
+import flows.maintenance.router as modulo_router  # noqa: E402
 
 
 def test_menu_mantenimiento_solo_atiende_registrados(monkeypatch):

@@ -8,8 +8,7 @@ setattr(imghdr_stub, "what", lambda *args, **kwargs: None)
 sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-import routes.maintenance.deletion as modulo_deletion  # noqa: E402
-from routes.maintenance import manejar_eliminacion_proveedor  # noqa: E402
+import flows.maintenance.deletion as modulo_deletion  # noqa: E402
 
 
 def test_mantenimiento_eliminacion_delega_al_handler(monkeypatch):
@@ -31,7 +30,7 @@ def test_mantenimiento_eliminacion_delega_al_handler(monkeypatch):
     )
 
     resultado = asyncio.run(
-        manejar_eliminacion_proveedor(
+        modulo_deletion.manejar_confirmacion_eliminacion(
             flujo=flujo,
             texto_mensaje="si",
             supabase=None,

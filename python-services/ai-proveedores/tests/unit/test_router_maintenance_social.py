@@ -8,7 +8,7 @@ setattr(imghdr_stub, "what", lambda *args, **kwargs: None)
 sys.modules.setdefault("imghdr", imghdr_stub)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-import routes.maintenance.handlers.social as modulo_social  # noqa: E402
+import flows.maintenance.handlers.social as modulo_social  # noqa: E402
 from flows.maintenance.experience_step import manejar_espera_experiencia  # noqa: E402
 
 
