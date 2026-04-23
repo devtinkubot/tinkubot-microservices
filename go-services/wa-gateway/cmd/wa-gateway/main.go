@@ -56,6 +56,15 @@ func main() {
 	if aiProveedoresURL == "" {
 		aiProveedoresURL = "http://ai-proveedores:8002"
 	}
+	onboardingRustURL := os.Getenv("ONBOARDING_RUST_URL")
+	if onboardingRustURL == "" {
+		onboardingRustURL = "http://onboarding:8003"
+	}
+	rustOnboardingTestNumbers := os.Getenv("RUST_ONBOARDING_TEST_NUMBERS")
+	if rustOnboardingTestNumbers == "" {
+		rustOnboardingTestNumbers = "+593959091325"
+	}
+	internalToken := strings.TrimSpace(os.Getenv("AI_PROVEEDORES_INTERNAL_TOKEN"))
 	webhookEndpoint := os.Getenv("WEBHOOK_ENDPOINT")
 	if webhookEndpoint == "" {
 		webhookEndpoint = "/handle-whatsapp-message"
@@ -66,12 +75,15 @@ func main() {
 	webhookClient := webhook.NewWebhookClient(
 		aiClientesURL,
 		aiProveedoresURL,
+		onboardingRustURL,
+		rustOnboardingTestNumbers,
+		internalToken,
 		webhookEndpoint,
 		webhookTimeout,
 		webhookRetryAttempts,
 	)
-	log.Printf("✅ Webhook client created - clientes: %s%s, proveedores: %s%s",
-		aiClientesURL, webhookEndpoint, aiProveedoresURL, webhookEndpoint)
+	log.Printf("✅ Webhook client created - clientes: %s%s, proveedores: %s%s, rust_onboarding: %s%s, test_numbers: %s, internal_token_configured=%t",
+		aiClientesURL, webhookEndpoint, aiProveedoresURL, webhookEndpoint, onboardingRustURL, webhookEndpoint, rustOnboardingTestNumbers, internalToken != "")
 
 	// Create API handlers
 	metaEnabled := parseBoolEnv("WA_META_WEBHOOK_ENABLED", false)

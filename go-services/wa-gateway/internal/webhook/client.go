@@ -15,7 +15,8 @@ import (
 // Routes dynamically based on payload.AccountID
 func (wc *WebhookClient) Send(ctx context.Context, payload *WebhookPayload) (*WebhookResponse, error) {
 	var lastErr error
-	url := wc.getURL(payload.AccountID)
+	url := wc.getURL(payload)
+	isRustOnboarding := wc.isRustOnboardingURL(url)
 
 	for attempt := 0; attempt <= wc.retryAttempts; attempt++ {
 		if attempt > 0 {
@@ -42,6 +43,14 @@ func (wc *WebhookClient) Send(ctx context.Context, payload *WebhookPayload) (*We
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("User-Agent", "wa-gateway/1.0")
 		req.Header.Set("X-Account-ID", payload.AccountID)
+		if isRustOnboarding {
+			if wc.internalToken != "" {
+				req.Header.Set("x-internal-token", wc.internalToken)
+				log.Printf("[Webhook] Adding x-internal-token header for Rust onboarding: from=%s", payload.FromNumber)
+			} else {
+				log.Printf("[Webhook] WARNING: x-internal-token missing for Rust onboarding: from=%s", payload.FromNumber)
+			}
+		}
 		log.Printf(
 			"[Webhook] dispatch account=%s url=%s from=%s phone=%s context_from=%s context_id=%s message_type=%s selected_option=%q",
 			payload.AccountID,
@@ -95,4 +104,8 @@ func (wc *WebhookClient) Send(ctx context.Context, payload *WebhookPayload) (*We
 	}
 
 	return nil, fmt.Errorf("failed after %d attempts for %s: %w", wc.retryAttempts+1, payload.AccountID, lastErr)
+}
+
+func (wc *WebhookClient) isRustOnboardingURL(url string) bool {
+	return wc.onboardingRustURL != "" && url == wc.onboardingRustURL+wc.endpoint
 }

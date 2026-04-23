@@ -21,6 +21,9 @@ services:
       # Webhook Configuration (Dynamic Routing)
       - AI_CLIENTES_URL=${AI_CLIENTES_URL:-http://ai-clientes:8001}
       - AI_PROVEEDORES_URL=${AI_PROVEEDORES_URL:-http://ai-proveedores:8002}
+      - ONBOARDING_RUST_URL=${ONBOARDING_RUST_URL:-http://onboarding:8003}
+      - RUST_ONBOARDING_TEST_NUMBERS=${RUST_ONBOARDING_TEST_NUMBERS:-+593959091325}
+      - AI_PROVEEDORES_INTERNAL_TOKEN=${AI_PROVEEDORES_INTERNAL_TOKEN}
       - WEBHOOK_ENDPOINT=${WEBHOOK_ENDPOINT:-/handle-whatsapp-message}
       - WEBHOOK_TIMEOUT_MS=${WEBHOOK_TIMEOUT_MS:-10000}
       - WEBHOOK_RETRY_ATTEMPTS=${WEBHOOK_RETRY_ATTEMPTS:-3}
@@ -254,6 +257,45 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+
+  onboarding:
+    build:
+      context: ./rust-services/onboarding
+      dockerfile: Dockerfile
+    container_name: tinkubot-onboarding
+    ports:
+      - "${ONBOARDING_PORT:-8003}:8003"
+    environment:
+      - REDIS_URL=${REDIS_URL}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_SERVICE_KEY}
+      - SUPABASE_PROVIDERS_BUCKET=${SUPABASE_PROVIDERS_BUCKET:-tinkubot-providers}
+      - AI_PROVEEDORES_INTERNAL_TOKEN=${AI_PROVEEDORES_INTERNAL_TOKEN}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_EMBEDDING_MODEL=${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
+      - RUST_ONBOARDING_TEST_NUMBERS=${RUST_ONBOARDING_TEST_NUMBERS:-}
+      - PORT=${ONBOARDING_PORT:-8003}
+      - RUST_LOG=${RUST_LOG:-info}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - wa-gateway-ipv4
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   provider-onboarding-worker:
     build:
