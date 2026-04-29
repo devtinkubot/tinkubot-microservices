@@ -49,6 +49,20 @@ pub struct FlowState {
     pub last_message_id: Option<String>,
     pub updated_at: Option<String>,
     #[serde(default)]
+    pub account_id: String,
+    #[serde(default)]
+    pub from_number: Option<String>,
+    #[serde(default)]
+    pub user_id: Option<String>,
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub formatted_name: Option<String>,
+    #[serde(default)]
+    pub first_name: Option<String>,
+    #[serde(default)]
+    pub last_name: Option<String>,
+    #[serde(default)]
     pub has_consent: bool,
     #[serde(default)]
     pub real_phone: Option<String>,
@@ -84,6 +98,13 @@ impl FlowState {
             step: None,
             last_message_id: None,
             updated_at: None,
+            account_id: String::new(),
+            from_number: None,
+            user_id: None,
+            display_name: None,
+            formatted_name: None,
+            first_name: None,
+            last_name: None,
             has_consent: false,
             real_phone: None,
             city: None,
