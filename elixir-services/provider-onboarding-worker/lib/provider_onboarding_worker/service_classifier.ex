@@ -1,128 +1,81 @@
 defmodule ProviderOnboardingWorker.ServiceClassifier do
-  @moduledoc """
-  Clasifica servicios de onboarding usando OpenAI y el catálogo de dominios
-  de Supabase. Reemplaza la dependencia en ai-proveedores Python.
-  """
-
   alias ProviderOnboardingWorker.OpenAIClient
   alias ProviderOnboardingWorker.SupabaseClient
   require Logger
 
   @system_prompt """
-  Eres un clasificador obligatorio de servicios para proveedores en Ecuador.
-  Tu trabajo es cerrar un servicio operativo, su dominio y su categoría
-  sin dejar campos vacíos cuando el texto sí permite resolverlos.
-  El usuario envía un servicio por WhatsApp y el texto ya pasó por
-  filtros básicos, así que no respondas con basura ni con oficios puros.
-  Piensa en la jerarquía conceptual de UNSPSC solo como guía, sin usar
-  códigos numéricos.
-  Devuelve `normalized_service`, `domain_code`, `category_name` y
-  `service_summary` en español neutro, claros y operativos.
-  Nunca devuelvas una profesión pura como normalized_service.
-  Si el texto es ambiguo, usa `clarification_required` en vez de inventar.
-  No uses `catalog_review_required` ni sugerencias de revisión.
-  La salida debe ser JSON estricto.
+  Eres un clasificador de servicios para proveedores en Ecuador.
+  Tu tarea es analizar el texto que describe un servicio y devolver SIEMPRE:
+  - Un nombre normalizado y claro del servicio (normalized_service)
+  - El dominio al que pertenece (domain_code), usando los códigos del catálogo
+  - Una categoría específica dentro del dominio (category_name)
+  - Un resumen breve operativo del servicio (service_summary)
+  - Un nivel de confianza de 0.0 a 1.0 (confidence)
+
+  Reglas obligatorias:
+  - SIEMPRE asigna un domain_code y un category_name, incluso si el texto es vago.
+    Usa el dominio y categoría más cercana según tu criterio.
+  - normalized_service debe ser legible, en español neutro, máximo 80 caracteres.
+    Nunca devuelvas un oficio puro (plomero, contador) — devuelve el servicio concreto.
+  - service_summary es una frase operativa breve de lo que hace el proveedor.
+  - confidence refleja qué tan claro es el servicio en el texto (0.9 = muy claro, 0.5 = interpretado).
+  - La salida SIEMPRE es JSON estricto, sin texto adicional.
+  - Nunca dejes domain_code ni category_name en null o vacío.
   """
 
-  @doc """
-  Clasifica un texto de servicio crudo.
-
-  Devuelve {:ok, map} con:
-    - service_name: string normalizado y visible
-    - service_summary: descripción breve operativa
-    - domain_code: código del catálogo de dominios (puede ser nil)
-    - category_name: categoría (puede ser nil)
-    - classification_confidence: float 0.0..1.0
-    - raw_service_text: texto original
-
-  o {:error, reason}
-  """
   def classify(raw_text) when is_binary(raw_text) do
     text = String.trim(raw_text)
 
     cond do
-      String.length(text) < 2 ->
-        {:error, :text_too_short}
-
-      String.length(text) > 300 ->
-        {:error, :text_too_long}
-
-      heuristic_reject?(text) ->
-        {:error, :invalid_service_text}
-
-      true ->
-        do_classify(text)
+      String.length(text) < 2 -> {:error, :text_too_short}
+      String.length(text) > 300 -> {:error, :text_too_long}
+      heuristic_reject?(text) -> {:error, :invalid_service_text}
+      true -> do_classify(text)
     end
   end
 
   defp do_classify(text) do
-    domains = fetch_domain_catalog()
-    domains_prompt = build_domains_prompt(domains)
-
-    with {:ok, result} <- call_openai(text, domains_prompt, strict: false) do
-      if classification_complete?(result, domains) do
-        {:ok, build_result(text, result)}
-      else
-        # Segunda llamada en modo estricto si la primera no cerró dominio/categoría
-        case call_openai(text, domains_prompt, strict: true) do
-          {:ok, result2} when result2 != nil ->
-            final = if classification_complete?(result2, domains), do: result2, else: result
-            {:ok, build_result(text, final)}
-
-          _ ->
-            {:ok, build_result(text, result)}
-        end
-      end
-    end
-  end
-
-  defp call_openai(text, domains_prompt, strict: strict) do
-    strict_note =
-      if strict do
-        "\nModo estricto: si el texto es un servicio real, debes cerrar " <>
-          "domain_code y category_name; no dejes ambos vacíos. " <>
-          "Si no puedes resolverlos, devuelve clarification_required."
-      else
-        ""
-      end
+    domains_prompt = fetch_domain_catalog() |> build_domains_prompt()
 
     user_prompt =
       "Clasifica este servicio:\n" <>
         "\"#{text}\"\n\n" <>
-        "Dominios disponibles:\n" <>
+        "Catálogo de dominios disponibles (usa estos códigos exactos para domain_code):\n" <>
         domains_prompt <>
-        "\n\nResponde SOLO con JSON con la forma " <>
-        "{\"normalized_service\":\"...\"," <>
-        "\"domain_code\":\"...\"," <>
-        "\"category_name\":\"...\"," <>
-        "\"service_summary\":\"...\"," <>
-        "\"confidence\":0.0," <>
-        "\"reason\":\"...\"," <>
-        "\"clarification_question\":\"... o null\"," <>
-        "\"status\":\"accepted|clarification_required|rejected\"}" <>
-        strict_note
+        "\n\nResponde SOLO con este JSON:\n" <>
+        "{" <>
+        "\"normalized_service\": \"nombre claro del servicio\"," <>
+        "\"domain_code\": \"código del catálogo\"," <>
+        "\"category_name\": \"categoría específica\"," <>
+        "\"service_summary\": \"resumen operativo breve\"," <>
+        "\"confidence\": 0.0" <>
+        "}"
 
     case OpenAIClient.chat_completion(@system_prompt, user_prompt) do
       {:ok, json_text} ->
         case Jason.decode(json_text) do
-          {:ok, parsed} -> {:ok, parsed}
-          _ -> {:ok, %{}}
+          {:ok, result} ->
+            {:ok, build_result(text, result)}
+
+          _ ->
+            Logger.warning("ServiceClassifier: no se pudo parsear JSON de OpenAI: #{inspect(json_text)}")
+            {:ok, fallback_result(text)}
         end
 
       {:error, reason} ->
-        Logger.warning("ServiceClassifier OpenAI error: #{inspect(reason)}")
+        Logger.warning("ServiceClassifier: error OpenAI: #{inspect(reason)}")
         {:error, reason}
     end
   end
 
   defp fetch_domain_catalog do
     case SupabaseClient.fetch_service_domains() do
-      {:ok, %{body: domains}} when is_list(domains) -> domains
+      {:ok, %{body: domains}} when is_list(domains) and length(domains) > 0 -> domains
       _ -> []
     end
   end
 
-  defp build_domains_prompt([]), do: "- sin_catalogo: usar null si no hay dominio claro"
+  defp build_domains_prompt([]), do: "Sin catálogo — asigna el dominio y categoría según tu criterio."
 
   defp build_domains_prompt(domains) do
     domains
@@ -133,28 +86,30 @@ defmodule ProviderOnboardingWorker.ServiceClassifier do
     end)
   end
 
-  defp classification_complete?(result, domains) do
-    category = result["category_name"]
-    status = result["status"]
-    domain_code = result["domain_code"]
-    valid_codes = Enum.map(domains, & &1["code"])
-
-    not blank?(result["normalized_service"]) and
-      not blank?(category) and
-      status in ["accepted", nil, ""] and
-      (blank?(domain_code) or Enum.member?(valid_codes, domain_code))
-  end
-
   defp build_result(raw_text, result) do
-    normalized = blank_to_default(result["normalized_service"], raw_text)
-    summary = blank_to_default(result["service_summary"], normalized)
+    normalized = to_string_safe(result["normalized_service"]) |> default_if_blank(raw_text)
+    summary = to_string_safe(result["service_summary"]) |> default_if_blank(normalized)
+    domain = to_string_safe(result["domain_code"]) |> nil_if_blank()
+    category = to_string_safe(result["category_name"]) |> nil_if_blank()
+    confidence = to_float(result["confidence"])
 
     %{
       "service_name" => normalized,
       "service_summary" => summary,
-      "domain_code" => blank_to_nil(result["domain_code"]),
-      "category_name" => blank_to_nil(result["category_name"]),
-      "classification_confidence" => to_float(result["confidence"]),
+      "domain_code" => domain,
+      "category_name" => category,
+      "classification_confidence" => confidence,
+      "raw_service_text" => raw_text
+    }
+  end
+
+  defp fallback_result(raw_text) do
+    %{
+      "service_name" => raw_text,
+      "service_summary" => raw_text,
+      "domain_code" => nil,
+      "category_name" => nil,
+      "classification_confidence" => 0.0,
       "raw_service_text" => raw_text
     }
   end
@@ -164,11 +119,15 @@ defmodule ProviderOnboardingWorker.ServiceClassifier do
     normalized in ~w(hola buenas gracias ok okay info ayuda test prueba servicio servicios varios general)
   end
 
-  defp blank?(value), do: is_nil(value) or value == ""
-  defp blank_to_nil(value) when value in [nil, "", "null"], do: nil
-  defp blank_to_nil(value), do: value
-  defp blank_to_default(value, default) when value in [nil, ""], do: default
-  defp blank_to_default(value, _default), do: value
+  defp to_string_safe(nil), do: ""
+  defp to_string_safe(v), do: to_string(v) |> String.trim()
+
+  defp default_if_blank("", default), do: default
+  defp default_if_blank(v, _), do: v
+
+  defp nil_if_blank(""), do: nil
+  defp nil_if_blank(v), do: v
+
   defp to_float(nil), do: 0.0
   defp to_float(v) when is_float(v), do: v
   defp to_float(v) when is_integer(v), do: v * 1.0
