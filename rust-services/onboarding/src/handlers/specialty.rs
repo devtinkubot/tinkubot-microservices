@@ -40,6 +40,7 @@ pub async fn handle(state: &AppState, payload: &WebhookPayload) -> Result<Onboar
         }
     }
     flow.specialty = Some(flow.services.join(", "));
+    flow.service_slot += 1;
     set_transition_fields(&mut flow, &current_state, "onboarding_add_another_service");
     flow.state = "onboarding_add_another_service".to_string();
     let event_payload = build_specialty_payload(&flow, payload);
@@ -50,7 +51,7 @@ pub async fn handle(state: &AppState, payload: &WebhookPayload) -> Result<Onboar
 fn build_specialty_payload(flow: &FlowState, payload: &WebhookPayload) -> serde_json::Value {
     serde_json::json!({
         "raw_service_text": payload.message,
-        "service_position": flow.services.len().saturating_sub(1),
+        "service_position": flow.service_slot.saturating_sub(1),
         "checkpoint": flow.checkpoint.as_deref().unwrap_or(&flow.state),
     })
 }

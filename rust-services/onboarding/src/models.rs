@@ -24,7 +24,6 @@ pub struct WebhookPayload {
     pub context_from: Option<String>,
     pub context_id: Option<String>,
     pub content: Option<String>,
-    #[validate(length(min = 1))]
     pub message: String,
     pub message_type: Option<String>,
     pub selected_option: Option<String>,
@@ -56,15 +55,17 @@ pub struct FlowState {
     #[serde(default)]
     pub city: Option<String>,
     #[serde(default)]
+    pub location_lat: Option<f64>,
+    #[serde(default)]
+    pub location_lng: Option<f64>,
+    #[serde(default)]
     pub experience_range: Option<String>,
     #[serde(default)]
     pub services: Vec<String>,
     #[serde(default)]
+    pub service_slot: usize,
+    #[serde(default)]
     pub specialty: Option<String>,
-    #[serde(default)]
-    pub dni_front_url: Option<String>,
-    #[serde(default)]
-    pub face_photo_url: Option<String>,
     #[serde(default)]
     pub facebook_username: Option<String>,
     #[serde(default)]
@@ -86,11 +87,12 @@ impl FlowState {
             has_consent: false,
             real_phone: None,
             city: None,
+            location_lat: None,
+            location_lng: None,
             experience_range: None,
             services: Vec::new(),
+            service_slot: 0,
             specialty: None,
-            dni_front_url: None,
-            face_photo_url: None,
             facebook_username: None,
             instagram_username: None,
             onboarding_complete: false,
@@ -99,8 +101,39 @@ impl FlowState {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UIOption {
+    pub id: String,
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UIConfig {
+    #[serde(rename = "type")]
+    pub ui_type: String,
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub options: Option<Vec<UIOption>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub header_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub header_text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub header_media_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub footer_text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub list_button_text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub list_section_title: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ResponseMessage {
     pub response: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ui: Option<UIConfig>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -109,8 +142,3 @@ pub struct OnboardingResponse {
     pub messages: Vec<ResponseMessage>,
 }
 
-impl OnboardingResponse {
-    pub fn single(response: impl Into<String>) -> Self {
-        Self { success: true, messages: vec![ResponseMessage { response: response.into() }] }
-    }
-}
