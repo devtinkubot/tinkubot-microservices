@@ -28,4 +28,5 @@ config :provider_onboarding_worker,
   providers_bucket: System.get_env("SUPABASE_PROVIDERS_BUCKET", "tinkubot-providers"),
   openai_api_key: System.get_env("OPENAI_API_KEY", ""),
   openai_embedding_model:
-    System.get_env("PROVIDER_OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+    System.get_env("PROVIDER_OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
+  chat_model: System.get_env("OPENAI_CHAT_MODEL", "gpt-4o-mini")

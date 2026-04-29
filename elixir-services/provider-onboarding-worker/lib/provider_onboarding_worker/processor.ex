@@ -2,6 +2,7 @@ defmodule ProviderOnboardingWorker.Processor do
   alias ProviderOnboardingWorker.AIProveedoresClient
   alias ProviderOnboardingWorker.Event
   alias ProviderOnboardingWorker.OpenAIClient
+  alias ProviderOnboardingWorker.ServiceClassifier
   alias ProviderOnboardingWorker.SupabaseClient
   require Logger
 
@@ -145,11 +146,11 @@ defmodule ProviderOnboardingWorker.Processor do
     )
   end
 
-  defp replace_services(%Event{provider_id: provider_id, payload: payload} = event) do
+  defp replace_services(%Event{provider_id: provider_id, payload: payload}) do
     normalized_payload = normalize_service_payload(payload)
 
     with true <- SupabaseClient.provider_exists?(provider_id),
-         {:ok, resolved} <- AIProveedoresClient.resolve_service(event, normalized_payload),
+         {:ok, resolved} <- classify_service(normalized_payload["raw_service_text"]),
          {:ok, service_row} <- build_service_row(provider_id, normalized_payload, resolved),
          {:ok, _} <- SupabaseClient.replace_service_at_position(provider_id, service_row),
          {:ok, verified_payload} <-
@@ -538,4 +539,16 @@ defmodule ProviderOnboardingWorker.Processor do
   end
 
   defp now_iso, do: DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601()
+
+  defp classify_service(raw_text) do
+    case ServiceClassifier.classify(raw_text || "") do
+      {:ok, result} ->
+        # Wrap en la forma que espera build_service_row (igual que respondía Python)
+        {:ok, %{"service_detail" => result}}
+
+      {:error, reason} ->
+        Logger.warning("ServiceClassifier failed: #{inspect(reason)}, usando texto crudo")
+        {:ok, %{"service_detail" => %{"service_name" => raw_text, "service_summary" => raw_text, "raw_service_text" => raw_text}}}
+    end
+  end
 end
