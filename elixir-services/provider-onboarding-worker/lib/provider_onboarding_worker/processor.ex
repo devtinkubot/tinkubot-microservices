@@ -15,6 +15,7 @@ defmodule ProviderOnboardingWorker.Processor do
   @event_services "provider.onboarding.services.persist_requested"
   @event_social "provider.onboarding.social.persist_requested"
   @event_registration "provider.onboarding.registration.persist_requested"
+  @event_review "provider.onboarding.review_requested"
   @nominatim_user_agent "tinkubot-provider-onboarding-worker/1.0 (support@tinkubot.com)"
   @nominatim_search_url "https://nominatim.openstreetmap.org/search"
   @nominatim_reverse_url "https://nominatim.openstreetmap.org/reverse"
@@ -33,6 +34,9 @@ defmodule ProviderOnboardingWorker.Processor do
 
   def process(%Event{event_type: @event_registration} = event),
     do: register_provider(event)
+
+  def process(%Event{event_type: @event_review} = event),
+    do: mark_review_pending(event)
 
   def process(%Event{event_type: "onboarding_transition"}), do: {:ok, :ignored}
 
@@ -176,6 +180,23 @@ defmodule ProviderOnboardingWorker.Processor do
   defp register_provider(%Event{} = event) do
     with {:ok, _} <- AIProveedoresClient.resolve_registration(event) do
       {:ok, :persisted}
+    end
+  end
+
+  defp mark_review_pending(%Event{provider_id: provider_id, payload: payload}) do
+    checkpoint = payload["checkpoint"] || "review_pending_verification"
+    now = now_iso()
+
+    updates = %{
+      "onboarding_step" => checkpoint,
+      "onboarding_step_updated_at" => now,
+      "onboarding_complete" => true,
+      "updated_at" => now
+    }
+
+    case SupabaseClient.update_provider(provider_id, updates) do
+      {:ok, _} -> {:ok, :persisted}
+      {:error, _} -> {:retry, :provider_missing}
     end
   end
 
