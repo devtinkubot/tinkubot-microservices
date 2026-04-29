@@ -64,7 +64,7 @@ defmodule ProviderOnboardingWorker.OpenAIClient do
       temperature: 0.1
     }
 
-    case Req.post(req, url: "/chat/completions", json: body) do
+    case Req.post(req, url: "/v1/chat/completions", json: body) do
       {:ok, %{status: 200, body: %{"choices" => [%{"message" => %{"content" => content}} | _]}}} ->
         {:ok, content}
 
