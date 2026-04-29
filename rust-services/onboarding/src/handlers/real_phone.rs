@@ -1,6 +1,6 @@
 use crate::{
     errors::AppError,
-    flow::{load_or_create_flow, persist_transition},
+    flow::{load_or_create_flow, persist_transition_with_payload},
     logic::{response_for_state, set_transition_fields},
     normalize::normalize_ecuador_phone,
     models::{OnboardingResponse, WebhookPayload},
@@ -15,8 +15,12 @@ pub async fn handle(state: &AppState, payload: &WebhookPayload) -> Result<Onboar
     let current_state = flow.state.clone();
     set_transition_fields(&mut flow, &current_state, &current_state);
     let _ = process(&mut flow, payload);
-    persist_transition(state, &mut flow, payload, EVENT_TYPE).await?;
-    Ok(response_for_state(&current_state))
+    let event_payload = serde_json::json!({
+        "real_phone": flow.real_phone,
+        "checkpoint": flow.checkpoint.as_deref().unwrap_or(&flow.state),
+    });
+    persist_transition_with_payload(state, &mut flow, payload, EVENT_TYPE, event_payload).await?;
+    Ok(response_for_state(&flow.state, &state.config))
 }
 
 pub(crate) fn process(flow: &mut crate::models::FlowState, payload: &WebhookPayload) -> bool {
