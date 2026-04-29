@@ -14,9 +14,6 @@ from config import configuracion
 from dependencies import deps
 from fastapi import FastAPI, Header
 from fastapi.middleware.cors import CORSMiddleware
-from flows.onboarding.handlers.servicios import (
-    resolver_servicio_onboarding_best_effort,
-)
 from infrastructure.database import run_supabase
 from infrastructure.redis import cliente_redis  # noqa: F401
 from infrastructure.storage import subir_medios_identidad
@@ -107,21 +104,6 @@ class SolicitudAutoAsignacionGovernanceReviews(BaseModel):
     reviewer: Optional[str] = None
     notes: Optional[str] = None
     create_domain_if_missing: bool = False
-
-
-class SolicitudResolverServicioOnboarding(BaseModel):
-    raw_service_text: str
-    provider_id: Optional[str] = None
-    phone: Optional[str] = None
-    checkpoint: Optional[str] = None
-
-
-class RespuestaResolverServicioOnboarding(BaseModel):
-    ok: bool
-    raw_service_text: str
-    service_detail: Dict[str, Any]
-    used_fallback: bool = False
-    error_reason: Optional[str] = None
 
 
 class RespuestaRegistrarProveedorOnboarding(BaseModel):
@@ -337,32 +319,6 @@ async def reset_provider_onboarding(
         whatsapp_url=configuracion.whatsapp_proveedores_url,
         whatsapp_account_id=configuracion.whatsapp_proveedores_account_id,
     )
-
-
-@app.post(
-    "/internal/onboarding/services/resolve",
-    response_model=RespuestaResolverServicioOnboarding,
-)
-async def resolver_servicio_onboarding_interno(
-    solicitud: SolicitudResolverServicioOnboarding,
-    token: Optional[str] = Header(default=None, alias="x-internal-token"),
-) -> RespuestaResolverServicioOnboarding:
-    token_esperado = configuracion.internal_token
-    if token_esperado and token != token_esperado:
-        return RespuestaResolverServicioOnboarding(
-            ok=False,
-            raw_service_text=str(solicitud.raw_service_text or "").strip(),
-            service_detail={},
-            error_reason="unauthorized",
-        )
-
-    resultado = await resolver_servicio_onboarding_best_effort(
-        texto_mensaje=solicitud.raw_service_text,
-        cliente_openai=deps.cliente_openai,
-        servicio_embeddings=deps.servicio_embeddings,
-        provider_id=solicitud.provider_id,
-    )
-    return RespuestaResolverServicioOnboarding(**resultado)
 
 
 @app.post(
