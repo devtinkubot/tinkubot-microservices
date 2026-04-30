@@ -7,6 +7,7 @@ import {
 import { formatearTelefonoEcuador } from "../utils";
 import {
   escaparHtml,
+  esIdentificadorMetaNoTelefonico,
   formatearFechaLarga,
   limpiarTelefono,
   normalizarClaveServicio,
@@ -322,9 +323,14 @@ function actualizarCertificados(proveedor: ProviderRecord): void {
   placeholder.style.display = "none";
 }
 
+function resolverTelefonoContacto(proveedor: ProviderRecord): string | null {
+  return [proveedor.contactPhone, proveedor.realPhone, proveedor.phone].find(
+    (v) => v && !esIdentificadorMetaNoTelefonico(v),
+  ) ?? null;
+}
+
 function actualizarContacto(proveedor: ProviderRecord): void {
-  const telefono =
-    proveedor.contactPhone ?? proveedor.realPhone ?? proveedor.phone ?? null;
+  const telefono = resolverTelefonoContacto(proveedor);
   const realPhone = proveedor.realPhone ?? null;
   const telefonoPresentable = formatearTelefonoEcuador(telefono);
   const realPhonePresentable = formatearTelefonoEcuador(realPhone);
@@ -1049,7 +1055,7 @@ function manejarAccionModal(): void {
   const documentLastNames = apellidosInput?.value.trim() ?? "";
   const documentIdNumber = cedulaInput?.value.trim() ?? "";
   const telefono = limpiarTelefono(
-    proveedor.contactPhone ?? proveedor.phone ?? "",
+    resolverTelefonoContacto(proveedor),
   );
   const esEditable = esPerfilProfesionalEditable(proveedor);
 

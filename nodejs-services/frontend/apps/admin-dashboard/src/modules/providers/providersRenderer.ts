@@ -2,6 +2,7 @@ import type { ProviderRecord, ProviderServiceReview } from "@tinkubot/api-client
 import {
   construirUrlWhatsApp,
   escaparHtml,
+  esIdentificadorMetaNoTelefonico,
   extraerPrimerNombre,
   formatearAntiguedadAprobacion,
   formatearFechaLarga,
@@ -481,7 +482,9 @@ export function renderizarFilaPerfilProfesionalIncompleto(
     ? `<span class="fw-semibold">${escaparHtml(antiguedad)}</span>`
     : '<span class="text-muted">Sin fecha de aprobación</span>';
   const whatsappUrl = construirUrlWhatsApp(
-    proveedor.contactPhone || proveedor.realPhone || proveedor.phone,
+    [proveedor.contactPhone, proveedor.realPhone, proveedor.phone].find(
+      (v) => v && !esIdentificadorMetaNoTelefonico(v),
+    ),
   );
   const contactoMarkup = whatsappUrl
     ? `<a class="btn btn-sm btn-success" href="${escaparHtml(whatsappUrl)}" target="_blank" rel="noopener noreferrer" aria-label="Abrir WhatsApp con ${escaparHtml(firstName)}"><i class="fab fa-whatsapp me-1"></i>WhatsApp</a>`
@@ -515,7 +518,9 @@ export function renderizarTarjetaOnboarding(
 ): string {
   const nombreVisible = resolverNombreVisibleProveedor(proveedor);
   const telefonoVisible = resolverTextoVisible(
-    proveedor.contactPhone || proveedor.realPhone || proveedor.phone,
+    [proveedor.contactPhone, proveedor.realPhone, proveedor.phone].find(
+      (v) => v && !esIdentificadorMetaNoTelefonico(v),
+    ),
   );
   const antiguedad = resolverAntiguedadOnboarding(proveedor.registeredAt);
   const claseNivel =

@@ -58,9 +58,25 @@ export const normalizarClaveServicio = (
   return texto.toLowerCase().replace(/\s+/g, " ");
 };
 
+export const esIdentificadorMetaNoTelefonico = (
+  valor: string | null | undefined,
+): boolean => {
+  if (!valor) return false;
+  const texto = valor.trim();
+  if (!texto) return false;
+  // BSUID tipo "EC.4017827728517538"
+  if (/^[A-Z]{2}\.[A-Za-z0-9]+$/.test(texto)) return true;
+  // LID puro de 15+ dígitos sin código de país reconocible
+  const digitos = texto.replace(/[^\d]/g, "");
+  if (digitos.length >= 15) return true;
+  return false;
+};
+
 export const esIdentificadorWhatsAppCrudo = (valor: string): boolean => {
   const texto = valor.trim();
   if (!texto) return false;
+  // BSUID tipo "EC.401..." no es un identificador WhatsApp válido
+  if (esIdentificadorMetaNoTelefonico(texto)) return false;
   if (texto.includes("@s.whatsapp.net") || texto.includes("@lid")) {
     return true;
   }
@@ -122,11 +138,18 @@ export const resolverNombreVisibleSegunBucketActivo = (
 export const resolverTelefonoVisibleOperativoProveedor = (
   proveedor: ProviderRecord,
 ): string | null => {
-  return (
-    resolverTextoVisible(proveedor.contactPhone) ??
-    resolverTextoVisible(proveedor.realPhone) ??
-    resolverTextoVisible(proveedor.phone)
-  );
+  const candidatos = [
+    proveedor.contactPhone,
+    proveedor.realPhone,
+    proveedor.phone,
+  ];
+  for (const valor of candidatos) {
+    if (!valor) continue;
+    if (esIdentificadorMetaNoTelefonico(valor)) continue;
+    const visible = resolverTextoVisible(valor);
+    if (visible) return visible;
+  }
+  return null;
 };
 
 export const normalizarPasoOnboarding = (

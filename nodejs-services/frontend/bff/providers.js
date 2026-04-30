@@ -104,6 +104,22 @@ const generarUrlFirmadaSupabase = (filePath) => {
   return trimmed;
 };
 
+/** Detecta identificadores no telefónicos de Meta (BSUID, LID crudo).
+ *  Patrón: dos letras mayúsculas + punto + dígitos (EC.401..., US.xxx).
+ *  También atrapa LIDs puros de 15+ dígitos, que no son números marcables.
+ */
+const esIdentificadorMetaNoTelefonico = (value) => {
+  if (!value || typeof value !== "string") return false;
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  // BSUID tipo "EC.4017827728517538"
+  if (/^[A-Z]{2}\.[A-Za-z0-9]+$/.test(trimmed)) return true;
+  // LID puro de 15+ dígitos sin código de país reconocible
+  const digitsOnly = trimmed.replace(/[^\d]/g, "");
+  if (digitsOnly.length >= 15) return true;
+  return false;
+};
+
 const supabaseClient =
   supabaseRestBaseUrl && supabaseServiceKey
     ? axios.create({
@@ -451,12 +467,14 @@ const normalizarProveedorSupabase = (registro) => {
   const businessName = limpiarTexto(registro?.business_name) || null;
   const contact =
     limpiarTexto(registro?.contact_name) || nombre || "Contacto no definido";
+  const realPhone = limpiarTexto(registro?.real_phone) || null;
+  const phoneRaw = limpiarTexto(registro?.phone) || null;
+  const phone = phoneRaw && !esIdentificadorMetaNoTelefonico(phoneRaw) ? phoneRaw : null;
   const contactPhone =
     limpiarTexto(registro?.contact_phone) ||
-    limpiarTexto(registro?.phone) ||
+    realPhone ||
+    phone ||
     null;
-  const realPhone = limpiarTexto(registro?.real_phone) || null;
-  const phone = limpiarTexto(registro?.phone) || null;
   const ciudad = limpiarTexto(registro?.city) || null;
   const provincia = limpiarTexto(registro?.province) || null;
   const providerServicesDetailed = Array.isArray(registro?.provider_services)
@@ -2107,6 +2125,7 @@ async function obtenerMonetizacionProveedor(providerId) {
 }
 
 module.exports = {
+  esIdentificadorMetaNoTelefonico,
   obtenerProveedoresOnboarding,
   obtenerProveedoresPendientes,
   obtenerProveedoresNuevos,
