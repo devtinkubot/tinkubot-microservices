@@ -676,6 +676,7 @@ export function renderizarEncabezadoTabla(
 export function renderizarProveedores(
   bucketActivo: ProviderBucket,
   proveedores: readonly ProviderRecord[],
+  pagina = 0,
 ): void {
   const estadoVacio = obtenerElemento<HTMLDivElement>("#providers-empty");
   const contenedorTabla = obtenerElemento<HTMLDivElement>(
@@ -727,7 +728,13 @@ export function renderizarProveedores(
   estadoVacio.style.display = "none";
   contenedorTabla.style.display = "block";
 
-  const filas = proveedores
+  const TAMANO_PAGINA = 50;
+  const listaPaginada =
+    bucketActivo === "operativos"
+      ? proveedores.slice(pagina * TAMANO_PAGINA, (pagina + 1) * TAMANO_PAGINA)
+      : proveedores;
+
+  const filas = listaPaginada
     .map((proveedor) =>
       bucketActivo === "profile_incomplete"
         ? renderizarFilaPerfilProfesionalIncompleto(proveedor)
@@ -738,6 +745,13 @@ export function renderizarProveedores(
     .join("");
 
   cuerpoTabla.innerHTML = filas;
+
+  if (bucketActivo === "operativos") {
+    renderizarPaginacion(pagina, proveedores.length, TAMANO_PAGINA);
+  } else {
+    const contenedorPag = document.querySelector<HTMLDivElement>("#providers-pagination");
+    if (contenedorPag) contenedorPag.style.display = "none";
+  }
 }
 
 export function prepararTablaServicioPerfil(
@@ -826,4 +840,29 @@ function obtenerReviewServicioProveedor(
       return Boolean(reviewKey && claves.includes(reviewKey));
     }) || null
   );
+}
+
+export function renderizarPaginacion(
+  pagina: number,
+  totalProveedores: number,
+  tamano: number,
+): void {
+  const contenedor = document.querySelector<HTMLDivElement>("#providers-pagination");
+  const btnPrev = document.querySelector<HTMLButtonElement>("#providers-pagination-prev");
+  const btnNext = document.querySelector<HTMLButtonElement>("#providers-pagination-next");
+  const info = document.querySelector<HTMLSpanElement>("#providers-pagination-info");
+  if (!contenedor || !btnPrev || !btnNext || !info) return;
+
+  const totalPaginas = Math.ceil(totalProveedores / tamano);
+  if (totalPaginas <= 1) {
+    contenedor.style.display = "none";
+    return;
+  }
+
+  contenedor.style.display = "flex";
+  btnPrev.disabled = pagina === 0;
+  btnNext.disabled = pagina >= totalPaginas - 1;
+  const desde = pagina * tamano + 1;
+  const hasta = Math.min((pagina + 1) * tamano, totalProveedores);
+  info.textContent = `${desde}–${hasta} de ${totalProveedores}`;
 }

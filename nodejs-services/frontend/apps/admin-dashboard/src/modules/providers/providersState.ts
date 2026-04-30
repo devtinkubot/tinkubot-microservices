@@ -9,6 +9,7 @@ const estado: EstadoProveedores = {
   proveedorSeleccionado: null,
   reviewSeleccionada: null,
   bucketActivo: "onboarding",
+  paginaOperativos: 0,
 };
 
 export const obtenerProveedores = (): readonly ProviderRecord[] =>
@@ -60,4 +61,11 @@ export const establecerReviewSeleccionada = (
 
 export const establecerBucketActivo = (bucket: ProviderBucket): void => {
   estado.bucketActivo = bucket;
+};
+
+export const obtenerPaginaOperativos = (): number =>
+  estado.paginaOperativos;
+
+export const establecerPaginaOperativos = (pagina: number): void => {
+  estado.paginaOperativos = pagina;
 };

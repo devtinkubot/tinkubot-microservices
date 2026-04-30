@@ -27,6 +27,7 @@ mod models;
 mod router;
 mod store;
 mod supabase;
+mod templates;
 
 use config::Config;
 use errors::AppError;
@@ -85,7 +86,7 @@ fn build_app(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/handle-whatsapp-message", post(handle_whatsapp_message))
-        .layer(RequestBodyLimitLayer::new(64 * 1024))
+        .layer(RequestBodyLimitLayer::new(10 * 1024 * 1024))
         .layer(TimeoutLayer::with_status_code(
             StatusCode::REQUEST_TIMEOUT,
             Duration::from_secs(10),

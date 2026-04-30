@@ -4,7 +4,7 @@ use chrono::Utc;
 use deadpool_redis::Pool;
 use sha2::{Digest, Sha256};
 
-use crate::{errors::AppError, models::WebhookPayload};
+use crate::errors::AppError;
 
 pub async fn publish_onboarding_event(
     pool: &Pool,
@@ -16,7 +16,7 @@ pub async fn publish_onboarding_event(
     step: &str,
     checkpoint: &str,
     source_message_id: &str,
-    payload: &WebhookPayload,
+    payload: &serde_json::Value,
 ) -> Result<String, AppError> {
     let occurred_at = Utc::now().to_rfc3339();
     let payload_json = serde_json::to_string(payload)?;

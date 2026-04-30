@@ -16,7 +16,7 @@ pub async fn handle(state: &AppState, payload: &WebhookPayload) -> Result<Onboar
     set_transition_fields(&mut flow, &current_state, &current_state);
     let _ = process(&mut flow, payload);
     persist_transition(state, &mut flow, payload, EVENT_TYPE).await?;
-    Ok(response_for_state(&current_state))
+    Ok(response_for_state(&flow.state, &state.config))
 }
 
 pub(crate) fn process(flow: &mut crate::models::FlowState, payload: &WebhookPayload) -> Option<bool> {
@@ -29,8 +29,8 @@ pub(crate) fn process(flow: &mut crate::models::FlowState, payload: &WebhookPayl
         return Some(true);
     }
     if is_negative(text, selected) {
-        set_transition_fields(flow, &current_state, "confirm");
-        flow.state = "confirm".to_string();
+        set_transition_fields(flow, &current_state, "onboarding_social_media");
+        flow.state = "onboarding_social_media".to_string();
         return Some(false);
     }
     None

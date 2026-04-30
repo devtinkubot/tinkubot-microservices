@@ -18,14 +18,16 @@ pub struct Config {
     pub provider_onboarding_stream_key: String,
     #[serde(default = "default_stream_maxlen")]
     pub provider_onboarding_stream_maxlen: u64,
-    #[serde(default = "default_async_persistence")]
-    pub provider_onboarding_async_persistence_enabled: bool,
     #[serde(default = "default_rust_log")]
     pub rust_log: String,
     #[serde(default = "default_port")]
     pub port: u16,
     #[serde(default = "default_bind_addr")]
     pub bind_addr: String,
+    #[serde(default)]
+    pub wa_provider_onboarding_consent_url: String,
+    #[serde(default)]
+    pub wa_provider_social_network_image_url: String,
 }
 
 impl Config {
@@ -45,7 +47,6 @@ impl Config {
 
 fn default_stream_key() -> String { "provider_onboarding_events".to_string() }
 fn default_stream_maxlen() -> u64 { 10_000 }
-fn default_async_persistence() -> bool { true }
 fn default_rust_log() -> String { "info".to_string() }
 fn default_port() -> u16 { 8003 }
 fn default_bind_addr() -> String { "0.0.0.0".to_string() }

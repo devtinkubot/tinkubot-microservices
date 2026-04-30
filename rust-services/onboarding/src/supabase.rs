@@ -21,46 +21,13 @@ impl SupabaseClient {
         }
     }
 
-    pub async fn upload_to_storage(
-        &self,
-        path: &str,
-        data: &[u8],
-        content_type: &str,
-    ) -> Result<String, AppError> {
-        let clean_path = path.trim_start_matches('/');
-        let endpoint = format!(
-            "{}/storage/v1/object/{}/{}",
-            trim_slash(&self.url),
-            self.bucket,
-            clean_path
-        );
-        let response = self
-            .client
-            .put(endpoint)
-            .header("Authorization", format!("Bearer {}", self.key))
-            .header("apikey", &self.key)
-            .header("x-upsert", "true")
-            .header("content-type", content_type)
-            .body(data.to_vec())
-            .send()
-            .await?;
-        if !response.status().is_success() {
-            let body = response.text().await.unwrap_or_default();
-            return Err(AppError::BadRequest(format!(
-                "storage upload failed: {}",
-                body
-            )));
-        }
-        Ok(self.public_url(clean_path))
-    }
-
     pub async fn search_similar_services(
         &self,
         embedding: &[f32],
         threshold: f32,
         count: i32,
     ) -> Result<Vec<String>, AppError> {
-        let endpoint = format!("{}/rest/v1/rpc/match_services", trim_slash(&self.url));
+        let endpoint = format!("{}/rest/v1/rpc/match_provider_services", trim_slash(&self.url));
         let response = self
             .client
             .post(endpoint)
@@ -68,8 +35,9 @@ impl SupabaseClient {
             .header("apikey", &self.key)
             .json(&json!({
                 "query_embedding": embedding,
-                "match_threshold": threshold,
+                "similarity_threshold": threshold,
                 "match_count": count,
+                "city_filter": serde_json::Value::Null,
             }))
             .send()
             .await?;
@@ -105,6 +73,49 @@ impl SupabaseClient {
         }
 
         Ok(results)
+    }
+
+    pub async fn delete_provider_data(&self, provider_id: &str) -> Result<(), AppError> {
+        use urlencoding::encode;
+        let id = encode(provider_id);
+
+        let _ = self
+            .client
+            .delete(format!(
+                "{}/rest/v1/provider_whatsapp_identities?provider_id=eq.{}",
+                trim_slash(&self.url),
+                id
+            ))
+            .header("Authorization", format!("Bearer {}", self.key))
+            .header("apikey", &self.key)
+            .send()
+            .await;
+
+        let _ = self
+            .client
+            .delete(format!(
+                "{}/rest/v1/consents?user_id=eq.{}",
+                trim_slash(&self.url),
+                id
+            ))
+            .header("Authorization", format!("Bearer {}", self.key))
+            .header("apikey", &self.key)
+            .send()
+            .await;
+
+        let _ = self
+            .client
+            .delete(format!(
+                "{}/rest/v1/providers?id=eq.{}",
+                trim_slash(&self.url),
+                id
+            ))
+            .header("Authorization", format!("Bearer {}", self.key))
+            .header("apikey", &self.key)
+            .send()
+            .await;
+
+        Ok(())
     }
 
     pub fn public_url(&self, path: &str) -> String {

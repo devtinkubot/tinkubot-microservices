@@ -185,19 +185,103 @@ defmodule ProviderOnboardingWorker.Processor do
 
   defp mark_review_pending(%Event{provider_id: provider_id, payload: payload}) do
     checkpoint = payload["checkpoint"] || "review_pending_verification"
-    now = now_iso()
 
-    updates = %{
-      "onboarding_step" => checkpoint,
-      "onboarding_step_updated_at" => now,
-      "onboarding_complete" => true,
-      "updated_at" => now
-    }
+    provider_result =
+      SupabaseClient.fetch_provider(
+        provider_id,
+        "id,phone,has_consent,real_phone,city,location_lat,location_lng,dni_front_photo_url,face_photo_url,experience_range,status"
+      )
 
-    case SupabaseClient.update_provider(provider_id, updates) do
-      {:ok, _} -> {:ok, :persisted}
-      {:error, _} -> {:retry, :provider_missing}
+    case provider_result do
+      {:ok, %{body: [provider | _]}} ->
+        case SupabaseClient.count_services(provider_id) do
+          {:ok, service_count} ->
+            missing = check_minimum_fields(provider, service_count)
+
+            if missing == [] do
+              now = now_iso()
+              updates = %{
+                "onboarding_step" => checkpoint,
+                "onboarding_step_updated_at" => now,
+                "onboarding_complete" => true,
+                "updated_at" => now
+              }
+
+              case SupabaseClient.update_provider(provider_id, updates) do
+                {:ok, _} -> {:ok, :persisted}
+                {:error, _} -> {:retry, :provider_missing}
+              end
+            else
+              Logger.warning(
+                "review_requested: provider #{provider_id} missing fields: #{inspect(missing)}"
+              )
+
+              {:retry, {:provider_not_ready, missing}}
+            end
+
+          {:error, _} ->
+            {:retry, :provider_missing}
+        end
+
+      _ ->
+        {:retry, :provider_missing}
     end
+  end
+
+  def check_minimum_fields(provider, service_count) do
+    missing = []
+
+    missing =
+      if provider["has_consent"] != true do
+        ["has_consent" | missing]
+      else
+        missing
+      end
+
+    missing =
+      if blank?(provider["real_phone"]) do
+        ["real_phone" | missing]
+      else
+        missing
+      end
+
+    missing =
+      if blank?(provider["city"]) and
+           (is_nil(provider["location_lat"]) or is_nil(provider["location_lng"])) do
+        ["city_or_location" | missing]
+      else
+        missing
+      end
+
+    missing =
+      if blank?(provider["dni_front_photo_url"]) do
+        ["dni_front_photo_url" | missing]
+      else
+        missing
+      end
+
+    missing =
+      if blank?(provider["face_photo_url"]) do
+        ["face_photo_url" | missing]
+      else
+        missing
+      end
+
+    missing =
+      if blank?(provider["experience_range"]) do
+        ["experience_range" | missing]
+      else
+        missing
+      end
+
+    missing =
+      if not is_integer(service_count) or service_count < 1 do
+        ["provider_services" | missing]
+      else
+        missing
+      end
+
+    Enum.reverse(missing)
   end
 
   defp city_update_payload(payload) do
@@ -443,18 +527,17 @@ defmodule ProviderOnboardingWorker.Processor do
   end
 
   defp verified_payload(provider_id, checkpoint) do
-    with {:ok, %{body: [provider | _]}} <-
-           SupabaseClient.fetch_provider(provider_id, "id,experience_range"),
-         {:ok, count} <- SupabaseClient.count_services(provider_id) do
-      {:ok,
-       compact_map(
-         Map.merge(onboarding_meta(checkpoint), %{
-           "onboarding_complete" =>
-             not blank?(provider["experience_range"]) and count > 0,
-           "service_review_required" => false,
-           "generic_services_removed" => []
-         })
-       )}
+    if SupabaseClient.provider_exists?(provider_id) do
+      payload =
+        Map.merge(onboarding_meta(checkpoint), %{
+          "onboarding_complete" => false,
+          "service_review_required" => false,
+          "generic_services_removed" => []
+        })
+
+      {:ok, compact_map(payload)}
+    else
+      {:retry, :provider_missing}
     end
   end
 
@@ -491,7 +574,7 @@ defmodule ProviderOnboardingWorker.Processor do
     field = if type == :dni_front, do: "dni_front_photo_url", else: "face_photo_url"
 
     onboarding_meta(checkpoint)
-    |> Map.put(field, SupabaseClient.public_storage_url(path))
+    |> Map.put(field, path)
   end
 
   defp normalize_for_search(value) do
@@ -564,7 +647,6 @@ defmodule ProviderOnboardingWorker.Processor do
   defp classify_service(raw_text) do
     case ServiceClassifier.classify(raw_text || "") do
       {:ok, result} ->
-        # Wrap en la forma que espera build_service_row (igual que respondía Python)
         {:ok, %{"service_detail" => result}}
 
       {:error, reason} ->

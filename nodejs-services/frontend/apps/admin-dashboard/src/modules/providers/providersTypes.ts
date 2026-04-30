@@ -24,6 +24,7 @@ export interface EstadoProveedores {
   proveedorSeleccionado: ProviderRecord | null;
   reviewSeleccionada: ProviderServiceReview | null;
   bucketActivo: ProviderBucket;
+  paginaOperativos: number;
 }
 
 export interface AccionProveedorOpciones {

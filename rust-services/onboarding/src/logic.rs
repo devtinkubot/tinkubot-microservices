@@ -1,9 +1,10 @@
 use chrono::Utc;
 
-use crate::models::{FlowState, OnboardingResponse};
+use crate::{config::Config, models::{FlowState, OnboardingResponse}, templates};
 
-pub fn response_for_state(state: &str) -> OnboardingResponse {
-    OnboardingResponse::single(state)
+pub fn response_for_state(state: &str, config: &Config) -> OnboardingResponse {
+    let msg = templates::message_for_state(state, config);
+    OnboardingResponse { success: true, messages: vec![msg] }
 }
 
 pub fn set_transition_fields(flow: &mut FlowState, current_state: &str, next_state: &str) {

@@ -1005,7 +1005,7 @@ const obtenerResumenEstadosProveedoresSupabase = async () => {
   const [nuevos, responseOperativos] = await Promise.all([
     obtenerProveedoresPendientesSupabase(),
     supabaseClient.get(
-      `${supabaseProvidersTable}?limit=${pendingLimit}&order=approved_notified_at.desc.nullslast,created_at.desc&select=*,provider_services(service_name,service_name_normalized,raw_service_text,service_summary,domain_code,category_name,classification_confidence,display_order),provider_certificates(id,file_url,display_order,status,created_at,updated_at)&status=eq.approved&onboarding_complete=eq.true`,
+      `${supabaseProvidersTable}?limit=500&order=approved_notified_at.desc.nullslast,created_at.desc&select=*,provider_services(service_name,service_name_normalized,raw_service_text,service_summary,domain_code,category_name,classification_confidence,display_order),provider_certificates(id,file_url,display_order,status,created_at,updated_at)&status=eq.approved&onboarding_complete=eq.true`,
       {
         headers: {
           Accept: "application/json",
@@ -1070,7 +1070,7 @@ const obtenerProveedoresPerfilProfesionalIncompletoSupabase = async () => {
 
 const construirRutaSupabaseOperativos = () => {
   const parametrosBase = [
-    `limit=${pendingLimit}`,
+    `limit=500`,
     `order=approved_notified_at.desc.nullslast,created_at.desc`,
     "select=*,provider_services(service_name,service_name_normalized,raw_service_text,service_summary,domain_code,category_name,classification_confidence,display_order),provider_certificates(id,file_url,display_order,status,created_at,updated_at)",
     "status=eq.approved",

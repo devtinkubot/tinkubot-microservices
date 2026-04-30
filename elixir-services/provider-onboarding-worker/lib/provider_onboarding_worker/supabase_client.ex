@@ -6,13 +6,13 @@ defmodule ProviderOnboardingWorker.SupabaseClient do
   def start_link(_opts) do
     Agent.start_link(
       fn ->
-        base = Application.fetch_env!(:provider_onboarding_worker, :supabase_url)
+        supabase_url = Application.fetch_env!(:provider_onboarding_worker, :supabase_url)
         key = Application.fetch_env!(:provider_onboarding_worker, :supabase_service_key)
         bucket = Application.fetch_env!(:provider_onboarding_worker, :providers_bucket)
 
         req =
           Req.new(
-            base_url: base,
+            base_url: supabase_url,
             headers: [
               {"apikey", key},
               {"Authorization", "Bearer #{key}"},
@@ -24,15 +24,14 @@ defmodule ProviderOnboardingWorker.SupabaseClient do
             receive_timeout: 15_000
           )
 
-        {req, bucket, base}
+        {req, bucket}
       end,
       name: __MODULE__
     )
   end
 
-  defp req, do: Agent.get(__MODULE__, fn {r, _, _} -> r end)
-  defp bucket, do: Agent.get(__MODULE__, fn {_, b, _} -> b end)
-  defp base_url, do: Agent.get(__MODULE__, fn {_, _, u} -> u end)
+  defp req, do: Agent.get(__MODULE__, fn {r, _} -> r end)
+  defp bucket, do: Agent.get(__MODULE__, fn {_, b} -> b end)
 
   defp request(method, path, opts \\ []) do
     merged = Keyword.merge([method: method, url: path], opts)
@@ -163,10 +162,6 @@ defmodule ProviderOnboardingWorker.SupabaseClient do
         {"x-upsert", "true"}
       ]
     )
-  end
-
-  def public_storage_url(path) do
-    "#{base_url()}/storage/v1/object/public/#{bucket()}/#{path}"
   end
 
   def fetch_service_domains do

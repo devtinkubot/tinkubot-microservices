@@ -5,6 +5,7 @@ pub mod add_service;
 pub mod experience;
 pub mod real_phone;
 pub mod specialty;
+pub mod photo_upload;
 pub mod dni_front_photo;
 pub mod face_photo;
 pub mod social_media;

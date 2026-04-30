@@ -28,6 +28,7 @@ import {
   prepararTablaServicioPerfil,
   renderizarEditorServiciosProfesionales,
   renderizarOpcionesExperienciaProfesional,
+  renderizarPaginacion,
   renderizarProveedores,
 } from "./providersRenderer";
 import {
@@ -43,10 +44,12 @@ import {
 } from "./providersModals";
 import {
   obtenerBucketActivo,
+  obtenerPaginaOperativos,
   obtenerProveedores,
   obtenerProveedorSeleccionado,
   obtenerReviewSeleccionada,
   establecerBucketActivo,
+  establecerPaginaOperativos,
   establecerEstadoCarga,
   establecerIdAccionEnProceso,
   establecerIdReviewEnProceso,
@@ -795,7 +798,7 @@ export async function cargarProveedoresBucket(): Promise<void> {
     const proveedores =
       await obtenerProveedoresPorBucket(obtenerBucketActivo());
     establecerProveedores(proveedores);
-    renderizarProveedores(obtenerBucketActivo(), obtenerProveedores());
+    renderizarProveedores(obtenerBucketActivo(), obtenerProveedores(), obtenerPaginaOperativos());
   } catch (error) {
     console.error("Error al cargar proveedores:", error);
     mostrarAviso(
@@ -805,7 +808,7 @@ export async function cargarProveedoresBucket(): Promise<void> {
       "error",
     );
     establecerProveedores([]);
-    renderizarProveedores(obtenerBucketActivo(), obtenerProveedores());
+    renderizarProveedores(obtenerBucketActivo(), obtenerProveedores(), obtenerPaginaOperativos());
   } finally {
     sincronizarEstadoCarga(false);
   }
@@ -1377,6 +1380,7 @@ export function enlazarEventos(): void {
         return;
       }
       establecerBucketActivo(bucket);
+      establecerPaginaOperativos(0);
       tabs.forEach((btn) => btn.classList.remove("active"));
       tab.classList.add("active");
       actualizarEncabezadoBucket(obtenerBucketActivo());
@@ -1497,6 +1501,31 @@ export function enlazarEventos(): void {
   if (modalServicioElement) {
     modalServicioElement.addEventListener("hidden.bs.modal", () => {
       limpiarFormularioRevisionServicio();
+    });
+  }
+
+  const btnPrev = document.querySelector<HTMLButtonElement>("#providers-pagination-prev");
+  const btnNext = document.querySelector<HTMLButtonElement>("#providers-pagination-next");
+
+  if (btnPrev) {
+    btnPrev.addEventListener("click", () => {
+      const pagina = obtenerPaginaOperativos();
+      if (pagina > 0) {
+        establecerPaginaOperativos(pagina - 1);
+        renderizarProveedores(obtenerBucketActivo(), [...obtenerProveedores()], obtenerPaginaOperativos());
+      }
+    });
+  }
+
+  if (btnNext) {
+    btnNext.addEventListener("click", () => {
+      const pagina = obtenerPaginaOperativos();
+      const TAMANO_PAGINA = 50;
+      const totalPaginas = Math.ceil(obtenerProveedores().length / TAMANO_PAGINA);
+      if (pagina < totalPaginas - 1) {
+        establecerPaginaOperativos(pagina + 1);
+        renderizarProveedores(obtenerBucketActivo(), [...obtenerProveedores()], obtenerPaginaOperativos());
+      }
     });
   }
 }
